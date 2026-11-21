@@ -534,3 +534,29 @@ async def test_a_customer_with_one_known_site_is_still_asked_and_a_town_answer_g
     request = poller.ingest(ctx, request)  # round 20: Weidner had named 61391 before, which was wrong
     rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
     assert (rfq.origin, rfq.pickup_zone, rfq.pickup_postcode, rfq.extracted_by) == ("AAA", "86", None, "rules")
+
+
+VARIANTS = json.loads((Path(__file__).parent / "fixtures" / "request-variants.json").read_text())
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param(v, marks=pytest.mark.xfail(strict=True, reason=v["hole"])) if "hole" in v else v
+        for v in VARIANTS["variants"]
+    ],
+    ids=lambda v: v["name"],
+)
+def test_one_request_written_many_ways(variant):
+    # Right or None (the model reads it); never a confident wrong read.
+    rfq = extract.by_rules(mail(variant["body"]), DEADLINE)
+    if rfq is None:
+        return
+    want = {**VARIANTS["base"], **variant.get("expect", {})}
+    got = {k: getattr(rfq, k) for k in want}
+    got["preference"] = got["preference"].value
+    assert got == {
+        **want,
+        "weight_kg": Decimal(want["weight_kg"]),
+        "volume_cbm": Decimal(want["volume_cbm"]),
+    }
