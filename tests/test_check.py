@@ -8,10 +8,11 @@ from pathlib import Path
 import pytest
 from test_outbox import ingest_rfq, kinds, make_ctx
 
-from pixel.agents.rfq import agent, check, compose, dangerous
+from pixel.agents.rfq import agent, check, compose, dangerous, extract
 from pixel.agents.rfq.extract import DG_DOCUMENTS
+from pixel.api import mailbox
 from pixel.contracts import Preference, Quote, RateOption, Rfq, Source
-from pixel.core import events
+from pixel.core import events, orchestrator
 from pixel.pricing import calc
 
 NOW = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
@@ -164,7 +165,7 @@ def test_dangerous_goods_with_the_papers_asked_for_pass():
 
 def test_non_dangerous_adhesives_only_warn():
     option = airline("2609.75")
-    text = "3 pieces of industrial adhesives, general cargo, non-dangerous."
+    text = "3 pieces of industrial adhesives, 679 kg, general cargo, non-dangerous."
     found = check.run(quote(rfq(), option), text, [option], ("PL_53839.xlsx",))
     assert rules(found, check.WARN) == {"dangerous_goods"} and not check.blocking(found)
 
@@ -297,3 +298,66 @@ def test_a_check_that_fails_is_an_error_event_never_a_lost_quote(conn, monkeypat
     monkeypatch.setattr(check, "run", broken)
     assert agent._quote(ctx, request, [airline("1483.43")], None, fallback=False).total == Decimal("1483.43")
     assert "error" in kinds(ctx) and "quote.drafted" in kinds(ctx)
+
+
+# --- weight accounting: the priced weight must be one the mail's own figures explain ---------------------------------
+
+
+def accounting(text: str, weight: str, files: tuple[str, ...] = ()) -> list[str]:
+    option = airline("2000.00", kg=str(max(Decimal(weight), Decimal("699.73"))))
+    return [f.level for f in check.run(quote(rfq(weight=weight), option), text, [option], files)
+            if f.rule == "weight_unexplained"]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "text, misread, right",
+    [
+        ("FRA to ORD, gross weight: 480 lbs, 2.1 cbm", "480", "217.72"),  # 21.11. 18:25: pounds read as kg
+        ("FRA to ORD, 4 cartons, each 48 kg gross (41 kg net), 0.6 cbm", "48", "192"),  # per piece as the total
+        ("FRA to ORD, 3 pallets à 250 kg, 2.4 cbm", "250", "750"),
+        ("FRA to ORD, 1,5 t, 6 cbm", "1.5", "1500"),
+        ("FRA to ORD\nLot 1: 2 pallets, 900 kg, 2 cbm\nLot 2: one crate, 922 kg, 1 cbm", "922", "1822"),  # #18
+        ("FRA to ORD, 715 kg gross (680 kg net), 3 cbm", "680", "715"),  # the net weight priced
+    ],
+)
+def test_a_weight_the_mails_figures_do_not_give_blocks(text, misread, right):
+    assert accounting(text, misread) == [check.BLOCK]
+    assert accounting(text, right) == []
+
+
+def test_round_9_a_lot_left_out_or_one_lot_alone_blocks():
+    mail = json.loads((MAILS / "rfq-door-three-lots.json").read_text())["body"]
+    for wrong in ("1750", "1030", "730"):
+        assert accounting(mail, wrong) == [check.BLOCK], wrong
+    assert accounting(mail, "1952") == []
+
+
+@pytest.mark.parametrize(
+    "text, weight",
+    [
+        ("FRA to ORD, 4 pallets, each 180 kg, total 720 kg, 3 cbm", "720"),
+        ("FRA to ORD, 700 kg, max 1000 kg per pallet, 3 cbm", "700"),
+        ("FRA to ORD, 2 x 300 kg, 2 cbm", "600"),
+        ("FRA to ORD, gross weight: 1.234 kg, 4 cbm", "1234"),
+        ("FRA to ORD, Gewicht: 480, 2 cbm", "480"),
+        ("FRA to ORD, 218 kg (480 lbs), 1 cbm", "218"),
+        ("FRA to ORD\n- 2 pallets, 380 kg\n- 1 crate, 618 kg\nTotal: 998 kg", "998"),
+    ],
+)
+def test_a_weight_the_figures_give_passes(text, weight):
+    assert accounting(text, weight) == []
+
+
+@pytest.mark.parametrize("name", sorted(p.stem for p in MAILS.glob("rfq-*.json")))
+def test_every_captured_request_read_by_the_rules_is_explained(name):
+    data = json.loads((MAILS / f"{name}.json").read_text())
+    message = mailbox.to_message(data, "in")
+    read = extract.by_rules(message, orchestrator.Deadline(NOW, NOW, NOW, NOW))
+    if read is None:
+        pytest.skip("the rules do not read it")
+    assert accounting(extract._text(message), str(read.weight_kg)) == []
+
+
+def test_a_mail_without_any_weight_only_warns():
+    assert accounting("FRA to ORD, details in the packing list", "500", ("packing.pdf",)) == [check.WARN]
+    assert accounting("", "500") == [check.WARN]
