@@ -934,8 +934,11 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             if named := [name for name, content in sources if names_code(content, getattr(rfq, key))]:
                 evidence[key] = named
         excluded = [name for name, content in documents if (name, content) not in sources]
+        # The weight priced off a same-lane document whose table bears it out: `check` holds the quote against it.
+        borne = any(_document_weight(content) == rfq.weight_kg for _, content in sources[1:])
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
-                    payload={"sources": evidence, "attachment_route_conflicts": excluded})  # fmt: skip
+                    payload={"sources": evidence, "attachment_route_conflicts": excluded,
+                             "document_weight_kg": str(rfq.weight_kg) if borne else None})  # fmt: skip
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})

@@ -6,13 +6,14 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from test_extract import FixtureMailbox
 from test_outbox import ingest_rfq, kinds, make_ctx
 
 from pixel.agents.rfq import agent, check, compose, dangerous, extract
 from pixel.agents.rfq.extract import DG_DOCUMENTS
 from pixel.api import mailbox
 from pixel.contracts import Preference, Quote, RateOption, Rfq, Source
-from pixel.core import events, orchestrator
+from pixel.core import events, orchestrator, poller
 from pixel.pricing import calc
 
 NOW = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
@@ -318,6 +319,13 @@ def accounting(text: str, weight: str, files: tuple[str, ...] = ()) -> list[str]
         ("FRA to ORD, 1,5 t, 6 cbm", "1.5", "1500"),
         ("FRA to ORD\nLot 1: 2 pallets, 900 kg, 2 cbm\nLot 2: one crate, 922 kg, 1 cbm", "922", "1822"),  # #18
         ("FRA to ORD, 715 kg gross (680 kg net), 3 cbm", "680", "715"),  # the net weight priced
+        ("FRA to ORD, 2 pallets with 900 kg and one crate with 922 kg, 3 cbm", "922", "1822"),  # inline lots
+        ("FRA to ORD, two pallets of 400 kg, three cases at 120 kg, 3 cbm", "400", "520"),
+        ("FRA to ORD\n- 4 drums, 48 kg each, together 192 kg\n- 1 crate, 300 kg", "300", "492"),  # a group twice
+        ("FRA to ORD, 2 pallets: 400 kg; 3 boxes, each 100 kg, 3 cbm", "600", "700"),  # 2 x 100 for the boxes
+        ("FRA to ORD, 2 pallets: 400 kg; 3 boxes, each 100 kg, 3 cbm", "400", "700"),
+        ("FRA to ORD, 3 cbm: 300 kg of motors plus 250 kg of spare parts and 220 kg of cables", "300", "770"),
+        ("FRA to ORD, 3 cbm: 300 kg of motors, 250 kg of spare parts and 220 kg of cables", "220", "770"),
     ],
 )
 def test_a_weight_the_mails_figures_do_not_give_blocks(text, misread, right):
@@ -354,6 +362,12 @@ def test_round_9_a_lot_left_out_or_one_lot_alone_blocks():
         ("FRA to ORD, Gewicht: 480, 2 cbm", "480"),
         ("FRA to ORD, 218 kg (480 lbs), 1 cbm", "218"),
         ("FRA to ORD\n- 2 pallets, 380 kg\n- 1 crate, 618 kg\nTotal: 998 kg", "998"),
+        ("FRA to ORD, 700 kg, 3 cbm. We can load a 24 t truck at our dock.", "700"),  # not the shipment
+        ("FRA to ORD, 700 kg, 3 cbm. Last month we sent 1200 kg with you.", "700"),
+        ("FRA to ORD, chargeable weight approx. 900 kg, actual 700 kg", "700"),
+        ("FRA to ORD, 2 pallets (8 cartons), 50 kg each, 1 cbm", "400"),  # nested counts: either reading
+        ("FRA to ORD, 2 pallets (8 cartons), 50 kg each, 1 cbm", "100"),
+        ("FRA to ORD, 2 pallets, 300 kg each, in total 600 kg, 2 cbm", "600"),
     ],
 )
 def test_a_weight_the_figures_give_passes(text, weight):
@@ -368,6 +382,38 @@ def test_every_captured_request_read_by_the_rules_is_explained(name):
     if read is None:
         pytest.skip("the rules do not read it")
     assert accounting(extract._text(message), str(read.weight_kg)) == []
+
+
+@pytest.mark.parametrize(
+    "instruction, destination, blocks",
+    [
+        ("", None, False),  # round 35: the spec's own table bears out 1751 kg against the mail's 2644
+        ("", "BKK", True),  # a spec for another lane explains nothing
+        ("Corrected gross weight: 2800 kg.", None, True),  # the mail's correction wins over the spec
+    ],
+)
+async def test_a_weight_a_same_lane_document_bears_out_is_explained(
+    conn, monkeypatch, instruction, destination, blocks
+):
+    raw = json.loads((MAILS / "rfq-spec-weight-differs-from-mail.json").read_text())
+    raw["body"] = f"{instruction}\n\n{raw['body']}"
+    read = extract._attachments
+
+    async def attachments(ctx, message):
+        files = await read(ctx, message)
+        return [
+            (name, [f"Destination airport: {destination}", *lines] if destination else lines) for name, lines in files
+        ]
+
+    monkeypatch.setattr(extract, "_attachments", attachments)
+    ctx = make_ctx(conn, FixtureMailbox(raw))
+    message = poller.ingest(ctx, mailbox.to_message(raw, "in"))
+    request, _ = await extract.read_request(ctx, message, orchestrator.Deadline(NOW, NOW, NOW, NOW))
+    request = request.model_copy(update={"weight_kg": Decimal(1751)})
+    option = airline("3000.00", kg="1998.99").model_copy(update={"origin": "MUC", "destination": "SGN"})
+    agent._check(ctx, request, quote(request, option))
+    [checked] = [e.payload for e in events.for_session(ctx, request.session_id) if e.kind == "quote.checked"]
+    assert ("weight_unexplained" in {f["rule"] for f in checked["findings"]}) is blocks
 
 
 def test_a_mail_without_any_weight_only_warns():
