@@ -136,7 +136,7 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
 
     store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])  # an airport a zone trucks to
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
-    assert rfq.origin == "XFW"
+    assert rfq.origin == "AAA"  # still a guess: the mail names no airport code, the pickup zone decides
 
 
 @pytest.mark.parametrize(
@@ -406,3 +406,33 @@ async def test_a_gateway_that_refuses_the_model_still_gives_a_reading(monkeypatc
     assert emitted[0][1]["payload"]["where"] == "rfq_extract_model"
     with pytest.raises(RuntimeError):  # nothing to guess from
         await extract.extract(None, mail("Could you help us with a shipment next week?"), DEADLINE)
+
+
+async def test_a_captured_request_above_a_forwarded_old_thread_is_read_alone(conn, monkeypatch, emitted):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-door-forwarded-thread.json").read_text())
+    message = to_message(raw, "in")
+    text = extract._text(message)
+    assert "ZURICH" not in text and "3,459" not in text  # neither the old thread nor its subject
+
+    async def no_model(ctx, **kw):
+        raise AssertionError("the rules read this request")
+
+    monkeypatch.setattr(llm, "ask_json", no_model)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("42401"), "area": "Town", "airport": "AAA"},
+                           {"zone": "50", "area": "Other", "airport": "CGN"}])  # fmt: skip
+    rfq = await extract.extract(ctx, message, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (
+        "AAA", "PEK", Decimal(1081), Decimal("8.03"), 8)  # fmt: skip
+
+
+def test_a_guessed_origin_gives_way_to_the_pickup_zone_even_when_it_is_an_airport_we_know(conn):
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(
+        ctx, [{"zone": "42", "area": "Town", "airport": "DUS"}, {"zone": "50", "area": "Other", "airport": "CGN"}]
+    )
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-door-forwarded-thread.json").read_text())
+    message = to_message(raw, "in")
+    guessed = extract.by_rules(message, DEADLINE).model_copy(update={"origin": "CGN", "pickup_zone": "42"})
+    assert extract._zone_origin(ctx, guessed, extract._text(message)).origin == "DUS"
+    assert extract._zone_origin(ctx, guessed, "pickup in 42401, please fly from CGN to PEK").origin == "CGN"

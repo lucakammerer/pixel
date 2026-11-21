@@ -301,8 +301,20 @@ def _preference(text: str) -> Preference:
     return Preference.FASTEST
 
 
+# Where the customer's own words end and an older mail begins, and subjects that belong to that older mail.
+HISTORY = re.compile(
+    r"(?im)^\s*(?:>|-{2,}\s*(?:original message|forwarded message|urspr\w+ nachricht|weitergeleitete nachricht)"
+    r"|on .{5,90} wrote:|am .{5,90} schrieb|from:\s|von:\s)"
+)
+OLD_SUBJECT = re.compile(r"(?i)^\s*(?:re|fw|fwd|aw|wg)\s*:")
+
+
 def _text(message: Message) -> str:
-    return f"{message.subject}\n\n{message.body}"
+    """What the customer asks now: the body above any quoted or forwarded mail, and the subject unless it is the
+    subject of that older mail (`RE: FW: …`). Figures of an old thread must not reach the rules or the model."""
+    cut = HISTORY.search(message.body)
+    body = message.body[: cut.start()] if cut else message.body
+    return body if OLD_SUBJECT.match(message.subject) else f"{message.subject}\n\n{body}"
 
 
 def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:
@@ -452,12 +464,13 @@ def _town_zone(ctx: Context, rfq: Rfq, text: str) -> Rfq:
                                                                                if m != "pickup_postcode")})  # fmt: skip
 
 
-def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
-    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16), also
-    when the origin read from the mail is an airport no pickup zone trucks to (a model's guess from the town)."""
+def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
+    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16). An
+    origin read from the mail stands only when the customer wrote that airport code; a model's guess from the town
+    does not, whether it is an airport we know or not."""
     if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
         return rfq
-    if rfq.origin and not (rfq.door_pickup and rfq.origin not in store.zone_airports(ctx)):
+    if rfq.origin and not (rfq.door_pickup and not re.search(rf"\b{re.escape(rfq.origin)}\b", text)):
         return rfq
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 
@@ -491,7 +504,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     text = _text(message)
     rfq, prose = by_rules(message, deadline), None
-    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text))).origin:
+    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text), text)).origin:
         rfq = None
     if rfq is None:
         try:
@@ -507,13 +520,13 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = by_rules(message, deadline, guess=True)
-            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text))).origin:
+            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text), text)).origin:
                 raise
             events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
                         payload={"where": "rfq_extract_model", "error": f"{type(e).__name__}: {e}", "default": "guess"})  # fmt: skip
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
-            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text))
+            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text), text)
             prose = {k: result.data.get(k) for k in PROSE}
     if dg := await dangerous_goods(ctx, message):
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).

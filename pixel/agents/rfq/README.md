@@ -66,6 +66,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A request can sit above a forwarded old thread with other figures, under that thread's subject (`RE: FW: …`).
+  `extract.py` `_text` keeps the customer's own words only. And a door-to-port request's origin is the pickup zone's
+  airport unless the customer wrote an airport code: a model once guessed an airport we know from the town, no
+  airline flew the lane from there, and the request ended without a price.
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
   ("Dangerous goods: UN…, Class …") while the mail calls the goods non-dangerous. `extract.py`
   `dangerous_goods` reads them and marks the request; `agent.py` `_noted` then names the goods in the quote and asks

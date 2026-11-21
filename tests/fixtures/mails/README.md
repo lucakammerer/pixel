@@ -74,3 +74,5 @@ needed". Quoted like any export from the named airport; accepted.
 `rfq-door-import-two-towns.json`: door-to-port from 24983 (Kiel), signed "Best greetings from Regensburg", another
 zone's town. Read by the postcode; without one, a pickup town is taken only when the mail names one zone's town.
 
+`rfq-door-forwarded-thread.json` is a door-to-port request written above a forwarded old thread, under that
+thread's subject; the old thread's weight, volume and airports must not be read.
