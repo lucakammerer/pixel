@@ -59,8 +59,8 @@ def test_balanced_picks_the_trucker_the_scorer_picked():
         assert balanced(bids, speed=lambda b: b.pickup_hours).trucker == request["scorer"]
 
 
-def test_only_the_balanced_bid_competes_with_other_sources():
-    # balanced: X 0 + 0.5, Y 0.1 + 0, W 0.5 + 0.21 -> Y (320); the sheet at 310 beats Y, X at 300 never competes
-    bids = [opt("X", "300", 9, Source.BID), opt("Y", "320", 2, Source.BID), opt("W", "400", 5, Source.BID)]
-    assert select(rfq(Preference.CHEAPEST), bids + [opt("S", "310", 4)]).carrier == "S"
-    assert select(rfq(Preference.CHEAPEST), bids + [opt("S", "350", 4)]).carrier == "Y"
+def test_airline_bids_compete_by_the_customers_wish():
+    # round 28: the scorer took Ultraviolet's 390.45 (4 days) for cheapest, not the balanced Lumen 457.08 (1 day)
+    bids = [opt("Lumen", "457.08", 1, Source.BID), opt("Ultraviolet", "390.45", 4, Source.BID)]
+    assert select(rfq(Preference.CHEAPEST), bids + [opt("Quetzal", "416.16", 3)]).carrier == "Ultraviolet"
+    assert select(rfq(Preference.FASTEST), bids + [opt("Quetzal", "416.16", 3)]).carrier == "Lumen"
