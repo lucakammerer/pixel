@@ -115,3 +115,10 @@ async def test_folder_reads_the_scan_through_the_model_once(ctx, start_kit, monk
 
     await agent.ingest_folder(ctx, start_kit)
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    "words", ["one hundred and twenty boxes", "one thousand twenty pieces", "hundert und zwölf Kisten"]
+)
+def test_a_spoken_compound_number_is_left_whole(words):
+    assert agent._spoken([f"We ship {words}, 5 kg each."]) == [f"We ship {words}, 5 kg each."]  # never "... 20 boxes"

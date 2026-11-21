@@ -247,7 +247,13 @@ def _transcribe(content: bytes) -> list[str]:
     return re.split(r"(?<=[.!?])\s+", text)
 
 
+# "one hundred and twenty boxes": the words before the last one are part of the number, so none of it is converted.
+LARGER = re.compile(r"\b(?:hundred|thousand|hundert|tausend)(?:\s+(?:and|und))?[\s-]*$", re.IGNORECASE)
+
+
 def _number(m: re.Match) -> str:
+    if LARGER.search(m.string[: m.start()]):
+        return m[0]
     if m["one_de"]:
         return str(NUMBER_WORDS[m["ten_de"].lower()] + NUMBER_WORDS[m["one_de"].lower()])
     if m["ten"]:

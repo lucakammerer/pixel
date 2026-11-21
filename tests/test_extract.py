@@ -773,6 +773,11 @@ async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(c
     assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("CCC", "51115", "51", "model")
 
 
+def test_the_origin_airport_named_after_to_is_no_destination():
+    body = "Pickup from our site in 60311 Frankfurt, our truck goes to departure airport FRA. Air freight to New York."
+    assert extract._destination_only(body + " 300 kg, 1 cbm.") is None  # FRA is the origin; the model reads the rest
+
+
 async def test_an_answer_that_gives_every_fact_is_read_after_the_model_could_read_nothing(conn, monkeypatch):
     """Round 69: the recording could not be read, we asked, the customer answered with everything. "Select the
     departure airport for the fastest option to JFK" read JFK as the origin, so the answer was dropped: no quote."""
@@ -859,3 +864,15 @@ async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
 )
 def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
     assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"})[0]) == excluded
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Please quote AAA to BBB, 300 kg, 1 cbm. We will arrange the truck to your warehouse ourselves.",
+        "Please quote AAA to BBB, 300 kg, 1 cbm, airport to airport. The airline will collect the cargo at BBB.",
+        "Please quote AAA to BBB, 300 kg, 1 cbm. Our consignee will collect the goods at the destination airport.",
+    ],
+)
+def test_someone_else_collecting_the_goods_is_no_door_pickup(body):
+    assert extract.by_rules(mail(body), DEADLINE).door_pickup is False

@@ -86,7 +86,7 @@ below what we sent. The "rule's total" is the airline the scorer took plus that 
 A parser meets layouts it has never seen, and a wrong number it reads looks like any other. So the price itself is
 checked, whatever the layout: a bid below a quarter (`selection.TRUST`) of the cheapest other carrier of its kind
 in the same request (a trucker against the other truckers; an airline bid against the sheet, portal, desk and bid
-prices of the lane) is not used. `engine.combine` leaves it out, in the fallback too, and records it once as
+prices of the lane; an airline the customer ruled out is no peer, `selection.allowed`) is not used. `engine.combine` leaves it out, in the fallback too, and records it once as
 `option.failed` with `error: implausible` (`feedback.attention` shows it as `bid_distrusted`); `rfq/check.py`
 `_implausible` blocks a quote that still holds one. Only the cheapest bid of a kind can fail, so a trusted one of
 its kind always remains; a bid without peers is never distrusted. No model reads it again: `bids._read_with_model`

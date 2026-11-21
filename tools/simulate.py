@@ -6,7 +6,7 @@ uv run python -m tools.simulate            # per axis: read right, left to the m
 uv run python -m tools.simulate --show 10  # the first wrong cases outside the known gaps, in full
 uv run python -m tools.simulate --seed 3   # the same grid with other figures; a failing seed becomes a fixture
 
-Two families. `document`: a mail with an attached packing list, letter of instruction or specification (PDF, xlsx,
+Three families. `document`: a mail with an attached packing list, letter of instruction or specification (PDF, xlsx,
 docx, txt, csv) in the layouts seen since round 33 and their neighbours. Which source a right reading takes depends
 on how mail and document relate (`relation`): `tests/fixtures/rfqs/simulate-sources.json` says it per relation and
 why, so a correction the customer makes or an attachment for another shipment is never read as "the document wins".
@@ -15,6 +15,15 @@ also puts the other kinds' decisive fact in an attachment of each format, read b
 customer's acceptance or decline (`booking.reply_intent`), the tracking desk's reference (`tracking.question`,
 `match`), the airline's and our reference in a booking confirmation (`booking.confirmed_references`) and a
 carrier's tariff (`tariffs.agent.handle`, priced against `tariffs/variants/variants.jsonl`).
+
+`bid` (`--family bid`): a carrier's answer to our bid request, an airline's (total, currency, exchange rate, transit
+days) or a trucker's (pickup price, currency, exchange rate, pickup hours), read by `pricing.bids.record` as a live
+mail is: in the body, only in an attachment (pdf, docx, xlsx, txt, csv) or in both; as a sentence, key-value lines, a
+table with the currency only in its header, a letter, a quotation, charges without a total, a rate per kg with or
+without its total; beside a surcharge per hour, day, pallet or piece, an offer validity, an exchange rate line,
+another lane's price or a date; in EUR (ISO code, euro sign, decimal comma, thousands by comma or space), USD, GBP
+or CHF ("2'748.45"). A bid class the rules leave to the model costs a gateway call: it is named in the known gaps
+too, and a named class that reads right fails the run like any stale gap.
 
 Right: every judged field within 1% or 0.005 (a volume written with two decimals); neither moves a price out of
 the 5% band. Model: the rules gave up and the model would read it, not measured offline. Wrong: the rules read a
@@ -31,6 +40,7 @@ import json
 import random
 import re
 import sqlite3
+import textwrap
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -43,10 +53,10 @@ from pixel.agents.tariffs import agent as tariffs
 from pixel.agents.tracking import agent as tracking
 from pixel.config import settings
 from pixel.contracts import Attachment, Message, Rfq
-from pixel.core import db
+from pixel.core import db, events
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
-from pixel.pricing import store
+from pixel.pricing import bids, session, store
 from pixel.pricing.calc import price_tariff
 
 FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "rfqs"
@@ -82,6 +92,7 @@ class Case:
     files: list[tuple[str, bytes]]
     want: dict[str, object]
     kind: str = "customer_rfq"
+    request: dict[str, object] = field(default_factory=dict)  # a bid: the request it answers
 
     @property
     def disagrees(self) -> bool:
@@ -426,6 +437,143 @@ def mail_cases(seed: int = 11) -> list[Case]:
     return cases
 
 
+CARRIERS = {"airline": ("Kestrel Air Cargo", "kestrel@carrier.example"),
+            "trucker": ("Nordwind Trucking", "nordwind@carrier.example")}  # fmt: skip
+BID_AXES = {
+    "carrier": tuple(CARRIERS),
+    "place": ("body", "pdf", "docx", "xlsx", "txt", "csv", "both"),
+    "layout": ("sentence", "keyvalue", "table", "letter", "quotation", "components", "per_kg", "per_kg_total"),
+    "distractor": ("none", "per_hour", "per_day", "per_pallet", "per_piece", "validity", "fx_line", "second_lane",
+                   "date"),
+    "money": ("iso", "sign", "de", "thousands", "space", "usd", "gbp", "chf"),
+}  # fmt: skip
+NUMBERS = {"iso": "plain", "sign": "plain", "de": "de", "thousands": "thousands", "space": "space", "usd": "thousands",
+           "gbp": "plain", "chf": "swiss"}  # fmt: skip
+HEADER = {"iso": "EUR", "sign": "€", "de": "EUR", "thousands": "EUR", "space": "EUR", "usd": "USD", "gbp": "GBP",
+          "chf": "CHF"}  # fmt: skip
+
+
+def _written(amount: D, style: str) -> str:
+    """An amount in a carrier's number style: also "1 234,50" and the Swiss "1'234.50"."""
+    places = max(2, -amount.as_tuple().exponent)
+    if style == "space":
+        return _num(amount, "de", places).replace(".", " ")
+    if style == "swiss":
+        return _num(amount, "thousands", places).replace(",", "'")
+    return _num(amount, style, places)
+
+
+def _priced(amount: D, style: str, before: bool) -> str:
+    """An amount with its currency as carriers write it; a rate keeps its own decimals."""
+    number, code = _written(amount, NUMBERS[style]), HEADER[style]
+    if code == "€":
+        return f"€{number}" if before else f"{number} €"
+    return f"{code} {number}" if before else f"{number} {code}"
+
+
+def _offer(kind: str, layout: str, f: dict, money: str, rng: random.Random) -> tuple[list[list[str]], D]:
+    """The offer as lines of cells and the total a right reader takes from it."""
+    before = rng.random() < 0.5
+    m = lambda x: _priced(x, money, before)
+    n = lambda x: _written(x, NUMBERS[money])
+    ck, total, rate = f["kg"], f["total"], f["rate"]
+    per_kg = (rate * ck).quantize(D("0.01"))
+    parts = f["parts"]  # (description, quantity, unit price, amount)
+    if kind == "airline":
+        when, when_kv = f"The transit time is {f['time']} days.", ["Transit time", f"{f['time']} days"]
+        price = f"Our all-in rate from {f['o']} to {f['d']} is {m(total)}, including freight, fuel and security."
+        letter = (f"Our price for this shipment is {m(total)}. This price is all-in. It consists of "
+                  + ", ".join(f"{p[0].lower()} {m(p[3])}" for p in parts) + ".")  # fmt: skip
+        title, route = "AIR FREIGHT QUOTATION", ["Route", f"{f['o']} to {f['d']}"]
+    else:
+        when, when_kv = f"Our driver can be at the pickup address {f['time']} hours after your order.", [
+            "Lead time", f"{f['time']} hours from order to collection"]  # fmt: skip
+        price = f"We can collect your shipment at postcode {f['pc']} and deliver it to {f['o']} airport for {m(total)}."
+        letter = (f"Our price for this transport is {m(total)}. This price is all-in. It has a "
+                  + " and a ".join(f"{p[0].lower()} of {m(p[3])}" for p in parts) + ".")  # fmt: skip
+        title, route = "PICKUP QUOTATION", ["Route", f"{f['pc']} to {f['o']} airport"]
+    ref = ["Offer no.", f"Q-{rng.randint(1000, 9999)}"]
+    lines = {
+        "sentence": [[price], [when]],
+        "keyvalue": [ref, route, ["All-in price", m(total)], when_kv],
+        "table": [ref, route, when_kv, ["Pos", "Description", "Quantity", f"Unit price ({HEADER[money]})",
+                  f"Amount ({HEADER[money]})"], *[[str(i), p[0], p[1], n(p[2]), n(p[3])] for i, p in
+                  enumerate(parts, 1)], ["Total", n(total)]],
+        "letter": [["Dear customer,"], [f"thank you for your enquiry. We calculated with {ck} kg chargeable weight."],
+                   [letter], [when], ["Kind regards"]],
+        "quotation": [[title], ref, route, ["Chargeable weight", f"{ck} kg"], *[[p[0], m(p[3])] for p in parts],
+                      ["Total, all-in", m(total)], when_kv],
+        "components": [ref, route, *[[p[0], m(p[3])] for p in parts], when_kv],
+        "per_kg": [[f"Our all-in rate is {m(rate)} per kg chargeable weight."], [when]],
+        "per_kg_total": [[f"All-in rate {m(rate)}/kg x {ck} kg = {m(per_kg)}"], [when]],
+    }[layout]  # fmt: skip
+    return lines, per_kg if layout.startswith("per_kg") else total
+
+
+def _bid_case(i: int, axes: dict[str, str], seed: int) -> Case:
+    rng = random.Random(seed * 100_000 + i)
+    kind, money = axes["carrier"], axes["money"]
+    cents = lambda lo, hi: D(rng.randint(lo, hi)) / 100
+    kg = rng.randint(80, 2400)
+    if kind == "airline":
+        unit = (cents(120, 650), cents(40, 140), cents(10, 30))
+        names = ("Air freight", "Fuel surcharge", "Security surcharge")
+        parts = [(name, f"{kg} kg", u, (u * kg).quantize(D("0.01"))) for name, u in zip(names, unit, strict=True)]
+        time, rate = rng.randint(1, 7), sum(unit)
+    else:
+        base, unit = cents(4000, 13000), cents(4, 12)
+        parts = [("Base charge", "1", base, base), ("Weight charge", f"{kg} kg", unit, (unit * kg).quantize(D("0.01")))]
+        time, rate = rng.randint(3, 36), cents(12, 30)
+    o, d, other = rng.choice(ORIGINS), *rng.sample(DESTINATIONS, 2)
+    f = {"kg": kg, "parts": parts, "total": sum(p[3] for p in parts), "rate": rate, "time": time, "o": o, "d": d,
+         "pc": f"{rng.randint(10, 99)}{rng.randint(100, 999)}"}  # fmt: skip
+    lines, total = _offer(kind, axes["layout"], f, money, rng)
+    currency = {"usd": "USD", "gbp": "GBP", "chf": "CHF"}.get(money, "EUR")
+    fx = D(rng.randint(7000, 13000)) / 10_000 if currency != "EUR" else None
+    if money in ("usd", "chf"):
+        lines.append([f"Exchange rate: 1 {currency} = {fx} EUR"])
+    elif money == "gbp":
+        lines.append([f"Exchange rate: {fx} EUR per GBP"])
+    unit = "days" if kind == "airline" else "hours"
+    other_time = rng.choice([t for t in (2, 5, 14, 24, 48) if t != time])
+    extra = _priced(cents(1500, 9500), money, rng.random() < 0.5)
+    near = _priced((total * cents(70, 130)).quantize(D("0.01")), money, rng.random() < 0.5)  # another offer's price
+    distractor = {
+        "per_hour": f"Not part of this offer: waiting time after the first 30 minutes, {extra} for each hour.",
+        "per_day": f"Storage at the airport after 2 days: {extra} per day.",
+        "per_pallet": f"Pallet exchange on request: {extra} per pallet.",
+        "per_piece": f"Labelling on request: {extra} per piece.",
+        "validity": f"This offer is valid for {other_time} {unit}.",
+        "fx_line": "For reference: 1 SEK = 0.0871 EUR.",
+        "second_lane": f"Note: our rate to {other} last week was {near}, with a transit time of {other_time} days."
+        if kind == "airline" else f"Note: a pickup at the other postcode would be {near}.",
+        "date": "Ready at the warehouse on 27.11.2026 from 09:00, flight on 28 Nov 2026.",
+    }.get(axes["distractor"])  # fmt: skip
+    if distractor:
+        lines.insert(rng.randint(0, len(lines)), [distractor])
+    place, files = axes["place"], []
+    fmt = rng.choice(tuple(WRITERS)) if place == "both" else place
+    name = f"offer-Q{rng.randint(1000, 9999)}.{fmt}"
+    text = "\n".join("  ".join(c) for c in lines)
+    if place != "body":  # a pdf wraps a long line as a letter does
+        wrap = fmt == "pdf"
+        doc = [w for c in lines for w in ([[t] for t in textwrap.wrap(c[0], 90)] if wrap and len(c) == 1 else [c])]
+        files.append((name, WRITERS[fmt](doc)))
+    attached = f"Please find our offer in the attached file {name}."
+    offer = {"body": text, "both": f"{text}\n\nThe same offer is attached as {name}."}.get(place, attached)
+    body = f"Hello,\n\nthank you for your request.\n\n{offer}\n\nBest regards\n{CARRIERS[kind][0]}"
+    want = {"total": total, "currency": currency, "fx_eur": fx, "transit_days" if kind == "airline" else
+            "pickup_hours": time}  # fmt: skip
+    subject = f"Re: Rate request {o}-{d}" if kind == "airline" else f"Re: Pickup request {f['pc']} to {o}"
+    return Case("bid", axes, subject, body, files, want, request={"origin": o, "destination": d, "weight_kg": D(kg)})
+
+
+def bid_cases(seed: int = 13, step: int = 1) -> list[Case]:
+    """Every combination of `BID_AXES`; with `step`, every step-th."""
+    grid = itertools.product(*BID_AXES.values())
+    return [_bid_case(i, dict(zip(BID_AXES, v, strict=True)), seed) for i, v in enumerate(grid) if not i % step]
+
+
 class Mailbox:
     def __init__(self, files: list[tuple[str, bytes]]):
         self.files = dict(enumerate(content for _, content in files))
@@ -527,6 +675,36 @@ async def read(case: Case, ctx: Context) -> Outcome:
     return Outcome(case, "wrong" if wrong else "right", wrong)
 
 
+async def read_bid(case: Case, ctx: Context, i: int) -> Outcome:
+    """A carrier's answer through the path a live mail takes, `bids.record`, each in a session of its own."""
+    email = CARRIERS[case.axes["carrier"]][1]
+    rfq = Rfq(session_id=i, message_id=i, customer="buyer@example.com", received_at=RECEIVED, deadline_at=RECEIVED,
+              **case.request)  # fmt: skip
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=i, payload=rfq.model_dump(mode="json"))
+    message = Message(
+        id=i, session_id=i, direction="in", sender=email, to="us@example.com", subject=case.subject, body=case.body,
+        sent_at=RECEIVED,
+        attachments=[Attachment(id=j, filename=n, content_type="", size=len(c)) for j, (n, c) in enumerate(case.files)],
+    )  # fmt: skip
+    ctx.mailbox = Mailbox(case.files)
+    called = []
+
+    async def model(ctx, **kw):
+        called.append(1)
+        raise ModelNeeded
+
+    llm.ask_json = model
+    await bids.record(ctx, message)
+    found = session.options(ctx, i)
+    if called and not found:
+        return Outcome(case, "model")
+    if len(found) != 1:
+        return Outcome(case, "wrong", [f"{len(found)} options"])
+    got = found[0].model_dump()
+    wrong = [f"{k}: {got[k]} != {v}" for k, v in case.want.items() if got[k] != v]
+    return Outcome(case, "wrong" if wrong else "right", wrong)
+
+
 async def run(cases: list[Case]) -> list[Outcome]:
     """Each case on one in-memory database, with every model call refused and counted; mail stays dry."""
     conn = sqlite3.connect(":memory:")
@@ -534,12 +712,14 @@ async def run(cases: list[Case]) -> list[Outcome]:
     db.init(conn)
     ctx = Context(settings(), conn, None, None, None, None)
     ask_json, gaps = llm.ask_json, known_gaps()
+    if any(c.family == "bid" for c in cases):
+        store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
     try:
-        outcomes = [await read(case, ctx) for case in cases]
+        outcomes = [await (read_bid(c, ctx, i) if c.family == "bid" else read(c, ctx)) for i, c in enumerate(cases, 1)]
     finally:
         llm.ask_json = ask_json
-    for o in outcomes:
-        if o.verdict == "wrong":
+    for o in outcomes:  # a bid the rules leave to the model costs spend: its class is named too
+        if o.verdict == "wrong" or (o.verdict == "model" and o.case.family == "bid"):
             o.gap = gap_of(o.case, gaps)
     return outcomes
 
@@ -556,7 +736,7 @@ def report(outcomes: list[Outcome]) -> None:
         groups[o.case.family if o.case.kind == "customer_rfq" else f"{o.case.family}: {o.case.kind}"].append(o)
     for family, mine in groups.items():
         count = {v: sum(o.verdict == v for o in mine) for v in ("right", "model", "wrong")}
-        known = sum(bool(o.gap) for o in mine)
+        known = sum(bool(o.gap) for o in mine if o.verdict == "wrong")
         print(f"\n[{family}] {len(mine)} cases: {count['right']} right, {count['model']} model, "
               f"{count['wrong']} wrong ({known} in known gaps)")  # fmt: skip
         for axis in mine[0].case.axes:
@@ -570,11 +750,12 @@ def report(outcomes: list[Outcome]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--show", type=int, default=0, help="print this many wrong cases outside the known gaps")
-    parser.add_argument("--family", choices=("document", "mail"))
-    parser.add_argument("--seed", type=int, help="draw other figures for the same grid (default: 7 and 11)")
+    parser.add_argument("--family", choices=("document", "mail", "bid"))
+    parser.add_argument("--seed", type=int, help="draw other figures for the same grid (default: 7, 11 and 13)")
     args = parser.parse_args()
     seeds = {} if args.seed is None else {"seed": args.seed}
-    cases = [c for c in (*document_cases(**seeds), *mail_cases(**seeds)) if args.family in (None, c.family)]
+    every = (*document_cases(**seeds), *mail_cases(**seeds), *bid_cases(**seeds))
+    cases = [c for c in every if args.family in (None, c.family)]
     outcomes = asyncio.run(run(cases))
     report(outcomes)
     unknown = [o for o in outcomes if o.verdict == "wrong" and not o.gap]

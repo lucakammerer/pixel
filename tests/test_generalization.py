@@ -166,9 +166,11 @@ def test_a_mail_that_contradicts_its_attached_document_is_read_by_the_document()
 
 
 def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
-    """Every seventh document case and every mail case of `tools/simulate.py`: read right or left to the model, unless
-    `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now must lose its note."""
-    outcomes = asyncio.run(simulate.run([*simulate.document_cases(step=7), *simulate.mail_cases()]))
+    """Every seventh document case, every mail case and every eleventh carrier answer of `tools/simulate.py`: read
+    right or left to the model, unless `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now
+    must lose its note."""
+    cases = [*simulate.document_cases(step=7), *simulate.mail_cases(), *simulate.bid_cases(step=11)]
+    outcomes = asyncio.run(simulate.run(cases))
     assert [f"{o.case.family} {o.case.axes}: {o.wrong}" for o in outcomes if o.verdict == "wrong" and not o.gap] == []
     assert simulate.stale_gaps(outcomes) == []
 

@@ -152,8 +152,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
 - A door-to-port request names the destination and the pickup address, not the origin airport. The rules read it
   when it names one destination and a pickup postcode; the origin is the zone's airport. "Select the departure airport for
-  the fastest option to JFK" names no origin: `_destination_only` ignores an origin label that points at the destination
-  (round 69, where it dropped the customer's answer and no quote went out).
+  the fastest option to JFK" names no origin: in `_destination_only` a code both labels reach belongs to the nearer
+  one (round 69, where it dropped the customer's answer and no quote went out), so "our truck goes to departure
+  airport FRA" stays an origin and never becomes the destination.
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
@@ -265,8 +266,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
   price.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
-  packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
-  we had to ask the customer for every fact.
+  packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
+  "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
+  customer for every fact.
 - A file no code reads (a video, an image outside a tariff mail, an unknown type, a pdf without text) is a deliberate
   `attachment.unreadable` with its name and type (`tariffs/agent.py` `attachment_lines`, not downloaded when its type
   has no reader), never an `error`, and the mail goes on as if it held nothing: a carrier who answered only in one
@@ -274,6 +276,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   whose facts sit in one has them missing and asks the one question. A file of a readable type that breaks its
   reader (a corrupt pdf, an mp3 the decoder refuses) is still an `error`. The gateway takes no audio (text and
   `image_url` only, no audio model listed), so a voice message is read by the local transcript or not at all.
+- A carrier's answer comes in more shapes than the captured ones: `tools/simulate.py --family bid` generates them
+  (place, layout, distractor, currency). Found there: a pdf wraps "for 256.85" and "EUR." onto two lines
+  (`bids.UNWRAP` joins them), the Swiss "CHF 2'748.45" groups thousands with an apostrophe, a table total whose
+  currency is not an ISO code in the header leaves an unlabelled amount elsewhere no price (`_price` refuses), and
+  another lane's "transit time of 5 days" next to ours makes the transit unclear (`_days` refuses).
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

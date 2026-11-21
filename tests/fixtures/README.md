@@ -45,7 +45,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   contradicts, silent, an explicit correction in four wordings, another shipment's document, a document that
   contradicts itself), which source a right reading takes for weight and volume, and the round or pull request that
   says so. The generator computes each case's answer from its own figures and this table, never from the code.
-  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
+  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`, and
+  for carrier answers (`bid`) also the classes left to the model, which cost a gateway call per bid;
   `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right. The same
   family puts each other kind's decisive fact (an acceptance or decline, the tracking desk's reference, a booking
   confirmation's references, a whole tariff) only in an attachment, in every format.
