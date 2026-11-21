@@ -1,0 +1,14 @@
+{
+  "agrees": {"weight_kg": "document", "volume_cbm": "document", "why": "mail and document give the same figures"},
+  "doc_weight": {"weight_kg": "document", "volume_cbm": "document", "why": "round 35: the mail said 2644 kg, the attached spec 1751 kg; the scorer priced the spec"},
+  "doc_volume": {"weight_kg": "document", "volume_cbm": "document", "why": "rounds 33 and 34: the mail's volume and dimensions differed from the attached document's; the scorer priced the document"},
+  "doc_all": {"weight_kg": "document", "volume_cbm": "document", "why": "rounds 33 to 35 together: weight and volume both differ, nothing in the mail says which holds"},
+  "pieces": {"weight_kg": "document", "volume_cbm": "document", "why": "only the piece count differs; weight and volume are the same in both"},
+  "silent": {"weight_kg": "document", "volume_cbm": "document", "why": "the mail names no figure and points to the attachment"},
+  "correction_revised": {"weight_kg": "mail", "volume_cbm": "document", "why": "the customer corrects the weight explicitly in the mail (#164); the volume agrees"},
+  "correction_use_mail": {"weight_kg": "mail", "volume_cbm": "document", "why": "the customer says to use the mail's weight, not the attachment's (#164)"},
+  "correction_outdated": {"weight_kg": "mail", "volume_cbm": "document", "why": "the customer gives a new weight and calls the attached list outdated"},
+  "correction_de": {"weight_kg": "mail", "volume_cbm": "document", "why": "the same correction in German"},
+  "other_shipment": {"weight_kg": "mail", "volume_cbm": "mail", "why": "the attachment names another destination airport: it belongs to another shipment (#164)"},
+  "inconsistent": {"weight_kg": "mail", "volume_cbm": "mail", "why": "the document's stated total volume contradicts its own table, so it settles nothing; the mail's figures stand or the model reads it"}
+}

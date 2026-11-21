@@ -47,21 +47,21 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
-- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
-  customer who does not write formally (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
-  the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
-  model's slot, else `signed_name` by rule); the model's opening on a line of its own when it passed, else none (no
-  stock opening); the offer with an opinion ("I'd go with …", "Good news: …"): total and currency, carrier, transit,
-  what is included, a short line ("Simple as that."), the chargeable weight only when it is above the gross weight;
-  the validity on our desk's clock ("until 17:22 today") with the booking line; the signature by first name
-  (`signature`) and a P.S. that only says what we do anyway. At most three smileys, none twice (`_one_each`).
-  "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `sign_off` answers
-  the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off goes to the town they
-  greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, "Best wishes". A clearly formal
-  mail (`formal`: "Dear …", "Sehr geehrte …", "Yours sincerely", "Mit freundlichen Grüßen"; "Kind regards" alone is
-  not) gets the register back: "Dear Jonas Kessler" as signed, without guessing Mr or Ms (`addressed`), the calm
-  offer and booking lines, no short line, smiley or P.S., "Kind regards" and the full name; its booking mails too,
-  without the thank-you. Code formats every
+- `extract.py` `excluded_airlines`, `_ruled_out`: an airline the customer rules out (a sentence with a negation that
+  names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
+  two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
+  When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
+- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as a clerk writes to
+  this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
+  "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
+  by the name they signed with (the model's slot, else `signed_name` by rule). "Hope your week's going well" is
+  answered first (`WELL`), then the model's opening when it passed (no stock opening), then the offer: the goods in
+  the customer's words when the mail names them (`goods_of`, "For your machine parts, …"), total and currency,
+  carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
+  our desk's clock ("until 17:22 today") with the booking line; the signature with the signer's full name. No
+  filler line, smiley or P.S.: rounds 29 to 46 carried them to formal and casual mails alike and won no human
+  award. `sign_off` answers the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off
+  goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does. Code formats every
   number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
   proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
   is rendered without the model's slots (R9, P1).
@@ -93,7 +93,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
-  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`).
+  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`), except to a formal customer.
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
@@ -109,6 +109,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A customer can rule out an airline ("Please do not offer … for this shipment or for any of our future
+  inquiries"), and it can be the cheapest bid. Round 42 quoted it and was rejected as `excluded_airline`; the
+  exclusion is read by rule and holds for that customer's later requests too (`extract.py` `_ruled_out`).
 - A customer's yes comes in many shapes ("Bitte buchen Sie.", "Please book it and send us the AWB once
   available.", "Could you book it, please?"). `booking.py` `intent` takes an acceptance anywhere in a sentence that
   is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes

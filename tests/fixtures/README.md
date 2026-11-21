@@ -24,7 +24,10 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   answers follow from the row; the old request and the reply subject they add, as seen live, are in
   `rfqs/live-mutations.json`. A new captured request: store it with `tools.replay --capture`, then
   `tools.benchmark_generalization --stub` prints its row with every field `"?"`; read each from the mail, never
-  copy what the code read, or the row repeats today's misread. CI fails while a `"?"` is left.
+  copy what the code read, or the row repeats today's misread. A missing row or a `"?"` is printed as a to-do,
+  never failed, so a capture cannot stop the deploy job. A field the rules misread today carries `known_gap` on the
+  row, a change they misread `known_gap_mutations` (`{"pounds": "<note> Owner: <role>."}`); both are reported as
+  gaps instead of failures.
 - `mails/routing_probes.jsonl`: mails as the API delivers them, each with a setup (a reply to our quote or bid
   request, a sender on the carrier list) and the kind a right router gives.
 - `mails/bid_probes.jsonl`: carrier answers with the total, currency and transit a right reader takes from them.
@@ -32,6 +35,12 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - Spreadsheet changes need no files: `tools/benchmark_generalization.py` `XLSX_CHANGES` edits every kit `.xlsx` in
   memory and requires the original's tariffs or a refusal. Known gaps for them go in
   `tariffs/variants/xlsx_known_gaps.json`, keyed `change:file`.
+- `rfqs/simulate-sources.json`: for every way `tools/simulate.py` relates a mail to its attachment (agrees,
+  contradicts, silent, an explicit correction in four wordings, another shipment's document, a document that
+  contradicts itself), which source a right reading takes for weight and volume, and the round or pull request that
+  says so. The generator computes each case's answer from its own figures and this table, never from the code.
+  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
+  `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 

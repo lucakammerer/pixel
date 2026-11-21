@@ -20,6 +20,9 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    (`rfqs/live.jsonl`), with the score per field.
 10. The same requests changed in ways seen live (an old request quoted below, a reply's subject, pounds): each
    read right or left to the model.
+11. Mail against its attached document (rounds 33 to 35): every figure the document states, changed in the mail,
+   in every column order, file format and document layout (`tools/document_conflicts.py`); the document's figure
+   is the right reading.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -52,6 +55,7 @@ from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
 from pixel.pricing import bids
 from pixel.pricing.calc import chargeable_kg, price_tariff
+from tools import document_conflicts
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -298,10 +302,11 @@ class Live:
     wrong_fields: list[str] = field(default_factory=list)
     judged: list[str] = field(default_factory=list)  # the fields its row states, the ones compared
     known_gap: str | None = None
+    todo: str | None = None  # the row is missing or unfinished: reported, never a failure (a capture must not block)
 
     @property
     def right(self) -> bool | None:
-        return None if not self.by_rules else not self.wrong_fields
+        return None if not self.by_rules or self.todo else not self.wrong_fields
 
 
 LIVE_FIELDS = ("origin", "destination", "weight_kg", "volume_cbm", "pieces", "preference", "door_pickup",
@@ -323,18 +328,23 @@ def audit_live() -> list[Live]:
     """Every captured customer request (`mails/rfq-*.json`) against `rfqs/live.jsonl`: the fields a person read
     from the mail itself, never from the code's output. A field the row leaves out is not judged (the origin of a
     door-to-port request is the pickup zone's airport, set by `extract.extract`, not by the rules). None from the
-    rules is safe: the model reads the mail then. A captured request without a row is a failure: write its row."""
+    rules is safe: the model reads the mail then. A captured request without a row, or with a field still "?", is
+    a to-do, not a failure: capturing a mail must never turn the tests red and stop the host's deploy job. A key the
+    row names that is no field is a failure: it would leave that field unjudged without a word."""
     rows = {r["fixture"]: r for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
     deadline = _deadline()
     results = []
     for path in sorted(MAILS.glob("rfq-*.json")):
         row = rows.get(path.name)
         if row is None:
-            results.append(Live(path.name, by_rules=True, wrong_fields=["no row in rfqs/live.jsonl"]))
+            results.append(Live(path.name, by_rules=True, todo="write its row (--stub)"))
             continue
-        exp = {k: v for k, v in row["expected"].items() if k in LIVE_FIELDS and v != UNREAD}
+        if unknown := sorted(set(row["expected"]) - set(LIVE_FIELDS)):
+            results.append(Live(path.name, True, [f"unknown field {k}" for k in unknown]))
+            continue
+        exp = {k: v for k, v in row["expected"].items() if v != UNREAD}
         if unread := [k for k, v in row["expected"].items() if v == UNREAD]:
-            results.append(Live(path.name, True, [f"fill in {', '.join(unread)} from the mail"], list(exp)))
+            results.append(Live(path.name, True, todo=f"fill in {', '.join(unread)} from the mail"))
             continue
         rfq = extract.by_rules(to_message(json.loads(path.read_text()), "in"), deadline)
         if rfq is None:
@@ -350,7 +360,7 @@ def live_by_field(results: list[Live]) -> dict[str, tuple[int, int]]:
     """Per field: right and judged among the requests the rules read."""
     tally: dict[str, list[int]] = {k: [0, 0] for k in LIVE_FIELDS}
     for r in results:
-        if not r.by_rules:
+        if not r.by_rules or r.todo:
             continue
         wrong = {w.split(":", 1)[0] for w in r.wrong_fields}
         for k in r.judged:
@@ -376,37 +386,42 @@ def _mutations(raw: dict, exp: dict) -> dict[str, tuple[dict, dict]]:
         "reply_subject": (raw | {"subject": seen["reply_subject"]}, exp),
     }
     weight = exp.get("weight_kg")
-    if weight and len(re.findall(rf"(?<![\d.,]){re.escape(weight)} kg", raw["body"])) == 1:
+    figure = re.compile(rf"(?<![\d.,]){re.escape(weight)} kg\b") if weight else None
+    if figure and len(figure.findall(raw["body"])) == 1:
         lbs = (D(weight) / LB).quantize(D(1))
-        body = raw["body"].replace(f"{weight} kg", f"{lbs} lbs")
+        body = figure.sub(f"{lbs} lbs", raw["body"], count=1)
         found["pounds"] = (raw | {"body": body}, exp | {"weight_kg": str(lbs * LB)})
     return found
 
 
 def audit_live_mutations() -> list[Live]:
-    """Every captured request with a finished row, changed as `_mutations` says: read right or left to the model."""
+    """Every captured request with a finished row, changed as `_mutations` says: read right or left to the model.
+    A row's `known_gap_mutations` (`{"pounds": "<note> Owner: <role>."}`) names a change the rules misread today:
+    reported as a gap for that owner, not failed."""
     rows = {r["fixture"]: r for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
     deadline, results = _deadline(), []
     for path in sorted(MAILS.glob("rfq-*.json")):
         row = rows.get(path.name)
-        if row is None or UNREAD in row["expected"].values():
+        if row is None or UNREAD in row["expected"].values() or set(row["expected"]) - set(LIVE_FIELDS):
             continue
-        exp = {k: v for k, v in row["expected"].items() if k in LIVE_FIELDS}
+        exp = dict(row["expected"])
+        gaps = row.get("known_gap_mutations") or {}
         for name, (raw, want) in _mutations(json.loads(path.read_text()), exp).items():
             case = f"{path.name} {name}"
             rfq = extract.by_rules(to_message(raw, "in"), deadline)
             if rfq is None:
-                results.append(Live(case, False, judged=list(want)))
+                results.append(Live(case, False, judged=list(want), known_gap=gaps.get(name)))
                 continue
             wrong = [f"{k}: {_live_value(rfq, k)} != {v}" for k, v in want.items()
                      if _live_value(rfq, k) != _live_want(k, v)]  # fmt: skip
-            results.append(Live(case, True, wrong, list(want)))
+            results.append(Live(case, True, wrong, list(want), gaps.get(name)))
     return results
 
 
 def live_stubs() -> list[str]:
-    """A row to fill in for every captured request that has none: every field "?", to be read from the mail by
-    a person (null where the mail does not state it, the key removed where it is not to be judged). Never filled from what the code reads, or the corpus would only repeat today's misreads."""
+    """A row to fill in for every captured request that has none: every field "?", to be read from the mail by a
+    person (null where the mail does not state it, the key removed where it is not to be judged). Never filled from
+    what the code reads, or the corpus would only repeat today's misreads."""
     have = {r["fixture"] for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
     return [json.dumps({"fixture": p.name, "expected": dict.fromkeys(LIVE_FIELDS, UNREAD), "note": ""})
             for p in sorted(MAILS.glob("rfq-*.json")) if p.name not in have]  # fmt: skip
@@ -707,8 +722,16 @@ def open_gaps() -> dict[str, list[str]]:
     found = [(r.case_id, r.known_gap) for r in audit_rewrites() if r.by_rules and not r.right and r.known_gap]
     found += [(v.file, v.known_gap) for v in audit_variants() + audit_xlsx_changes() if not v.safe and v.known_gap]
     found += [(r.case_id, r.known_gap) for r in audit_routing() if not r.ok and r.known_gap]
-    found += [(r.fixture, r.known_gap) for r in audit_live() if r.right is False and r.known_gap]
+    found += [
+        (r.fixture, r.known_gap) for r in audit_live() + audit_live_mutations() if r.right is False and r.known_gap
+    ]
     found += [(b.case_id, b.known_gap) for b in audit_bids() if not b.ok and b.known_gap]
+    seen_gaps = set()
+    for r in document_conflicts.audit():
+        key = f"{r.case.change}:{r.case.layout}"
+        if r.right is False and r.known_gap and r.known_gap not in seen_gaps:
+            seen_gaps.add(r.known_gap)
+            found.append((f"document conflict {key}", r.known_gap))
     by_owner: dict[str, list[str]] = {}
     for case, note in found:
         owner = m.group(1) if (m := re.search(r"Owner: (\w+)", note)) else "unassigned"
@@ -826,7 +849,8 @@ def main() -> int:
     live = audit_live()
     live_wrong = [r for r in live if r.right is False and not r.known_gap]
     read = sum(r.by_rules for r in live)
-    print(f"\n[9] Captured requests: {sum(bool(r.right) for r in live)}/{len(live)} read right, {read} by rules")
+    print(f"\n[9] Captured requests: {sum(bool(r.right) for r in live)}/{len(live)} read right, {read} by rules, "
+          f"{sum(bool(r.todo) for r in live)} rows to write")  # fmt: skip
     for k, (right, total) in live_by_field(live).items():
         print(f"    {k:<16} {right}/{total}")
     for r in live:
@@ -835,17 +859,46 @@ def main() -> int:
             print(f"    {status:<4} {r.fixture}: {'; '.join(r.wrong_fields)}")
         elif r.right and r.known_gap:
             print(f"    ok   {r.fixture}: now right, remove its known_gap")
+        elif r.todo:
+            print(f"    todo {r.fixture}: {r.todo}")
         elif r.right is None:
             print(f"    model {r.fixture}")
 
     mutated = audit_live_mutations()
-    mutated_wrong = [r for r in mutated if r.right is False]
+    mutated_wrong = [r for r in mutated if r.right is False and not r.known_gap]
     print(f"\n[10] Captured requests, changed: {sum(bool(r.right) for r in mutated)}/{len(mutated)} read right, "
           f"{sum(r.right is None for r in mutated)} left to the model")  # fmt: skip
-    for r in mutated_wrong:
-        print(f"    FAIL {r.fixture}: {'; '.join(r.wrong_fields)}")
+    for r in mutated:
+        if r.right is False:
+            status = "GAP" if r.known_gap else "FAIL"
+            print(f"    {status:<4} {r.fixture}: {'; '.join(r.wrong_fields)}")
+        elif r.right and r.known_gap:
+            print(f"    ok   {r.fixture}: now right, remove it from known_gap_mutations")
     if not mutated_wrong:
         print("    ok   an old quoted request, a reply's subject and pounds change no field")
+
+    conflicts = document_conflicts.audit()
+    conflicts_wrong = [r for r in conflicts if r.right is False and not r.known_gap]
+    print(f"\n[11] Mail against its document: {sum(bool(r.right) for r in conflicts)}/{len(conflicts)} read the "
+          f"document's figures, {sum(r.right is None for r in conflicts)} left to the model")  # fmt: skip
+    layouts = document_conflicts.LAYOUTS
+    print(f"    {'mail states wrong':<18} " + " ".join(f"{name:>16}" for name in layouts))
+    for change, row in document_conflicts.by_change(conflicts).items():
+        cells = []
+        for name in layouts:
+            ok, bad, model = row.get(name, (0, 0, 0))
+            cells.append(f"{ok}/{ok + bad + model}" + ("" if not model else f" m{model}"))
+        print(f"    {change:<18} " + " ".join(f"{c:>16}" for c in cells))
+    noted = set()
+    for r in conflicts:
+        if r.right is False and r.known_gap and r.known_gap not in noted:
+            noted.add(r.known_gap)
+            print(f"    gap  {r.case.change}: {r.known_gap}")
+    stale = {f"{r.case.change}:{r.case.layout}" for r in conflicts if r.right and r.known_gap}
+    for key in sorted(stale):
+        print(f"    ok   {key}: now right, narrow or remove its known_gap")
+    for r in conflicts_wrong[:20]:
+        print(f"    FAIL {r.name}: {'; '.join(r.wrong_fields)}")
 
     failed = bool(
         prices.failures
@@ -858,6 +911,7 @@ def main() -> int:
         or unsafe_sheets
         or live_wrong
         or mutated_wrong
+        or conflicts_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")

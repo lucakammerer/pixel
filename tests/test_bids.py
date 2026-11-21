@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from pixel import llm
-from pixel.agents.rfq import agent, compose, extract
+from pixel.agents.rfq import agent, extract
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import LaneTariff, LlmResult, Message, RateOption, Rfq, Source
@@ -273,12 +273,12 @@ async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeyp
     quote = await agent.handle(ctx, request, deadline(30))
     assert calls == ["rfq.extract"] and quote.llm_calls == 1
     # the extraction's opening names no phrase of the mail it answers (`hook`), so the quote opens with the price
-    assert quote.body.startswith(compose.greeting("en", "Tom", 1) + "\n\n") and intro not in quote.body
+    assert quote.body.startswith("Hello Tom,\n\n") and intro not in quote.body
     assert "2 minutes" not in quote.body
     assert "260.00 EUR" in quote.body
 
     backup = await agent.fallback(ctx, 1)
-    assert backup.body.startswith(compose.greeting("en", "Tom", 1)) and len(calls) == 1
+    assert backup.body.startswith("Hello Tom,") and len(calls) == 1
 
 
 async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
@@ -302,7 +302,7 @@ async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
     started = datetime.now(UTC)
     quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg, 0.3 cbm."), deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 2
-    assert quote.body.startswith("Hi there!\n\n") and "260.00 EUR" in quote.body
+    assert quote.body.startswith("Hello,\n\n") and "260.00 EUR" in quote.body
 
 
 async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monkeypatch):

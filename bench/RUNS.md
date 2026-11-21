@@ -214,3 +214,15 @@ What follows:
   mail's volume (round 33: 2.78 against 1.92 cbm, round 34: 11.69 against 7.49), and the scorer prices the document.
   Both rejected too high; #159 (repair loop) lets a document's volume win when its table bears it out, and reads
   round 34 as 7.49 cbm. Round 34 is a fixture now. Next: the first verdict on such a request with #159 live.
+- 21.11. 19:45, mail against its document (rounds 33 to 35, one scenario): the attachment carries the truth, the
+  mail states one figure differently with its dimensions changed to match. Benchmark section 11
+  (`tools/document_conflicts.py`) now renders every captured base with every figure the document states wrong in
+  the mail, 5 column orders, pdf/xlsx/docx and 6 layouts: 1890 cases, 1080 read the document's figure. Open
+  (known gaps for extract.py): pieces and destination always take the mail's; weight per piece in the table and a
+  table without total lines leave the mail's weight and volume standing. Next: one resolver for every field the
+  document states.
+- 21.11. 20:10, after #163: rounds 36-41 all accepted at the best price (60 each, about 32 s); 39-41 carried
+  attached documents that agree with the mail, read by rules. Every customer reply live is one of a few templates
+  (accept, decline too high/too low/DG, thanks, DG documents to follow), all read right on main; the four declines
+  logged as accepted before 16:35 read as declines now. None of 98 customer replies in a thread held a new request,
+  so the reply-in-old-thread gap stays a note. Next: capture the next request whose reading or verdict differs.
