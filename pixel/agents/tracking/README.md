@@ -30,6 +30,9 @@ in the inbound thread and uses no gateway call.
 
 ## Pitfalls
 
+- Our record of a shipment can differ from the desk's description: the pickup postcode came from the customer's
+  earlier site (same zone), or the zone's airport replaced the origin the customer named. `described` then matches
+  by zone, or by company and weight alone, and still answers only for exactly one shipment.
 - The tracking desk names no reference. It writes the shipment as the customer requested it: for a door-to-port
   request `<pickup postcode> to <destination>`, with the weight and the company name. The company is matched against
   the customer's address, the postcode against the request the shipment was quoted for.

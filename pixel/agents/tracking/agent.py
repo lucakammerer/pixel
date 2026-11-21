@@ -66,7 +66,8 @@ def greeting(text: str) -> tuple[str, str]:
 def described(ctx: Context, text: str) -> list[Shipment]:
     """The tracking desk names no reference. It describes the shipment the way the customer asked for it: the origin
     airport, or the pickup postcode of a door-to-port request, "to" the destination, the gross weight and the
-    customer's company name. The origin and weight must agree, and recognized company names narrow the results."""
+    customer's company name. Origin (or the pickup zone) and weight must agree; when our origin differs from the
+    desk's, the company and the weight alone may still name the one shipment."""
     lane = DESCRIBED.search(text)
     if not lane:
         return []
@@ -79,6 +80,13 @@ def described(ctx: Context, text: str) -> list[Shipment]:
         tokens = [t for t in re.split(r"[^a-z0-9]+", s.customer.split("@")[0].lower()) if len(t) > 2]
         return bool(tokens) and words.issuperset(tokens)
 
+    def weighs(candidates: list[Shipment]) -> list[Shipment]:
+        if kg is None:
+            return candidates
+        exact_weight = [s for s in candidates if s.weight_kg == kg]
+        tolerance = max(Decimal(1), kg * Decimal("0.01"))
+        return exact_weight or [s for s in candidates if abs(s.weight_kg - kg) <= tolerance]
+
     addresses = {e.lower() for e in EMAIL.findall(text)}
     found = shipments.find(ctx, destination=destination)
     if addresses:
@@ -86,7 +94,7 @@ def described(ctx: Context, text: str) -> list[Shipment]:
     names = [s for s in found if company(s)]
     found = names or found
     if origin:
-        found = [s for s in found if s.origin == origin]
+        strict = [s for s in found if s.origin == origin]
     else:
         exact, zone = [], []
         for shipment in found:
@@ -95,14 +103,16 @@ def described(ctx: Context, text: str) -> list[Shipment]:
                 continue
             if quote.rfq.pickup_postcode == postcode:
                 exact.append(shipment)
-            elif not quote.rfq.pickup_postcode and quote.rfq.pickup_zone == zone_of(postcode):
+            elif quote.rfq.pickup_zone == zone_of(postcode):  # a remembered site of the customer, same zone
                 zone.append(shipment)
-        found = exact or zone
-    if kg is not None:
-        exact_weight = [s for s in found if s.weight_kg == kg]
-        tolerance = max(Decimal(1), kg * Decimal("0.01"))
-        found = exact_weight or [s for s in found if abs(s.weight_kg - kg) <= tolerance]
-    return found if len(found) == 1 else []
+        strict = exact or zone
+    strict = weighs(strict)
+    if len(strict) == 1:
+        return strict
+    # Our origin can differ from the desk's (the zone's airport replaced a guessed one): the company and the
+    # weight alone still name one shipment.
+    relaxed = weighs(names) if origin and names and kg is not None else []
+    return relaxed if not strict and len(relaxed) == 1 else []
 
 
 def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | None]:
