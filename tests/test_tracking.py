@@ -64,7 +64,10 @@ async def test_the_desk_describes_a_door_shipment_by_pickup_postcode_weight_and_
     body = pipe.sent[0]["body"]
     assert ours.id in body and ours.booking_reference in body and same_destination.id not in body
     # The desk signs as the customer and gives the ready date: answer them by name, with the arrival, in sentences.
-    assert body.startswith("Hi Sara,") and "Sunday 29 November" in body and "@" not in body
+    assert body.startswith("Hi Sara,") and "Sunday 29 November" in body
+    # Every line the answer carried before stays until a variant scores (R30).
+    assert "Status: confirmed by Kestrel Airways, booked and ready to ship" in body
+    assert "Customer: lindqvist-medtech@hackloop.mail" in body and f"Shipment {ours.id}: CGN → ORD, 676 kg" in body
 
 
 async def test_the_desk_describes_a_port_shipment_by_lane_weight_and_company(pipe):

@@ -23,6 +23,13 @@ STATUS = {
     "confirmed": "is booked with {carrier}, and the airline has confirmed it{under}",
     "failed": "could not be booked with {carrier} yet; a colleague is already on it and will be in touch",
 }
+# The record lines our answer carried before it was prose; kept verbatim until a variant is shown to score (R30).
+RECORD = {
+    "booking": "booking requested with {carrier}, waiting for the airline",
+    "booked": "booked with {carrier}, waiting for the airline's confirmation",
+    "confirmed": "confirmed by {carrier}, booked and ready to ship",
+    "failed": "not booked: the booking with {carrier} failed and a colleague is on it",
+}
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December"]  # fmt: skip
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -137,6 +144,19 @@ def _paragraph(s: Shipment, detail: Detail, today: date) -> str:
     return " ".join(text)
 
 
+def record(s: Shipment) -> str:
+    lines = [
+        f"Shipment {s.id}: {s.origin} → {s.destination}, {s.weight_kg} kg",
+        f"Status: {RECORD.get(s.status, s.status).format(carrier=s.carrier)}",
+    ]
+    if s.booking_reference:
+        lines.append(f"Airline booking reference: {s.booking_reference}")
+    if s.transit_days:
+        lines.append(f"Transit time: {s.transit_days} days")
+    lines.append(f"Customer: {s.customer}")
+    return "\n".join(lines)
+
+
 def answer(
     found: list[Shipment],
     reference: str | None,
@@ -146,7 +166,8 @@ def answer(
     signer: str = DEFAULT_SIGNER,
 ) -> str:
     """The status of each shipment in sentences, in the asker's register: status, airline, booking reference,
-    transit and the arrival from the ready date, from the CRM alone."""
+    transit and the arrival from the ready date, from the CRM alone; below it every record line the answer carried
+    before, verbatim, until a variant is shown to score (R30)."""
     hello, bye = greeting(question)
     if not found:
         named = f" under {reference}" if reference else " matching your question"
@@ -156,6 +177,7 @@ def answer(
         today = today or datetime.now(UTC).date()
         details = details or {}
         body = "\n\n".join(_paragraph(s, details.get(s.id, Detail()), today) for s in found[:5])
+        body += "\n\nHere is the status from our records:\n\n" + "\n\n".join(record(s) for s in found[:5])
     return f"{hello}\n\n{body}\n\nJust reply if you need anything else.\n\n{bye}\n{signer}\n{COMPANY}"
 
 
