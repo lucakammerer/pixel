@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 from datetime import UTC, datetime
+from email.utils import parseaddr
 from typing import Any
 
 import httpx
@@ -41,6 +42,12 @@ def mapping_gaps(raw: dict[str, Any]) -> list[str]:
     return [keys[0] for keys in (SENDER, RECIPIENT, STORED_AT) if _first(raw, keys) is None]
 
 
+def _address(val: Any) -> str:
+    text = str(val or "").strip()
+    _, addr = parseaddr(text)
+    return (addr or text).strip().lower()
+
+
 def to_message(raw: dict[str, Any], direction: str) -> Message:
     """The only place that knows the API's mail fields. `session_id` is set by the poller. Tolerant on purpose: a
     mail it cannot fully read still gets a deadline (from now) instead of blocking the mailbox; see `mapping_gaps`."""
@@ -49,8 +56,8 @@ def to_message(raw: dict[str, Any], direction: str) -> Message:
         id=int(raw["id"]),
         session_id=int(raw["id"]),
         direction=direction,
-        sender=str(_first(raw, SENDER) or "").strip().lower(),
-        to=str(_first(raw, RECIPIENT) or "").strip().lower(),
+        sender=_address(_first(raw, SENDER)),
+        to=_address(_first(raw, RECIPIENT)),
         subject=raw.get("subject") or "",
         body=raw.get("body") or "",
         in_reply_to=raw.get("in_reply_to"),

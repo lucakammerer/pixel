@@ -352,3 +352,10 @@ def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days
 )
 def test_pickup_hours_read_a_decimal_and_skip_a_clock_time(text, hours):
     assert bids._pickup_hours(text) == hours  # 10.5 read as 5 and 09:00 h as 0 pick the wrong trucker
+
+
+def test_bid_transit_ignores_validity_period():
+    body = "EUR 900.00 all-in, offer valid for 7 days, transit 3 days."
+    assert bids._days(body) == 3
+    body2 = "EUR 900.00 all-in, Valid 7 days, 3 days transit."
+    assert bids._days(body2) == 3

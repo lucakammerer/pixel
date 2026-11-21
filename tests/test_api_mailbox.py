@@ -60,6 +60,20 @@ def test_a_mail_in_an_unknown_shape_still_maps_and_says_what_is_missing():
     assert mapping_gaps(raw) == ["from", "to", "received_at"]
 
 
+def test_to_message_strips_display_names():
+    raw = {
+        "id": 1,
+        "from": "Kestrel Ops <ops@kestrel-airways.hackloop.mail>",
+        "to": "PIXEL Dispatch <dispatch@pixel.mail>",
+        "subject": "Quote",
+        "body": "Hello",
+        "created_at": "2026-11-21T16:00:00Z",
+    }
+    msg = to_message(raw, "in")
+    assert msg.sender == "ops@kestrel-airways.hackloop.mail"
+    assert msg.to == "dispatch@pixel.mail"
+
+
 def test_a_captured_mail_maps_without_gaps():
     raw = json.loads((MAILS / "bid-decline-lane.json").read_text())
     assert mapping_gaps(raw) == []

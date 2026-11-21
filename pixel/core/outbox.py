@@ -228,7 +228,8 @@ async def _deliver(
             if (
                 quote is not None
                 or 400 <= e.status < 500
-                or e.status == 0 and e.detail in {"ConnectError", "ConnectTimeout", "PoolTimeout"}
+                or e.status == 0
+                and e.detail in {"ConnectError", "ConnectTimeout", "PoolTimeout"}
             ):
                 ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))
             if e.status == 429:
