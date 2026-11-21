@@ -386,7 +386,8 @@ async def record(ctx: Context, message: Message) -> None:
         return
     listed = parse_desk(message, rfq) if kind == "ratedesk" else []
     option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
-    if not listed and option is None and not DECLINE.search(_own_text(message.body)):
+    # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
+    if not listed and option is None and kind != "ratedesk" and not DECLINE.search(_own_text(message.body)):
         read_by = "model"
         try:
             option = await _read_with_model(ctx, message, rfq, needs_transit=not pickup)
