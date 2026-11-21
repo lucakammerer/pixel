@@ -112,8 +112,8 @@ def test_dashboard_renders(client, pipe):
         pipe.ctx, "score", "board", payload={"round": 2, "verdict": "accepted", "points": {}, "cost_pending": True}
     )
     page = client.get("/dashboard").text
-    assert "Spend per accepted quote" in page and "Median response" in page
-    assert "136.53" in page and "rank 6" in page and "41.77" in page and "96.53" in page
+    assert "Spend / accepted" in page and "Median response" in page
+    assert "136.53" in page and "#6" in page and "41.77" in page and "96.53" in page
     assert "next hour" in page and "being scored" in page and "together" not in page  # round 2: answered only
 
 
@@ -173,5 +173,26 @@ def test_dashboard_keeps_tracking_apart_from_the_quote_and_estimates_cost_still_
     assert s["points_projected"] == D("317.87")
     page = client.get("/dashboard").text
     assert "39.20" in page and "≈" not in page and "109.20" in page and "317.87" in page
-    assert "Booking" not in page and "Human writing" in page and "none awarded yet" in page
+    assert "Booking" not in page and "Human writing" in page and "none yet" in page
     assert "= team total 239.47 + cost still due 78.40" in page
+
+
+async def test_dashboard_shows_our_rank_big_and_the_gap_to_the_teams_around_us(client, pipe):
+    from pixel.core import feedback
+
+    class Board:
+        async def me(self):
+            return {"team": "pixel", "rank": 6, "total": 1851.98, "requests": []}
+
+        async def public(self):
+            return {"ranking": [{"rank": n, "name": f"t{n}", "team": f"Team {n}", "total": 2000 - 20 * n} for n in range(1, 6)]
+                    + [{"rank": 6, "name": "pixel", "team": "PIXEL", "total": 1851.98},
+                       {"rank": 7, "name": "t7", "team": "Team 7", "total": 1700.5}]}  # fmt: skip
+
+    pipe.ctx.board = Board()
+    await feedback.once(pipe.ctx)
+    await feedback.once(pipe.ctx)  # unchanged: stored once
+    assert pipe.ctx.db.execute("SELECT COUNT(*) FROM events WHERE kind = 'score.total'").fetchone()[0] == 1
+    page = client.get("/dashboard").text
+    assert "<div class=rank>#6<small>of 7</small></div>" in page and "1851.98" in page
+    assert "48.02</b> behind #5 Team 5" in page and "151.48</b> ahead of #7 Team 7" in page

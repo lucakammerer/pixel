@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from pixel.crm import quotes
-from pixel.ui.page import clock, esc, layout, page_head, stats, status
+from pixel.ui.page import clock, esc, layout, page_head, status
 
 router = APIRouter()
 
@@ -53,6 +53,61 @@ def _quote(r: dict[str, Any]) -> str:
     return _cell(f"<b>{pts(r['quote'])}</b>")
 
 
+CSS = """<style>
+.hero{display:flex;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.hero>div{padding:18px 24px;border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:center}
+.hero>div:last-child{border-right:0;flex:1}
+.hero .k{font-size:12px;color:var(--muted)}
+.hero .rank{font-size:56px;font-weight:700;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.hero .rank small{font-size:15px;font-weight:500;color:var(--muted);letter-spacing:0;margin-left:6px}
+.hero .total{font-size:30px;font-weight:650;line-height:1.15;font-variant-numeric:tabular-nums}
+.hero .note{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.hero .race{font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums;line-height:1.8}
+.hero .race b{font-weight:600}.hero .race .behind{color:var(--bad)}.hero .race .ahead{color:var(--ok)}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));background:var(--surface);
+border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:10px}
+.strip>div{padding:10px 14px;border-right:1px solid var(--line)}.strip>div:last-child{border-right:0}
+.strip .k{font-size:12px;color:var(--muted)}
+.strip .v{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.strip .note{font-size:12px;color:var(--muted);white-space:nowrap}
+.rounds{overflow-x:auto;max-width:100%}.rounds td,.rounds th{white-space:nowrap}
+@media (max-width:640px){.hero>div{border-right:0;border-bottom:1px solid var(--line);flex:1 1 100%;padding:14px 16px}
+.hero .rank{font-size:44px}}
+</style>"""
+
+
+def _strip(cells: list[tuple[str, Any, str]]) -> str:
+    return "<div class=strip>" + "".join(
+        f"<div><div class=k>{esc(k)}</div><div class=v>{esc(v)}</div>"
+        + (f"<div class=note>{esc(note)}</div>" if note else "") + "</div>"
+        for k, v, note in cells
+    ) + "</div>"  # fmt: skip
+
+
+def _hero(s: dict[str, Any]) -> str:
+    """Rank in big, the team total with what the cost still due will add, and the gap to the teams around us."""
+    total, estimate = s["points_total"], s["cost_estimate"]
+    rank = (f"#{esc(s['rank'])}" + (f"<small>of {esc(s['teams'])}</small>" if s.get("teams") else "")
+            if s["rank"] else "—")  # fmt: skip
+    projected = f"{pts(total + estimate)} with the cost still due" if estimate and total is not None else ""
+
+    def gap(side: dict[str, Any] | None, word: str, css: str) -> str:
+        if not side or total is None:
+            return ""
+        diff = (Decimal(side["total"]) - total).copy_abs()
+        return f"<div><b class={css}>{pts(diff)}</b> {word} #{esc(side['rank'])} {esc(side['team'])}</div>"
+
+    race = gap(s.get("above"), "behind", "behind") + gap(s.get("below"), "ahead of", "ahead")
+    return (
+        "<div class=hero>"
+        f"<div><div class=k>Rank</div><div class=rank>{rank}</div></div>"
+        f"<div><div class=k>Team total</div><div class=total>{pts(total) if total is not None else '—'}</div>"
+        + (f"<div class=note>{projected}</div>" if projected else "") + "</div>"
+        + (f"<div><div class=race>{race}</div></div>" if race else "<div></div>")
+        + "</div>"
+    )  # fmt: skip
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """`crm.quotes.stats` and the scored rounds of /v1/board/me. Shipments live in the CRM."""
@@ -60,47 +115,25 @@ async def dashboard(request: Request):
     s = quotes.stats(ctx)
     spend = s["spend_per_accepted_usd"]
     total = s["points_total"]
-    quoted_share = f"{round(100 * s['quoted'] / s['requests'])} % of requests" if s["requests"] else ""
-    flow = stats([
-        ("Requests", s["requests"], ""),
-        ("Quoted", s["quoted"], quoted_share),
-        ("By fallback", s["fallback"], "sent at the deadline"),
-        ("Missed", s["missed"], ""),
-        ("Median response", f'{s["median_response_s"]} s' if s["median_response_s"] is not None else None, ""),
-        ("Won with customer", s["won"], f'{s["lost"]} lost'),
-    ])  # fmt: skip
-
     p, accepted = s["points"], s["accepted"]
-    unreported = s["points_unreported"]
     estimate = s["cost_estimate"]
-    rank = f"rank {s['rank']} · " if s["rank"] else ""
-    quote_note = " + ".join(f"{k} {pts(p[k])}" for k in ("accuracy", "time", "cost") if k in p) + (
-        f" + {pts(unreported)} accuracy and time the rows leave out" if unreported and unreported >= Decimal("0.01")
-        else "")  # fmt: skip
-    cost_note = (
-        f"scored · {s['cost_pending']} rounds still due, estimated {pts(estimate)}"
-        if s["cost_pending"] and estimate
-        else f"scored · {s['cost_pending']} rounds still due"
-        if s["cost_pending"]
-        else "added by the scorer hourly"
-    )
-    humanity = p.get("humanity", Decimal(0))
-    score = stats(
-        [
-            ("Team total", pts(total) if total is not None else None, f"{rank}from the scorer"),
-            ("Projected total", pts(s["points_projected"]) if estimate and total is not None else None,
-             "team total + the cost points still due"),
-            ("Quote points", pts(s["points_quote"]), quote_note),
-            ("Cost points", pts(p.get("cost", Decimal(0))), cost_note),
-            ("Human writing", pts(humanity), "up to 10 per round · none awarded yet" if not humanity
-             else "up to 10 per round"),
-            ("Tracking points", pts(p.get("tracking", Decimal(0))), "10 per correct tracking answer"),
-            ("Accepted by scorer", accepted, f'of {s["rounds"]} scored · {s["rejected"]} rejected'
-             + (f' · {s["no_answer"]} no answer' if s["no_answer"] else "")),
-            ("Spend per accepted quote", f"${spend:.4f}" if spend is not None else None,
-             f'${float(s["spend_hour_usd"]):.4f} in the last hour'),
-        ]
-    )  # fmt: skip
+    hero = _hero(s)
+    score = _strip([
+        ("Accuracy", pts(p.get("accuracy", Decimal(0))), ""),
+        ("Time", pts(p.get("time", Decimal(0))), ""),
+        ("Cost", pts(p.get("cost", Decimal(0))), f"+ {pts(estimate)} due" if estimate else ""),
+        ("Tracking", pts(p.get("tracking", Decimal(0))), ""),
+        ("Human writing", pts(p.get("humanity", Decimal(0))), "" if p.get("humanity") else "none yet"),
+        ("Accepted", f'{accepted} / {s["rounds"]}', f'{s["rejected"]} rejected'
+         + (f' · {s["no_answer"]} no answer' if s["no_answer"] else "")),
+        ("Spend / accepted", f"${spend:.4f}" if spend is not None else "—", "last hour"),
+    ])  # fmt: skip
+    flow = _strip([
+        ("Quoted", f'{s["quoted"]} / {s["requests"]}', f'{s["fallback"]} by fallback' if s["fallback"] else ""),
+        ("Missed", s["missed"], ""),
+        ("Median response", f'{s["median_response_s"]} s' if s["median_response_s"] is not None else "—", ""),
+        ("Won with customer", s["won"], f'{s["lost"]} lost' if s["lost"] else ""),
+    ])  # fmt: skip
 
     rounds = quotes.scored_rounds(ctx)
     adjustment = any("adjustment" in r["points"] for r in rounds)
@@ -149,8 +182,8 @@ async def dashboard(request: Request):
     body = (
         page_head("Performance", "Our pipeline and what the scorer says about it. Updates live.")
         + "<div id=refresh data-live>"
-        + f"<h2 style='margin-top:0'>Pipeline</h2>{flow}<h2>Score</h2>{score}"
-        + f"<h2>Scorer, per round</h2><div class=panel><table><thead>{head}</thead>"
+        + f"{CSS}{hero}{score}<h2>Pipeline</h2>{flow}"
+        + f"<h2>Scorer, per round</h2><div class='panel rounds'><table><thead>{head}</thead>"
         f"<tbody>{score_rows or f'<tr><td colspan={cols} class=empty>No result from /v1/board/me yet.</td></tr>'}"
         f"</tbody>{foot}</table></div></div>"
     )

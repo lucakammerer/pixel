@@ -61,7 +61,8 @@ def latest_scores(ctx: Context) -> list[dict[str, Any]]:
 
 def board_summary(ctx: Context) -> dict[str, Any]:
     """The newest team line of /v1/board/me: `total` (Decimal or None), `rank`, `revealed` (accuracy and time are
-    in the request rows)."""
+    in the request rows), and from the public board `teams` and the neighbours `above` and `below` (rank, team,
+    total). `raw` is the stored payload."""
     row = ctx.db.execute("SELECT payload FROM events WHERE kind = 'score.total' ORDER BY id DESC LIMIT 1").fetchone()
     payload = json.loads(row["payload"]) if row else {}
     total = payload.get("total")
@@ -69,6 +70,10 @@ def board_summary(ctx: Context) -> dict[str, Any]:
         "total": Decimal(str(total)) if total is not None else None,
         "rank": payload.get("rank"),
         "revealed": bool(payload.get("revealed")),
+        "teams": payload.get("teams"),
+        "above": payload.get("above"),
+        "below": payload.get("below"),
+        "raw": payload,
     }
 
 
@@ -218,6 +223,9 @@ def stats(ctx: Context, now: datetime | None = None) -> dict[str, Any]:
         "points_rows": sum(known, Decimal(0)),
         "rounds_unknown": len(rounds) - len(known),
         "rank": board["rank"],
+        "teams": board["teams"],
+        "above": board["above"],
+        "below": board["below"],
         "revealed": board["revealed"],
         "cost_pending": cost_pending,
         "spend_hour_usd": spend_hour,

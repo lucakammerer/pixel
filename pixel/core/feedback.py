@@ -149,19 +149,31 @@ def _round(ctx: Context, row: dict[str, Any]) -> None:
                 payload=json.loads(json.dumps(payload, default=str)))  # fmt: skip
 
 
+async def _standing(ctx: Context, team: str | None) -> dict[str, Any]:
+    """From the public board: how many teams, and the teams just above and below ours (rank, name, total)."""
+    try:
+        ranking = (await ctx.board.public()).get("ranking") or []
+    except Exception:  # noqa: BLE001  the public board is for the dashboard only: never cost the poll
+        return {}
+    ours = next((i for i, r in enumerate(ranking) if r.get("name") == team), None)
+    if ours is None:
+        return {"teams": len(ranking)} if ranking else {}
+
+    def side(i: int) -> dict[str, Any] | None:
+        r = ranking[i] if 0 <= i < len(ranking) else None
+        return {"rank": r.get("rank"), "team": r.get("team"), "total": str(r.get("total"))} if r else None
+
+    return {"teams": len(ranking), "above": side(ours - 1), "below": side(ours + 1)}
+
+
 async def once(ctx: Context) -> int:
     """Store board totals and finalized score updates, and return the number of new feedback verdicts."""
     data = await ctx.board.me()
     reported_total = data.get("total")
     total = Decimal(str(reported_total)) if reported_total is not None else None
     summary = {"total": str(total) if total is not None else None, "rank": data.get("rank"),
-               "revealed": bool(data.get("scores_revealed"))}  # fmt: skip
-    last = quotes.board_summary(ctx)
-    if total is not None and (total, summary["rank"], summary["revealed"]) != (
-        last["total"],
-        last["rank"],
-        last["revealed"],
-    ):
+               "revealed": bool(data.get("scores_revealed"))} | await _standing(ctx, data.get("team"))  # fmt: skip
+    if total is not None and summary != quotes.board_summary(ctx)["raw"]:
         events.emit(ctx, "score.total", "board", payload=summary)
     requests = [r for r in data.get("requests", []) if r.get("verdict") in FINAL]
     stored = {str(score["round"]): score for score in quotes.latest_scores(ctx)}
