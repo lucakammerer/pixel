@@ -3,10 +3,13 @@
 uv run python -m tools.replay tests/fixtures/mails/<file>.json     # one mail
 uv run python -m tools.replay --session 123                        # a whole session from the database
 uv run python -m tools.replay --capture 123 > tests/fixtures/mails/rfq-door.json
+uv run python -m tools.replay --db data/pixel.sqlite3 --session 123    # with the stored tariffs, carriers and bids
 
-A replay always runs dry, on a fresh database, and with an API client that refuses every call unless `--online`
-is given (then portal and gateway are real, mail still is not). The mail's stored time is moved to now, so its
-deadline starts with the replay.
+A replay always runs dry and with an API client that refuses every call unless `--online` is given (then portal
+and gateway are real, mail still is not). It runs on a fresh database, or with `--db` on a copy of that database,
+never on the file itself: tariffs, carriers, zones and the mails we sent take part, and what the replayed mails
+left behind (their sessions, quotes and events) is removed from the copy first. The mail's stored time is moved to
+now, so its deadline starts with the replay.
 """
 
 import argparse
@@ -63,8 +66,28 @@ def _stored(db_path: str, query: str, value: int) -> list[dict]:
     return [json.loads(data)["raw"] for (data,) in rows]
 
 
-async def replay(raws: list[dict], online: bool) -> int:
+def _copy(source: str, target: str, raws: list[dict]) -> int:
+    """Copies a database and forgets the replayed mails and their sessions. Returns the copy's last event id."""
+    original = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    conn = sqlite3.connect(target)
+    original.backup(conn)
+    original.close()
+    ids = [(int(raw["id"]),) for raw in raws]
+    sessions = [conn.execute("SELECT session_id FROM messages WHERE id = ?", i).fetchone() or i for i in ids]
+    conn.executemany("DELETE FROM messages WHERE id = ? AND direction = 'in'", ids)
+    for table in ("events", "quotes", "bookings", "shipments"):
+        conn.executemany(f"DELETE FROM {table} WHERE session_id = ?", sessions)
+    conn.executemany("DELETE FROM sessions WHERE id = ?", sessions)
+    conn.executemany("DELETE FROM kv WHERE key = 'quote:' || ?", sessions)
+    last = conn.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
+    conn.commit()
+    conn.close()
+    return last
+
+
+async def replay(raws: list[dict], online: bool, db: str | None = None) -> int:
     config = dataclasses.replace(settings(), dry_run=True, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3"))
+    last_event = _copy(db, config.db_path, raws) if db else 0
     ctx = build_context(config)
     client = make_client(config) if online else httpx.AsyncClient(transport=httpx.MockTransport(_offline))
     ctx.mailbox = OfflineMailbox(client, _files(raws))
@@ -77,9 +100,11 @@ async def replay(raws: list[dict], online: bool) -> int:
         if stored:
             session_id = session_id or stored.session_id
             await orchestrator.dispatch(ctx, stored)
-    for event in events.since(ctx, 0, limit=10_000):
-        print(json.dumps({**event.payload, "ts": event.ts.isoformat(timespec="seconds"), "session": event.session_id,
-                          "event": event.kind, "actor": event.actor}, default=str))  # fmt: skip
+    for event in events.since(ctx, last_event, limit=10_000):
+        usage = {"tokens_in": event.tokens_in, "tokens_out": event.tokens_out, "cost_usd": event.cost_usd,
+                 "ms": event.duration_ms} if event.kind == "llm.call" else {}  # fmt: skip
+        print(json.dumps({**event.payload, **usage, "ts": event.ts.isoformat(timespec="seconds"),
+                          "session": event.session_id, "event": event.kind, "actor": event.actor}, default=str))  # fmt: skip
     return 0
 
 
@@ -89,8 +114,9 @@ def main() -> None:
     parser.add_argument("--session", type=int, help="replay every incoming mail of a stored session")
     parser.add_argument("--capture", type=int, help="print one stored mail as the API returned it")
     parser.add_argument("--online", action="store_true", help="real portal and gateway; mail stays dry")
+    parser.add_argument("--db", help="replay on a copy of this database instead of a fresh one")
     args = parser.parse_args()
-    db_path = settings().db_path
+    db_path = args.db or settings().db_path
     if args.capture:
         print(json.dumps(_stored(db_path, "SELECT data FROM messages WHERE id = ?", args.capture)[0], indent=2))
         return
@@ -101,7 +127,7 @@ def main() -> None:
         raws = [json.loads(args.fixture.read_text())]
     else:
         parser.error("a fixture, --session or --capture")
-    raise SystemExit(asyncio.run(replay(raws, args.online)))
+    raise SystemExit(asyncio.run(replay(raws, args.online, args.db)))
 
 
 if __name__ == "__main__":
