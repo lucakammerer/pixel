@@ -439,6 +439,24 @@ async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(co
     ]
 
 
+async def test_a_packing_spec_whose_table_bears_out_its_volume_outweighs_the_mail(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    # Round 33: the mail says 2.78 cbm (120 x 40 x 116 cm), the attached spec 1.92 cbm and a table row of
+    # 5 pieces of 40 x 120 x 80 cm. The scorer priced 1.92: our 1475.00 on 464.26 kg was rejected as too high.
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures" / "mails" / "rfq-sli-volume-differs-from-mail.json").read_text()
+    )
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(292), Decimal("1.92"), 5)
+    evidence = next(kw["payload"]["sources"] for kind, kw in emitted if kind == "rfq.evidence")
+    assert evidence["volume_cbm"] == ["SLI_53351.pdf"]
+
+
 @pytest.mark.parametrize(
     "body, model_kg, model_cbm, pieces, expected",
     [
