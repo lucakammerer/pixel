@@ -19,8 +19,11 @@ CODE = r"\b([A-Z]{3})\b"
 ARROW = r"(?:->|→|–|—|-|>|(?i:\bto\b)|(?i:\bnach\b))"
 PAIR = re.compile(rf"{CODE}\s*{ARROW}\s*{CODE}")
 PAIR_NAMED = re.compile(rf"\(([A-Z]{{3}})\)[^()\n]{{0,60}}?{ARROW}[^()\n]{{0,60}}?\(([A-Z]{{3}})\)")
-ORIGIN_LABEL = re.compile(rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b)\s*:?[^\n:]{{0,30}}?{CODE}")
-DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b)\s*:?[^\n:]{{0,30}}?{CODE}")
+AIRPORT_WORD = r"(?:\s+(?:airport|flughafen))?"
+ORIGIN_LABEL = re.compile(
+    rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
+)
+DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
 
 NUM = r"(\d[\d.,']*)"
 WEIGHT = (
@@ -319,7 +322,6 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     if door and not postcode:
         missing.append("pickup_postcode")
     currency = (data.get("currency") or "").strip().upper() or None
-    language = (data.get("language") or "").strip().lower()[:2]
     return Rfq(
         session_id=message.session_id,
         message_id=message.id,
@@ -334,7 +336,7 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
         pickup_postcode=postcode,
         pickup_zone=zone_of(postcode) if postcode else None,
         currency=currency if currency and re.fullmatch(r"[A-Z]{3}", currency) else None,
-        language=language if re.fullmatch(r"[a-z]{2}", language) else _language(text),
+        language=_language(text),  # the model answered "de" for an English mail with German place names
         received_at=deadline.received_at,
         deadline_at=deadline.expires_at,
         extracted_by="model",
