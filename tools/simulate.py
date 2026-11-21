@@ -280,6 +280,8 @@ def document_cases(seed: int = 7, step: int = 1) -> list[Case]:
         axes = dict(zip(DOCUMENT_AXES, values, strict=True))
         if i % step or (axes["totals"] == "only" and axes["rows"] == "2"):
             continue  # without a table its rows are invisible: the same case as one row
+        if axes["relation"] == "inconsistent" and axes["totals"] in ("none", "only"):
+            continue  # no stated total or no table to contradict it: the same document as doc_volume
         cases.append(_document_case(i, axes, seed))
     return cases
 

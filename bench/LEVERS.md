@@ -311,16 +311,16 @@ Columns: **Ex.** = the one-factor mutation · **Live** = round · **Code** · **
 | b3 | Doc as **csv** | "Length (cm),Width…\n120,40,80,5,292" | – | **NO**: decoded, but `_table` cell regex `\d[\d.,]*` swallows "120,40,80" as one cell; no table, so the mail wins | none | H | 60 |
 | b4 | Doc as xls | old Excel | – | NO: `_lines` has no `.xls` reader | none | M | 60 |
 | b5 | Column order | 5 orders | r34 | YES `_table` by header | bench 11 | H | – |
-| b6 | **Table only, no total lines** | drop "Total gross weight" | – | **NO** (known gap: `_document_weight` / `_document_volume` need a stated total) | bench 11 `table_only` 0/45 | **H** | 60 |
-| b7 | **Weight per piece column** | "Weight/pc (kg)" | – | **NO** (known gap: `EACH_WEIGHT` returns None) | bench 11 `weight_per_piece` 0/45 | **H** | 60 |
-| b8 | Doc units lbs / inches / feet | "Weight (lbs)", "Length (in)" | – | NO: `COLUMN` unit is mm/cm/m/kg only; inches read as cm, so the table disagrees and the mail wins | none | M | 60 |
+| b6 | **Table only, no total lines** | drop "Total gross weight" | – | YES `_document_facts` sums the table | bench 11 `table_only` 315/315 | **H** | – |
+| b7 | **Weight per piece column** | "Weight/pc (kg)" | – | YES `_table_totals` multiplies by the row's pieces | bench 11 `weight_per_piece` 315/315 | **H** | – |
+| b8 | Doc units lbs / inches / feet | "Weight (lbs)", "Length (in)" | – | PARTIAL: a weight column in lb is converted (`_table_totals`); inches and feet read as cm, so the table disagrees and the mail wins | none | M | 60 |
 | b9 | Dims in one column | "Dimensions (cm): 120x40x80" | – | NO: `_table` needs separate L/W/H columns | none | M | 60 |
 | b10 | Transposed table / key-value per piece | "Piece 1: L 120, W 40…" | – | NO | none | M | 60 |
 | b11 | Headers in fr/es/it | "Longueur", "Poids brut" | – | NO: `COLUMN` en/de only | none | M | 60 |
-| b12 | Net and gross weight columns | two kg columns | – | NO: `_document_weight` refuses at >1 weight column, so the mail wins | none | M | 60 |
+| b12 | Net and gross weight columns | two kg columns | – | PARTIAL: two weight columns give no table weight; a labelled total still counts | none | M | 60 |
 | b13 | Total row inside the table / subtotals | "TOTAL 5 … 292" | – | PARTIAL: row cell count breaks the loop (OK); a subtotal row would double count | none | M | 60 |
-| b14 | **Pieces: doc vs mail** | mail 7, doc 5 | – | NO (known gap); low price impact unless per-piece | bench 11 pieces 0/270 | M | 0–60 |
-| b15 | **Destination: doc vs mail** | mail AMM, doc CAI | – | NO (known gap); hypothesis that the scorer prices the doc lane | bench 11 destination 0/270 | M | 60 |
+| b14 | **Pieces: doc vs mail** | mail 7, doc 5 | – | YES: the document's pieces win | bench 11 pieces 270/270 | M | – |
+| b15 | **Destination: doc vs mail** | mail AMM, doc CAI | – | YES when the document carries the mail's cargo, else another shipment | bench 11 destination 270/270 | M | – |
 | b16 | Origin: doc vs mail | mail FRA, doc MUC | – | NO, **and not in the generator** (`CHANGES` lacks origin) | none | M | 60 |
 | b17 | Ready date / wish / currency / DG in doc vs mail | doc "Service: Express" | r10 (DG only) | NO except DG (`dangerous_goods`) | test_dangerous | M | 60 |
 | b18 | Pickup address in doc vs mail | doc "Pickup: 80331", mail "36627" | – | PARTIAL: `_document_pickup` uses the doc only when the mail has none | test_extract | M | 60 |

@@ -31,7 +31,7 @@ def with_attachment(message):
 
 
 async def test_mail_weight_and_attached_volume_both_reach_pricing(conn):
-    ctx = make_ctx(conn, PackingList("Gross weight: 80 kg\nTotal volume: 10 cbm"))
+    ctx = make_ctx(conn, PackingList("Total volume: 10 cbm"))
     msg = with_attachment(mail("Please quote AAA-BBB, total gross weight 100 kg. See the attached packing list."))
     rfq = await extract.extract(ctx, msg, DEADLINE)
     assert (rfq.weight_kg, rfq.volume_cbm, calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)) == (100, 10, 1670)

@@ -161,20 +161,22 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself.
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
-  excludes attachments that explicitly name a different origin or destination airport. For weight and volume,
-  an explicit email correction takes precedence. When the customer names one eligible attachment to use,
-  its corroborated figures can resolve disagreement between attachments. A unique attachment value can still
-  supply a missing field. Round 33: the mail said 2.78 cbm (120 x 40 x 116 cm), the attached
-  packing spec 1.92 cbm with a table row of 5 pieces of 40 x 120 x 80 cm, and the scorer priced 1.92. A volume a
-  document states and its own table or dimensions times pieces bear out (`_document_volume`, `_table_volume`) wins
-  over the mail's. A stated volume nothing in the document confirms does not. The same holds for the gross weight
-  (round 35: the mail said 2644 kg, the spec 1751 kg in its total and its row): `_document_weight` takes the
-  document's total only when the table's one weight column, headed in kg, adds up to it within 0.5 kg. A row's
-  weight is never multiplied by its pieces; a column without kg, a second weight column or a weight per piece leaves
-  the mail standing. Live requests 2264 and 2537 had
-  attachments that agreed with their mails. `rfq.evidence` records the chosen sources and any attachment airport
-  conflicts. A positive weight recovered by code clears
-  the missing-weight flag. A document number alone is no pickup postcode.
+  excludes attachments that name a different origin or destination airport (another shipment, #164). For weight
+  and volume, an explicit email correction takes precedence, and "use the weight in this email" keeps the mail's.
+  When the customer names one eligible attachment to use, only that one counts. Otherwise what the document states
+  wins over the mail (rounds 33 to 35: the mail said 2.78 cbm, 11.69 cbm, 2644 kg; the scorer priced the attached
+  spec's 1.92 cbm, 7.49 cbm, 1751 kg). `_document_facts` reads one document: its labelled totals ("Total pieces",
+  "Bruttogewicht gesamt (kg)", "Volume: 7.25 cbm"), the totals of its packing table (`_table_totals`: sum of
+  weights, sum of L × W × H × pieces), or both. A weight column marked per piece ("per pc", "each", "/pc", "unit",
+  "je Stück") is multiplied by the row's pieces; a weight column in lb is converted; with no unit or a second
+  weight column the table gives no weight. A document whose totals and table disagree settles nothing: the mail
+  stands. Several documents count only when they agree. A table header ending in "Gross weight (kg)" ran into the
+  first row ('5' kg, volume 0): a labelled figure never comes from the next line, and the totals are read off the
+  text around the table. A document that names only another destination but carries the mail's own weight (and
+  pieces and volume where both state them) is this shipment with the lane mistyped in the mail: its destination
+  wins. Live requests 2264 and 2537 had attachments that agreed with their mails. `rfq.evidence` records the chosen
+  sources and any attachment airport conflicts. A positive weight recovered by code clears the missing-weight
+  flag. A document number alone is no pickup postcode.
 - A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
   to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.
 - A pickup "from our warehouse" can name no postcode and no town but the signature's (round 15): truckers then answer
