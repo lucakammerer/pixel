@@ -6,8 +6,8 @@ the options the session had; the result is a `feedback` event in that session. F
 the trucker the scorer took, and `pickup_rule` picks the balanced rule that agrees with those most often.
 
 What the service cannot correct itself goes out: `attention` lists what went wrong lately, `alert` calls
-PIXEL_ALERT_URL with it, once per kind of issue and deployed commit, so the same fault is reported again only
-after new code had its chance.
+PIXEL_ALERT_URL with what cost or may cost points, once per kind of issue and deployed commit and only for what
+happened since this process started, so the same fault is reported again only after new code had its chance.
 """
 
 import asyncio
@@ -36,6 +36,8 @@ ALERT_MINUTES = 15
 VERSION = subprocess.run(
     ["git", "rev-parse", "--short", "HEAD"], check=False, capture_output=True, text=True
 ).stdout.strip()
+STARTED = datetime.now(UTC).isoformat()[:19]  # this commit answers for what happens from here on
+REPAIRABLE = {"missed", "rejected", "no_answer", "lost_points", "tracking_unmatched", "error"}
 
 
 def time_points(seconds: float) -> Decimal:
@@ -149,7 +151,7 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "lost_points"
         elif row["kind"] == "tracking.answered" and not p.get("shipments"):
             issue = "tracking_unmatched"
-        elif row["kind"] == "error" and p.get("where") != "alert":
+        elif row["kind"] == "error" and p.get("where") not in ("alert", "poll"):  # not ours: the hook, the API
             issue = "error"
         elif row["kind"] == "human.note" and p.get("note"):
             issue = "reply_unhandled"
@@ -164,7 +166,8 @@ async def alert(ctx: Context) -> int:
     if not ctx.settings.alert_url:
         return 0
     sent = json.loads(db.get(ctx.db, ALERTED) or "{}")
-    new = {i["issue"]: i for i in reversed(attention(ctx.db, ALERT_MINUTES)) if f"{i['issue']}@{VERSION}" not in sent}
+    new = {i["issue"]: i for i in reversed(attention(ctx.db, ALERT_MINUTES))
+           if i["issue"] in REPAIRABLE and i["at"] >= STARTED and f"{i['issue']}@{VERSION}" not in sent}  # fmt: skip
     if not new:
         return 0
     sent.update({f"{issue}@{VERSION}": i["at"] for issue, i in new.items()})
