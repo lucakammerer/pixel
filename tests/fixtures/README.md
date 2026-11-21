@@ -32,6 +32,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   request, a sender on the carrier list) and the kind a right router gives.
 - `mails/bid_probes.jsonl`: carrier answers with the total, currency and transit a right reader takes from them.
   Refusing is always safe: the model reads the answer then.
+- `pickup-offer-layouts.json`: trucker offers sent only as an attachment (letter, table, quotation), with the
+  attachment's text as `tariffs.agent._lines` reads it, the price and the pickup hours a right reader takes.
 - Spreadsheet changes need no files: `tools/benchmark_generalization.py` `XLSX_CHANGES` edits every kit `.xlsx` in
   memory and requires the original's tariffs or a refusal. Known gaps for them go in
   `tariffs/variants/xlsx_known_gaps.json`, keyed `change:file`.

@@ -34,12 +34,20 @@ TOTAL_BEFORE = re.compile(
     TOTAL_LABEL + r"(?:\s+(?:freight|air|rate|price|cost|charge|is|of|amount))*[\s:=,-]*$", re.IGNORECASE
 )
 TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE)
+# An offer letter: "Our price for this transport is 273.20 EUR. It has a base charge of 104.00 EUR and ..."
+PRICE_IS = re.compile(r"\b(?:our|the|this)\s+price\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)\s*$", re.IGNORECASE)
+# An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none.
+HEADER_CURRENCY = re.compile(rf"\((?P<c>{CURRENCY})\)")
+TOTAL_LINE = re.compile(rf"^\s*{TOTAL_LABEL}[\s:,-]*(?P<n>{AMOUNT})\s*$", re.IGNORECASE)
 KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
 KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
 # A basis other than the whole shipment ("per pallet", "/ 100 kg"); "per shipment" or "per AWB" is the flat total.
 FLAT = r"(?!(?:shipment|consignment|awb|air\s*waybill|sendung|auftrag)\b)"
-OTHER_BASIS = re.compile(rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE)
+# "45.00 EUR for each hour" of waiting is a surcharge per unit, never the offer's price.
+OTHER_BASIS = re.compile(
+    rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro|je|(?:for\s+)?each|an?)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE
+)
 TRANSIT = re.compile(
     r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b",
     re.IGNORECASE,
@@ -107,7 +115,12 @@ def _rate(text: str) -> Decimal:
 def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
     found, labelled = set(), set()
     unresolved_unit = False
+    headers = {m.group("c") for m in HEADER_CURRENCY.finditer(text)}
     for line in FX.sub("", text).splitlines():
+        if len(headers) == 1 and (m := TOTAL_LINE.match(line)):
+            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), next(iter(headers)))
+            found.add(price)
+            labelled.add(price)
         prices = list(PRICED.finditer(line))
         for i, m in enumerate(prices):
             before = line[prices[i - 1].end() if i else 0 : m.start()]
@@ -121,7 +134,7 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
             currency = m.group("c1") or m.group("c2")
             price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency, currency))
             found.add(price)
-            if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after):
+            if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after) or PRICE_IS.search(before):
                 labelled.add(price)
     if unresolved_unit and not labelled:
         return None

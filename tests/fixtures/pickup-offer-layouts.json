@@ -1,0 +1,41 @@
+{
+  "note": "Trucker offers of rounds 63 and 64 (21.11.2026), sent only as an attachment: the mail body and the attachment's text as tariffs.agent._lines reads it. The waiting time per hour is never the price.",
+  "offers": [
+    {
+      "layout": "letter",
+      "file": "offer-letter-TRK-5732.pdf",
+      "body": "Dear customer,\n\nthank you for your enquiry. Our offer letter is attached to this mail as a PDF file (offer-letter-TRK-5732.pdf).\n\nOur offer number is TRK-5732. You do not need to book.\n\nKind regards\nDispatch, Westfalenroute\nwestfalenroute@hackloop.mail",
+      "attachment_text": "Westfalenroute\nwestfalenroute@hackloop.mail\n21 November 2026\nOur offer TRK-5732: collection in 51252\nDear customer,\nthank you for your enquiry. We can collect your goods at postcode 51252 and deliver them to\nCologne airport (CGN). We calculated with a chargeable weight of 1410 kg.\nOur price for this transport is 273.20 EUR (two hundred seventy-three euros and twenty\ncents). This price is all-in. It has a base charge of 104.00 EUR and a weight charge of\n169.20 EUR.\nOur driver can be at the pickup address 11 hours after your order. We keep this price until\n21 Nov 2026 21:32 UTC. You do not need to book: give our offer number TRK-5732 in your\nquotation.\nKind regards\nDispatch, Westfalenroute",
+      "total": "273.20",
+      "currency": "EUR",
+      "pickup_hours": 11
+    },
+    {
+      "layout": "table",
+      "file": "price-offer-TRK-5733.pdf",
+      "body": "Good day,\n\nthank you for your request. You find our price offer in the attachment, as a PDF file (price-offer-TRK-5733.pdf).\n\nThe offer number is TRK-5733. No booking is necessary: give this number when you use the price.\n\nElbkante Logistik\nelbkante-logistik@hackloop.mail",
+      "attachment_text": "OFFER TRK-5733\nElbkante Logistik | elbkante-logistik@hackloop.mail\nOffer valid until 21 Nov 2026 21:32 UTC\nOffer date 21 Nov 2026 21:17 UTC\nLead time 29 hours from order to collection\nRoute 51252 (zone 51) to CGN Cologne\nPos Description Quantity Unit price (EUR) Amount (EUR)\n1 Base charge, zone 51 1 67.00 67.00\n2 Weight charge 1410 kg 0.07 98.70\nTotal 165.70\nNot part of this offer: waiting time at the pickup address after the first 30 minutes, 45.00\nEUR for each hour.\nNo booking is necessary. Give the offer number when you use this price.",
+      "total": "165.70",
+      "currency": "EUR",
+      "pickup_hours": 29
+    },
+    {
+      "layout": "quotation",
+      "file": "quotation-TRK-5852.txt",
+      "body": "Hello,\n\nthank you for your request. Please find our quotation attached as a text file (quotation-TRK-5852.txt).\n\nYour offer reference is TRK-5852, and no booking is needed.\n\nBest regards\nHansekogge Trucking\nhansekogge-trucking@hackloop.mail",
+      "attachment_text": "PICKUP QUOTATION\n========================================================================\nHansekogge Trucking\n\nQuotation no.       TRK-5852\nDate                21 Nov 2026 21:23 UTC\n\nPickup              postcode 20103\nDelivery            Hamburg airport (HAM)\nChargeable weight   827 kg\n\nCharge                                  Amount\n----------------------------------------------\nPickup and delivery to HAM airport  122.89 EUR\n----------------------------------------------\nTotal, all-in                       122.89 EUR\n\nIn words            one hundred twenty-two euros and eighty-nine cents\nCollection          in 31 hours\nValid until         21 Nov 2026 21:38 UTC\n\nhansekogge-trucking@hackloop.mail",
+      "total": "122.89",
+      "currency": "EUR",
+      "pickup_hours": 31
+    },
+    {
+      "layout": "table_waiting_time_same_line",
+      "file": "price-offer-TRK-5849.txt",
+      "body": "Good day,\n\nthank you for your request. You find our price offer in the attachment, as a text file (price-offer-TRK-5849.txt).\n\nThe offer number is TRK-5849. No booking is necessary: give this number when you use the price.\n\nRheinufer Spedition\nrheinufer-spedition@hackloop.mail",
+      "attachment_text": "OFFER TRK-5849\n========================================================================\nRheinufer Spedition  |  rheinufer-spedition@hackloop.mail\n\nOffer valid until   21 Nov 2026 21:38 UTC\nOffer date          21 Nov 2026 21:23 UTC\nLead time           28 hours from order to collection\nRoute               20103 (zone 20) to HAM Hamburg\n\nPos  Description           Quantity  Unit price (EUR)  Amount (EUR)\n-------------------------------------------------------------------\n1    Base charge, zone 20         1             55.00         55.00\n2    Weight charge           827 kg              0.06         49.62\n-------------------------------------------------------------------\n     Total                                                   104.62\n\nNot part of this offer: waiting time at the pickup address after the\nfirst 30 minutes, 45.00 EUR for each hour.\nNo booking is necessary. Give the offer number when you use this price.",
+      "total": "104.62",
+      "currency": "EUR",
+      "pickup_hours": 28
+    }
+  ]
+}

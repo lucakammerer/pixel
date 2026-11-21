@@ -229,6 +229,21 @@ def test_rules_read_the_captured_airline_bid_and_pickup_bid():
     assert (pickup.total, pickup.currency) == (D("182.62"), "EUR")
 
 
+OFFERS = json.loads((Path(__file__).parent / "fixtures" / "pickup-offer-layouts.json").read_text())["offers"]
+
+
+@pytest.mark.parametrize("offer", OFFERS, ids=[o["layout"] for o in OFFERS])
+def test_rules_read_every_attached_offer_layout_and_never_the_waiting_time(offer):
+    """Rounds 63 and 64: a letter, a table with its currency only in the header, a quotation. "45.00 EUR for each
+    hour" of waiting read as the price would quote the pickup far too low; a model call per trucker costs spend."""
+    body = bids._own_text(offer["body"]) + "\n" + offer["attachment_text"]
+    message = Message(id=9, session_id=1, direction="in", sender="t@x", to="us@x", subject="Re: Pickup", body=body,
+                      sent_at=NOW)  # fmt: skip
+    found = bids.parse(message, rfq(), needs_transit=False)
+    assert (str(found.total), found.currency, bids._pickup_hours(body)) == (
+        offer["total"], offer["currency"], offer["pickup_hours"])  # fmt: skip
+
+
 async def test_a_pickup_price_in_an_attached_offer_is_read(ctx, monkeypatch):
     """Round 63: every trucker priced the pickup in an attachment (pdf, docx, mp3); the body says only "see the
     attachment". Read without the file, no pickup was priced and the airport-only fallback was rejected as too low."""

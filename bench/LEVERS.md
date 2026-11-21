@@ -87,7 +87,7 @@ What the repo shows:
 | R13 Portal /rates | rate_id or a field missing → e5 N [M4] | price, fx, transit Y | e5 renamed field, GBP fx key, transit_hours N/P [M4] | e9 rates only on the page or desk N [M4] | e8 portal ≠ sheet Y | extra fields Y | e4 shorter validity Y; **n29** slow responses P | e1 429, e2 503, 5xx/timeouts Y |
 | R14 Portal /bookings | ?? | price ≠ quote (r19) Y | **n31** response field renamed: KeyError in `book` is uncaught, so no booking and no notice N [M4] | ?? | ?? | ?? | e4 410 Y | e3 503 Y; **n30** 404/409 → failed, no recovery P [M4] |
 | R15 Rate desk mail | e9 never asked N [M4] | e9 N | e9 rigid `parse_desk` N [M4] | own thread Y | NA | NA | ?? | NA |
-| R16 Airline bid | no transit / no currency P (model) | f2 non-EUR without fx N [M9]; f5 conditional P | f1 Y; f3 validity before transit Y; f4 two levels P; hours Y | f7 new thread N [M4]; f8 PDF attachment N [M4] | f4 two prices P | weight restated, references Y | f13 late Y | NA |
+| R16 Airline bid | no transit / no currency P (model) | f2 non-EUR without fx N [M9]; f5 conditional P | f1 Y; f3 validity before transit Y; f4 two levels P; hours Y | f7 new thread N [M4]; f8 PDF attachment Y | f4 two prices P | weight restated, references Y | f13 late Y | NA |
 | R17 Trucker bid | f9 no pickup hours P [M7] | f11 extra fees P | f9 "tomorrow 08:00" P [M7]; "10.5 h" Y | f7 new thread N [M4] | f11 P | clock times Y | late Y | f10 asks for a postcode Y |
 | R18 Booking confirmation | h2 no reference P [M4] | **n32** confirmed price or flight ≠ ours U | h1 Y | own thread / our thread Y (6adaf83) | n32 U | h1 refusal Y | h3 early or duplicate P | NA |
 | R19 Tracking question | h4 no weight / postcode P [M7] | unknown shipment → "none" Y | h4 city names, lbs; h5 AWB N/P [M7] | c8 from the customer thread N [M3] | desk postcode vs ours Y (r19) | another customer's name Y | question before confirmation P | NA |
@@ -398,7 +398,7 @@ Columns: **Ex.** = the one-factor mutation · **Live** = round · **Code** · **
 | f5 | Conditional price | "subject to space", "+EUR 50 if…" | – | PARTIAL (read as price) | none | L | 60 |
 | f6 | Declines, soft declines | – | 14:13 | YES | bench 7 | M | – |
 | f7 | **Bid in a new thread** (no in_reply_to) | – | – | **NO**: router says carrier_bid, but `poller.session_of` returns a new session id, and `bids.record` gives "bid for a session without an RFQ"; lost (bench 6 checks only the kind) | bench 6 (kind only) | M | 60 |
-| f8 | Bid as PDF attachment | "offer attached" | – | NO: `record` reads the body only | bench 6 (kind only) | M | 60 |
+| f8 | Bid as PDF attachment | "offer attached" | – | YES: `_with_attachments` adds pdf, docx, txt text; rules read letter, table and quotation layouts; audio still unread | `tests/test_bids.py` offer layouts | M | 60 |
 | f9 | Trucker pickup time as date/day | "pickup tomorrow 08:00", "next working day" | – | PARTIAL: `_pickup_hours` None, so the balanced pick is replaced by cheapest (`engine.combine`) | test_bids | M | 60 |
 | f10 | Trucker asks for postcode / declines zone | – | r15 | YES (zone first postcode) | test_bids | M | 60 |
 | f11 | Trucker extra fees | "+ waiting time EUR 40", "tail-lift +25" | – | PARTIAL (multiple prices give None, then the model's sum) | bid_probes breakdown | M | 60 |
