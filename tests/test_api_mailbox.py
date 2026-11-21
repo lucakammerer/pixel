@@ -57,4 +57,10 @@ async def test_send_is_not_repeated_after_a_5xx(config):
 def test_a_mail_in_an_unknown_shape_still_maps_and_says_what_is_missing():
     raw = {"id": 7, "subject": "s", "body": "b"}
     assert to_message(raw, "in").id == 7
-    assert mapping_gaps(raw) == ["from", "to", "created_at"]
+    assert mapping_gaps(raw) == ["from", "to", "received_at"]
+
+
+def test_a_captured_mail_maps_without_gaps():
+    raw = json.loads((MAILS / "bid-decline-lane.json").read_text())
+    assert mapping_gaps(raw) == []
+    assert to_message(raw, "in").sent_at.isoformat() == raw["received_at"]
