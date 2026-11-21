@@ -235,6 +235,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   attachment" (round 63: all four did, one as an mp3). `pricing/bids.py` `record` reads the body together with
   every attachment code can read (`_with_attachments`); an unreadable file is an `error` event, the others still
   count.
+- A carrier's answer comes in more shapes than the captured ones: `tools/simulate.py --family bid` generates them
+  (place, layout, distractor, currency). Found there: a pdf wraps "for 256.85" and "EUR." onto two lines
+  (`bids.UNWRAP` joins them), the Swiss "CHF 2'748.45" groups thousands with an apostrophe, a table total whose
+  currency is not an ISO code in the header leaves an unlabelled amount elsewhere no price (`_price` refuses), and
+  another lane's "transit time of 5 days" next to ours makes the transit unclear (`_days` refuses).
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

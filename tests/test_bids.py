@@ -391,3 +391,22 @@ def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days
 )
 def test_pickup_hours_read_a_decimal_and_skip_a_clock_time(text, hours):
     assert bids._pickup_hours(text) == hours  # 10.5 read as 5 and 09:00 h as 0 pick the wrong trucker
+
+
+@pytest.mark.parametrize(
+    "text, price",
+    [
+        ("Our all-in rate is CHF 2'748.45, including fuel.", (D("2748.45"), "CHF")),  # read as CHF 2
+        ("and deliver it to DUS airport for 256.85\nEUR.\nNote: the other postcode would be 28.22 EUR.",
+         (D("256.85"), "EUR")),  # a pdf line wrap left the note's price alone
+        ("Amount (€)\nBase charge  47.55\nTotal  124.65\nNote: the other postcode would be 74.98 €.", None),
+    ],
+)  # fmt: skip
+def test_generated_bids_never_take_another_amount_for_the_price(text, price):
+    """tools/simulate.py, family bid: each of these took a wrong figure as the offer's price."""
+    assert bids._price(text, rfq()) == price
+
+
+def test_two_labelled_transit_times_are_no_transit():
+    text = "Note: our rate to CAI last week was EUR 900.00, with a transit time of 5 days.\nTransit time: 2 days"
+    assert bids._days(text) is None  # the first one, another lane's, was quoted

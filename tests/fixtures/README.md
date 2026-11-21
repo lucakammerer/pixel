@@ -41,7 +41,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   contradicts, silent, an explicit correction in four wordings, another shipment's document, a document that
   contradicts itself), which source a right reading takes for weight and volume, and the round or pull request that
   says so. The generator computes each case's answer from its own figures and this table, never from the code.
-  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
+  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`, and
+  for carrier answers (`bid`) also the classes left to the model, which cost a gateway call per bid;
   `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
