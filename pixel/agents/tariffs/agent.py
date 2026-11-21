@@ -4,6 +4,7 @@ import hashlib
 import io
 import itertools
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -28,6 +29,13 @@ LEAD_COLUMN = re.compile(
     r"\b(?:(?P<transit>transit|laufzeit|t/t)|(?P<minimum>minimum|min\.|mindest\w*))(?!\w)", re.IGNORECASE
 )
 IMAGES = {".jpg", ".jpeg", ".png"}
+AUDIO = {".mp3", ".wav", ".m4a", ".ogg"}
+SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
+# Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
+SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
+SPOKEN_EUR = re.compile(r"(\d[\d,.]*)\s*euros?\b", re.IGNORECASE)
+_speech: list = []
+_speech_lock = threading.Lock()
 VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
 RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
@@ -124,7 +132,32 @@ def _lines(filename: str, content: bytes) -> list[str]:
             return content.decode("utf-8").splitlines()
         except UnicodeDecodeError:
             return content.decode("latin-1").splitlines()
+    if suffix in AUDIO:
+        return _spoken(_transcribe(content))
     raise ValueError(f"no code parser for {suffix or filename}")
+
+
+def _transcribe(content: bytes) -> list[str]:
+    """A voice message as one line per spoken sentence, by a local model: no gateway spend. Slow: run it in a thread."""
+    import av
+    import numpy as np
+    from faster_whisper import WhisperModel
+
+    with av.open(io.BytesIO(content)) as container:
+        resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
+        pcm = [f.to_ndarray() for frame in container.decode(audio=0) for f in resampler.resample(frame)]
+    audio = np.concatenate(pcm, axis=1).flatten().astype(np.float32) / 32768
+    with _speech_lock:
+        if not _speech:
+            _speech.append(WhisperModel(SPEECH_MODEL, device="cpu", compute_type="int8"))
+        segments, _ = _speech[0].transcribe(audio, beam_size=1)
+        return [segment.text.strip() for segment in segments]
+
+
+def _spoken(lines: list[str]) -> list[str]:
+    return [
+        SPOKEN_EUR.sub(r"\1 EUR", SPOKEN_CENTS.sub(lambda m: f"{m[1]}.{int(m[2]):02d} EUR", line)) for line in lines
+    ]
 
 
 def _codes(text: str, currency: str | None) -> list[str]:

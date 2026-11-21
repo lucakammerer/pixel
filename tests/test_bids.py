@@ -12,6 +12,7 @@ import pytest
 
 from pixel import llm
 from pixel.agents.rfq import agent, extract
+from pixel.agents.tariffs.agent import _spoken
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import LaneTariff, LlmResult, Message, RateOption, Rfq, Source
@@ -236,9 +237,11 @@ OFFERS = json.loads((Path(__file__).parent / "fixtures" / "pickup-offer-layouts.
 
 @pytest.mark.parametrize("offer", OFFERS, ids=[o["layout"] for o in OFFERS])
 def test_rules_read_every_attached_offer_layout_and_never_the_waiting_time(offer):
-    """Rounds 63 and 64: a letter, a table with its currency only in the header, a quotation. "45.00 EUR for each
-    hour" of waiting read as the price would quote the pickup far too low; a model call per trucker costs spend."""
-    body = bids._own_text(offer["body"]) + "\n" + offer["attachment_text"]
+    """Rounds 63 to 65: a letter, a table with its currency only in the header, a quotation, a voice message. "45.00
+    EUR for each hour" of waiting read as the price would quote the pickup far too low; a model call per trucker
+    costs spend."""
+    text = offer.get("attachment_text") or "\n".join(_spoken(offer["transcript"]))
+    body = bids._own_text(offer["body"]) + "\n" + text
     message = Message(id=9, session_id=1, direction="in", sender="t@x", to="us@x", subject="Re: Pickup", body=body,
                       sent_at=NOW)  # fmt: skip
     found = bids.parse(message, rfq(), needs_transit=False)

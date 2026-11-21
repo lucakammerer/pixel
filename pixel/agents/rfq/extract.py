@@ -98,7 +98,8 @@ HURRY = re.compile(
 )
 DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
-    r"|collection from|collect from|abhol\w*|ab werk|ab haus",
+    r"|collection from|collect from|abhol\w*|ab werk|ab haus"
+    r"|collect (?:the )?(?:goods|cargo|shipment|freight)|arrange (?:the|a) truck",  # a voice message's own words
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
@@ -676,8 +677,8 @@ async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[s
     files = []
     for attachment in message.attachments:
         try:
-            files.append((attachment.filename, _lines(attachment.filename,
-                                                      await ctx.mailbox.attachment(message.id, attachment.id))))  # fmt: skip
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            files.append((attachment.filename, await asyncio.to_thread(_lines, attachment.filename, content)))
         except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
             events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
                         payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip

@@ -399,7 +399,8 @@ async def _with_attachments(ctx: Context, message: Message) -> str:
     parts = [_own_text(message.body)]
     for attachment in message.attachments:
         try:
-            parts += _lines(attachment.filename, await ctx.mailbox.attachment(message.id, attachment.id))
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            parts += await asyncio.to_thread(_lines, attachment.filename, content)  # a voice message takes seconds
         except Exception as e:  # noqa: BLE001  an unreadable file (a voice message) must not lose the body
             events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
                         payload={"where": "bid_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
