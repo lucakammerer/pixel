@@ -103,6 +103,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   answer. The tracking answer signed "Best regards" where Lena's quote and booking to the same customer said "Viele
   Grüße" or "Best regards to Regensburg"; it now signs off as the quote did, every fact and the record block
   unchanged. Next: the tracking total after the next question, the human column.
+- 21.11. 18:25 CET: round 24 accepted (60) and booked; round 23's tracking answer went out signed "Best regards to
+  Regensburg" with every fact as before. The quote read "Going well here, thanks! Thanks for your request, happy to
+  help with the laboratory glassware ready.": the small-talk answer no longer thanks (the opening line does), and
+  the goods stop before "ready". Next: the tracking total, the human column.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
