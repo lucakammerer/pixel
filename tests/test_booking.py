@@ -304,3 +304,15 @@ async def test_reentry_after_interrupted_acceptance_reuses_team_reference(pipe, 
     pipe.ctx.portal = Portal(None)
     await booking.handle_reply(pipe.ctx, accepted)
     assert pipe.ctx.portal.calls == [first] and len(pipe.sent) == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Looks good, please book it and pass on the AWB number.",
+        "Please go ahead. Leider nicht vor Montag abholbereit.",
+        "Price is fine, not too high. Book it.",
+    ],
+)
+def test_an_acceptance_that_names_a_decline_word_still_books(text):
+    assert booking.intent(text) == "accept"

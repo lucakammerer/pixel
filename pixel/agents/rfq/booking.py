@@ -25,15 +25,17 @@ ACCEPT = re.compile(
     r"|we['’]ll take (?:it|the offer)|let['’]s (?:book it|proceed)|(?:offer|quote) accepted|accepted"
     r"|bitte\s+buchen(?:\s+sie\s+(?:die|diese)\s+sendung)?|buchen\s+sie\s+bitte(?:\s+die sendung)?"
     r"|wir\s+(?:beauftragen\s+sie|nehmen\s+(?:ihr|das)\s+angebot\s+an)|einverstanden|agreed)"
+    r"(?:\s+and\s+(?:pass on|send|share)\s+(?:the|our|your)\s+(?:AWB(?:\s+number)?|booking reference|tracking number))?"
     r"\s*(?:[,!.]|$)",
     re.IGNORECASE,
 )
 DECLINE = re.compile(
-    r"\b(decline|no thanks|too (?:low|high)|not competitive|pass on|not interested|too expensive|went with|"
+    r"\b(decline|no thanks|(?<!not )too (?:low|high)|not competitive|pass on (?:this|it|that|your offer)|not interested|"
+    r"too expensive|went with|"
     r"another (?:offer|forwarder)|"
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:yet\s+)?(?:go ahead|accept(?:ed)?|book(?:ed)?|proceed|confirm(?:ed)?|take it|move forward|be moving forward)|"
-    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
+    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
     re.IGNORECASE,
 )
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
