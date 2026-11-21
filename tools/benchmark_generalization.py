@@ -17,8 +17,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`, and on every captured pickup offer
    (`pickup-offer-layouts.json`) with one change each (`PICKUP_CHANGES`): its total, currency and pickup hours.
 8. Spreadsheet changes: layout-only edits of every kit xlsx parse to the original's tariffs or are refused.
-9. Captured requests: every `mails/rfq-*.json` read by the rules against the fields a person read from the mail
-   (`rfqs/live.jsonl`), with the score per field.
+9. Captured requests: every `mails/rfq-*.json` with its embedded attachments read by the rules against the
+   fields a person read from the mail (`rfqs/live.jsonl`), with the score per field.
 10. The same requests changed in ways seen live (an old request quoted below, a reply's subject, pounds): each
    read right or left to the model.
 11. Mail against its attached document (rounds 33 to 35): every figure the document states, changed in the mail,
@@ -38,6 +38,7 @@ Scanned sheets are read by the real `agents.tariffs.agent.read_with_model`, with
 """
 
 import asyncio
+import base64
 import csv
 import json
 import re
@@ -330,6 +331,20 @@ def _live_want(key: str, want):
     return D(want) if key in ("weight_kg", "volume_cbm") and want is not None else want
 
 
+def _rules_with_attachments(raw: dict, deadline) -> Rfq | None:
+    """`extract.read_request`'s rules on a captured mail and its embedded attachments, without its question."""
+    message = to_message(raw, "in")
+    files = [(a["filename"], agent._lines(a["filename"], base64.b64decode(a["content_base64"])))
+             for a in raw.get("attachments", []) if a.get("content_base64")]  # fmt: skip
+    if not files:
+        return extract.by_rules(message, deadline)
+    documents = [(name, extract.own_words("\n".join(lines))) for name, lines in files]
+    sources = extract._shipment_sources([("mail", extract._text(message)), *documents])
+    cargo = extract._cargo_sources(sources)[0]
+    combined = message.model_copy(update={"subject": "", "body": "\n\n".join(content for _, content in sources)})
+    return extract.by_rules(message, deadline, cargo=cargo) or extract.by_rules(combined, deadline, cargo=cargo)
+
+
 def audit_live() -> list[Live]:
     """Every captured customer request (`mails/rfq-*.json`) against `rfqs/live.jsonl`: the fields a person read
     from the mail itself, never from the code's output. A field the row leaves out is not judged (the origin of a
@@ -352,7 +367,7 @@ def audit_live() -> list[Live]:
         if unread := [k for k, v in row["expected"].items() if v == UNREAD]:
             results.append(Live(path.name, True, todo=f"fill in {', '.join(unread)} from the mail"))
             continue
-        rfq = extract.by_rules(to_message(json.loads(path.read_text()), "in"), deadline)
+        rfq = _rules_with_attachments(json.loads(path.read_text()), deadline)
         if rfq is None:
             results.append(Live(path.name, False, judged=list(exp), known_gap=row.get("known_gap")))
             continue

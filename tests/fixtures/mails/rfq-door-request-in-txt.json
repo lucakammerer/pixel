@@ -1,0 +1,19 @@
+{
+  "id": 18357,
+  "from": "rheintal-elektronik@hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "Request for quotation from Rheintal Elektronik GmbH",
+  "body": "Hello,\n\nplease find our request for an air freight quotation attached, as a text file (quotation-request.txt). It has all details of the shipment.\n\nPlease reply by mail with your all-in price in EUR.\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+  "in_reply_to": null,
+  "references": [],
+  "received_at": "2026-11-21T21:35:39.011545+00:00",
+  "attachments": [
+    {
+      "id": 366,
+      "filename": "quotation-request.txt",
+      "content_type": "text/plain",
+      "size": 594,
+      "content_base64": "QWlyIGZyZWlnaHQgcXVvdGUgcmVxdWVzdCB0byBQRUsKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KCkhlbGxvLAoKQ291bGQgeW91IHBsZWFzZSBxdW90ZSB0aGUgY2hlYXBlc3QgYWlyIGZyZWlnaHQgb3B0aW9uIHRvIFBFSyAoQmVpamluZywgQ04pPyBUaGUgc2hpcG1lbnQgd2lsbCBiZSByZWFkeSBmb3IgcGlja3VwIG9uIDIwMjYtMTEtMjUgYXQgb3VyIHNpdGUgaW4gNDUyOTkgKEVzc2VuKSwgR2VybWFueS4gUGxlYXNlIGFycmFuZ2UgdGhlIHRydWNrIGZyb20gb3VyIHNpdGUgdG8gdGhlIGRlcGFydHVyZSBhaXJwb3J0IGFuZCBpbmNsdWRlIHRoaXMgaW4geW91ciBhbGwtaW4gcHJpY2UgaW4gRVVSLgoKVGhlIHNoaXBtZW50IGNvbnNpc3RzIG9mIDQgcGllY2VzIG9mIHByaW50ZWQgbWFya2V0aW5nIG1hdGVyaWFsLCB3aXRoIGEgZ3Jvc3Mgd2VpZ2h0IG9mIDE0OTQga2cgYW5kIGEgdG90YWwgdm9sdW1lIG9mIDQuMjkgY2JtLgoKVGhhbmsgeW91IGluIGFkdmFuY2UgZm9yIHlvdXIgcXVvdGF0aW9uLgoKVmllbGUgR3J1ZXNzZSAvIE1hbnkgZ3JlZXRpbmdzCkRlbml6IFlpbG1hegpSaGVpbnRhbCBFbGVrdHJvbmlrIEdtYkgK"
+    }
+  ]
+}
