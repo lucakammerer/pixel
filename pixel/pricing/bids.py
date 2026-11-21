@@ -45,7 +45,7 @@ TRANSIT = re.compile(
     re.IGNORECASE,
 )
 TRANSIT_EXPLICIT = re.compile(
-    r"(?:transit|laufzeit)[^\d\n]{0,24}" + TRANSIT.pattern,
+    r"(?:(?:transit|laufzeit)[^\d\n]{0,24}" + TRANSIT.pattern + r"|(\d+)\s*(?:days?|tage?|d)\s*(?:transit|laufzeit)\b)",
     re.IGNORECASE,
 )
 TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
@@ -132,11 +132,11 @@ def _days(text: str) -> int | None:
     if match := TRANSIT_HOURS.search(text):
         return calc.transit_days(int(match[1]), hours=True)
     if match := TRANSIT_EXPLICIT.search(text):
-        return calc.transit_days(int(match[1]), hours=False)
+        days_str = next(g for g in match.groups() if g)
+        return calc.transit_days(int(days_str), hours=False)
     for match in TRANSIT.finditer(text):
-        start = max(0, match.start() - 30)
-        prefix = text[start : match.start()].lower()
-        if re.search(r"\b(?:valid|gilt|gültig)\b", prefix):
+        clause = re.split(r"[,;.\n]", text[: match.start()])[-1].lower()
+        if re.search(r"\b(?:valid|gilt|gültig)\b", clause):
             continue
         return calc.transit_days(int(match[1]), hours=False)
     return None

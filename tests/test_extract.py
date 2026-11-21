@@ -291,11 +291,15 @@ def test_no_pickup_needed_is_no_door_pickup():
 
 
 @pytest.mark.parametrize(
-    "text",
-    ["Pickup from our site in 61391, no pickup before 9:00 please.", "Abholung in 61391, keine Abholung am Freitag."],
+    ("text", "postcode"),
+    [
+        ("Pickup from our site in 61391, no pickup before 9:00 please.", "61391"),
+        ("Abholung in 61391, keine Abholung am Freitag.", "61391"),
+        ("Please collect from our site in 80331 and deliver to the airport.", "80331"),
+    ],
 )
-def test_a_pickup_time_window_keeps_the_door_pickup(text):
-    assert extract._pickup(text) == (True, "61391")
+def test_a_pickup_time_window_keeps_the_door_pickup(text, postcode):
+    assert extract._pickup(text) == (True, postcode)
 
 
 def lot(pieces, weight, per_piece=False, unit="kg", cbm=None, dims=None):

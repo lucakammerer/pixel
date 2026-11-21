@@ -98,7 +98,9 @@ DOOR = re.compile(
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
-    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst|(?:to\s+(?:the\s+)?(?:port|airport)))\b"
+    r"\b(?:we\s+(?:will\s+)?(?:deliver|bring|drop)\w*|wir\s+(?:liefern|bringen)\w*|shipper\s+delivers?|customer\s+delivers?)\b[^.\n]{0,60}\b(?:to\s+(?:the\s+)?(?:port|airport)|selbst|ourselves)?\b"
+    r"|\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b"
+    r"|\b(?:selbstanlieferung|selbstablieferung)\b"
     r"|\bno\s+(?:door[\s-]*)?(?:pick[\s-]?up|collection)\s+(?:is\s+)?(?:needed|required|necessary)\b"
     r"|\bkeine\s+(?:tür[\s-]*)?abholung\s+(?:nötig|notwendig|erforderlich)\b",
     re.IGNORECASE,

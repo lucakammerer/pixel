@@ -85,6 +85,22 @@ def test_without_subject_or_prose_still_a_full_mail():
     assert body.startswith("Guten Tag,\n\n") and "Viele Grüße" in body
 
 
+def test_goods_of_and_natural_humanizer():
+    assert compose.goods_of("Please quote for 4 pallets of automotive parts to DFW.") == "automotive parts"
+    assert compose.goods_of("Cargo: industrial pumps.") == "industrial pumps"
+    assert compose.goods_of("Rate request for our optical lenses from FRA to ORD.") == "optical lenses"
+
+    assert compose.goods_of("Ware: Maschinenteile für Fertigung.") == "Maschinenteile"
+    assert compose.goods_of("Wir versenden elektronische Bauteile nach ORD.") == "elektronische Bauteile"
+
+    _, de_body = compose.render(rfq("de"), OPTION, request="Ware: Maschinenteile nach BBB")
+    assert "Für Ihre Maschinenteile" in de_body
+
+    opt = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
+    _, fac_body = compose.render(rfq("en"), opt, request="Please collect from our factory.")
+    assert "your factory by Example Trucks" in fac_body
+
+
 @pytest.mark.parametrize(
     ("slot", "text", "language"),
     [

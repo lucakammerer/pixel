@@ -206,6 +206,28 @@ TEXT = {
                 ),
             ),
         },
+        "core_goods": {
+            "cheapest": (
+                (
+                    "Für Ihre {goods} ist das beste Angebot von {origin} nach {destination} mit {carrier}: {total} "
+                    "{currency} all-in, Laufzeit {transit}."
+                ),
+                (
+                    "Ich habe die Airlines für Ihre {goods} von {origin} nach {destination} verglichen: mit {carrier} "
+                    "fliegen Sie am günstigsten für {total} {currency} all-in, mit {transit} Laufzeit."
+                ),
+            ),
+            "fastest": (
+                (
+                    "Für Ihre {goods} ist die schnellste Verbindung von {origin} nach {destination} mit {carrier}: "
+                    "Laufzeit {transit}, {total} {currency} all-in."
+                ),
+                (
+                    "Wenn es bei Ihren {goods} eilt, ist {carrier} von {origin} nach {destination} die schnellste "
+                    "Wahl: Laufzeit {transit}, {total} {currency} all-in."
+                ),
+            ),
+        },
         "air_only": (
             "Der Preis von Flughafen {origin} bis Flughafen {destination} mit {carrier} beträgt {total} {currency}, "
             "die Laufzeit {transit}. Die Abholung ist nicht enthalten."
@@ -366,7 +388,7 @@ OWN_BYE = re.compile(r"^\s*(cheers|viele gr(?:ü|ue)(?:ß|ss)e)\b", re.IGNORECAS
 SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
-WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
+WAREHOUSE = re.compile(r"\b(warehouse|factory|plant|facility)\b", re.IGNORECASE)
 PICKUP_ASK = re.compile(r"earliest (?:\w+ )?pick-?up|frühest\w* Abholung", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
@@ -413,17 +435,58 @@ def reply_subject(subject: str | None) -> str | None:
 
 # The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
 GOODS = re.compile(
-    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
-    r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
+    r"\b(?:pallets?|cartons?|boxes?|crates?|pkgs?|colli|pieces?|pcs) (?:of )?(?P<a>[a-zäöüß][a-zäöüß -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are | gepackt)"
+    r"|\b(?:Commodity|Cargo|Ware|Gegenstand):\s*(?P<b>[a-zäöüß][a-zäöüß -]{2,40}?)(?=[,.;\n]| for | to | from | with | für | nach | von )"
     r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
     r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
     r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
+    r"|\bfür (?:unsere|die|einige) (?P<de_c>[a-zäöüß][a-zäöüß -]{2,40}?)(?=[?.,]| von | nach )"
     r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
-    r"|\b(?:cargo|goods|shipment) (?:is|are|consists? of) (?P<g>[a-z][a-z -]{2,40}?)(?=, packed|,? in \d| packed)"
+    r"|\b(?:cargo|goods|shipment|Sendung|Ware) (?:is|are|consists? of|besteht aus|enthält) (?P<g>[a-zäöüß][a-zäöüß -]{2,40}?)(?=, packed|,? in \d| packed| gepackt|[,.;\n])"
     r"|\b[Ww]e(?:['’]re| are) (?:shipping|sending) (?P<h>[a-z][a-z -]{2,40}?)(?=[:,.]| with )"
+    r"|\bversenden (?:wir |einige )?(?P<de_b>[a-zäöüß][a-zäöüß -]{2,40}?)(?=[,.;\n]| nach | von | mit | per | to | from )"
+    r"|\bquote (?:for )?(?:our )?(?P<i>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )",
+    re.IGNORECASE,
 )
-NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
-             "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
+NOT_GOODS = {
+    "shipment",
+    "goods",
+    "cargo",
+    "consignment",
+    "freight",
+    "lot",
+    "lots",
+    "import",
+    "export",
+    "pieces",
+    "option",
+    "price",
+    "quote",
+    "pickup",
+    "the",
+    "this",
+    "our",
+    "your",
+    "each",
+    "all",
+    "both",
+    "sendung",
+    "ware",
+    "fracht",
+    "ladung",
+    "kisten",
+    "kartons",
+    "paletten",
+    "stücke",
+    "stück",
+    "angebot",
+    "abholung",
+    "preis",
+    "air",
+    "flug",
+    "unsere",
+    "ihre",
+}
 
 
 def goods_of(request: str) -> str | None:
@@ -578,7 +641,8 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     offer = [_sentence(prose.intro)] if prose.intro and not air_only else []
     if WELL.search(request):
         offer.insert(0, pick(t["well_back"]))
-    site = "warehouse" if WAREHOUSE.search(request) else "site"
+    site_match = WAREHOUSE.search(request)
+    site = site_match.group(1).lower() if site_match else "site"
     offer += [price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
