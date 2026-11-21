@@ -26,8 +26,8 @@ TEXT = {
         "subject": "Quote {origin} to {destination}, {weight} kg",
         "hello_name": {"formal": "Dear {name},", "neutral": "Hello {name},", "casual": "Hi {name},"},
         "hello": "Hello,",
-        # the opening line after it begins with a thank-you, so this one does not
-        "well_back": ("All good here, and I hope yours is too!", "Going well here!", "All well on our side!"),
+        # the opening no longer thanks, so the answer to their small talk does, once
+        "well_back": ("All good here, thanks for asking!", "Going well here, thanks!", "All well on our side, thanks!"),
         "core": {
             "cheapest": (
                 (
@@ -143,7 +143,7 @@ TEXT = {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
         "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
-        "well_back": ("Hier läuft alles gut, und ich hoffe, bei Ihnen auch.", "Bei uns ist alles bestens."),
+        "well_back": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
         "core": {
             "cheapest": (
                 (
@@ -343,19 +343,6 @@ DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\
 READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
 WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
-# The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
-GOODS = re.compile(
-    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
-    r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
-    r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
-    r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
-    r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
-    r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
-    r"|\b(?:cargo|goods|shipment) (?:is|are|consists? of) (?P<g>[a-z][a-z -]{2,40}?)(?=, packed|,? in \d| packed)"
-    r"|\b[Ww]e(?:['’]re| are) (?:shipping|sending) (?P<h>[a-z][a-z -]{2,40}?)(?=[:,.]| with )"
-)
-NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
-             "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
@@ -448,16 +435,6 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
         return " ".join(said)
     except Exception:  # noqa: BLE001  an extra answer must never cost the quote
         return ""
-
-
-def goods_of(request: str) -> str | None:
-    """What is shipped, as the customer calls it ("precision instruments"); None when the mail names only "the
-    shipment" or words it another way."""
-    for found in GOODS.finditer(request):
-        goods = next(g for g in found.groups() if g).strip(" -")
-        if not set(goods.split()) & NOT_GOODS:
-            return goods
-    return None
 
 
 def city_of(request: str, airport: str) -> str | None:

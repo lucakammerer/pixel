@@ -325,29 +325,6 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
     assert body.startswith("Hi Petra,") and "Best wishes," in body
 
 
-@pytest.mark.parametrize(
-    ("line", "goods"),
-    [
-        ("It’s 12 pieces of printed marketing material, 676 kg gross and 5.79 cbm.", "printed marketing material"),
-        ("The shipment will be ready on 2026-11-25. It is 1 piece of machine parts, with 40 kg.", "machine parts"),
-        ("quote the cheapest option to BBB (Example City, XX) for automotive sensors?", "automotive sensors"),
-        ("- Commodity: maintenance spray cans, 4 pieces", "maintenance spray cans"),
-        ("Our buyer is importing some control units from us in Germany.", "control units"),
-        ("The sports equipment will be ready for pickup on 2026-12-02: 11 pieces", "sports equipment"),
-        ("The cargo is electronic control units, packed in 5 pieces, with 1403 kg.", "electronic control units"),
-        ("We’ll have 10 pieces of laboratory glassware ready for pickup on 2026-11-25.", "laboratory glassware"),
-        (
-            "We are shipping spare parts for packaging machines: 8 pieces, 1708 kg.",
-            "spare parts for packaging machines",
-        ),
-        ("The shipment will be ready on 2026-11-25: 4 cartons, each 48 kg gross.", None),
-        ("Please send both lots together for this import shipment to BBB.", None),
-    ],
-)
-def test_the_goods_are_named_in_the_customers_own_words(line, goods):
-    assert compose.goods_of(line) == goods
-
-
 def test_the_earliest_departure_is_answered_only_when_asked():
     asked = "Ready on 2026-11-25 at our site. Please confirm the earliest available departure and arrival."
     pickup = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
@@ -371,4 +348,5 @@ def test_the_customers_small_talk_is_answered_before_the_price(opening, answered
     paragraph = body.split("\n\n")[1]
     assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]) == answered
     assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
+    assert ("thank" in paragraph.lower()) == answered  # the opening no longer thanks: the small-talk answer does
     assert body.count("1234.57 EUR") == 1
