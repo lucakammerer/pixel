@@ -383,7 +383,10 @@ def _ruled_out(ctx: Context, rfq: Rfq, text: str) -> Rfq:
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
 HISTORY = re.compile(
     r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht)"
-    r"|(?:from|von):.*@|on .{0,80} wrote:\s*$|am .{0,80} schrieb|>)",
+    r"|(?:from|von):.*@|on .{0,80} wrote:\s*$|am .{0,80} schrieb|>"
+    # Outlook without an address: "From: Name" over "Sent:", or a rule over "Subject:". A request's own field block
+    # ("From: FRA" over "To:" or "Date:") has neither.
+    r"|(?:[-_]{2,}[ \t]*\n\s*)?(?:from|von):.*\n\s*(?:sent|gesendet):|[-_]{2,}[ \t]*\n\s*(?:subject|betreff):)",
     re.IGNORECASE | re.MULTILINE,
 )
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)

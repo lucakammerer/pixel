@@ -160,7 +160,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `extracted_by: guess`, and emits `error`; with no lane at all it still raises.
 - A request can come as a reply or forward with an older request quoted below it ("-----Original Message-----"),
   and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
-  to the model.
+  to the model. `HISTORY` also ends the customer's words at a quote header without an address (Outlook's "From:
+  Name" over "Sent:", in German "Von:" over "Gesendet:", or a rule over "Subject:"): without it the old request went
+  to the model, and our own quote below a thank-you ("we will book it for you") read as an acceptance. A request's
+  own field block ("From: FRA" over "To:", "Von:" over "Datum:", even under a rule) is never cut.
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself.
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
