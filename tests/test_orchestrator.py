@@ -70,6 +70,20 @@ async def test_an_agent_that_gives_up_early_still_quotes_a_price_that_arrives_be
     assert kinds(ctx).count("quote.waiting") == 1
 
 
+async def test_a_dry_run_does_not_wait_for_a_late_price(conn, monkeypatch):
+    ctx = make_ctx(conn, dry_run=True)  # a replay or the offline KPI: nothing can still arrive
+    rfq = ingest_rfq(ctx)
+    fake_clock(monkeypatch, rfq, ctx, before_hard_s=300)
+
+    async def nothing(*args):
+        return None
+
+    monkeypatch.setattr(rfq_agent, "handle", nothing)
+    monkeypatch.setattr(rfq_agent, "fallback", nothing)
+    await asyncio.wait_for(orchestrator.quote_with_deadline(ctx, rfq), timeout=1)
+    assert kinds(ctx)[-1] == "quote.missed"
+
+
 async def test_one_quote_when_the_agent_answers_in_time(conn, monkeypatch):
     ctx = make_ctx(conn)
     rfq = ingest_rfq(ctx)

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -62,3 +63,13 @@ async def test_an_answer_outside_the_served_airports_is_not_taken(conn, monkeypa
     answers(monkeypatch, {"origin": "YYY", "destination": "CCC"})
     rfq = await agent.served_airports(served(conn), request("XXX", "CCC"), mail("Pickup in Town, to CCC."))
     assert rfq.origin == "XXX"
+
+
+async def test_a_hanging_airport_check_never_holds_the_pricing(conn, monkeypatch):
+    async def hangs(ctx, **kw):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(llm, "ask_json", hangs)
+    monkeypatch.setattr(agent, "AIRPORTS_WAIT_S", 0.1)
+    rfq = await agent.served_airports(served(conn), request("XXX", "CCC"), mail("Pickup in Town, to CCC, 855 kg."))
+    assert rfq.origin == "XXX"  # priced as read, at once

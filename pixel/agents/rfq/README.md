@@ -108,7 +108,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   not a veto.
 - The same guess can hit a request without a pickup zone, or a destination (a city code, a nearby airfield): no
   lane starts or ends there and every rate and bid request for it is wasted. `agent.py` `served_airports` asks once
-  more with the airports we serve; a request still without a price waits for a late one until `hard_at`
+  more with the airports we serve (at most `AIRPORTS_WAIT_S`); a request still without a price waits for a late one
+  until `hard_at`, except in a dry run, which no late price reaches
   (`core/orchestrator.py` `_first_price`) instead of being missed at once.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
