@@ -125,5 +125,12 @@ async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch)
     assert {i["issue"] for i in calls[0][1]["issues"]} == {"missed", "lost_points", "rejected"}
     emit(ctx, "quote.missed", "orchestrator", session_id=5, payload={"reason": "no_price"})
     assert await feedback.alert(ctx) == 0 and len(calls) == 1  # the same kind, the same commit
+    emit(ctx, "human.note", "crm", session_id=6, payload={"note": "Customer reply needs a person"})
+    assert await feedback.alert(ctx) == 0  # listed by `attention`, but it costs no points: no repair run
+    assert "reply_unhandled" in {i["issue"] for i in feedback.attention(conn, 5)}
     monkeypatch.setattr(feedback, "VERSION", "next")
-    assert await feedback.alert(ctx) == 3  # new code had its chance and the issues are still there
+    monkeypatch.setattr(feedback, "STARTED", datetime.now(UTC).isoformat()[:19] + "Z")  # a restart with new code
+    assert await feedback.alert(ctx) == 0  # what happened before the restart is the old code's
+    emit(ctx, "quote.missed", "orchestrator", session_id=7, payload={"reason": "no_price"})
+    monkeypatch.setattr(feedback, "STARTED", "2026-01-01T00:00:00")
+    assert await feedback.alert(ctx) == 3  # the new code missed one too: reported again, with what else is open
