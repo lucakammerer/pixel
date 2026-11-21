@@ -697,6 +697,7 @@ def test_one_request_written_many_ways(variant):
     "body, cbm, pieces",
     [
         ("AAA to BBB, 2,400 lbs, 5 skids 48x40x50 in, cheapest.", 5 * 48 * 40 * 50 * Decimal("0.0254") ** 3, 5),
+        ("AAA to BBB, 4 pallets, 800 kg, 24 x 16 x 51 in each.", 4 * 24 * 16 * 51 * Decimal("0.0254") ** 3, 4),
         ("AAA nach BBB: 6 Packstücke, 300 kg, je 120 x 80 x 100 cm.", Decimal("5.76"), 6),
         ("AAA to BBB, 1 piece, 300 kg, 1200 x 800 x 1000 mm.", Decimal("0.96"), 1),
     ],
