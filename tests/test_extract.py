@@ -378,3 +378,18 @@ async def test_a_pickup_town_beside_another_zone_town_is_not_guessed(conn, emitt
 )
 def test_a_negated_superlative_or_a_quick_reply_is_no_wish_for_speed(text):
     assert extract._preference(text) == Preference.CHEAPEST
+
+
+@pytest.mark.parametrize(
+    "body, kg",
+    [
+        ("AAA to BBB: 1 pallet, gross weight: 480 lbs, 120x80x100 cm.", 480 * extract.LB),  # not 480 kg
+        ("AAA to BBB, 3 pallets each 400 lbs, 120x80x110 cm", 1200 * extract.LB),
+        ("AAA-BBB 1.2t 6cbm asap", Decimal(1200)),
+        ("AAA-BBB, 2,5 Tonnen, 10 cbm", Decimal(2500)),
+        ("AAA-BBB 1000 kg (2205 lbs), 3 cbm", Decimal(1000)),
+        ("AAA-BBB, 500 t-shirts, 300 kg, 2 cbm", Decimal(300)),
+    ],
+)
+def test_code_converts_pounds_and_tonnes(body, kg):
+    assert extract.by_rules(mail(body), DEADLINE).weight_kg == kg

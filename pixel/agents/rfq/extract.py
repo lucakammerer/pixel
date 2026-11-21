@@ -26,10 +26,13 @@ ORIGIN_LABEL = re.compile(
 DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
 
 NUM = r"(\d[\d.,']*)"
+OTHER_UNIT = r"\s*(?i:lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
 WEIGHT = (
     re.compile(rf"{NUM}\s*(?i:kgs?|kilos?|kilograms?|kilogramm)\b"),
-    re.compile(rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht))\s*:?\s*{NUM}"),
+    re.compile(rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht))\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"),
 )
+POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
+TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
     re.compile(rf"(?i:\b(?:cbm|volume|volumen))\s*:?\s*{NUM}"),
@@ -47,7 +50,7 @@ ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
 MODE = rf"(?:\b(?P<each>{EACH})|\b(?P<all>{ALL}))?\s*"
 PER_PIECE = rf"(?:\b(?:{EACH})\b|(?<!\w)à)"
 EACH_WEIGHT = re.compile(
-    rf"{PER_PIECE}\s*(?:of\s+)?{NUM}\s*(?:kgs?|kilos?)\b|{NUM}\s*(?:kgs?|kilos?)\s+(?:gross\s+)?{PER_PIECE}",
+    rf"{PER_PIECE}\s*(?:of\s+)?{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\b|{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\s+(?:gross\s+)?{PER_PIECE}",
     re.IGNORECASE,
 )
 EACH_VOLUME = re.compile(rf"{PER_PIECE}\s*{NUM}\s*(?:cbm|m3|m³)|{NUM}\s*(?:cbm|m3|m³)\s+{PER_PIECE}", re.IGNORECASE)
@@ -214,6 +217,10 @@ def _pieces(text: str) -> int | None:
 def _weight(text: str, pieces: int | None) -> Decimal | None:
     """The one gross weight; a weight per piece ("4 cartons, each 48 kg") times the pieces, or None without them."""
     weight = _unique(WEIGHT, text, thousands=True)
+    if weight is None and not any(p.search(text) for p in WEIGHT):  # in pounds or tonnes only: code converts
+        pounds, tonnes = _unique(POUNDS, text, thousands=True), _unique(TONNES, text, thousands=False)
+        if (pounds is None) != (tonnes is None):
+            weight = pounds * LB if pounds is not None else tonnes * 1000
     if weight is None or not EACH_WEIGHT.search(text):
         return weight
     return weight * pieces if pieces else None

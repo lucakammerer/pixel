@@ -84,6 +84,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport instead of an origin that is not the airport of any pickup zone.
 - A pickup can be named by its town and no postcode ("from our warehouse in Augsburg"): `extract.py` `_town_zone`
   takes the zone whose area the mail names, only when it names exactly one (a signature can name another town).
+- "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
+  weight in kg, the kg wins.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
