@@ -59,22 +59,26 @@ Three lines per scenario: what we tried, what changed, what is next.
 - 21.11. 17:35 CET: board after round 16: human awards START Milan 4, AEIOU 4, MAKEANOTHERMD 1, Austrian Power 1,
   TALOS 1, PIXEL 0. Our accepted quotes of rounds 12 to 14 went out in the clerk's voice and won none; rounds 15
   and 16 were rejected (`too_low`, `too_high`), so no mail of ours was read.
-- 21.11. 17:55 CET: tried answering the customer's own closing in kind (`compose.in_kind`: "have a lovely day"
+- 21.11. 17:40 CET: tried answering the customer's own closing in kind (`compose.in_kind`: "have a lovely day"
   returned, "Best regards to <their town>", "Cheers" and "Viele Grüße" mirrored, the arrival "in <the city they
   wrote>"), the opening line joined to the offer and the validity to the booking sentence, one phrasing that shows
   the comparison done; changed: wording only, the model's opening was dropped in every live quote since round 12 so
   the stock line stays the default; next: the `human` column after the first accepted round with it live, then the
   model's opening line (the extraction's prompt asks for two sentences, `clean` drops them).
-- 21.11. 18:10 CET: tried naming the goods as the customer does (`compose.goods_of`, by rule from their words: all
+- 21.11. 17:43 CET: tried naming the goods as the customer does (`compose.goods_of`, by rule from their words: all
   17 live requests and 17 of 19 fixtures give one) in the opening line, and answering "the earliest departure" when
   asked (rounds 3 and 7 asked, we gave the arrival only); changed: wording only, the model's opening still wins
   when it passes `clean`; next: the `human` column, then the booking mails in the same kind (#71 covers the quote
   only) and a German request to read the German wording against.
-- 21.11. 18:20 CET: rounds 15 to 17 rejected (`too_low`, `too_high`, `too_low`: the pickup from "our warehouse"),
+- 21.11. 17:46 CET: rounds 15 to 17 rejected (`too_low`, `too_high`, `too_low`: the pickup from "our warehouse"),
   so no mail of ours stood before the jury; board unchanged for us. Tried the booking mails greeted and signed as
   the quote (`booking._tell_customer`: register, the name by rule when the model gave none, the sign-off to their
   town or as "Cheers"); changed: wording only, no wish returned a second time in one thread; next: the first
   accepted round with #71 and #72 live.
+- 21.11. 17:50 CET: round 18 rejected too (`too_high`, again a pickup from "our warehouse"): four rounds without a
+  mail of ours before the jury, board unchanged for us. Tried the customer's word for the place ("your warehouse"
+  when they write warehouse, else "your site"); changed: one word; next: unchanged, the first accepted round with
+  #71 to #73 live.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
