@@ -206,7 +206,7 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     quote = await agent.handle(ctx, request, deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 10
     assert (quote.total, quote.currency, quote.option.source, quote.llm_calls) == (D("260.00"), "EUR", Source.SHEET, 1)
-    assert "260.00 EUR" in quote.body and calls == ["quote.prose"]
+    assert "260.00 EUR" in quote.body and calls == ["rfq.crosscheck"]
 
     assert quotes.for_session(ctx, 1) == quote
 
@@ -368,6 +368,7 @@ async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
         return quote.model_copy(update={"sent_at": datetime.now(UTC), "sent_message_id": 9})
 
     monkeypatch.setattr(agent, "PROSE_WAIT_S", 0.3)
+    monkeypatch.setattr(extract, "CHECK_WAIT_S", 0.3)
     monkeypatch.setattr(llm, "ask_json", hangs)
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")

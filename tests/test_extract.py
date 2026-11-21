@@ -82,13 +82,27 @@ async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
     assert emitted[0][0] == "rfq.extracted"
 
 
-async def test_rules_path_makes_no_model_call(monkeypatch, emitted):
+async def test_the_model_cross_checks_the_rules_and_its_figure_wins(conn, monkeypatch, emitted):
+    """Rounds 33 to 35: the rules took the mail's figure over the packing list's; gpt-4.1 read the list's."""
+    ctx = Context(settings(), conn, None, None, None, None)
+    said = {"origin": "AAA", "destination": "CCC", "weight_kg": "480", "volume_cbm": None, "pieces": None,
+            "lots": [], "preference": "fastest", "door_pickup": False, "pickup_postcode": None, "currency": None,
+            "language": "en", "first_name": None, "intro": None, "closing": None}  # fmt: skip
+
+    async def model(ctx, **kw):
+        assert kw["purpose"] == "rfq.crosscheck"
+        return LlmResult(data=said, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    rfq = await extract.extract(ctx, mail("AAA → BBB, 500 kg, 2 cbm. The packing list says 480."), DEADLINE)
+    assert (rfq.extracted_by, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("rules", "BBB", 480, 2)
+    assert rfq.preference == Preference.FASTEST  # a value the rules did not read; CCC is not in the mail
+
     async def boom(ctx, **kw):
-        raise AssertionError("no model call expected")
+        raise RuntimeError("gateway down")
 
     monkeypatch.setattr(llm, "ask_json", boom)
-    rfq = await extract.extract(None, mail("AAA → BBB, 500 kg"), DEADLINE)
-    assert rfq.extracted_by == "rules"
+    assert (await extract.extract(ctx, mail("AAA → BBB, 500 kg"), DEADLINE)).weight_kg == 500
 
 
 def captured(name: str) -> Message:
