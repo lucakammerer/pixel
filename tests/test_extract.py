@@ -149,6 +149,7 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
         # "ready for pickup", but delivered to the airport by the customer
         ("rfq-lots-two.json", ("MUC", "LAX", "998", "2.39", 2, False, None)),
         ("rfq-lots-gross-after.json", ("MUC", "CAI", "486", "2.62", 11, False, None)),
+        ("rfq-import-no-pickup.json", ("FRA", "DOH", "102", "0.49", 6, False, None)),
         ("rfq-door-three-lots.json", ("", "LOS", "1952", "4.6768", 13, True, "36627")),
         # labelled bullets: "- Destination airport: Toronto (YYZ), CA", "- Pickup: from our site at 21663 Lueneburg"
         ("rfq-dg-instruction-bullets.json", ("", "YYZ", "855", "3.74", 4, True, "21663")),
@@ -280,3 +281,8 @@ async def test_the_language_is_codes_reading_not_the_models(monkeypatch, emitted
     monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
     body = "Hello, please quote the shipment from our site in Lueneburg to Toronto, about three hundred kilos. Thanks"
     assert (await extract.extract(None, mail(body), DEADLINE)).language == "en"
+
+
+def test_no_pickup_needed_is_no_door_pickup():
+    rfq = extract.by_rules(mail("AAA to BBB, 300 kg, 1 cbm. No pickup needed, the goods are at the airport."), DEADLINE)
+    assert rfq.door_pickup is False

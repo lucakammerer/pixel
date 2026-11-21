@@ -70,7 +70,11 @@ DOOR = re.compile(
     r"|collection from|collect from|abhol\w*|ab werk|ab haus",
     re.IGNORECASE,
 )
-OWN_DELIVERY = re.compile(r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b", re.IGNORECASE)
+OWN_DELIVERY = re.compile(
+    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b|\bno\s+(?:pick[\s-]?up|collection)\b"
+    r"|\bkeine\s+abholung\b",
+    re.IGNORECASE,
+)
 POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
 # "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
 DANGEROUS = re.compile(
