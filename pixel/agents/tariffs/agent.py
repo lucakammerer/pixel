@@ -36,8 +36,10 @@ IMAGES = {".jpg", ".jpeg", ".png"}
 AUDIO = {".mp3", ".wav", ".m4a", ".ogg"}
 TEXTS = {".txt", ".csv", ".tsv", ".md", ".json", ".xml"}
 READABLE = {".xlsx", ".xls", ".docx", ".pdf", ".html", ".htm", ".eml", ".zip", *TEXTS, *AUDIO}
-# A file inside a zip larger than this is skipped: no archive may stall a request's handler.
-ZIP_MEMBER_BYTES = 20_000_000
+# A zip of more files or bytes than this is not read: no archive may stall a request's handler.
+ZIP_FILES, ZIP_BYTES = 20, 20_000_000
+# Starts a forwarded mail's lines: history, whose figures never override the mail (`extract._cargo_sources`).
+FORWARDED = "Forwarded mail:"
 SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
 # Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
 SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
@@ -107,29 +109,38 @@ class Unreadable(ValueError):
 
 
 class _HtmlText(HTMLParser):
-    """An html page as lines: a block element or a table row starts a line, cells are two spaces apart."""
+    """An html page as lines: a block element or a table row starts a line, cells are two spaces apart. Only what
+    the page shows: no script, style, template, noscript or element marked `hidden`."""
 
     BLOCKS = frozenset(
         {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "table", "section", "article"}
     )
+    HIDDEN = frozenset({"script", "style", "template", "noscript"})
+    VOID = frozenset({"br", "hr", "img", "input", "meta", "link", "wbr", "col", "area", "base", "embed", "source"})
 
     def __init__(self) -> None:
         super().__init__()
-        self.lines, self.skip = [""], 0
+        self.lines, self.hidden, self.depth = [""], None, 0
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        self.skip += tag in ("script", "style")
-        if tag in self.BLOCKS:
+        if self.hidden:
+            self.depth += tag == self.hidden
+        elif tag not in self.VOID and (tag in self.HIDDEN or any(name == "hidden" for name, _ in attrs)):
+            self.hidden, self.depth = tag, 1
+        elif tag in self.BLOCKS:
             self.lines.append("")
         elif tag in ("td", "th") and self.lines[-1].strip():
-            self.lines[-1] += "  "
+            self.lines[-1] = self.lines[-1].rstrip() + "  "
 
     def handle_endtag(self, tag: str) -> None:
-        self.skip -= tag in ("script", "style") and self.skip > 0
+        if tag == self.hidden:
+            self.depth -= 1
+            self.hidden = self.hidden if self.depth else None
 
     def handle_data(self, data: str) -> None:
-        if not self.skip:
-            self.lines[-1] += " ".join(data.split()) if data.strip() else ""
+        if not self.hidden:  # "<b>50978</b> Cologne": the space between two elements stays
+            text = re.sub(r"\s+", " ", data)
+            self.lines[-1] += text.lstrip() if not self.lines[-1] or self.lines[-1].endswith(" ") else text
 
 
 def _decoded(content: bytes) -> str:
@@ -171,11 +182,11 @@ def _kind(filename: str, content: bytes) -> str:
 
 
 def _mail_lines(content: bytes) -> list[str]:
-    """A forwarded mail: its subject, its text and every attachment code can read."""
+    """A forwarded mail: `FORWARDED` and its subject, its text and every attachment code can read."""
     mail = email.message_from_bytes(content, policy=email.policy.default)
     body = mail.get_body(preferencelist=("plain", "html"))
     text = body.get_content() if body else ""
-    lines = [f"Subject: {mail['subject'] or ''}", *(_lines("body.html", text.encode()) if body and
+    lines = [f"{FORWARDED} {mail['subject'] or ''}", *(_lines("body.html", text.encode()) if body and
              body.get_content_type() == "text/html" else text.splitlines())]  # fmt: skip
     for part in mail.iter_attachments():
         inner = part.get_content()
@@ -189,15 +200,18 @@ def _mail_lines(content: bytes) -> list[str]:
 
 
 def _zip_lines(content: bytes) -> list[str]:
-    """Every file of an archive code can read, one after another; an archive inside one is not opened."""
+    """Every file of an archive code can read, one after another; an archive or a mail inside one is not opened."""
     lines, read = [], False
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
-        for member in archive.infolist():
-            name = Path(member.filename).name
-            if member.is_dir() or member.file_size > ZIP_MEMBER_BYTES or name.lower().endswith(".zip"):
+        members = [m for m in archive.infolist() if not m.is_dir()]
+        if len(members) > ZIP_FILES or sum(m.file_size for m in members) > ZIP_BYTES:
+            raise Unreadable(f"zip of more than {ZIP_FILES} files or {ZIP_BYTES} bytes")
+        for member in members:
+            name, data = Path(member.filename).name, archive.read(member)
+            if _kind(name, data) in (".zip", ".eml"):
                 continue
             try:
-                lines += _lines(name, archive.read(member))
+                lines += _lines(name, data)
                 read = True
             except Unreadable:
                 continue

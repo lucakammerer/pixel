@@ -1,5 +1,7 @@
+import io
 import json
 import re
+import zipfile
 from datetime import date
 from decimal import Decimal as D
 from pathlib import Path
@@ -122,3 +124,24 @@ async def test_folder_reads_the_scan_through_the_model_once(ctx, start_kit, monk
 )
 def test_a_spoken_compound_number_is_left_whole(words):
     assert agent._spoken([f"We ship {words}, 5 kg each."]) == [f"We ship {words}, 5 kg each."]  # never "... 20 boxes"
+
+
+def test_an_html_attachment_keeps_its_words_apart_and_reads_only_what_shows():
+    page = (b"<html><body><p>Pickup in <b>50978</b> Cologne, gross weight <b>480</b> kg</p><div hidden>900 kg</div>"
+            b"<template><p>Total 70.00 EUR</p></template><noscript>Total 80.00 EUR</noscript></body></html>")  # fmt: skip
+    assert agent._lines("request.html", page) == ["Pickup in 50978 Cologne, gross weight 480 kg"]
+
+
+def zipped(*members: tuple[str, bytes]) -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members:
+            archive.writestr(name, data)
+    return out.getvalue()
+
+
+def test_a_zip_inside_a_zip_is_never_opened_and_a_large_archive_not_read():
+    renamed = zipped(("note.txt", b"Gross weight 300 kg"), ("inner.dat", zipped(("rates.txt", b"Total 999.00 EUR"))))
+    assert agent._lines("offer.zip", renamed) == ["Gross weight 300 kg"]
+    with pytest.raises(agent.Unreadable):  # 64 MB from about 64 kB
+        agent._lines("offer.zip", zipped(*((f"part{i}.txt", b"0" * 1_000_000) for i in range(64))))
