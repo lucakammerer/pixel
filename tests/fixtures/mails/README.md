@@ -22,3 +22,8 @@ Captured carrier answers, each to a request in the wording of `pixel/pricing/bid
 - `ratedesk-portal-rates.json`: the rate desk's answer, a thread of its own that names our mail by its subject: the
   portal's rate per airline on the lane with its rate id and validity, and the address of an airline that is not on
   the portal.
+
+Captured customer mails:
+
+- `rfq-door-no-origin.json`: the first scored request. Door-to-port, fastest, a currency asked for; it names the
+  destination and the pickup postcode but no origin airport.
