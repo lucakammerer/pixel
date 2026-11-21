@@ -223,6 +223,41 @@ def test_a_captured_lane_decline_is_recognised_without_a_model():
     assert bids.DECLINE.search(captured("bid-decline-lane.json").body)
 
 
+DECLINES = json.loads((Path(__file__).parent / "fixtures" / "lane-declines.json").read_text())["declines"]
+
+
+@pytest.mark.parametrize("decline", DECLINES, ids=[d["shape"] for d in DECLINES])
+def test_rules_read_the_lanes_a_declining_airline_flies_and_nothing_in_doubt(decline):
+    body = captured(decline["mail"].removeprefix("mails/")).body if "mail" in decline else decline["body"]
+    assert bids.offered_lanes(body) == decline["lanes"]
+
+
+async def test_an_airline_is_skipped_only_while_its_fresh_list_leaves_the_lane_out(ctx, monkeypatch):
+    """Air Two's list holds the lane: it must still be asked. Air One's leaves it out: skipped, for an hour."""
+    request = rfq()
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    lane = f"{request.origin}-{request.destination}"
+    await bids.record(ctx, mail("one@air", "We do not serve this lane/zone: XXX-YYY.\nWe fly XXX-ZZZ, ZZZ-YYY."))
+    await bids.record(ctx, mail("two@air", f"We do not serve this lane/zone: XXX-YYY.\nWe fly XXX-ZZZ, {lane}."))
+    assert [r["carrier"] for r in kinds(ctx, "carrier.lanes")] == ["Air One", "Air Two"]
+
+    async def answer():
+        while not kinds(ctx, "bid.requested"):
+            await asyncio.sleep(0.01)
+        await bids.record(ctx, mail("two@air", "All-in EUR 400.00, transit 4 days"))
+
+    ctx.settings = replace(ctx.settings, model_check="")
+    found, _ = await asyncio.gather(engine.options(ctx, request, deadline()), answer())
+    assert [r["carrier"] for r in kinds(ctx, "bid.requested")] == ["Air Two"]
+    assert [r["carrier"] for r in kinds(ctx, "bid.skipped")] == ["Air One"]
+    assert [o.carrier for o in found] == ["Air Two"]
+
+    stale = (NOW - bids.LANES_FRESH - timedelta(minutes=1)).isoformat()
+    ctx.db.execute("UPDATE events SET ts = ? WHERE kind = 'carrier.lanes'", (stale,))
+    carriers = store.carriers(ctx, "airline", request.destination)
+    assert bids.worth_asking(ctx, request, carriers) == carriers
+
+
 def test_rules_read_the_captured_airline_bid_and_pickup_bid():
     """The airline writes its total ungrouped; both mails carry a validity time with a time zone after a number."""
     airline = bids.parse(captured("bid-airline-priced.json"), rfq())

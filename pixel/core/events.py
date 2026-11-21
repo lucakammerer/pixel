@@ -14,7 +14,7 @@ from pixel.core.context import Context
 KINDS = (
     "mail.in", "mail.out", "mail.held",  # held: dry run, or a session a person took over
     "route",
-    "rfq.extracted", "rfq.evidence", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received",
+    "rfq.extracted", "rfq.evidence", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received", "bid.skipped",
     "quote.drafted", "quote.sent", "quote.fallback", "quote.recovery", "quote.waiting", "quote.missed", "quote.prose", "rfq.crosscheck", "bid.crosscheck", "prose.raw",
     "quote.stuck",  # core/watchdog.py: open past its STUCK_AFTER, alerted once
     "quote.checked",  # agents/rfq/check.py: what the last check before sending found
@@ -22,6 +22,7 @@ KINDS = (
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",
     "tracking.answered",
     "tariff.ingested", "tariff.failed",
+    "carrier.lanes",  # pricing/bids.py: the lanes an airline says it flies when it declines ours
     "attachment.unreadable",  # a file code cannot read (audio, video, an image, a scan): treated as holding nothing
     "llm.call",
     "score",  # one row of /v1/board/me

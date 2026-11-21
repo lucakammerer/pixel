@@ -24,7 +24,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   customer's own words or documents (`_gross`: never net, tare, per piece, superseded, forwarded or in pounds); a
   destination never, it is only reported. On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
   the prose (`prose.raw`) and `compose.adopt` checks it; only without either, `compose.prose` runs in parallel. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
-  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (bids by
+  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (no bid
+  to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by
   mail, pickup and airline, are waited for until all are in, or until the later of `target_at` and
   `PIXEL_BID_WAIT_S` after the ask, never past `hard_at`: `pricing/bids.py` `collect`); `selection.select`; `compose.render`;
   `outbox.send_quote`, which attaches the quote's text as a PDF to every quote (R38, `core/pdf.py`). A request missing origin, destination or weight emits `error` and returns None; the
@@ -130,6 +131,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   table's currency only from the nearest header above it that names one, never under a "(kg)" or "per kg" header.
   A header may name it as "(€)", the total row may be "Grand total", "Sum", "Total amount" or "Total EUR   104.62",
   an amount may say "euros"; the benchmark's `PICKUP_CHANGES` writes every captured offer each of these ways.
+- A carrier can write the price without a label ("we can offer EUR 952.00") beside prices that are not the offer:
+  "rates from", "ab", "minimum charge", "our previous offer was", "optional insurance", "... extra". `bids._price`
+  takes "we can offer" or "our offer is" as the label and skips such a price (`SIDE_BEFORE`, `SIDE_AFTER`);
+  `tools/simulate.py` writes every bid layout beside each of them.
   "The fuel (security, waiting) rate is" never labels the offer's price (`PRICE_IS`), and an amount at a line's end
   joins the next line's currency only when that line holds the currency alone (`UNWRAP`).
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
