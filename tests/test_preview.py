@@ -20,7 +20,7 @@ def test_preview_seeds_every_page(tmp_path):
         app.include_router(module.router)
     app.state.ctx = ctx
     client = TestClient(app)
-    for path in ("/", "/requests", "/dashboard", "/crm/customers", "/crm/quotes", "/crm/shipments"):
+    for path in ("/", "/requests", "/dashboard", "/night", "/crm/customers", "/crm/quotes", "/crm/shipments"):
         assert client.get(path).status_code == 200, path
     assert "GmbH" in client.get("/crm/customers").text  # the company from the signature, not the address
     first, every = client.get("/requests").text, client.get("/requests", params={"more": "1"}).text

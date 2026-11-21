@@ -157,7 +157,12 @@ if(box){let t;box.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=
 box.value?u.searchParams.set('q',box.value):u.searchParams.delete('q');history.replaceState(null,'',u);reload();},250);});}
 """
 
-NAV = (("/requests", "Requests", "sessions"), ("/crm", "CRM", "crm"), ("/dashboard", "Performance", "dashboard"))
+NAV = (
+    ("/requests", "Requests", "sessions"),
+    ("/crm", "CRM", "crm"),
+    ("/dashboard", "Performance", "dashboard"),
+    ("/night", "Night shift", "night"),
+)
 
 
 def esc(value: Any) -> str:
