@@ -114,6 +114,8 @@ def kinds(ctx, kind):
         ("Hello,\nour all-in price is EUR 1.234,50, transit 3 days.\nRegards", "1234.50", "EUR", 3),
         ("Freight 2.10/kg\nTotal: 980.00 USD (1 USD = 0.92 EUR)\nTransit time: 4 days", "980.00", "USD", 4),
         ("We offer 845,00 € all in, 2 Tage Laufzeit.\n\n> Please quote 100 kg, EUR 5 per kg", "845.00", "EUR", 2),
+        ("EUR 900,00 all-in. Transitzeit: 3 Tage. Laufzeit des Angebots: 14 Tage.", "900.00", "EUR", 3),
+        ("EUR 900.00 all-in, 2 days. Transit via DXB, 1 day stopover.", "900.00", "EUR", 2),
     ],
 )
 def test_rules_read_a_bid(body, total, currency, days):

@@ -53,11 +53,13 @@ TRANSIT = re.compile(
     re.IGNORECASE,
 )
 # "offer valid for 7 days, transit 3 days": the figure after the transit word counts, a validity never does.
-LABELLED_TRANSIT = re.compile(
-    r"\b(?:transit(?:\s*time)?|laufzeit|t/t)\b[^\d\n]{0,24}?" + TRANSIT.pattern, re.IGNORECASE
+# "Laufzeit des Angebots" is the offer's validity and "transit via DXB" names a hub, neither is a transit time.
+TRANSIT_LABEL = r"\b(?:transit(?:\s*time|zeit)?|laufzeit|t/t)\b(?!\s+(?:via\b|de[sr]\s+(?:angebots|offerte)))"
+LABELLED_TRANSIT = re.compile(TRANSIT_LABEL + r"[^\d\n]{0,24}?" + TRANSIT.pattern, re.IGNORECASE)
+VALIDITY = re.compile(
+    r"\b(?:valid(?:ity)?|g(?:ü|ue)ltig\w*|good|laufzeit\s+de[sr]\s+(?:angebots|offerte))\b[^\d\n]{0,20}$", re.IGNORECASE
 )
-VALIDITY = re.compile(r"\b(?:valid(?:ity)?|g(?:ü|ue)ltig\w*|good)\b[^\d\n]{0,20}$", re.IGNORECASE)
-TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
+TRANSIT_HOURS = re.compile(TRANSIT_LABEL + r"[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
 # "10.5 hours" and "4,5 Stunden" are one figure; "09:00 h" is a clock time, not a duration.
 HOURS = re.compile(r"(?<![\d:.,])(\d+(?:[.,]\d+)?)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
 PICKUP_HOURS = re.compile(
