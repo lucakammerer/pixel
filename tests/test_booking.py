@@ -117,6 +117,9 @@ async def test_confirmation_marks_confirmed_and_tells_once(pipe, accepted):
         ("Bitte buchen Sie die Sendung.", "accept"),
         ("Thanks, but too expensive for us.", "decline"),
         ("We cannot accept this price.", "decline"),
+        # rounds 15 and 16: both were booked at the portal, "go ahead" read as the acceptance
+        ("Thank you for your offer. That seems too low to be right, so we will not go ahead with it.", "decline"),
+        ("Thank you for your offer, but your price is too high for us, so we will not go ahead with it.", "decline"),
         ("Does the price include pickup?", "other"),
     ],
 )
