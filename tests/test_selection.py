@@ -3,8 +3,10 @@ from datetime import UTC, datetime
 from decimal import Decimal as D
 from pathlib import Path
 
-from pixel.contracts import Preference, RateOption, Rfq, Source
-from pixel.pricing.selection import DEFAULT_RULE, RULES, balanced, select
+from pixel.agents.rfq import check
+from pixel.contracts import Preference, Quote, RateOption, Rfq, Source
+from pixel.pricing import calc, engine
+from pixel.pricing.selection import DEFAULT_RULE, RULES, balanced, implausible, select
 
 NOW = datetime(2026, 11, 21, 16, tzinfo=UTC)
 
@@ -74,3 +76,41 @@ def test_an_airline_the_customer_ruled_out_is_never_quoted():
               for o in options]  # fmt: skip
     by_code = by_name.model_copy(update={"excluded_carriers": (scored["code"],)})
     assert select(by_code, portal).carrier != scored["excluded"]
+
+
+PLAUSIBILITY = json.loads((Path(__file__).parent / "fixtures" / "bid-plausibility.json").read_text())
+
+
+def test_no_bid_read_right_in_a_recorded_round_is_distrusted():
+    for r in PLAUSIBILITY["truckers"]:
+        bids = [opt(name, eur, 0, Source.BID).model_copy(update={"trucker": name}) for name, eur, _ in r["bids"]]
+        assert not [b.trucker for b in bids if implausible(b, bids)], r["round"]
+    for r in PLAUSIBILITY["airlines"]:
+        options = [opt(carrier, eur, 1, Source(source)) for source, carrier, eur in r["options"]]
+        assert not [o.carrier for o in options if implausible(o, options)], r["round"]
+
+
+def test_a_misread_trucker_bid_is_not_quoted():
+    case = PLAUSIBILITY["misread"]
+    origin, destination = case["lane"]
+    request = rfq(Preference(case["preference"])).model_copy(
+        update={"origin": origin, "destination": destination, "weight_kg": D(case["weight_kg"]), "door_pickup": True}
+    )
+    lane = {"origin": origin, "destination": destination}
+    airlines = [opt(carrier, eur, days, Source(source)).model_copy(update=lane)
+                for source, carrier, eur, days in case["airlines"]]  # fmt: skip
+    bids = [opt(name, eur, 0, Source.BID).model_copy(update={**lane, "freight": D(0), "pickup": D(eur), "trucker": name,
+                                                             "pickup_hours": hours})
+            for name, eur, hours in case["bids"]]  # fmt: skip
+    options = airlines + bids
+    quoted = select(request, engine.combine(request, options))
+    assert (quoted.trucker, quoted.total) == (case["right"]["trucker"], D(case["right"]["total"]))
+    misread = select(request, [calc.with_pickup(a, D("45.00"), case["misread"]) for a in airlines])
+    assert misread.total == D(case["quoted"])
+
+    def blocked(option: RateOption) -> list[str]:
+        quote = Quote(id="q", session_id=1, rfq=request, option=option, total=option.total, currency="EUR",
+                      subject="s", body="b", created_at=NOW)  # fmt: skip
+        return [f.rule for f in check.run(quote, "", options) if f.level == check.BLOCK]
+
+    assert "implausible_bid" in blocked(misread) and "implausible_bid" not in blocked(quoted)

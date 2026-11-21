@@ -6,9 +6,10 @@ Ties: cheaper (in EUR) first, then faster, then the carrier name, so the same op
 from collections.abc import Callable
 from decimal import Decimal
 
-from pixel.contracts import Preference, RateOption, Rfq
+from pixel.contracts import Preference, RateOption, Rfq, Source
 
 HALF = Decimal("0.5")
+TRUST = Decimal("0.25")  # docs/calc.md, when a bid is not trusted
 
 
 def _cheapest(o: RateOption) -> tuple:
@@ -52,6 +53,18 @@ def balanced(
         return HALF * cost(b.total_eur, prices) + HALF * cost(Decimal(speed(b)), speeds)
 
     return min(bids, key=lambda b: (score(b), *_cheapest(b)))
+
+
+def implausible(option: RateOption, options: list[RateOption]) -> bool:
+    """A carrier's bid below TRUST times the cheapest other carrier of its kind (truckers; airline options of the
+    lane) was read wrong, whatever its layout (round 67: a waiting charge per hour taken for the pickup price).
+    Only the cheapest bid of a kind can fail, so a trusted one of its kind always remains."""
+    if option.source != Source.BID:
+        return False
+    own = option.trucker or option.carrier
+    peers = [o.total_eur for o in options if (o.trucker is None) == (option.trucker is None)
+             and (o.trucker or o.carrier) != own and o.total_eur > 0]  # fmt: skip
+    return bool(peers) and option.total_eur < TRUST * min(peers)
 
 
 def allowed(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
