@@ -387,3 +387,30 @@ def test_a_french_request_is_answered_in_french_with_its_fastest_option():
 )
 def test_the_goods_are_named_as_the_customer_calls_them(request_text, goods):
     assert compose.goods_of(request_text) == goods
+
+
+async def test_a_request_in_a_language_we_have_no_text_for_is_written_by_the_model_and_checked_by_code(
+    ctx, monkeypatch
+):
+    """Round 72: a Chinese mail. Code's word count read it as English, the template went out in English and was
+    rejected as wrong_language, although the model had read it as Chinese."""
+    ctx.db.execute("INSERT INTO carriers VALUES ('Other Air', 'airline', 'o@air', 'BBB')")
+    mail = captured("rfq-chinese-door.json")
+    assert extract._language(extract._text(mail), "zh") == "zh"
+    request = rfq("zh").model_copy(update={"door_pickup": True, "pickup_postcode": "50978"})
+    option = OPTION.model_copy(update={"trucker": "Example Trucking", "pickup": Decimal("112.28")})
+    written = {"body": ""}
+
+    async def model(ctx, **kw):
+        assert "Price: 1234.57 EUR all-in (pickup from the customer's site by Example Trucking" in kw["user"]
+        return LlmResult(data=written, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    written["body"] = "Petra 您好，\n\nExample Air 从 AAA 到 BBB：1234.57 EUR 全包，运输时间 3 天，704 kg。\n\n此致"
+    body = await compose.letter(ctx, request, option, mail.body, None, 5)
+    assert body.startswith("Petra 您好") and body.endswith(f"{SIGNER}\n{compose.COMPANY}")
+    for wrong in ("1234.57 EUR，另加 112.28 EUR", "1234.57 EUR 和 1234.57 EUR", "Other Air 1234.57 EUR"):
+        written["body"] = f"Example Air 3 天 {wrong}"
+        assert await compose.letter(ctx, request, option, mail.body, None, 5) is None
+    written["body"] = "Example Air 1234.57 EUR 3 天"
+    assert await compose.letter(ctx, request, option, mail.body, "UN1950", 5) is None  # no DGD, no MSDS

@@ -2,6 +2,7 @@
 customer's first name and one short opening line (the closing slot is no longer rendered). Slots that fail a check are
 dropped, never the quote (P1, R9)."""
 
+import asyncio
 import json
 import random
 import re
@@ -902,6 +903,113 @@ async def prose(ctx: Context, rfq: Rfq, message: Message) -> Prose | None:
         )
         return None
     return adopt(ctx, rfq, message, result.data)
+
+
+LETTER_SYSTEM = (
+    "You are an air freight sales clerk answering a customer's request for a quote. Write the whole reply in the "
+    "language of the customer's mail and in their tone, as a person writes it: a greeting (with their name only if "
+    "they signed with it), the offer, what it covers, until when it holds and that they can reply to book, then a "
+    "short sign-off phrase. Use only the facts given and copy every number, code and name exactly as written there, "
+    "the price with its decimal point; write no other number, price, date or company. No subject line, no "
+    "signature name: ours is added below your text."
+)
+LETTER_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"body": {"type": "string"}},
+    "required": ["body"],
+}
+NUMBER = re.compile(r"\d+(?:[.,:]\d+)*")
+
+
+def _facts(rfq: Rfq, option: RateOption, request: str, dangerous: str | None) -> tuple[list[str], set[str]]:
+    """The facts the letter may state, each written by code, and every number it may hold."""
+    total = money(option.total)
+    scope = "air freight, fuel and security surcharges"
+    if option.trucker:
+        scope = f"pickup from the customer's site by {option.trucker}, {scope}"
+    elif rfq.door_pickup:
+        scope = f"{scope}; airport to airport only, the pickup is not included"
+    facts = [
+        f"Route: {option.origin} to {option.destination}",
+        f"Airline: {option.carrier}",
+        f"Price: {total} {option.currency} all-in ({scope})",
+        f"Transit time: {option.transit_days} days",
+    ]
+    numbers = {total, str(option.transit_days)}
+    cargo = [f"{rfq.weight_kg.normalize():f} kg"]
+    if rfq.volume_cbm:
+        cargo.append(f"{rfq.volume_cbm.normalize():f} cbm")
+    if rfq.pieces:
+        cargo.append(f"{rfq.pieces} pieces")
+    facts.append("Their shipment: " + ", ".join(cargo))
+    numbers |= {c.split()[0] for c in cargo} | set(NUMBER.findall(request))  # their own figures may be repeated
+    if option.chargeable_kg > rfq.weight_kg:
+        chargeable = f"{option.chargeable_kg.normalize():f}"
+        facts.append(f"Chargeable weight: {chargeable} kg, as the cargo is bulky for its weight")
+        numbers.add(chargeable)
+    if option.valid_until:
+        until = option.valid_until.astimezone(OFFICE).strftime("%H:%M")
+        facts.append(f"Valid until: {until} today")
+        numbers.add(until)
+    if rfq.door_pickup and not rfq.pickup_postcode:
+        facts.append("Ask for the full pickup address with its postcode")
+    if dangerous:
+        facts.append(f"The goods are declared as dangerous goods ({dangerous}): ask for the shipper's declaration "
+                     "for dangerous goods (DGD) and the safety data sheet (MSDS)")  # fmt: skip
+    for name in (option.carrier, option.trucker or "", dangerous or ""):
+        numbers |= set(NUMBER.findall(name))
+    return facts, numbers
+
+
+def letter_ok(
+    body: str, rfq: Rfq, option: RateOption, numbers: set[str], banned: set[str], dangerous: str | None
+) -> bool:
+    """`check` for a body the model wrote: the total exactly once, currency, carrier and transit present, every
+    number one of the facts', no other carrier or trucker, no placeholder or link, and the DG papers when declared."""
+    found = NUMBER.findall(body)
+    allowed = {option.carrier.casefold(), (option.trucker or "").casefold()}
+    return (
+        20 < len(body) < 3000
+        and body.count(money(option.total)) == 1
+        and option.currency in body
+        and option.carrier in body
+        and str(option.transit_days) in found
+        and all(n in numbers for n in found)
+        and not any(name in body.casefold() for name in banned - allowed)
+        and not re.search(r"[{}\[\]<>@]|https?:|www\.", body)
+        and (not dangerous or ("DGD" in body and "MSDS" in body))
+    )
+
+
+async def letter(
+    ctx: Context, rfq: Rfq, option: RateOption, request: str, dangerous: str | None, timeout: float
+) -> str | None:
+    """The whole quote written by the model, for a language we have no text for (round 72 was Chinese); our
+    signature added by code. None when the call fails, is late or its body fails `letter_ok`: the English
+    template goes out instead."""
+    facts, numbers = _facts(rfq, option, request, dangerous)
+    try:
+        result = await asyncio.wait_for(
+            llm.ask_json(
+                ctx,
+                purpose="quote.letter",
+                system=LETTER_SYSTEM,
+                user=f"Customer's mail:\n{own_words(request)[:2000]}\n\nFacts:\n" + "\n".join(facts),
+                schema=LETTER_SCHEMA,
+                session_id=rfq.session_id,
+                max_output_tokens=900,
+            ),
+            timeout=timeout,
+        )
+        body = str(result.data.get("body") or "").strip()
+        ok = letter_ok(body, rfq, option, numbers, _banned(ctx), dangerous)
+    except Exception as exc:  # noqa: BLE001  the template covers the quote
+        events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                    payload={"where": "quote.letter", "error": type(exc).__name__})  # fmt: skip
+        return None
+    events.emit(ctx, "quote.letter", "rfq", session_id=rfq.session_id, payload={"ok": ok, "body": body})
+    return f"{body}\n\n{ctx.settings.signer}\n{COMPANY}" if ok else None
 
 
 def stored(ctx: Context, session_id: int) -> Prose | None:

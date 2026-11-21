@@ -134,6 +134,7 @@ ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "reg
 FRENCH = {"le", "la", "les", "des", "du", "et", "pour", "nous", "vous", "votre", "un", "une", "est", "avec", "merci",
           "bonjour", "poids", "envoi", "colis", "que", "pouvez", "cordialement", "devis", "dans", "aux"}  # fmt: skip
 LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH}
+LATIN_WORD_OR_LETTER = re.compile(r"[A-Za-zÀ-ɏ]+|[^\W\d_A-Za-zÀ-ɏ]")
 
 SYSTEM = (
     "You read an air freight customer's request for a quote and return its facts as JSON. "
@@ -341,10 +342,18 @@ def words_of(text: str, extra: dict[str, set[str]] | None = None) -> dict[str, i
     }
 
 
-def _language(text: str) -> str:
-    """The language with the most common words; English on a tie (round 70 was French, answered in English)."""
+def _language(text: str, said: str | None = None) -> str:
+    """The language with the most common words when they settle it (every live en/de/fr request: at least 18% of its
+    words); else the model's ISO code (round 72 was Chinese, answered in English); "" when neither knows, so the
+    quote is written by the model in the mail's own language (`compose.letter`)."""
     counts = words_of(text)
-    return max(counts, key=lambda lang: (counts[lang], lang == "en"))
+    best, runner = sorted(counts.values(), reverse=True)[:2]
+    words = len(LATIN_WORD_OR_LETTER.findall(text))  # each letter of another script counts: Chinese has no spaces
+    said = (said or "").strip().lower()
+    said = said if re.fullmatch(r"[a-z]{2}", said) else ""
+    if best >= 3 and best >= 2 * runner and best >= 0.15 * words:
+        return max(counts, key=lambda lang: (counts[lang], lang == "en"))
+    return said
 
 
 def _preference(text: str) -> Preference:
@@ -579,7 +588,7 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
         pickup_postcode=postcode,
         pickup_zone=zone_of(postcode) if postcode else None,
         currency=currency if currency and re.fullmatch(r"[A-Z]{3}", currency) else None,
-        language=_language(text),  # the model answered "de" for an English mail with German place names
+        language=_language(text, data.get("language")),  # code's count wins: the model said "de" for an English mail
         received_at=deadline.received_at,
         deadline_at=deadline.expires_at,
         extracted_by="model",
@@ -1115,7 +1124,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             rfq = apply_pickup(await ask(rfq))
             prose = {k: result.data.get(k) for k in PROSE}
     if files:
-        rfq = rfq.model_copy(update={"language": _language(_text(mail))})
+        rfq = rfq.model_copy(update={"language": _language(_text(mail), rfq.language)})
         for key in ("origin", "destination"):
             if named := [name for name, content in sources if names_code(content, getattr(rfq, key))]:
                 evidence[key] = named

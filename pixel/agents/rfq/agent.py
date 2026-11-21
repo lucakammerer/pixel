@@ -14,6 +14,8 @@ from pixel.pricing import calc, engine, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
+LETTER_WAIT_S = 20
+LETTER_MARGIN_S = 30
 AIRPORTS_WAIT_S = 5.0
 AIRPORTS_SYSTEM = (
     "You check the airports of an air freight request. A code read from the mail is on none of the lanes we "
@@ -36,10 +38,22 @@ def _fx_for(currency: str, options: list[RateOption]) -> Decimal | None:
     return next((o.fx_eur for o in options if o.currency == currency and o.fx_eur and o.fx_eur > 0), None)
 
 
-def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
+def _chosen(rfq: Rfq, options: list[RateOption]) -> RateOption:
     option = selection.select(rfq, options)
     if rfq.currency and option.currency != rfq.currency:
         option = calc.in_currency(option, rfq.currency, _fx_for(rfq.currency, options))
+    return option
+
+
+def _quote(
+    ctx: Context,
+    rfq: Rfq,
+    options: list[RateOption],
+    prose: compose.Prose | None,
+    fallback: bool,
+    letter: str | None = None,
+) -> Quote:
+    option = _chosen(rfq, options)
     subject, body = compose.render(
         rfq,
         option,
@@ -48,6 +62,7 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
         ctx.settings.signer,
         compose.customer_body(ctx, rfq.message_id),
     )
+    body = letter or body
     calls = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE kind = 'llm.call' AND session_id = ?", (rfq.session_id,)
     ).fetchone()[0]
@@ -65,7 +80,7 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
         llm_cost_usd=llm.spend_usd(ctx, session_id=rfq.session_id),
         created_at=timing.now(),
     )
-    quote = _noted(ctx, rfq, quote)
+    quote = quote if letter else _noted(ctx, rfq, quote)  # the letter already asks for the DG papers
     _check(ctx, rfq, quote)
     events.emit(ctx, "quote.drafted", "rfq", session_id=rfq.session_id,
                 payload={"quote_id": quote.id, "option": option.model_dump(mode="json"), "fallback": fallback,
@@ -143,7 +158,17 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     prose = compose.stored(ctx, rfq.session_id)
     if not options:
         return None
-    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, prose, fallback=False))
+    letter = None
+    if compose.language_of(rfq) != rfq.language:
+        # No text of ours in their language: the model writes the whole mail, code checks it (`compose.letter_ok`).
+        left = (deadline.hard_at - timing.now()).total_seconds() - LETTER_MARGIN_S
+        if left > 0:
+            found = dangerous.declared(ctx, rfq)
+            request = compose.customer_body(ctx, rfq.message_id)
+            letter = await compose.letter(
+                ctx, rfq, _chosen(rfq, options), request, found[0] if found else None, min(LETTER_WAIT_S, left)
+            )
+    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, prose, fallback=False, letter=letter))
     quotes.save(ctx, sent)
     return sent
 
