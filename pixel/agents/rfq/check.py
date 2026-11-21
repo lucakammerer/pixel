@@ -43,11 +43,21 @@ def as_payload(findings: list[Finding]) -> list[dict]:
     return [asdict(f) for f in findings]
 
 
-def run(quote: Quote, request: str, options: list[RateOption] = (), attachments: tuple[str, ...] = ()) -> list[Finding]:
+def run(
+    quote: Quote,
+    request: str,
+    options: list[RateOption] = (),
+    attachments: tuple[str, ...] = (),
+    *,
+    document_weight: Decimal | None = None,
+) -> list[Finding]:
     """Every finding for `quote`. `request` is the customer's mail (subject and body), `options` every option the
-    session found (airlines and pickups), `attachments` the file names on the customer's mail."""
+    session found (airlines and pickups), `attachments` the file names on the customer's mail. A gross weight
+    corroborated by a packing table can supersede the figures in the mail."""
     findings: list[Finding] = []
     for rule in RULES:
+        if rule in (_weight, _accounting) and document_weight == quote.rfq.weight_kg:
+            continue
         try:
             findings.extend(rule(quote, request, list(options), attachments))
         except Exception as exc:  # noqa: BLE001  a broken rule must never cost the quote

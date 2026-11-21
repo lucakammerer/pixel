@@ -85,7 +85,16 @@ def _check(ctx: Context, rfq: Rfq, quote: Quote) -> None:
         message = Message.model_validate_json(row["data"]) if row else None
         request = extract._text(message) if message else ""
         files = tuple(a.filename for a in message.attachments) if message else ()
-        findings = check.run(quote, request, session.for_request(ctx, rfq), files)
+        document_weight = None
+        if files:
+            evidence = ctx.db.execute(
+                "SELECT json_extract(payload, '$.document_weight_kg') AS weight FROM events"
+                " WHERE session_id = ? AND message_id = ? AND kind = 'rfq.evidence' ORDER BY id DESC LIMIT 1",
+                (rfq.session_id, rfq.message_id),
+            ).fetchone()
+            if evidence and evidence["weight"] is not None:
+                document_weight = Decimal(evidence["weight"])
+        findings = check.run(quote, request, session.for_request(ctx, rfq), files, document_weight=document_weight)
         events.emit(ctx, "quote.checked", "rfq", session_id=rfq.session_id,
                     payload={"quote": quote.id, "blocking": check.blocking(findings), "fallback": quote.fallback,
                              "total": str(quote.total), "findings": check.as_payload(findings)})  # fmt: skip

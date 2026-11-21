@@ -803,7 +803,7 @@ def _shipment_sources(sources: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return kept
 
 
-def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
+def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal | None]:
     """Use explicit corrections, then corroborated measurements from the eligible attachments."""
     clauses = [part.strip() for part in CARGO_CLAUSE.split(sources[0][1])]
     directives = [
@@ -824,6 +824,7 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
         sources = [sources[0], *named]
     lots = [_lots(text) for _, text in sources]
     facts, evidence = {}, {}
+    document_weight = None
 
     def take(field: str, readings: list) -> None:
         if readings[0] is not None:
@@ -859,7 +860,9 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
         if len(corroborated := {v for _, v in documents if v is not None}) == 1:
             facts[field] = corroborated.pop()
             evidence[field] = [name for name, v in documents if v is not None]
-    return facts, evidence
+            if field == "weight_kg":
+                document_weight = facts[field]
+    return facts, evidence, document_weight
 
 
 def _document_pickup(rfq: Rfq, sources: list[tuple[str, str]], evidence: dict) -> Rfq:
@@ -915,7 +918,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         return selected, combined, combined_mail
 
     sources, text, message = source_inputs()
-    cargo, evidence = _cargo_sources(sources) if files else ({}, {})
+    cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
 
     def rules(guess: bool = False) -> Rfq | None:
         if not files:
@@ -933,13 +936,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
 
     async def ask(read: Rfq) -> Rfq:
         """Asks once for the facts still missing and reads the request again with the customer's answer."""
-        nonlocal mail, message, sources, text, cargo, evidence
+        nonlocal mail, message, sources, text, cargo, evidence, document_weight
         read = apply_pickup(read, guess=False)
         if not (facts := _unknown(read)) or (said := await _ask(ctx, mail, read, facts, deadline)) is None:
             return read
         mail = mail.model_copy(update={"body": f"{_body(mail)}\n\n{own_words(said)}"})
         sources, text, message = source_inputs()
-        cargo, evidence = _cargo_sources(sources) if files else ({}, {})
+        cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
         again = rules()
         if (
             again is None
@@ -998,8 +1001,9 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             if named := [name for name, content in sources if names_code(content, getattr(rfq, key))]:
                 evidence[key] = named
         excluded = [name for name, content in documents if (name, content) not in sources]
+        proof = {"document_weight_kg": document_weight} if document_weight == rfq.weight_kg else {}
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
-                    payload={"sources": evidence, "attachment_route_conflicts": excluded})  # fmt: skip
+                    payload={"sources": evidence, "attachment_route_conflicts": excluded, **proof})  # fmt: skip
     rfq = _ruled_out(ctx, rfq, _text(mail))
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
