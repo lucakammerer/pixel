@@ -1,0 +1,16 @@
+[Unit]
+Description=PIXEL digital air forwarder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pixel
+WorkingDirectory=/opt/pixel/app
+ExecStart=/opt/pixel/app/.venv/bin/uvicorn pixel.app:app --host 127.0.0.1 --port 8421
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

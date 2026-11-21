@@ -8,7 +8,10 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+import httpx
+
 from pixel import llm
+from pixel.api.client import ApiError
 from pixel.contracts import LaneTariff, Message
 from pixel.core import events
 from pixel.core.context import Context
@@ -371,7 +374,7 @@ async def _ingest(ctx: Context, source: str, files: list[tuple[str, bytes]], ses
         else:
             tariffs = parse(source, files[0][1])
         findings = check(tariffs)
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+    except (ValueError, KeyError, TypeError, AttributeError, ApiError, httpx.HTTPError, llm.BudgetExceeded) as exc:
         tariffs, findings = [], [f"{type(exc).__name__}: {exc}"]
     if findings:
         events.emit(
