@@ -64,7 +64,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airline (address from the 503 message, else the carrier list), 404 and 409 are `booking.failed`. A second
   acceptance books nothing twice. A dry run (`PIXEL_DRY_RUN=1`) and every replay never book at the portal: the
   booking falls through to the booking mail, which the outbox holds. The customer mails (booked, confirmed) are in the customer's language, with
-  money and weight formatted by `compose`, the stored first name and the same signer, without a model call.
+  money and weight formatted by `compose`, greeted and signed as the quote was (`compose.register`, `signed_name`,
+  `in_kind`) by the same signer, without a model call.
   `handle_confirmation`: "Booking <reference> confirmed" marks booking and shipment
   confirmed and tells the customer once.
 
