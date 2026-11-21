@@ -48,14 +48,17 @@ TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 # Round 79: "a total volume of 95.00 cubic feet" (2.69 cbm) was read by the model as 95 cbm.
 FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t\b|cu\.?\s*ft\b|ft3\b|ft³)"
 FT3 = Decimal("0.028316846592")
+# "3360 litres" is 3.36 cbm; a bare "l" is left alone: "5 l canisters" names the goods, not the shipment.
+LITRE = r"\s*(?i:lit(?:er|re)s?\b|ltrs?\b)"
 VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
     re.compile(
         rf"(?i:\b(?:cbm|volume|volumen){TOTAL_WORD}(?:\s*\((?:cbm|m3|m³)\))?)[^\S\n]*:?[^\S\n]*{NUM}"
-        rf"(?![\d.,']|{FEET3})"
+        rf"(?![\d.,']|{FEET3}|{LITRE})"
     ),
 )
 CUBIC_FEET = (re.compile(rf"{NUM}{FEET3}"),)
+LITRES = (re.compile(rf"{NUM}{LITRE}"),)
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s])|\s+(?:each|apiece|per|je|pro)\b))?\b",  # "in total": a word, not inches
     re.IGNORECASE,
@@ -317,6 +320,8 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
         return stated
     if not any(p.search(text) for p in VOLUME) and (feet := _unique(CUBIC_FEET, text, thousands=False)):
         return feet * FT3
+    if not any(p.search(text) for p in VOLUME) and (litres := _unique(LITRES, text, thousands=True)):
+        return litres / 1000
     dims = DIMS.findall(text)
     if len(dims) != 1:
         return None
@@ -647,7 +652,7 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
             own := _weight(text, pieces) or (_model_lots(groups) or (None,))[0]
         ):
             weight = own
-        if (volume not in written or _only_with(text, volume, FEET3)) and (
+        if (volume not in written or _only_with(text, volume, f"(?:{FEET3}|{LITRE})")) and (
             own := _volume(text, pieces) or (_model_lots(groups) or (0, None))[1]
         ):
             volume = own

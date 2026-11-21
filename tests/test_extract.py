@@ -960,19 +960,23 @@ async def test_a_question_for_a_missing_fact_is_asked_in_the_customers_language(
     assert asked[0].startswith("Hola:") and "volume" in asked[0]
 
 
-async def test_a_figure_in_another_unit_is_never_taken_as_kg_or_cbm(conn, monkeypatch, emitted):
+@pytest.mark.parametrize(
+    "volume, written",
+    [("95.00", "a total volume of 95.00 cubic feet"), ("2690", "a volume of 2690 litres")],
+)
+async def test_a_figure_in_another_unit_is_never_taken_as_kg_or_cbm(conn, monkeypatch, emitted, volume, written):
     """Round 79: "1413.17 lb and a total volume of 95.00 cubic feet". The model copied 95.00 as cbm, the cross-check
     took it, and the quote went out on 15865 kg chargeable instead of 641 kg."""
     ctx = Context(settings(), conn, None, None, None, None)
     said = {"origin": "HAM", "destination": "SGN", "weight_kg": "1413.17", "volume_cbm": "95.00", "pieces": 3,
             "lots": [], "preference": "fastest", "door_pickup": False, "pickup_postcode": None, "currency": "EUR",
-            "language": "en", "first_name": None, "intro": None, "closing": None}  # fmt: skip
+            "language": "en", "first_name": None, "intro": None, "closing": None} | {"volume_cbm": volume}  # fmt: skip
 
     async def model(ctx, **kw):
         return LlmResult(data=said, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
     monkeypatch.setattr(llm, "ask_json", model)
-    body = "HAM to SGN: 3 pieces, a gross weight of 1413.17 lb and a total volume of 95.00 cubic feet. Fastest please."
+    body = f"HAM to SGN: 3 pieces, a gross weight of 1413.17 lb and {written}. Fastest please."
     rfq = await extract.extract(ctx, mail(body), DEADLINE)
     assert (round(rfq.weight_kg, 2), round(rfq.volume_cbm, 2)) == (Decimal("641.00"), Decimal("2.69"))
 

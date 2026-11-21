@@ -286,7 +286,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   price.
 - A request can give its volume in cubic feet and its weight in pounds (round 79: "1413.17 lb", "95.00 cubic
   feet"). Code converts both (`_volume`, `FT3`; `_weight`, `LB`); a model figure that stands in the text only
-  before another unit (`_only_with`) is replaced by code's reading, so the cross-check never takes 95 cbm.
+  before another unit (`_only_with`) is replaced by code's reading, so the cross-check never takes 95 cbm. The same
+  holds for litres ("3360 litres" is 3.36 cbm, `LITRE`; a bare "l" is left alone, "5 l canisters" names goods).
+  `tools/simulate.py` writes every mail in lb, pounds, kgs, kilos, kilograms, cubic feet, ft³, cu ft, litres and
+  dimensions in metres; with two lots these units still go to the model (`_lots` reads kg and cbm only).
 - The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
   181.96 EUR offer). The rules now refuse a fuel, security or waiting rate as the price (`_price`); a model read of
   every answer the rules price cost a call per carrier answer and read no other total on 359 answers of rounds 9 to
