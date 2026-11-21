@@ -778,6 +778,18 @@ def test_the_origin_airport_named_after_to_is_no_destination():
     assert extract._destination_only(body + " 300 kg, 1 cbm.") is None  # FRA is the origin; the model reads the rest
 
 
+@pytest.mark.parametrize(
+    ("text", "language"),
+    [
+        ("FRA-ORD 340 kg per kg rate pls, 1.2 cbm", "en"),
+        ("Origin MUC, destination GRU, 715 kg, 2.65 cbm, ready 2026-11-25, Saludos, Klaus", "en"),
+        ("Hola, necesitamos una cotización de FRA a GRU, 715 kg. Gracias", "es"),
+    ],
+)
+def test_one_word_of_a_language_we_translate_into_does_not_make_an_english_mail_foreign(text, language):
+    assert extract._language(text) == language
+
+
 async def test_an_answer_that_gives_every_fact_is_read_after_the_model_could_read_nothing(conn, monkeypatch):
     """Round 69: the recording could not be read, we asked, the customer answered with everything. "Select the
     departure airport for the fastest option to JFK" read JFK as the origin, so the answer was dropped: no quote."""

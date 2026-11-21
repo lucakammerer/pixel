@@ -155,6 +155,9 @@ CZECH = {"dobrý", "prosím", "děkuji", "děkujeme", "nabídku", "nabídka", "p
          "jsou", "kusy", "pozdravem", "zásilka", "zásilku", "cenovou"}  # fmt: skip
 LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH, "es": SPANISH, "it": ITALIAN, "pt": PORTUGUESE, "nl": DUTCH,
              "pl": POLISH, "tr": TURKISH, "sv": SWEDISH, "cs": CZECH}  # fmt: skip
+# One of their words alone turns up in an English mail ("per kg", a "Saludos" sign-off): two are needed, else the
+# quote is translated for a customer who wrote English.
+TWO_WORDS = set(LANGUAGES) - {"en", "de", "fr"}
 # The persona's own sign-off stays English or German whatever language the mail is in (rounds 70 and 72): a short
 # line from it to the end, with only the name and company below, is no evidence of the mail's language.
 SIGN_OFF = re.compile(
@@ -409,7 +412,7 @@ def _language(text: str, said: object = None, attached: str = "") -> str:
     for part in (_unsigned(text), attached, text):
         if script := _script(part):
             return own or script
-        counts = words_of(part)
+        counts = {lang: n for lang, n in words_of(part).items() if n >= 2 or lang not in TWO_WORDS}
         best = max(counts, key=lambda lang: (counts[lang], lang == "en"))
         if own and counts[best] * 5 < len(re.findall(r"[^\W\d_]+", part)):
             return own
