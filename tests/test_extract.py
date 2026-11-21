@@ -11,7 +11,7 @@ from pixel import llm
 from pixel.agents.rfq import extract
 from pixel.api.mailbox import to_message
 from pixel.config import settings
-from pixel.contracts import LlmResult, Message, Preference
+from pixel.contracts import Attachment, LlmResult, Message, Preference
 from pixel.core import events, outbox, poller
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
@@ -471,6 +471,77 @@ async def test_a_packing_spec_whose_table_bears_out_its_gross_weight_outweighs_t
     assert evidence["weight_kg"] == ["shipment_details_81971.xlsx"]
 
 
+@pytest.mark.parametrize(
+    "fixture, instruction, field, value",
+    [
+        (
+            "rfq-packing-list-volume-differs-from-mail.json",
+            "The packing list is outdated. Use the dimensions and gross weight in this email.",
+            "volume_cbm",
+            "11.69",
+        ),
+        (
+            "rfq-spec-weight-differs-from-mail.json",
+            "Please use the gross weight in this email.",
+            "weight_kg",
+            "2644",
+        ),
+        (
+            "rfq-spec-weight-differs-from-mail.json",
+            "Corrected gross weight: 2800 kg.",
+            "weight_kg",
+            "2800",
+        ),
+    ],
+)
+async def test_explicit_email_corrections_take_precedence(conn, emitted, fixture, instruction, field, value):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / fixture).read_bytes())
+    raw["body"] = f"{instruction}\n\n{raw['body']}"
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert getattr(rfq, field) == Decimal(value)
+    evidence = next(kw["payload"]["sources"] for kind, kw in emitted if kind == "rfq.evidence")
+    assert evidence[field] == ["mail"]
+
+
+@pytest.mark.parametrize(
+    "instruction, volume, source",
+    [
+        ("", "3.20", "mail"),
+        ("Please use the revised packing list in revised.pdf.", "2.40", "revised.pdf"),
+        ("Do not use revised.pdf.", "3.20", "mail"),
+        ("Please use different.pdf.", "3.20", "mail"),
+    ],
+)
+async def test_packing_documents_must_match_the_lane_and_a_named_revision_resolves_the_volume(
+    conn, monkeypatch, emitted, instruction, volume, source
+):
+    async def attachments(ctx, message):
+        header = "Length (cm) Width (cm) Height (cm) Pieces"
+        different = ("different.pdf", ["Destination airport: CCC", "Total volume (cbm): 1.60", header, "100 100 80 2"])
+        if not instruction:
+            return [different]
+        return [
+            ("original.pdf", ["Destination airport: BBB", "Total volume (cbm): 2.00", header, "100 100 100 2"]),
+            ("revised.pdf", ["Destination airport: BBB", "Total volume (cbm): 2.40", header, "100 100 120 2"]),
+            different,
+        ]
+
+    monkeypatch.setattr(extract, "_attachments", attachments)
+    ctx = Context(settings(), conn, None, None, None, None)
+    message = mail(f"{instruction}\nAAA to BBB, 2 pieces, 240 kg gross, 3.20 cbm.")
+    message = message.model_copy(
+        update={"attachments": (Attachment(id=1, filename="packing.pdf", content_type="application/pdf", size=1),)}
+    )
+    rfq, text = await extract.read_request(ctx, message, DEADLINE)
+    assert (rfq.destination, rfq.volume_cbm) == ("BBB", Decimal(volume))
+    evidence = next(kw["payload"] for kind, kw in emitted if kind == "rfq.evidence")
+    assert evidence["sources"]["volume_cbm"] == [source]
+    assert evidence["attachment_route_conflicts"] == ["different.pdf"]
+    assert "Destination airport: CCC" not in text
+
+
 TABLE = "Length (cm) Width (cm) Height (cm) Pieces {column}\n100 100 63 19 {row}"
 
 
@@ -682,3 +753,40 @@ async def test_a_request_without_a_volume_asks_for_it_and_reads_the_answer(conn,
     monkeypatch.setattr(outbox, "send", send)
     rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
     assert "volume" in asked[0] and (rfq.weight_kg, rfq.volume_cbm) == (Decimal(600), Decimal("5.76"))
+
+
+async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
+
+    fixtures = Path(__file__).parent / "fixtures"
+    scored = json.loads((fixtures / "scored-excluded-airline.json").read_text())
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_carriers(ctx, [{"name": n, "kind": "airline", "email": f"{i}@x", "serves": "AAA"}
+                              for i, n in enumerate(scored["airlines"])])  # fmt: skip
+    message = to_message(json.loads((fixtures / scored["request"]).read_text()), "in")
+    message = message.model_copy(update={"session_id": message.id})
+    store.save_zones(
+        ctx, [{"zone": zone_of(z), "area": "Town", "airport": "AAA"} for z in extract.POSTCODE.findall(message.body)]
+    )
+    rfq, _ = await extract.read_request(ctx, message, deadline_for(message.sent_at, settings()))
+    assert set(rfq.excluded_carriers) == {scored["excluded"], scored["code"]}
+    later = message.model_copy(update={"id": message.id + 1, "session_id": message.id + 1,
+                                       "body": message.body.split("\n\nPlease do not")[0]})  # fmt: skip
+    rfq, _ = await extract.read_request(ctx, later, deadline_for(later.sent_at, settings()))
+    assert scored["excluded"] in rfq.excluded_carriers
+    other = later.model_copy(update={"id": later.id + 1, "session_id": later.id + 1, "sender": "someone@else"})
+    rfq, _ = await extract.read_request(ctx, other, deadline_for(other.sent_at, settings()))
+    assert rfq.excluded_carriers == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "excluded"),
+    [
+        ("Please avoid Alpha Air on this one.", {"Alpha Air"}),
+        ("Bitte nicht mit Alpha Air fliegen.", {"Alpha Air"}),
+        ("Any airline except Alpha is fine.", {"Alpha Air"}),
+        ("We flew Alpha Air last time and were happy.", set()),
+        ("We are not in a hurry.", set()),
+    ],
+)
+def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
+    assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"})[0]) == excluded

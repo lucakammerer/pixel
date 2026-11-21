@@ -39,6 +39,10 @@ class NotOnPortal(Exception):
         self.hint = hint
 
 
+class RatesUnavailable(NotOnPortal):
+    """503 from /rates: the rate API is down for every airline, not this airline off the portal (rounds 27 to 29)."""
+
+
 class RateExpired(Exception):
     """410 from /bookings."""
 
@@ -139,7 +143,9 @@ class Portal:
                 self.rate_remaining = 0
                 await self._wait(retry_after, not_after, attempt)
                 continue
-            if response.status_code in (404, 503):
+            if response.status_code == 503:
+                raise RatesUnavailable(_detail(response))
+            if response.status_code == 404:
                 raise NotOnPortal(_detail(response))
             if response.status_code != 200:
                 raise ApiError(response.status_code, _detail(response))

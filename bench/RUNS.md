@@ -221,3 +221,8 @@ What follows:
   (known gaps for extract.py): pieces and destination always take the mail's; weight per piece in the table and a
   table without total lines leave the mail's weight and volume standing. Next: one resolver for every field the
   document states.
+- 21.11. 20:10, after #163: rounds 36-41 all accepted at the best price (60 each, about 32 s); 39-41 carried
+  attached documents that agree with the mail, read by rules. Every customer reply live is one of a few templates
+  (accept, decline too high/too low/DG, thanks, DG documents to follow), all read right on main; the four declines
+  logged as accepted before 16:35 read as declines now. None of 98 customer replies in a thread held a new request,
+  so the reply-in-old-thread gap stays a note. Next: capture the next request whose reading or verdict differs.

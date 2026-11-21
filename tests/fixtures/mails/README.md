@@ -42,6 +42,9 @@ Captured mails of a request, from the request to the confirmed booking:
   (140 x 100 x 107 cm); quoted on the mail's before #159 was live, rejected as too high.
 - `rfq-spec-weight-differs-from-mail.json`: round 35, MUC-SGN, fastest. The mail says 2644 kg; the attached xlsx
   spec (embedded) says 1751 kg in its total and its one table row. Quoted on 2644, rejected as too high.
+- `rfq-excluded-airline.json`: round 42, FRA-ULN door to port, cheapest. The customer rules out one airline for this
+  and every later request; we quoted it as the cheapest bid and were rejected as `excluded_airline`.
+  `../scored-excluded-airline.json` holds the bids and the verdict.
 - `rfq-port-to-port.json`: a request that names both airports and delivers to the airport itself; the rules read
   it without a model.
 - `rfq-port-cheapest-airline-bids.json`: round 28, port to port and cheapest, sent while the portal's rate API

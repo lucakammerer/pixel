@@ -63,3 +63,14 @@ def test_airline_bids_compete_by_the_customers_wish():
     scored = json.loads((Path(__file__).parent / "fixtures" / "scored-airline-bids.json").read_text())
     options = [opt(o["carrier"], o["total"], o["days"], Source(o["source"])) for o in scored["options"]]
     assert select(rfq(Preference(scored["preference"])), options).carrier == scored["scorer_carrier"]
+
+
+def test_an_airline_the_customer_ruled_out_is_never_quoted():
+    scored = json.loads((Path(__file__).parent / "fixtures" / "scored-excluded-airline.json").read_text())
+    options = [opt(o["carrier"], o["total"], o["days"], Source(o["source"])) for o in scored["options"]]
+    by_name = rfq(Preference(scored["preference"])).model_copy(update={"excluded_carriers": (scored["excluded"],)})
+    assert select(by_name, options).carrier != scored["excluded"]
+    portal = [o.model_copy(update={"carrier_code": scored["code"]}) if o.carrier == scored["excluded"] else o
+              for o in options]  # fmt: skip
+    by_code = by_name.model_copy(update={"excluded_carriers": (scored["code"],)})
+    assert select(by_code, portal).carrier != scored["excluded"]

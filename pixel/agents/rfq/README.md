@@ -47,6 +47,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
+- `extract.py` `excluded_airlines`, `_ruled_out`: an airline the customer rules out (a sentence with a negation that
+  names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
+  two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
+  When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
   customer, formal or not (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
   the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
@@ -105,6 +109,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A customer can rule out an airline ("Please do not offer … for this shipment or for any of our future
+  inquiries"), and it can be the cheapest bid. Round 42 quoted it and was rejected as `excluded_airline`; the
+  exclusion is read by rule and holds for that customer's later requests too (`extract.py` `_ruled_out`).
 - A customer's yes comes in many shapes ("Bitte buchen Sie.", "Please book it and send us the AWB once
   available.", "Could you book it, please?"). `booking.py` `intent` takes an acceptance anywhere in a sentence that
   is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes
@@ -151,8 +158,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself.
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
-  combines fields separately, giving precedence to an explicit figure in the mail. A unique attachment value
-  can supply a missing field. One exception, round 33: the mail said 2.78 cbm (120 x 40 x 116 cm), the attached
+  excludes attachments that explicitly name a different origin or destination airport. For weight and volume,
+  an explicit email correction takes precedence. When the customer names one eligible attachment to use,
+  its corroborated figures can resolve disagreement between attachments. A unique attachment value can still
+  supply a missing field. Round 33: the mail said 2.78 cbm (120 x 40 x 116 cm), the attached
   packing spec 1.92 cbm with a table row of 5 pieces of 40 x 120 x 80 cm, and the scorer priced 1.92. A volume a
   document states and its own table or dimensions times pieces bear out (`_document_volume`, `_table_volume`) wins
   over the mail's. A stated volume nothing in the document confirms does not. The same holds for the gross weight
@@ -160,7 +169,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   document's total only when the table's one weight column, headed in kg, adds up to it within 0.5 kg. A row's
   weight is never multiplied by its pieces; a column without kg, a second weight column or a weight per piece leaves
   the mail standing. Live requests 2264 and 2537 had
-  attachments that agreed with their mails. `rfq.evidence` records its source. A positive weight recovered by code clears
+  attachments that agreed with their mails. `rfq.evidence` records the chosen sources and any attachment airport
+  conflicts. A positive weight recovered by code clears
   the missing-weight flag. A document number alone is no pickup postcode.
 - A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
   to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.
