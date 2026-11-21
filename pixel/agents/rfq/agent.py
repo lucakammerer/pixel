@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import UTC, datetime, timedelta
 
 from pixel import llm
@@ -9,10 +10,21 @@ from pixel.core import events, feedback, outbox
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.crm import quotes
-from pixel.pricing import engine, selection, session
+from pixel.pricing import engine, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
+AIRPORTS_SYSTEM = (
+    "You check the airports of an air freight request. A code read from the mail is on none of the lanes we "
+    "price. Answer the IATA codes of the departure and the destination airport. Keep a code the mail names "
+    "itself; otherwise pick from the airports we serve the one the mail's place belongs to, or null."
+)
+AIRPORTS_SCHEMA = {
+    "type": "object",
+    "properties": {"origin": {"type": ["string", "null"]}, "destination": {"type": ["string", "null"]}},
+    "required": ["origin", "destination"],
+    "additionalProperties": False,
+}
 
 
 def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
@@ -67,6 +79,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         events.emit(ctx, "error", "rfq", session_id=rfq.session_id, payload={"error": "unreadable request",
                     "missing": list(rfq.missing)})  # fmt: skip
         return None
+    rfq = await served_airports(ctx, rfq, message)
     # The one gateway call per quote (R28): when rules read the request, it writes the prose slots (R31);
     # when the model read it, the same call already drafted them.
     # The prose may hold the quote at most PROSE_WAIT_S after it started, and never past target_at: a slow or
@@ -89,6 +102,48 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     sent = await outbox.send_quote(ctx, _noted(ctx, rfq, _quote(ctx, rfq, options, prose, fallback=False)))
     quotes.save(ctx, sent)
     return sent
+
+
+async def _served(ctx: Context) -> tuple[set[str], set[str]]:
+    origins, destinations = store.airports(ctx)
+    try:
+        for lane in await portal_rates.lanes(ctx):
+            origins.add(lane.origin)
+            destinations.add(lane.destination)
+    except Exception as e:  # noqa: BLE001  the sheets and the carrier list still tell
+        events.emit(ctx, "error", "rfq", payload={"where": "served_airports", "error": f"{type(e).__name__}: {e}"})
+    return origins, destinations
+
+
+async def served_airports(ctx: Context, rfq: Rfq, message: Message) -> Rfq:
+    """A guessed airport that no lane we know starts or ends at (a nearby airfield, a city code) prices nothing,
+    and its bid requests are wasted. Such a code, when the mail does not name it, goes back to the model once with
+    the airports we serve; a code the mail names stands. No call when both codes are served."""
+    origins, destinations = await _served(ctx)
+    text = f"{message.subject}\n\n{message.body}"
+    wrong = {
+        key: served
+        for key, served in (("origin", origins), ("destination", destinations))
+        if served and getattr(rfq, key) not in served and not re.search(rf"\b{getattr(rfq, key)}\b", text)
+    }
+    if not wrong:
+        return rfq
+    user = (f"{text}\n\nRead: {rfq.origin} to {rfq.destination}.\nDeparture airports we serve: "
+            f"{' '.join(sorted(origins))}\nDestination airports we serve: {' '.join(sorted(destinations))}")  # fmt: skip
+    try:
+        result = await llm.ask_json(ctx, purpose="rfq.airports", system=AIRPORTS_SYSTEM, user=user,
+                                    schema=AIRPORTS_SCHEMA, session_id=rfq.session_id, max_output_tokens=40)  # fmt: skip
+    except Exception as e:  # noqa: BLE001  pricing goes on with the codes as read
+        events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                    payload={"where": "served_airports", "error": f"{type(e).__name__}: {e}"})  # fmt: skip
+        return rfq
+    update = {k: code for k, served in wrong.items() if (code := str(result.data.get(k) or "").upper()) in served}
+    if not update:
+        return rfq
+    rfq = rfq.model_copy(update=update)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
+                payload=rfq.model_dump(mode="json"))  # fmt: skip
+    return rfq
 
 
 async def fallback(ctx: Context, session_id: int) -> Quote | None:

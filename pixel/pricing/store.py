@@ -116,3 +116,12 @@ def airport_of(ctx: Context, zone: str) -> str | None:
 
 def zone_airports(ctx: Context) -> set[str]:
     return {row["airport"] for row in ctx.db.execute("SELECT DISTINCT airport FROM pickup_zones")}
+
+
+def airports(ctx: Context) -> tuple[set[str], set[str]]:
+    """(origins, destinations) the stored tariffs, pickup zones and airlines of the carrier list serve."""
+    origins = {r[0] for r in ctx.db.execute("SELECT DISTINCT origin FROM tariffs")} | zone_airports(ctx)
+    destinations = {r[0] for r in ctx.db.execute("SELECT DISTINCT destination FROM tariffs")}
+    for (serves,) in ctx.db.execute("SELECT serves FROM carriers WHERE kind = 'airline'"):
+        destinations.update(serves.split())
+    return origins, destinations
