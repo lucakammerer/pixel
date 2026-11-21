@@ -286,3 +286,32 @@ async def test_the_language_is_codes_reading_not_the_models(monkeypatch, emitted
 def test_no_pickup_needed_is_no_door_pickup():
     rfq = extract.by_rules(mail("AAA to BBB, 300 kg, 1 cbm. No pickup needed, the goods are at the airport."), DEADLINE)
     assert rfq.door_pickup is False
+
+
+def lot(pieces, weight, per_piece=False, unit="kg", cbm=None, dims=None):
+    return {"pieces": pieces, "weight": weight, "weight_unit": unit, "weight_per_piece": per_piece,
+            "volume_cbm": cbm, "volume_per_piece": False, "dimensions": dims}  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "weight_kg, lots, expected",
+    [
+        # as gpt-4.1-mini read the three-lot mail without its "Lot" labels: its own total was 1094 kg
+        ("1094", [lot(4, "730", cbm="1.68"), lot(4, "48", True, dims="110 x 110 x 52 cm"),
+                  lot(5, "206", True, dims="120 x 100 x 8 cm")], ("1952", "4.6768", 13)),
+        (None, [lot(3, "400", True, "lb", dims="120x80x110 cm")], (str(1200 * extract.LB), "3.168", 3)),
+        ("676", [lot(12, "600", cbm="5.79")], ("676", "5.79", 12)),  # one group beside a total in kg: the total
+    ],
+)  # fmt: skip
+async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, weight_kg, lots, expected):
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": weight_kg, "volume_cbm": "5.79", "pieces": 12,
+                "lots": lots, "preference": "cheapest", "door_pickup": False, "pickup_postcode": None,
+                "currency": None, "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    rfq = await extract.extract(None, mail("goods as listed"), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.missing) == (
+        Decimal(expected[0]), Decimal(expected[1]), expected[2], ()
+    )  # fmt: skip

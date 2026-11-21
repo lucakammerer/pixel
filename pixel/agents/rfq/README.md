@@ -67,6 +67,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   for the shipper's declaration and the safety data sheet (`dangerous.py`), in the deadline fallback too. The
   note points to the attachment, or to the mail when the mail itself declared them. Without that the scorer rejects the quote (`dg_docs_missing`); with it, at the unchanged price,
   it accepted one.
+- When the model reads a request, it copies each piece group as written (`lots`: pieces, weight and unit, per piece
+  or not, volume or one piece's dimensions) and `extract.py` `_model_lots` adds them up. Its own total for the
+  three-lot mail without labels was 1094 kg against 1952 kg. A weight in pounds is converted by code.
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
