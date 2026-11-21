@@ -292,6 +292,11 @@ CUSTOMER = {
                      "Sie wissen möchten, wo Ihre Sendung gerade ist, fragen Sie einfach.",
     },
 }  # fmt: skip
+# The quote's voice carries on into its booking mail: a thank-you a person adds, once per thread.
+THANKS = {
+    "en": " Thanks again, great to have you on board! 😊",
+    "de": " Nochmals danke, schön, dass Sie mit uns fliegen! 😊",
+}
 
 
 def _lang(quote: Quote) -> str:
@@ -305,12 +310,11 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
     if db.get(ctx.db, delivered):
         return
     lang = _lang(quote)
-    t, frame = CUSTOMER[lang], compose.TEXT[lang]
+    t = CUSTOMER[lang]
     prose = compose.stored(ctx, quote.session_id)
     request = compose.own_words(compose.customer_body(ctx, quote.rfq.message_id))
-    tone = compose.register(request)
     name = (prose.first_name if prose else None) or compose.signed_name(request, ctx.settings.signer)
-    bye = compose.in_kind(request, lang, tone, name)[1]
+    bye = compose.in_kind(request, lang, name)[1]
     scope = "all-in"
     if quote.rfq.door_pickup and not quote.option.trucker:
         scope = (
@@ -320,8 +324,10 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
         )
     text = t[what].format(scope=scope, origin=quote.option.origin, destination=quote.option.destination,
                           weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
-    body = "\n\n".join([frame["hello_name"][tone].format(name=name) if name else frame["hello"], text,
-                          f"{bye}\n{ctx.settings.signer}\n{compose.COMPANY}"])  # fmt: skip
+    if what == "booked":  # once per thread, not again on the confirmation
+        text += THANKS[lang]
+    body = "\n\n".join([compose.greeting(lang, name, quote.session_id), text,
+                        compose.signature(bye, ctx.settings.signer)])  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:
         await outbox.send(

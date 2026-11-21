@@ -7,7 +7,7 @@ import httpx
 import pytest
 from test_crm import mail, quote
 
-from pixel.agents.rfq import booking
+from pixel.agents.rfq import booking, compose
 from pixel.api.client import ApiError
 from pixel.api.portal import BookingUnavailable, PortalBooking, RateExpired
 from pixel.contracts import BookingStatus, QuoteStatus
@@ -147,7 +147,7 @@ async def test_german_customer_gets_a_german_mail_with_the_total_written_once(pi
     pipe.ctx.portal = Portal(None)
     await booking.book(pipe.ctx, "Q-1", reply_to=20)
     (told,) = pipe.sent
-    assert told["body"].startswith("Guten Tag,") and "370.74 EUR all-in" in told["body"]
+    assert told["body"].startswith("Hallo") and "370.74 EUR all-in" in told["body"]
     assert "Viele Grüße" in told["body"] and "Decimal" not in told["body"]
 
 
@@ -161,7 +161,9 @@ async def test_the_booking_mail_greets_and_signs_as_the_quote_did(pipe, accepted
     pipe.ctx.portal = Portal(None)
     await booking.handle_reply(pipe.ctx, accepted)
     (told,) = pipe.sent
-    assert told["body"].startswith("Hi Klaus,\n\n") and "\n\nCheers,\nLena Berger\n" in told["body"]
+    # Same greeting as the quote of this session, and the warm customer's first-name signature.
+    assert told["body"].startswith(compose.greeting("en", "Klaus", 1) + "\n\n")
+    assert "\n\nCheers,\nLena\n" in told["body"] and "great to have you on board" in told["body"]
 
 
 async def test_a_dry_run_never_books_at_the_portal(pipe, accepted):

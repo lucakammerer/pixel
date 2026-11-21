@@ -59,8 +59,8 @@ def greeting(text: str) -> tuple[str, str]:
     blocks = [b for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
     first = next((line.strip().rstrip(",") for line in (blocks[-1].splitlines() if blocks else [])
                   if NAME.match(line.strip().rstrip(",")) and not NOT_A_NAME.search(line)), None)  # fmt: skip
-    own = in_kind(text, "en", register, first.split()[0] if first else None)[1]
-    bye = own.rstrip(",") if own != TEXT["en"]["bye"][register] else BYE[register]
+    own = in_kind(text, "en", first.split()[0] if first else None)[1]
+    bye = own.rstrip(",") if own != TEXT["en"]["warm"]["bye"] else BYE[register]
     return (HELLO[register].format(first=first.split()[0], full=first) if first else "Hello,"), bye
 
 

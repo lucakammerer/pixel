@@ -24,67 +24,7 @@ OFFICE = ZoneInfo("Europe/Berlin")  # our desk's clock: "until 17:22 today" is t
 TEXT = {
     "en": {
         "subject": "Quote {origin} to {destination}, {weight} kg",
-        "hello_name": {"formal": "Dear {name},", "neutral": "Hello {name},", "casual": "Hi {name},"},
-        "hello": "Hello,",
-        "intro": (
-            "Thanks for your request, happy to help with this one.",
-            "Thanks for the enquiry.",
-            "Thank you for getting in touch.",
-            "Many thanks for your request.",
-        ),
         "well_back": ("All good here, thanks for asking!", "Going well here, thanks!", "All well on our side, thanks!"),
-        "intro_goods": (
-            "Thanks for your request, happy to help with the {goods}.",
-            "Thanks for the enquiry about the {goods}.",
-            "Thank you for getting in touch about the {goods}.",
-            "Many thanks for your request for the {goods}.",
-        ),
-        "core": {
-            "cheapest": (
-                (
-                    "We can fly your shipment from {origin} to {destination} with {carrier} for {total} {currency} "
-                    "all-in, with {transit} in transit."
-                ),
-                (
-                    "For the best price I would go with {carrier} from {origin} to "
-                    "{destination}: {total} {currency} all-in, {transit} in transit."
-                ),
-                (
-                    "From {origin} to {destination} I can offer you {total} {currency} all-in with {carrier}; transit "
-                    "is {transit}."
-                ),
-                (
-                    "My best price from {origin} to {destination} is {total} {currency} all-in, flying with {carrier}, "
-                    "{transit} in transit."
-                ),
-                (
-                    "I've compared the airlines on {origin} to {destination}, and {carrier} comes out best at {total} "
-                    "{currency} all-in, with {transit} in transit."
-                ),
-            ),
-            "fastest": (
-                (
-                    "We can fly your shipment from {origin} to {destination} with {carrier} for {total} {currency} "
-                    "all-in, with {transit} in transit."
-                ),
-                (
-                    "As speed matters here, I would go with {carrier} from {origin} to {destination}: {transit} in "
-                    "transit, {total} {currency} all-in."
-                ),
-                (
-                    "For the fastest routing from {origin} to {destination} I can offer {carrier}, {transit} in "
-                    "transit, at {total} {currency} all-in."
-                ),
-                (
-                    "{carrier} gets your shipment from {origin} to {destination} in {transit}, for {total} {currency} "
-                    "all-in."
-                ),
-                (
-                    "I've compared the airlines on {origin} to {destination}, and {carrier} is the quickest: "
-                    "{transit} in transit, {total} {currency} all-in."
-                ),
-            ),
-        },
         "air_only": (
             "The airport-to-airport price from {origin} to {destination} with {carrier} is {total} {currency}, "
             "with {transit} in transit. Pickup is excluded."
@@ -112,12 +52,6 @@ TEXT = {
         "valid": ("I can hold the rate until {until}.", "The rate is good until {until}."),
         "until_today": "{time} today",
         "until": "{time} on {day}",
-        "book": (
-            "If that works for you, just reply and I'll book it right away.",
-            "Just reply to this mail if you'd like to go ahead, and I'll take care of the booking.",
-            "Let me know if you would like to go ahead and I'll book it straight away.",
-        ),
-        "bye": {"formal": "Kind regards,", "neutral": "Best regards,", "casual": "Best wishes,"},
         "bye_town": "Best regards to {town},",
         "wish_back": "Have a {wish} too!",
         "in_city": "in {place}",
@@ -149,55 +83,69 @@ TEXT = {
         ),
         "weekdays": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
         "date": "{weekday} {day} {month}",
+        # Every team's quote reads like the same clean template; ours reads like a person wrote it. One voice for
+        # every customer: their first name, a thank-you with an exclamation mark, an opinion, a short line, a smiley
+        # or two, a P.S. No line says anything about the price beyond the price line itself.
+        "warm": {
+            "hello": ("Hi {name}!", "Hi {name}! 👋", "Hello {name}!"),
+            "hello_anon": "Hi there!",
+            "intro": (
+                "Thanks for your request, happy to help! 🙂",
+                "Thanks for thinking of us! 😊",
+                "Thanks for sending this over, happy to help!",
+            ),
+            "intro_goods": (
+                "Thanks for your request, happy to help with the {goods}! 🙂",
+                "Thanks for thinking of us for the {goods}! 😊",
+                "Happy to help get the {goods} on their way! ✈️",
+            ),
+            "core": {
+                "cheapest": (
+                    (
+                        "Good news: I've got {carrier} from {origin} to {destination} for {total} {currency} all-in, "
+                        "with {transit} in transit."
+                    ),
+                    (
+                        "I checked the airlines from {origin} to {destination}, and {carrier} is the cheapest: {total} "
+                        "{currency} all-in, {transit} in transit."
+                    ),
+                    (
+                        "I'd go with {carrier}. From {origin} to {destination} it's {total} {currency} all-in, with "
+                        "{transit} in transit."
+                    ),
+                ),
+                "fastest": (
+                    (
+                        "Good news: {carrier} can get it from {origin} to {destination} in {transit}, for {total} "
+                        "{currency} all-in."
+                    ),
+                    (
+                        "Since speed matters, I'd go with {carrier}. It's the quickest from {origin} to {destination}: "
+                        "{transit} in transit, {total} {currency} all-in."
+                    ),
+                    (
+                        "I checked the airlines from {origin} to {destination}, and {carrier} is the quickest: "
+                        "{transit} in transit, {total} {currency} all-in."
+                    ),
+                ),
+            },
+            "short": ("Easy!", "Simple as that.", "Nice and simple."),
+            "book": (
+                "Just reply and I'll book it right away! 👍",
+                "Shall I book it? A quick yes is all I need!",
+                "Just hit reply and I'll get it booked for you! 🙂",
+            ),
+            "ps": (
+                "P.S. If the ready date moves, just let me know and I'll check the flights again.",
+                "P.S. Once it's booked, I'll send you the airline's reference straight away.",
+                "P.S. Any questions? Just ask, happy to help.",
+            ),
+            "bye": "Best wishes,",
+        },
     },
     "de": {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
-        "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
-        "hello": "Guten Tag,",
         "well_back": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
-        "intro": (
-            "Vielen Dank für Ihre Anfrage, darum kümmere ich mich gerne.",
-            "Danke für Ihre Anfrage.",
-            "Vielen Dank für Ihre Nachricht.",
-        ),
-        "core": {
-            "cheapest": (
-                (
-                    "Wir können Ihre Sendung von {origin} nach {destination} mit {carrier} für {total} {currency} "
-                    "all-in fliegen, die Laufzeit beträgt {transit}."
-                ),
-                (
-                    "Von {origin} nach {destination} kann ich Ihnen {total} {currency} all-in mit {carrier} anbieten, "
-                    "die Laufzeit beträgt {transit}."
-                ),
-                (
-                    "Mein bester Preis von {origin} nach {destination} ist {total} {currency} all-in mit {carrier}, "
-                    "Laufzeit {transit}."
-                ),
-                (
-                    "Ich habe die Airlines von {origin} nach {destination} verglichen: Am besten liegt {carrier} mit "
-                    "{total} {currency} all-in, Laufzeit {transit}."
-                ),
-            ),
-            "fastest": (
-                (
-                    "Wir können Ihre Sendung von {origin} nach {destination} mit {carrier} für {total} {currency} "
-                    "all-in fliegen, die Laufzeit beträgt {transit}."
-                ),
-                (
-                    "Da es schnell gehen soll, empfehle ich {carrier} von {origin} nach {destination}: Laufzeit "
-                    "{transit}, {total} {currency} all-in."
-                ),
-                (
-                    "Am schnellsten geht es von {origin} nach {destination} mit {carrier}, Laufzeit {transit}, zu "
-                    "{total} {currency} all-in."
-                ),
-                (
-                    "Ich habe die Airlines von {origin} nach {destination} verglichen: Am schnellsten ist {carrier}, "
-                    "Laufzeit {transit}, zu {total} {currency} all-in."
-                ),
-            ),
-        },
         "air_only": (
             "Der Preis von Flughafen {origin} bis Flughafen {destination} mit {carrier} beträgt {total} {currency}, "
             "die Laufzeit {transit}. Die Abholung ist nicht enthalten."
@@ -228,11 +176,6 @@ TEXT = {
         "valid": ("Ich halte die Rate bis {until}.", "Der Preis gilt bis {until}."),
         "until_today": "heute {time} Uhr",
         "until": "{day}, {time} Uhr",
-        "book": (
-            "Wenn das für Sie passt, antworten Sie einfach kurz, dann buche ich sofort.",
-            "Antworten Sie einfach auf diese Mail, wenn Sie buchen möchten, den Rest übernehme ich.",
-        ),
-        "bye": {"formal": "Mit freundlichen Grüßen", "neutral": "Viele Grüße", "casual": "Viele Grüße"},
         "bye_town": "Viele Grüße nach {town}",
         "wish_back": "Ihnen auch {wish}!",
         "in_city": "in {place}",
@@ -264,6 +207,47 @@ TEXT = {
         ),
         "weekdays": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"),
         "date": "{weekday}, den {day}. {month}",
+        "warm": {
+            "hello": ("Hallo {name}!", "Hallo {name}! 👋"),
+            "hello_anon": "Hallo!",
+            "intro": (
+                "Vielen Dank für Ihre Anfrage, da kümmere ich mich gern drum! 🙂",
+                "Danke, dass Sie an uns gedacht haben! 😊",
+            ),
+            "core": {
+                "cheapest": (
+                    (
+                        "Gute Nachricht: Mit {carrier} kann ich Ihnen von {origin} nach {destination} {total} {currency} "
+                        "all-in anbieten, Laufzeit {transit}."
+                    ),
+                    (
+                        "Ich habe die Airlines von {origin} nach {destination} verglichen, {carrier} ist am günstigsten: "
+                        "{total} {currency} all-in, Laufzeit {transit}."
+                    ),
+                ),
+                "fastest": (
+                    (
+                        "Gute Nachricht: {carrier} bringt Ihre Sendung in {transit} von {origin} nach {destination}, für "
+                        "{total} {currency} all-in."
+                    ),
+                    (
+                        "Da es eilt, würde ich {carrier} nehmen. Von {origin} nach {destination} geht es damit am "
+                        "schnellsten: Laufzeit {transit}, {total} {currency} all-in."
+                    ),
+                ),
+            },
+            "short": ("Ganz einfach.", "So einfach ist das."),
+            "book": (
+                "Geben Sie mir einfach kurz Bescheid, dann buche ich sofort! 👍",
+                "Soll ich buchen? Ein kurzes Ja genügt! 🙂",
+            ),
+            "ps": (
+                "P.S. Falls sich der Termin verschiebt, sagen Sie einfach Bescheid, dann prüfe ich die Flüge neu.",
+                "P.S. Nach der Buchung schicke ich Ihnen sofort die Referenz der Airline.",
+                "P.S. Fragen? Melden Sie sich gern jederzeit.",
+            ),
+            "bye": "Viele Grüße",
+        },
     },
 }
 
@@ -277,8 +261,9 @@ PROSE_SYSTEM = (
     "say that you noted, read or received their details. "
     "closing: always null. "
     "Never write digits, numbers, prices, currencies, dates, weekdays, months, airlines, airports, cities or "
-    "countries. Do not greet and do not sign. Sound like a person, not a template: no 'we are pleased to', no "
-    'exclamation marks. Answer as JSON {{"first_name": ..., "intro": ..., "closing": ...}}.'
+    "countries. Do not greet and do not sign. Sound like a warm, upbeat person, not a template: contractions, no "
+    "'we are pleased to', no 'I hope this helps'; end with an exclamation mark unless the customer writes formally. "
+    'Answer as JSON {{"first_name": ..., "intro": ..., "closing": ...}}.'
 )
 NULLABLE = {"type": ["string", "null"]}
 PROSE_FIELDS = {"first_name": NULLABLE, "intro": NULLABLE, "closing": NULLABLE}
@@ -306,8 +291,6 @@ LIMITS = {"intro": 140, "closing": 140}
 # An opening that hands the customer's mail back to them, or runs past one sentence, reads like a machine.
 ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|bezüglich|sorgfältig|"
                   r"zur Kenntnis)\b|[.!?]\s+\S", re.IGNORECASE)  # fmt: skip
-FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
-CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
 NOT_SIGNED = re.compile(
     r"\b(?:Thanks|Thank|Regards|Cheers|Best|Kind|Many|Greetings|Danke|Viele|Beste|Team|Department|Logistics|"
@@ -461,9 +444,9 @@ def city_of(request: str, airport: str) -> str | None:
     return found.group(1) if found else None
 
 
-def in_kind(request: str, lang: str, tone: str, name: str | None) -> tuple[str | None, str]:
+def in_kind(request: str, lang: str, name: str | None) -> tuple[str | None, str]:
     """The customer's own closing answered: their wish for the day returned, and the sign-off sent to the town
-    they greet from, or as "Cheers" or "Viele Grüße" when they write it in an English mail. Without either, the sign-off of their register."""
+    they greet from, or as "Cheers" or "Viele Grüße" when they write it in an English mail. Without either, our own "Best wishes"."""
     t = TEXT[lang]
     wished = WISH[lang].search(request)
     wish = t["wish_back"].format(wish=wished.group(1)[0].lower() + wished.group(1)[1:]) if wished else None
@@ -472,12 +455,7 @@ def in_kind(request: str, lang: str, tone: str, name: str | None) -> tuple[str |
         return wish, t["bye_town"].format(town=town.group(1))
     if lang == "en" and (own := OWN_BYE.search(request)):
         return wish, "Cheers," if own.group(1).lower() == "cheers" else "Viele Grüße,"
-    return wish, t["bye"][tone]
-
-
-def register(request: str) -> str:
-    """How the customer writes: formal, casual or neutral, from their greeting and closing."""
-    return "formal" if FORMAL.search(request) else "casual" if CASUAL.search(request) else "neutral"
+    return wish, t["warm"]["bye"]
 
 
 def signed_name(request: str, signer: str = "") -> str | None:
@@ -492,6 +470,17 @@ def signed_name(request: str, signer: str = "") -> str | None:
     return None
 
 
+def greeting(lang: str, name: str | None, seed: int) -> str:
+    """The salutation, the same for one session in the quote and in its booking mails."""
+    w = TEXT[lang]["warm"]
+    return random.Random(f"hello:{seed}").choice(w["hello"]).format(name=name) if name else w["hello_anon"]
+
+
+def signature(bye: str, signer: str) -> str:
+    """Signed with the first name, as a colleague signs; the company line stays."""
+    return f"{bye}\n{(signer.split() or [signer])[0]}\n{COMPANY}"
+
+
 def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
     """17:22 today: the validity on our desk's clock, with the day only when it is not today."""
     until = option.valid_until.astimezone(OFFICE)
@@ -500,14 +489,16 @@ def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
 
 
 def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "", request: str = "") -> str:
+    """One personal voice for every customer (`TEXT[lang]["warm"]`): greeting by first name, the thank-you on a line
+    of its own, the offer, the validity and booking line, the signature by first name, a P.S."""
     lang = language_of(rfq)
     t = TEXT[lang]
+    w = t["warm"]
     pick = random.Random(rfq.session_id).choice  # wording varies by session; one session always reads the same
-    tone = register(request)
     air_only = rfq.door_pickup and not option.trucker
     needs_address = rfq.door_pickup and not rfq.pickup_postcode
     preference = "fastest" if rfq.preference == Preference.FASTEST else "cheapest"
-    core = t["air_only"] if air_only else pick(t["core"][preference])
+    core = t["air_only"] if air_only else pick(w["core"][preference])
     if option.trucker:
         basis = t["basis_zone_pickup"] if needs_address else pick(t["basis_pickup"])
     else:
@@ -516,28 +507,32 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         origin=option.origin, destination=option.destination, carrier=option.carrier,
         total=money(option.total), currency=option.currency, transit=_transit(option, t),
     )  # fmt: skip
-    goods = goods_of(request) if "intro_goods" in t else None
+    goods = goods_of(request) if "intro_goods" in w else None
     if prose.intro and not air_only:
         intro = _sentence(prose.intro)
     elif goods:
-        intro = pick(t["intro_goods"]).format(goods=goods)
+        intro = pick(w["intro_goods"]).format(goods=goods)
     else:
-        intro = pick(t["intro"])
+        intro = pick(w["intro"])
     if WELL.search(request):
         intro = f"{pick(t['well_back'])} {intro}"
     site = "warehouse" if WAREHOUSE.search(request) else "site"
-    offer = [intro, price_line, basis.format(trucker=option.trucker, site=site)]
+    offer = [price_line, basis.format(trucker=option.trucker, site=site)]
+    if not air_only:
+        offer.append(pick(w["short"]))  # a short line after two long ones
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
     book = [pick(t["valid"]).format(until=_until(rfq, option, t))] if option.valid_until else []
     if needs_address:
         book.append(t["pickup_address"])
     else:
-        book.append(t["book_air_only"] if air_only else pick(t["book"]))
+        book.append(t["book_air_only"] if air_only else pick(w["book"]))
     name = prose.first_name or signed_name(request, signer)
-    wish, bye = in_kind(request, lang, tone, name)
+    wish, bye = in_kind(request, lang, name)
     lines = [
-        t["hello_name"][tone].format(name=name) if name else t["hello"],
+        greeting(lang, name, rfq.session_id),
+        "",
+        intro,
         "",
         " ".join(offer),
         "",
@@ -545,9 +540,29 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         " ".join(book),
         "",
         *([wish, ""] if wish else []),
-        f"{bye}\n{signer}\n{COMPANY}",
+        signature(bye, signer),
+        "",
+        pick(w["ps"]),
     ]
-    return "\n".join(lines)
+    return _one_each("\n".join(lines))
+
+
+SMILEY = re.compile(r" ?(?:👋|🙂|😊|✈️|👍|🚀|☀️)")
+SMILEYS_MAX = 3
+
+
+def _one_each(body: str) -> str:
+    """A person uses a smiley once, not the same one in every paragraph: a repeat and any beyond the third go."""
+    seen: list[str] = []
+
+    def keep(found: re.Match) -> str:
+        face = found.group().strip()
+        if face in seen or len(seen) >= SMILEYS_MAX:
+            return ""
+        seen.append(face)
+        return found.group()
+
+    return SMILEY.sub(keep, body)
 
 
 def check(body: str, rfq: Rfq, option: RateOption) -> bool:

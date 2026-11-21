@@ -4,6 +4,7 @@ the goods and ask for the papers: without that the scorer rejects it (`dg_docs_m
 
 import json
 
+from pixel.agents.rfq.compose import COMPANY
 from pixel.agents.rfq.extract import DG_DOCUMENTS
 from pixel.contracts import Rfq
 from pixel.core.context import Context
@@ -44,8 +45,10 @@ def declared(ctx: Context, rfq: Rfq) -> tuple[str, str] | None:
 
 
 def with_note(body: str, goods: str, language: str, source: str = "") -> str:
-    """The note goes before the closing line and the signature, the last two paragraphs of a quote."""
+    """The note goes before the paragraph above the signature (the booking line or the returned wish); a P.S. may
+    follow the signature, so the signature is found by our company line, not by its place."""
     notes = NOTE_MAIL if source == "mail" else NOTE
     paragraphs = body.split("\n\n")
-    at = max(len(paragraphs) - 2, 1)
+    signed = next((i for i, p in enumerate(paragraphs) if COMPANY in p), len(paragraphs) - 1)
+    at = max(signed - 1, 1)
     return "\n\n".join([*paragraphs[:at], notes.get(language, notes["en"]).format(goods=goods), *paragraphs[at:]])
