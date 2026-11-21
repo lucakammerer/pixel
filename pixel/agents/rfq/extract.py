@@ -1,11 +1,14 @@
 import asyncio
+import io
 import re
+from contextvars import copy_context
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 from pixel import llm
 from pixel.contracts import Message, Preference, Rfq
-from pixel.core import events, outbox, timing
+from pixel.core import events, feedback, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import store
@@ -113,7 +116,34 @@ DANGEROUS = re.compile(
     re.IGNORECASE,
 )
 DG_DOCUMENTS = "dangerous_goods_documents"
-CURRENCY_ASK = re.compile(r"(?i:\b(?:in|currency:?|währung:?))\s+([A-Z]{3})\b")
+CURRENCY_NAMES = {
+    **{code.lower(): code for code in CURRENCIES},
+    "us dollars": "USD",
+    "us dollar": "USD",
+    "us$": "USD",
+    "$": "USD",
+    "british pounds": "GBP",
+    "pounds sterling": "GBP",
+    "sterling": "GBP",
+    "£": "GBP",
+    "swiss francs": "CHF",
+    "swiss franc": "CHF",
+    "schweizer franken": "CHF",
+    "euros": "EUR",
+    "euro": "EUR",
+    "€": "EUR",
+}
+CURRENCY_ASK = re.compile(
+    r"(?:\b(?:quote|quoted|quotation|rate|reply|offer|price|preis|angebot|all-in|please|bitte)\s+(?:bitte\s+)?in\s+"
+    r"|\b(?:price|preis|currency|währung)\s*:\s*|\b(?:currency|währung)\s+"
+    r"|(?:^|[,;])\s*in\s+)"
+    r"(?P<currency>" + "|".join(map(re.escape, sorted(CURRENCY_NAMES, key=len, reverse=True))) + r")(?!\w|[ \t]*\d)",
+    re.IGNORECASE | re.MULTILINE,
+)
+SIGNOFF = re.compile(
+    r"(?im)^\s*(?:--\s*$|(?:kind |best |warm )?regards\b|best wishes\b|"
+    r"mit freundlichen gr[üu]ßen\b|thanks[,!]?\s*$)"
+)
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
@@ -125,7 +155,8 @@ SYSTEM = (
     "as a plain number string, volume_cbm: volume in cubic metres as a plain number string, null when not stated. "
     "pieces: integer or null. preference: fastest only when the customer asks for speed, else cheapest. "
     "door_pickup: true when the goods must be collected from the customer's address. pickup_postcode: that "
-    "address's postcode or null. currency: only when the customer asks for one, else null. language: ISO 639-1 "
+    "address's postcode or null. currency: the requested quote currency only; ignore invoice values, signatures "
+    "and quoted history, else null. language: ISO 639-1 "
     "code of the mail. lots: only when the mail lists two or more piece groups, one entry per group exactly as "
     "written: pieces, weight and its unit, weight_per_piece true when that weight is for one piece of the group, "
     'volume_cbm, volume_per_piece likewise, dimensions of one piece as written ("120 x 80 x 100 cm") or null; '
@@ -175,6 +206,33 @@ SCHEMA = {
     "required": ["origin", "destination", "weight_kg", "volume_cbm", "pieces", "lots", "preference", "door_pickup",
                  "pickup_postcode", "currency", "language", "first_name", "intro", "closing"],
 }  # fmt: skip
+
+
+IMAGE_SYSTEM = (
+    " Read the mail facts as usual. For each attached image, in input order, copy its shipment facts into "
+    "image_pages.lines: route labels, pickup instructions, stated totals, and the packing table with its original "
+    "header, units and rows on separate lines. Do not calculate or reconcile totals. In dangerous_goods copy "
+    "any affirmative dangerous goods declaration from that page, even if the mail denies it; otherwise return null."
+)
+IMAGE_SCHEMA = {
+    **SCHEMA,
+    "properties": {
+        **SCHEMA["properties"],
+        "image_pages": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "lines": {"type": "array", "items": {"type": "string"}},
+                    "dangerous_goods": NULLABLE_STR,
+                },
+                "required": ["lines", "dangerous_goods"],
+            },
+        },
+    },
+    "required": [*SCHEMA["required"], "image_pages"],
+}
 
 
 def number(text: str, thousands: bool = True) -> Decimal | None:
@@ -301,7 +359,8 @@ def _pickup(text: str) -> tuple[bool, str | None]:
 
 
 def _currency(text: str) -> str | None:
-    asked = {c for c in CURRENCY_ASK.findall(text) if c in CURRENCIES}
+    words = SIGNOFF.split(HISTORY.split(text, maxsplit=1)[0], maxsplit=1)[0]
+    asked = {CURRENCY_NAMES[m.casefold()] for m in CURRENCY_ASK.findall(words)}
     return asked.pop() if len(asked) == 1 else None
 
 
@@ -471,7 +530,7 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     postcode = postcode if len(postcode) == 5 else None
     if door and not postcode:
         missing.append("pickup_postcode")
-    currency = (data.get("currency") or "").strip().upper() or None
+    currency = _currency(text) or (data.get("currency") or "").strip().upper() or None
     return Rfq(
         session_id=message.session_id,
         message_id=message.id,
@@ -511,7 +570,7 @@ def _known_sites(ctx: Context, rfq: Rfq) -> list[str]:
     return list(dict.fromkeys(r["postcode"] for r in rows))
 
 
-def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
+def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True, *, pickup_answer: bool = False) -> Rfq:
     """A door-to-port pickup without a postcode ("pickup from our warehouse"): the town named where the pickup is
     described. Without it the place stays open to be asked; only with `guess` (no answer in time) the customer's
     first-named earlier site, then a town anywhere in the mail such as the signature's. The history was right once
@@ -524,7 +583,11 @@ def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
         named = {a for a in areas if re.search(rf"\b{re.escape(a)}\b", _plain(part))}
         return {areas[a] for a in named if not any(a != b and a in b for b in named)}  # "Munich" in "Munich South"
 
-    zones = towns("\n".join(line for line in text.splitlines() if DOOR.search(line) or PLACE_WORDS.search(line)))
+    zones = towns(
+        text
+        if pickup_answer
+        else "\n".join(line for line in text.splitlines() if DOOR.search(line) or PLACE_WORDS.search(line))
+    )
     postcode, sites = None, _known_sites(ctx, rfq)
     if len(zones) != 1 and sites and guess:
         postcode = sites[0]
@@ -565,7 +628,7 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
     """One short mail in the customer's thread asking for exactly the missing facts, never a price; their answer if
     it comes within ASK_WAIT_S of the request. A customer held back the pickup and gave it at once when asked (round
     18). Asked once per request."""
-    if ctx is None:
+    if ctx is None or not getattr(feedback, "ask_allowed", lambda _ctx: True)(ctx):
         return None
     if ctx.db.execute("SELECT 1 FROM messages WHERE session_id = ? AND purpose = 'question'",
                       (message.session_id,)).fetchone():  # fmt: skip
@@ -608,15 +671,89 @@ def _declared(lines: list[str]) -> str | None:
     return next((" ".join((m[1] or m[2]).split()) for m in found), None)
 
 
-async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[str]]]:
-    """The text lines of every attachment code can read (packing list, letter of instruction)."""
+IMAGE_LIMIT = 2
+IMAGE_BYTES = 5 * 1024 * 1024
+
+
+class AttachmentLines(list[tuple[str, list[str]]]):
+    """Existing text consumers iterate the lines; the vision reader also consumes the images."""
+
+    def __init__(self):
+        super().__init__()
+        self.images: list[tuple[str, bytes]] = []
+
+
+def _scanned_pages(content: bytes, limit: int) -> tuple[bytes, ...]:
+    import pypdfium2
+
+    from pixel.agents.tariffs.agent import _pdf_pages
+
+    # _pdf_pages renders its entire input. Trim the PDF before rasterising it.
+    with pypdfium2.PdfDocument(content) as document, pypdfium2.PdfDocument.new() as subset:
+        pages = list(range(min(len(document), limit)))
+        for index in pages:
+            width, height = document.get_page_size(index)
+            if width * height * 4 > 16_000_000:  # _pdf_pages renders at 144 dpi
+                raise ValueError("scan page too large")
+        subset.import_pages(document, pages)
+        stream = io.BytesIO()
+        subset.save(stream)
+    return _pdf_pages(stream.getvalue())
+
+
+def _image_bytes(content: bytes) -> bytes:
+    from PIL import Image
+
+    if len(content) > IMAGE_BYTES:
+        raise ValueError("image too large")
+    with Image.open(io.BytesIO(content)) as im:
+        if im.width * im.height > 16_000_000:
+            raise ValueError("image too large")
+        if im.format == "JPEG":
+            return content
+        # llm.ask_json labels every image as JPEG.
+        stream = io.BytesIO()
+        im.convert("RGB").save(stream, format="JPEG")
+        return stream.getvalue()
+
+
+async def _read_image(reader, *args):
+    # Offline replay installs a virtual clock and runs on its own worker. Its deadlines advance
+    # whenever the loop is idle. On the live loop, offload rasterisation so deadlines keep running.
+    if timing.clock in copy_context():
+        return reader(*args)
+    return await asyncio.to_thread(reader, *args)
+
+
+async def _attachments(ctx: Context, message: Message) -> AttachmentLines:
     from pixel.agents.tariffs.agent import _lines
 
-    files = []
+    files = AttachmentLines()
     for attachment in message.attachments:
+        name = attachment.filename
+        suffix = Path(name).suffix.lower()
+        remaining = IMAGE_LIMIT - len(files.images)
         try:
-            files.append((attachment.filename, _lines(attachment.filename,
-                                                      await ctx.mailbox.attachment(message.id, attachment.id))))  # fmt: skip
+            image = suffix in {".jpg", ".jpeg", ".png"}
+            if image and (not remaining or attachment.size > IMAGE_BYTES):
+                raise ValueError("image limit reached")
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            if image:
+                pages = [await _read_image(_image_bytes, content)]
+            else:
+                try:
+                    lines = _lines(name, content)
+                except ValueError as error:
+                    if suffix != ".pdf" or not str(error).startswith("pdf without text") or not remaining:
+                        raise
+                    pages = await _read_image(_scanned_pages, content, remaining)
+                else:
+                    files.append((name, lines))
+                    continue
+            for page in pages:
+                if len(page) > IMAGE_BYTES:
+                    raise ValueError("image too large")
+                files.images.append((name, page))
         except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
             events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
                         payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
@@ -629,7 +766,7 @@ def names_code(text: str, code: str) -> bool:
 
 COLUMN = re.compile(
     r"(?P<name>width|length|height|breite|l(?:ä|ae)nge|h(?:ö|oe)he|pieces|pcs|qty|quantity|st(?:ü|ue)ck|"
-    r"gross\s+weight|weight|gewicht)(?:\s*\((?P<unit>mm|cm|m|kgs?)\))?",
+    r"dimensions|abmessungen|gross\s+weight|bruttogewicht|weight|gewicht)(?:\s*\((?P<unit>mm|cm|m|kgs?)\))?",
     re.IGNORECASE,
 )
 SIDE = {"width": 0, "breite": 0, "length": 1, "länge": 1, "laenge": 1, "height": 2, "höhe": 2, "hoehe": 2}
@@ -637,17 +774,40 @@ COUNT = {"pieces", "pcs", "qty", "quantity", "stück", "stueck"}
 
 
 def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]], str] | None:
-    """A packing table: its columns (name, unit) from a header naming width, length, height and pieces, the rows
-    below it with one number per column, and the text around it."""
+    """Return numeric columns, rows and surrounding prose. Expand a dimensions cell into three sides."""
     lines = text.splitlines()
     for i, header in enumerate(lines):
-        columns = [(m["name"].casefold(), m["unit"]) for m in COLUMN.finditer(header)]
+        columns = [(m["name"].casefold(), (m["unit"] or "").lower() or None) for m in COLUMN.finditer(header)]
         names = [name for name, _ in columns]
-        if not ({0, 1, 2} <= {SIDE.get(n) for n in names} and COUNT & set(names)):
+        combined = {"dimensions", "abmessungen"}
+        if combined & set(names):
+            if not (set(names) & (COUNT | {"gross weight", "weight", "bruttogewicht", "gewicht"})):
+                continue
+            if COLUMN.sub("", header).strip(" \t|") or sum(name in combined for name in names) != 1:
+                # Unknown qualifiers (e.g. net or per piece) or duplicate dimensions make the rows ambiguous.
+                return columns, [], text
+            numeric = r"(\d+(?:[.,]\d+)*)"
+            triplet = r"\s*[x×*]\s*".join([numeric] * 3)
+            layout = re.compile(r"[\s|]+".join(triplet if n in combined else numeric for n in names), re.IGNORECASE)
+            columns = [
+                (side, unit)
+                for name, unit in columns
+                for side in (("length", "width", "height") if name in combined else (name,))
+            ]
+        elif {0, 1, 2} <= {SIDE.get(n) for n in names} and COUNT & set(names):
+            layout = None
+        else:
             continue
         rows = []
         for row in lines[i + 1 :]:
-            cells = re.findall(r"\d[\d.,]*", row)
+            if layout:
+                if not (match := layout.fullmatch(row.strip(" |\t"))):
+                    if re.match(r"[\s|]*\d", row):
+                        return columns, [], text
+                    break
+                cells = list(match.groups())
+            else:
+                cells = re.findall(r"\d[\d.,]*", row)
             if len(cells) != len(columns):
                 break
             rows.append(cells)
@@ -655,14 +815,13 @@ def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]], st
     return None
 
 
-def _table_volume(text: str) -> Decimal | None:
+def _table_volume(columns: list[tuple[str, str | None]], rows: list[list[str]]) -> Decimal | None:
     """The volume a packing table's rows add up to."""
-    columns, rows, _ = _table(text) or ([], [], "")
     total = None
     for row in rows:
         cells = [number(c, thousands=False) for c in row]
         if None in cells:
-            break
+            return None
         volume = Decimal(1)
         for (name, unit), cell in zip(columns, cells, strict=True):
             if name in SIDE:
@@ -683,7 +842,7 @@ def _document_weight(text: str) -> Decimal | None:
     columns, rows, around = table
     if (stated := _unique(WEIGHT, around, thousands=True)) is None:
         return None
-    weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name == "gewicht"]
+    weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name.endswith("gewicht")]
     if len(weights) != 1 or columns[weights[0]][1] not in ("kg", "kgs") or not rows:
         return None
     cells = [number(row[weights[0]]) for row in rows]
@@ -697,8 +856,12 @@ def _document_volume(text: str, pieces: int | None) -> Decimal | None:
     stated = _unique(VOLUME, text, thousands=False)
     if stated is None or EACH_VOLUME.search(text):
         return None
-    one = _dims_volume(text)
-    measured = _table_volume(text) or (one * pieces if one is not None and pieces else None)
+    if table := _table(text):
+        columns, rows, _ = table
+        measured = _table_volume(columns, rows)
+    else:
+        one = _dims_volume(text)
+        measured = one * pieces if one is not None and pieces else None
     if measured is None or abs(measured - stated) > max(Decimal("0.01"), stated * Decimal("0.01")):
         return None
     return stated
@@ -841,6 +1004,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     files = await _attachments(ctx, message) if message.attachments else []
+    images = getattr(files, "images", [])
     mail = message
     documents = [(name, own_words("\n".join(lines))) for name, lines in files]
 
@@ -877,19 +1041,17 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         sources, text, message = source_inputs()
         cargo, evidence = _cargo_sources(sources) if files else ({}, {})
         again = rules()
-        if (
-            again is None
-            and read.door_pickup
-            and not read.pickup_zone
-            and len(codes := set(POSTCODE.findall(own_words(said)))) == 1
-        ):
-            # The model read the request, so the rules cannot read it again: the place comes from the answer alone.
-            code = codes.pop()
-            again = read.model_copy(update={"pickup_postcode": code, "pickup_zone": zone_of(code),
-                                            "missing": tuple(m for m in read.missing if m != "pickup_postcode")})  # fmt: skip
+        if read.door_pickup and not read.pickup_zone:
+            answer = SIGNOFF.split(own_words(said), maxsplit=1)[0]
+            if again is None and len(codes := set(POSTCODE.findall(answer))) == 1:
+                code = codes.pop()
+                again = read.model_copy(update={"pickup_postcode": code, "pickup_zone": zone_of(code),
+                                                "missing": tuple(m for m in read.missing if m != "pickup_postcode")})  # fmt: skip
+            else:
+                again = _town_zone(ctx, again or read, answer, guess=False, pickup_answer=True)
         return apply_pickup(again or read, guess=False)
 
-    rfq, prose = rules(), None
+    rfq, prose = None if images else rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
     if rfq is None:
@@ -897,12 +1059,25 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             result = await llm.ask_json(
                 ctx,
                 purpose="rfq.extract",
-                system=SYSTEM,
+                system=SYSTEM + IMAGE_SYSTEM if images else SYSTEM,
                 user=text,
-                schema=SCHEMA,
+                schema=IMAGE_SCHEMA if images else SCHEMA,
                 session_id=message.session_id,
-                max_output_tokens=500,
+                images=tuple(content for _, content in images),
+                max_output_tokens=1600 if images else 500,
             )
+            if images:
+                # Reassemble pages of the same document so its totals and rows can corroborate one another.
+                scanned = {}
+                for (name, _), page in zip(images, result.data["image_pages"], strict=True):
+                    lines = scanned.setdefault(name, [])
+                    lines.extend(page["lines"])
+                    if declared := page.get("dangerous_goods"):
+                        lines.append(f"Dangerous goods: {declared}")
+                files.extend(scanned.items())
+                documents.extend((name, "\n".join(lines)) for name, lines in scanned.items())
+                sources, text, message = source_inputs()
+                cargo, evidence = _cargo_sources(sources)
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = rules(guess=True)
@@ -923,7 +1098,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             )  # fmt: skip  never the gateway's text: it can quote the OpenAI key
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
-            rfq = _from_model(result.data, message, deadline)
+            # Preserve a certain mail lane even when the image has no routing information.
+            parsed = rules() if images else None
+            rfq = (
+                parsed.model_copy(update={"extracted_by": "model"})
+                if parsed and parsed.origin
+                else _from_model(result.data, message, deadline)
+            )
             if cargo:
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
             rfq = apply_pickup(await ask(rfq))

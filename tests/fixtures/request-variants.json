@@ -56,19 +56,15 @@
      "hole": "AOG (aircraft on ground) is the most urgent cargo there is: read as cheapest"},
     {"name": "currency-in-words",
      "body": "Please quote the fastest option DUS to JFK, 1 piece, 1540 kg, 5.90 cbm. Please quote in US dollars. We deliver to DUS ourselves.",
-     "expect": {"currency": "USD"},
-     "hole": "currency named in words: read as none, quoted in EUR"},
+     "expect": {"currency": "USD"}},
     {"name": "currency-symbol",
      "body": "Please quote the fastest option DUS to JFK, 1 piece, 1540 kg, 5.90 cbm, all-in price in $. We deliver to DUS ourselves.",
-     "expect": {"currency": "USD"},
-     "hole": "currency as a symbol: read as none, quoted in EUR"},
+     "expect": {"currency": "USD"}},
     {"name": "currency-label-without-in",
      "body": "Please quote the fastest option DUS to JFK, 1 piece, 1540 kg, 5.90 cbm. Price: USD. We deliver to DUS ourselves.",
-     "expect": {"currency": "USD"},
-     "hole": "'Price: USD' (only 'in USD' and 'Currency: USD' are known): read as none, quoted in EUR"},
+     "expect": {"currency": "USD"}},
     {"name": "currency-invoice-and-quote-differ",
      "body": "Please quote the fastest option DUS to JFK, 1 piece, 1540 kg, 5.90 cbm. Our invoices are in EUR, but please quote in USD. We deliver to DUS ourselves.",
-     "expect": {"currency": "USD"},
-     "hole": "two currencies named: read as none (quoted in EUR) instead of handing the mail to the model"}
+     "expect": {"currency": "USD"}}
   ]
 }
