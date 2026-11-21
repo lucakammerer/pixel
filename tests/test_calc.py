@@ -1,6 +1,11 @@
+import json
 from datetime import UTC, date, datetime
 from decimal import Decimal as D
+from pathlib import Path
 
+import pytest
+
+from pixel.agents.tariffs import agent
 from pixel.contracts import LaneTariff, Rfq
 from pixel.pricing.calc import chargeable_kg, price_tariff, to_eur, with_pickup
 
@@ -10,6 +15,9 @@ TARIFF = LaneTariff(
     breaks=((D(0), D("4.00")), (D(45), D("3.00")), (D(100), D("2.50")), (D(300), D("2.00")), (D(500), D("1.50"))),
     fuel_per_kg=D("0.80"), security_per_kg=D("0.20"), source="test",
 )  # fmt: skip
+
+
+BY_HAND = json.loads((Path(__file__).parent / "fixtures" / "prices-by-hand.json").read_text())["cases"]
 
 
 def rfq(weight: str, volume: str = "0") -> Rfq:
@@ -68,3 +76,12 @@ def test_pickup_and_fx():
     o = with_pickup(usd, D("45.00"), "Trucker")
     assert (o.pickup, o.total, o.total_eur, o.trucker) == (D("50.00"), D("400.00"), D("360.00"), "Trucker")
     assert to_eur(D(10), "EUR", None) == D("10.00")
+
+
+@pytest.mark.parametrize("case", BY_HAND, ids=lambda c: f"{c['lane']}:{c['kg']}kg:{c['cbm']}cbm")
+def test_prices_worked_by_hand(start_kit, case):
+    # Second opinion on parse and price together: the kit file as ingested, against the hand working.
+    tariffs = agent.parse(case["file"], (start_kit / case["file"]).read_bytes())
+    tariff = next(t for t in tariffs if f"{t.origin}-{t.destination}" == case["lane"])
+    o = price_tariff(tariff, rfq(case["kg"], case["cbm"]))
+    assert (o.chargeable_kg, o.billed_kg, o.total) == (D(case["chargeable"]), D(case["billed"]), D(case["total"]))
