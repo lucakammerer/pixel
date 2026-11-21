@@ -117,6 +117,17 @@ Three lines per scenario: what we tried, what changed, what is next.
   mail), the closing slot (today: "Wishing you a wonderful day ahead.", "I appreciate your trust in our service …"),
   example lines in the prompt (copied into every quote). Next: the human column.
 
+### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
+
+One variant per booked round, smallest first. Measured as our total on `GET /v1/board` before the answer and 60 s
+after: +10 keeps it, no +10 sets `VARIANT` back at once.
+
+| Variant | Live since | Question | Board before | Board 60 s after | Result |
+| --- | --- | --- | --- | --- | --- |
+| `scored`: prose, record block with "Customer: <address>", "from <postcode> via <airport>" | 21.11. | 17 answers | | | +10 on every right first answer |
+| `a`: no address line, "from your site in Bremen, flying HAM to EZE" | | | | | pending |
+| `b`: the block's facts in the prose, no block | | | | | not yet tried |
+
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
 Do not start from "tracking scores 0". The board hides points per kind, but our total on `GET /v1/board` against the
