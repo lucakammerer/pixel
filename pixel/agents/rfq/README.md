@@ -117,6 +117,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 - A carrier's answer can carry a number the rules take for its price in a layout they have not seen: round 67
   quoted a trucker's "45.00 EUR for each hour" of waiting instead of its 181.96 total and was rejected as too low.
+  `pricing/bids.py` `_price` skips a figure "per", "je", "for each" or "for every" unit, and a total line takes a
+  table's currency only from the nearest header above it that names one, never under a "(kg)" or "per kg" header.
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
   selection and records it (`option.failed`, `error: implausible`); `check.py` `_implausible` blocks a quote that
   still holds one. Evidence and limits: `docs/calc.md`, when a bid is not trusted.

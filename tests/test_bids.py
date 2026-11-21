@@ -423,3 +423,42 @@ async def test_an_airline_bid_keeps_its_mail_price_beside_an_unrelated_attachmen
     await bids.record(replace(ctx, mailbox=Files()), message)
     found = [(o["option"]["total"], o["option"]["transit_days"]) for o in kinds(ctx, "option.found")]
     assert found == [("900.00", 3)]
+
+
+OFFER_UNITS = [
+    # airline bid with an attached per-kg breakdown: "All-in 2.80" read as a flat 2.80 EUR total
+    (
+        "airline_per_kg_table",
+        True,
+        (
+            "Our rate is EUR 2.80/kg, transit 3 days, breakdown attached.\n"
+            "Charges per kg (EUR)\nFreight 2.50\nFuel 0.20\nSecurity 0.10\nAll-in 2.80"
+        ),
+        D("280.00"),
+    ),
+    # trucker: a weight line under a table that names (EUR) elsewhere becomes 1410 EUR
+    (
+        "header_currency_on_weight",
+        False,
+        "Chargeable weight (kg)\nTotal: 1410\nPickup and delivery to CGN 165.70 EUR\nAll amounts (EUR) incl. fuel.",
+        D("165.70"),
+    ),
+    # trucker: a waiting-time rate per hour labelled by PRICE_IS becomes the pickup price
+    (
+        "waiting_per_hour",
+        False,
+        (
+            "Pickup at 51252 and delivery to CGN: 165.70 EUR.\n"
+            "Waiting time after the first 30 minutes: our price is 45.00 EUR for every hour."
+        ),
+        None,
+    ),
+    # trucker: a per-pallet rate labelled by PRICE_IS hides the labelled total -> None -> model call
+    ("per_pallet", False, "Our price is 60.00 EUR for every pallet. 3 pallets, total 180.00 EUR.", D("180.00")),
+]
+
+
+@pytest.mark.parametrize(("name", "airline", "body", "expected"), OFFER_UNITS, ids=[c[0] for c in OFFER_UNITS])
+def test_a_rate_per_unit_or_a_weight_is_never_the_offer_total(name, airline, body, expected):
+    found = bids.parse(mail("t@x", body), rfq(), needs_transit=airline)
+    assert (found.total if found else None) == expected
