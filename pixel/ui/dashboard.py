@@ -15,6 +15,7 @@ async def dashboard(request: Request):
     ctx = request.app.state.ctx
     s = quotes.stats(ctx)
     spend = s["spend_per_accepted_usd"]
+    total = s["points_total"]
     quoted_share = f"{round(100 * s['quoted'] / s['requests'])} % of requests" if s["requests"] else ""
     flow = stats([
         ("Requests", s["requests"], ""),
@@ -26,12 +27,13 @@ async def dashboard(request: Request):
     ])  # fmt: skip
     score = stats(
         [
-            ("Points", f"{float(s['points_total']):.1f}", ""),
+            ("Points", f"{total:.2f}" if total is not None else None, "Team total from the scorer"),
             ("Accepted by scorer", s["accepted"], f'{s["rejected"]} rejected · {s["pending"]} pending'),
             ("Spend per accepted quote", f"${spend:.4f}" if spend is not None else None,
              f'${float(s["spend_hour_usd"]):.4f} in the last hour'),
         ]
-        + [(f"{k.capitalize()} points", f"{float(v):.1f}", "") for k, v in sorted(s["points"].items())]
+        + [(f"{k.capitalize()} points", f"{v:.1f}", "Subtotal reported per request")
+           for k, v in sorted(s["points"].items())]
     )  # fmt: skip
 
     score_rows = "".join(

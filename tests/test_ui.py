@@ -91,9 +91,13 @@ def test_takeover_edit_send_release(client, pipe):
     assert kinds == ["human.takeover", "human.note", "human.release"]
 
 
-def test_dashboard_renders(client):
+def test_dashboard_renders(client, pipe):
+    pipe.emit(pipe.ctx, "score.total", "board", payload={"total": "876.54"})
+    pipe.emit(pipe.ctx, "score", "board", payload={"round": 1, "points": {"cost": 39.76}})
     page = client.get("/dashboard").text
     assert "Spend per accepted quote" in page and "Median response" in page
+    assert "876.54" in page and "Team total from the scorer" in page
+    assert "39.8" in page and "Subtotal reported per request" in page
 
 
 def test_dashboard_orders_rounds_by_number_after_score_updates(client, pipe):

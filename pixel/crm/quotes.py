@@ -54,6 +54,13 @@ def latest_scores(ctx: Context) -> list[dict[str, Any]]:
     return [json.loads(r["payload"]) for r in rows]
 
 
+def board_total(ctx: Context) -> Decimal | None:
+    row = ctx.db.execute(
+        "SELECT json_extract(payload, '$.total') FROM events WHERE kind = 'score.total' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return Decimal(row[0]) if row else None
+
+
 def stats(ctx: Context, now: datetime | None = None) -> dict[str, Any]:
     """Dashboard numbers: requests, quoted, missed, accepted and rejected by the scorer, won and lost with the
     customer, points per kind, spend per accepted quote this hour, median response time."""
@@ -104,7 +111,7 @@ def stats(ctx: Context, now: datetime | None = None) -> dict[str, Any]:
         "won": status.get(QuoteStatus.ACCEPTED, 0),  # by the customer
         "lost": status.get(QuoteStatus.DECLINED, 0) + status.get(QuoteStatus.EXPIRED, 0),
         "points": points,
-        "points_total": sum(points.values(), Decimal(0)),
+        "points_total": board_total(ctx),
         "spend_hour_usd": spend_hour,
         "spend_per_accepted_usd": (spend_hour / accepted_hour).quantize(Decimal("0.0001")) if accepted_hour else None,
         "median_response_s": round(statistics.median(seconds)) if seconds else None,

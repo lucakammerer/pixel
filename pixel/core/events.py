@@ -23,6 +23,7 @@ KINDS = (
     "tariff.ingested", "tariff.failed",
     "llm.call",
     "score",  # one row of /v1/board/me
+    "score.total",  # team total from /v1/board/me
     "feedback",  # what a request scored and which option the scorer's best price was (core/feedback.py)
     "human.note", "human.takeover", "human.release",
     "error",
