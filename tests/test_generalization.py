@@ -113,3 +113,10 @@ def test_captured_requests_changed_as_seen_live_are_read_right_or_left_to_the_mo
     mutated = bench.audit_live_mutations()
     assert mutated
     assert [f"{r.fixture}: {r.wrong_fields}" for r in mutated if r.right is False] == []
+
+
+def test_adversarial_mutations_and_domain_invariants():
+    """All programmatic adversarial mutations must pass without domain invariant violations."""
+    passed, total, failures = bench.audit_fuzzer()
+    assert passed == total
+    assert failures == []

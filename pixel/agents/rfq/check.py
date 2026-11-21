@@ -443,9 +443,35 @@ def _validity(q: Quote, request: str, options: list[RateOption], files: tuple[st
     return []
 
 
+def _domain_invariants(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """Physical air freight domain invariants: physical transit bounds, chargeable weight, and arithmetic sanity."""
+    from pixel.pricing.invariants import check_rate_option_invariants, is_valid_transit_duration
+
+    found = []
+    for issue in check_rate_option_invariants(q.option):
+        found.append(Finding("domain_invariant", BLOCK, issue))
+    if not is_valid_transit_duration(q.option.transit_days):
+        found.append(Finding("transit_bound", BLOCK, f"physical transit violation: {q.option.transit_days} days"))
+    return found
+
+
 def _pct(value: Decimal, best: Decimal) -> str:
     return f"{(value / best - 1) * 100:.1f}%" if best else "?"
 
 
-RULES = (_required, _lane, _arithmetic, _chargeable, _pickup, _best_price, _per_kg, _weight, _accounting, _dangerous, _text,
-         _language, _validity)  # fmt: skip
+RULES = (
+    _required,
+    _lane,
+    _arithmetic,
+    _chargeable,
+    _pickup,
+    _best_price,
+    _per_kg,
+    _weight,
+    _accounting,
+    _dangerous,
+    _text,
+    _language,
+    _validity,
+    _domain_invariants,
+)
