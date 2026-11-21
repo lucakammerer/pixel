@@ -75,12 +75,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
   `closing`, on `PIXEL_MODEL_PROSE` when set, plus `hook`: the phrase of the customer's mail the opening answers (a
-  friendly remark, an attachment, their buyer, the reason for the request), or null, and then no opening. It also
+  friendly remark, their buyer, the reason for the request; never a file they sent, see `ECHO`), or null, and then no opening. It also
   sees the openings this customer already got (`_history`, `notes`). `_opening_ok` keeps the opening only when the
   hook stands in the mail and is not the small talk `WELL` answers, it has at most `WORDS_MAX` words, no capitalised
   word of the mail (a name or place), and its first two words differ from every earlier opening to this customer;
   `ECHO` drops fillers and echoes ("thank you for your request", "inquiry", "regarding", "I've noted", "here is",
-  "cheapest", "pickup", announcing the offer) and a second sentence. A dropped opening is stored in `quote.prose`
+  "cheapest", "pickup", announcing the offer, a word about their attachment or voice message: "The voice message
+  was clear" went out unheard in round 65) and a second sentence. A dropped opening is stored in `quote.prose`
   as `rejected`; `tests/fixtures/openings.json` holds every live request with the opening we sent. The
   extraction's slots (model path) carry no hook, so those quotes open with the price. The closing slot is no
   longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a

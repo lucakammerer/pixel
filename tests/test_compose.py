@@ -355,3 +355,18 @@ def test_the_customers_small_talk_is_answered_before_the_price(opening, answered
     assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
     assert ("thank" in paragraph.lower()) == answered  # the opening no longer thanks: the small-talk answer does
     assert body.count("1234.57 EUR") == 1
+
+
+@pytest.mark.parametrize(
+    ("request_text", "goods"),
+    [
+        (
+            "Could you quote the fastest air freight option for some electronic control units going to SCL?",
+            "electronic control units",
+        ),  # round 62 sent "For your some electronic control units going"
+        ("Could you quote the cheapest option for our machine parts going to JFK?", "machine parts"),
+        ("We have 10 pieces of laboratory glassware ready on Monday.", "laboratory glassware"),
+    ],
+)
+def test_the_goods_are_named_as_the_customer_calls_them(request_text, goods):
+    assert compose.goods_of(request_text) == goods
