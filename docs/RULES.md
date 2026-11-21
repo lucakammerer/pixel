@@ -76,7 +76,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | # | Rule | Lives in |
 | --- | --- | --- |
 | P1 | Code does the arithmetic and the selection (Decimal, tested). A model only reads what code cannot: the customer's request, an odd carrier reply, an unknown tariff format | `pricing/calc.py`, `pricing/selection.py` |
-| P2 | One small gateway call per quote by default: rules first, the model as fallback, and where the rules sufficed one minimal call for the quote's prose (R31), which also keeps every window above no spend (R28). Tokens and cost are logged per call | `llm.py` |
+| P2 | One small gateway call per quote by default: rules first, the model as fallback, and where the rules sufficed one minimal call for the quote's prose (R31), which also keeps every window above no spend (R28); a customer language we have no text for adds one call to translate the quote (`agents/rfq/compose.py` `translate`). Tokens and cost are logged per call | `llm.py` |
 | P3 | Always answer: every request has its own deadline; before it runs out we send the best price we have | `core/orchestrator.py` `quote_with_deadline` |
 | P4 | Every mail in and out, every decision and every model call is an event. CRM and UI read that log | `core/events.py` |
 | P5 | Nothing from one dataset version is hardcoded; tariffs carry a version and a validity | `pricing/store.py` |
