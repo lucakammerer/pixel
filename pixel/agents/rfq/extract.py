@@ -189,11 +189,7 @@ SYSTEM = (
     "written: pieces, weight and its unit, weight_per_piece true when that weight is for one piece of the group, "
     'volume_cbm, volume_per_piece likewise, dimensions of one piece as written ("120 x 80 x 100 cm") or null; '
     "net weights are never wanted; else an empty list. Never calculate or guess. "
-    "Also write three short pieces for our reply, in the mail's language and tone (German: formal Sie): first_name, "
-    "the customer's first name only if they signed with it, else null; intro, one or two warm sentences that show "
-    "you read their mail (the goods, urgency, timing or a question they asked, in words); closing, one short "
-    "friendly last line that is not a call to action, or null. These three never contain digits, prices, dates, "
-    "airlines, airports or places, and never greet or sign."
+    "first_name: the customer's first name exactly as signed, or null if they did not sign with a first name."
 )
 NULLABLE_STR = {"type": ["string", "null"]}
 LOT_SCHEMA = {
@@ -211,7 +207,6 @@ LOT_SCHEMA = {
     "required": ["pieces", "weight", "weight_unit", "weight_per_piece", "volume_cbm", "volume_per_piece", "dimensions"],
 }
 LB = Decimal("0.45359237")
-PROSE = ("first_name", "intro", "closing")
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -228,11 +223,9 @@ SCHEMA = {
         "currency": NULLABLE_STR,
         "language": {"type": "string"},
         "first_name": NULLABLE_STR,
-        "intro": NULLABLE_STR,
-        "closing": NULLABLE_STR,
     },
     "required": ["origin", "destination", "weight_kg", "volume_cbm", "pieces", "lots", "preference", "door_pickup",
-                 "pickup_postcode", "currency", "language", "first_name", "intro", "closing"],
+                 "pickup_postcode", "currency", "language", "first_name"],
 }  # fmt: skip
 
 
@@ -1183,11 +1176,11 @@ async def _crosscheck(
     taken = {f: getattr(read, f) for f in differs if f != "destination" or names_code(text, read.destination)}
     events.emit(ctx, "rfq.crosscheck", "rfq", session_id=message.session_id, message_id=message.id,
                 payload={"model": result.model, "differs": differs, "taken": sorted(taken)})  # fmt: skip
-    return rfq.model_copy(update=taken), {k: result.data.get(k) for k in PROSE}
+    return rfq.model_copy(update=taken), {"first_name": result.data.get("first_name")}
 
 
 async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tuple[Rfq, str]:
-    """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
+    """by_rules, else one `llm.ask_json` call that also reads the name for the greeting (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     files = await _attachments(ctx, message) if message.attachments else []
     mail = message
@@ -1291,7 +1284,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             if cargo:
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
             rfq = apply_pickup(await ask(rfq))
-            prose = {k: result.data.get(k) for k in PROSE}
+            prose = {"first_name": result.data.get("first_name")}
     if files:
         attached = "\n".join(content for _, content in documents)
         rfq = rfq.model_copy(update={"language": _language(_text(mail), rfq.language, attached)})
