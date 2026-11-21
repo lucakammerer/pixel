@@ -48,7 +48,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/llm.py`: the only gateway caller
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
-- `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`,
+- `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
   `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `benchmark_generalization.py`; `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
@@ -94,6 +94,7 @@ uv run python -m tools.replay --db <database> --session <id>     # a stored sess
 uv run python -m tools.kpi                      # accuracy, cost and speed on the replayed request fixtures, as JSON
 uv run python -m tools.benchmark_generalization # fixtures vs code: prices, sheets, wording, routing, bids; exit 1 on a fail
 uv run python -m tools.benchmark_generalization --gaps   # open known gaps, grouped by owner
+uv run python -m tools.simulate                 # generated mails and attachments per axis: right, model, wrong
 tools/kpi_pr.sh <pull request>                  # the same online on the live host, posted as a comment
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
 uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts

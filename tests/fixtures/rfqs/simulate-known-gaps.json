@@ -1,0 +1,32 @@
+[
+  {
+    "family": "document",
+    "axes": {"relation": ["doc_weight", "doc_volume", "doc_all"], "totals": ["none", "only"]},
+    "note": "A document that contradicts the mail with a table and no labelled totals, or with totals and no table, does not win: `_document_weight` and `_document_volume` need both to agree, so the mail's figure is quoted (rounds 33 to 35 priced the document). Owner: Cost."
+  },
+  {
+    "family": "document",
+    "axes": {"relation": ["doc_weight", "doc_volume", "doc_all"], "labels": "de"},
+    "note": "A document labelled in German ('Bruttogewicht gesamt (kg)', 'Volumen gesamt (cbm)') that contradicts the mail does not win: the labelled-total patterns do not read the word between name and unit. Owner: Cost."
+  },
+  {
+    "family": "document",
+    "axes": {"relation": "silent", "totals": "none"},
+    "note": "A mail that leaves every figure to a document with a table and no totals: the header 'Gross weight (kg)' at a line's end runs into the first row, so a side or the piece count is read as the weight and the volume as 0. Owner: Cost."
+  },
+  {
+    "family": "document",
+    "axes": {"relation": "silent", "labels": "de"},
+    "note": "A mail that leaves every figure to a document labelled in German: 'Bruttogewicht (kg)' ending the table header runs into the first row ('5' kg), the volume is 0. Owner: Cost."
+  },
+  {
+    "family": "document",
+    "axes": {"relation": ["correction_outdated", "correction_de"], "labels": "en"},
+    "note": "A weight the customer corrects in other words than 'The corrected … is' or 'use … in this email' ('Correction: the gross weight is now 2218 kg, the attached list is outdated', the same in German) loses to a document whose table bears out its own weight. Owner: Cost."
+  },
+  {
+    "family": "mail",
+    "axes": {"volume": "dims_in"},
+    "note": "'24 x 16 x 51 in each' is read in centimetres: `DIMS` takes 'in' as inches only before the end or a sign, and 'each' is a word. Owner: Cost."
+  }
+]

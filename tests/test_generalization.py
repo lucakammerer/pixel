@@ -4,6 +4,7 @@ The checks live in `tools/benchmark_generalization.py`, which prints the same re
 on what it reports as FAIL. Counts come from the fixture files, never from this file.
 """
 
+import asyncio
 from decimal import Decimal as D
 
 import pytest
@@ -13,6 +14,7 @@ from pixel.agents.rfq import extract
 from pixel.contracts import LlmResult
 from pixel.core import events
 from tools import benchmark_generalization as bench
+from tools import simulate
 
 
 @pytest.fixture(scope="module")
@@ -113,3 +115,11 @@ def test_captured_requests_changed_as_seen_live_are_read_right_or_left_to_the_mo
     mutated = bench.audit_live_mutations()
     assert mutated
     assert [f"{r.fixture}: {r.wrong_fields}" for r in mutated if r.right is False] == []
+
+
+def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
+    """Every seventh document case and every mail case of `tools/simulate.py`: read right or left to the model, unless
+    `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now must lose its note."""
+    outcomes = asyncio.run(simulate.run([*simulate.document_cases(step=7), *simulate.mail_cases()]))
+    assert [f"{o.case.family} {o.case.axes}: {o.wrong}" for o in outcomes if o.verdict == "wrong" and not o.gap] == []
+    assert simulate.stale_gaps(outcomes) == []
