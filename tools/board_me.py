@@ -7,6 +7,7 @@ import asyncio
 import json
 import subprocess
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,9 @@ from pixel.core.context import Context
 RUNS = Path(__file__).parent.parent / "bench" / "RUNS.md"
 COLUMNS = ("round", "sent_at", "answered_at", "seconds", "verdict", "reason", "accuracy", "cost", "time", "bonus",
            "total", "booked", "commit", "note")  # fmt: skip
-POINTS = ("accuracy", "cost", "time", "bonus")
+KINDS = ("accuracy", "time", "cost", "humanity", "booking", "tracking", "adjustment")  # as the board lists them
+HIDDEN = ("accuracy", "time")  # left out of each row until the scores are revealed
+BONUS = ("humanity", "booking", "tracking", "adjustment")  # the RUNS.md column "Bonus"
 
 
 def _pick(row: dict[str, Any], *names: str) -> Any:
@@ -37,17 +40,16 @@ def rows_of(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def normalize(row: dict[str, Any]) -> dict[str, Any]:
+    """One /v1/board/me row in our shape. `points` holds every kind the scorer reports for the row (`KINDS`); the
+    board leaves accuracy and time out until the scores are revealed, and cost out while `cost_pending`."""
     nested = row.get("points") if isinstance(row.get("points"), dict) else {}
     points = {}
-    for k in POINTS:
+    for k in KINDS:
         value = _pick(nested, k, f"{k}_points")
         if value is None:
-            value = _pick(row, f"{k}_points", k)
+            value = _pick(row, f"{k}_points")
         if value is not None:
             points[k] = value
-    if "bonus" not in points:
-        bonus = _pick(nested, "tracking", "humanity")
-        points["bonus"] = bonus if bonus is not None else _pick(row, "tracking_points")
     seconds = _pick(row, "seconds", "response_seconds", "response_s")
     if seconds is None and row.get("sent_at") and row.get("answered_at"):
         try:
@@ -63,9 +65,10 @@ def normalize(row: dict[str, Any]) -> dict[str, Any]:
         "seconds": seconds,
         "verdict": _pick(row, "verdict", "status"),
         "reason": _pick(row, "reason", "reason_code"),
-        "points": {k: v for k, v in points.items() if v is not None},
+        "points": points,
         "total": _pick(row, "total", "points_total", "request_total"),
         "booked": _pick(row, "booked"),
+        "cost_pending": bool(row.get("cost_pending")),
         "raw": row,
     }
 
@@ -86,7 +89,10 @@ def _commit() -> str:
 
 def _cells(score: dict[str, Any], commit: str, note: str) -> dict[str, str]:
     cells = {k: "" if score.get(k) is None else str(score[k]) for k in COLUMNS}
-    cells.update({k: str(score["points"].get(k, "")) for k in POINTS})
+    points = score.get("points") or {}
+    cells.update({k: str(points.get(k, "")) for k in ("accuracy", "cost", "time")})
+    bonus = [Decimal(str(points[k])) for k in BONUS if points.get(k) is not None]
+    cells["bonus"] = str(sum(bonus, Decimal(0))) if bonus else ""
     cells["booked"] = {True: "yes", False: "no"}.get(score.get("booked"), cells["booked"])
     cells.update(commit=commit, note=note)
     return {k: v.replace("|", "/").replace("\n", " ") for k, v in cells.items()}
