@@ -72,8 +72,12 @@ def test_reply_subject_name_and_signer():
                           closing="Have a good day.")  # fmt: skip
     subject, body = compose.render(rfq("en"), OPTION, prose, "Machine parts to BBB", SIGNER)
     assert subject == "Re: Machine parts to BBB"
-    # The model's opening leads into the offer, below the greeting (R31).
-    assert body.startswith("Hello Anna,\n\nHappy to help get the machine parts moving quickly. ")
+    # Existing stored openings still leave the offer directly below the greeting.
+    _, with_name_only = compose.render(
+        rfq("en"), OPTION, compose.Prose(first_name="Anna"), "Machine parts to BBB", SIGNER
+    )
+    assert body == with_name_only and body.startswith("Hello Anna,\n\n")
+    assert "Happy to help" not in body
     # The mail ends on the booking sentence and the signature: no stock closing line, no P.S. (R31).
     assert "Have a good day" not in body and body.endswith(f"Best regards,\n{SIGNER}\n{compose.COMPANY}")
     assert compose.reply_subject("AW: Anfrage") == "AW: Anfrage" and compose.reply_subject("") is None
@@ -127,15 +131,15 @@ async def test_prose_is_stored_for_the_fallback(ctx, monkeypatch):
 
     async def fake_ask(ctx, **kw):
         calls.append(kw)
-        return LlmResult(data={"first_name": "Anna", "hook": "we are in a hurry", "closing": "Your 3 boxes are safe.",
-                               "intro": "Understood, I kept speed first on this one."},
+        return LlmResult(data={"first_name": "Anna"},
                          model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))  # fmt: skip
 
     monkeypatch.setattr(llm, "ask_json", fake_ask)
     prose = await compose.prose(ctx, rfq("en"), message())
-    assert prose == compose.Prose(first_name="Anna", intro="Understood, I kept speed first on this one.")
+    assert prose == compose.Prose(first_name="Anna")
     assert compose.stored(ctx, 1) == prose
     assert calls[0]["purpose"] == "quote.prose" and calls[0]["max_output_tokens"] == 150
+    assert calls[0]["schema"]["required"] == ["first_name"]
     assert compose.customer_subject(ctx, 1) == "Machine parts to BBB"
 
 
@@ -285,24 +289,6 @@ def test_the_opening_answers_a_phrase_from_the_mail_without_its_names_and_varies
     assert not compose.clean(raw, rfq("en"), message(), SIGNER, earlier=earlier).intro
 
 
-async def test_the_model_sees_the_openings_this_customer_already_got(ctx, monkeypatch):
-    calls = []
-
-    async def fake_ask(ctx, **kw):
-        calls.append(kw)
-        return LlmResult(data={"first_name": None, "hook": "we are in a hurry", "closing": None,
-                               "intro": "Understood, I kept speed first on this one."},
-                         model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))  # fmt: skip
-
-    monkeypatch.setattr(llm, "ask_json", fake_ask)
-    for session in (1, 2):
-        ctx.db.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (?, 'buyer@example.com', "
-                       "'new', 't')", (session,))  # fmt: skip
-    assert (await compose.prose(ctx, rfq("en", 1), message())).intro
-    assert not (await compose.prose(ctx, rfq("en", 2), message())).intro
-    assert "Understood, I kept speed first on this one." in calls[1]["user"]
-
-
 def test_two_sessions_do_not_read_alike():
     bodies = {compose.render(rfq("en", session), OPTION)[1] for session in range(1, 9)}
     assert len(bodies) >= 5
@@ -340,21 +326,21 @@ def test_the_earliest_departure_is_answered_only_when_asked():
 
 
 @pytest.mark.parametrize(
-    ("opening", "answered"),
+    ("language", "small_talk"),
     [
-        ("Hope your week’s going well! Could you quote AAA to BBB?", True),
-        ("Hope your week's going well. Please quote AAA to BBB.", True),
-        ("I hope you're doing well. Please quote AAA to BBB.", True),
-        ("Please quote AAA to BBB, hope the price is good as well.", False),
+        ("en", "I hope you're doing well."),
+        ("de", "Ich hoffe, es geht Ihnen gut."),
+        ("fr", "J’espère que tout va bien."),
     ],
 )
-def test_the_customers_small_talk_is_answered_before_the_price(opening, answered):
-    _, body = compose.render(rfq("en"), OPTION, request=f"Hi there,\n\n{opening}\n\nCheers,\nKlaus")
-    paragraph = body.split("\n\n")[1]
-    assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]) == answered
-    assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
-    assert ("thank" in paragraph.lower()) == answered  # the opening no longer thanks: the small-talk answer does
-    assert body.count("1234.57 EUR") == 1
+def test_offer_follows_the_greeting_even_with_small_talk(language, small_talk):
+    request = rfq(language)
+    plain = compose.render(request, OPTION, compose.Prose(first_name="Klaus"))[1]
+    with_intro = compose.render(
+        request, OPTION, compose.Prose(first_name="Klaus", intro="This is a legacy opening."), request=small_talk
+    )[1]
+    assert with_intro == plain
+    assert "1234.57 EUR" in with_intro.split("\n\n")[1]
 
 
 def test_a_french_request_is_answered_in_french_with_its_fastest_option():

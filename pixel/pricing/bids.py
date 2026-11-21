@@ -430,15 +430,28 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
     return _option(rfq, message, total, currency, fx, transit or 0)
 
 
-CHECK_WAIT_S = 6
+CHECK_WAIT_S = 3  # gpt-4.1-mini answers in about 1 s; a bid must not miss `collect`'s cutoff waiting for it
+
+
+def _stated(text: str, total: Decimal) -> bool:
+    """The total stands in the text as the whole shipment's amount: not per kg, per hour or per another unit."""
+    for m in re.finditer(AMOUNT, text):
+        tail = re.sub(rf"^\s*(?:{CURRENCY}|[€$£])", "", text[m.end() :])
+        if _amount(m.group()) == total and not (
+            PER_KG.match(tail) or OTHER_BASIS.match(tail) or KG_LABEL.search(text[: m.start()])
+        ):
+            return True
+    return False
 
 
 async def _crosscheck(
     ctx: Context, message: Message, rfq: Rfq, option: RateOption, *, needs_transit: bool
 ) -> tuple[RateOption, str]:
-    """The rules' reading of an answer checked by the model's (`_read_with_model`, code adds the charges up). Where the
-    totals differ the model's wins: in round 67 the rules read a waiting-time line (45.00 EUR) as the offer, the model
-    read 181.96; on 359 answers of rounds 9 to 72 both read the same. On any failure the rules' reading stands."""
+    """The rules' reading of an answer checked by the model's (`_read_with_model`): in round 67 the rules read a
+    waiting-time line (45.00 EUR) as the offer, the model read 181.96; on 359 answers of rounds 9 to 72 both read the
+    same. The model's total wins only in the rules' currency and when the text states it as the shipment's amount
+    (`_stated`): never a rate per kg or per hour, never a converted figure. Any other disagreement is only reported. On
+    any failure the rules' reading stands."""
     try:
         read = await asyncio.wait_for(_read_with_model(ctx, message, rfq, needs_transit), CHECK_WAIT_S)
     except Exception as exc:  # noqa: BLE001  the rules' reading stands
@@ -447,9 +460,11 @@ async def _crosscheck(
         return option, "rules"
     if read is None or (read.total, read.currency) == (option.total, option.currency):
         return option, "rules"
+    taken = read.currency == option.currency and _stated(_own_text(message.body), read.total)
     events.emit(ctx, "bid.crosscheck", "pricing", session_id=message.session_id, message_id=message.id,
-                payload={"rules": f"{option.total} {option.currency}", "model": f"{read.total} {read.currency}"})  # fmt: skip
-    return read, "model"
+                payload={"rules": f"{option.total} {option.currency}", "model": f"{read.total} {read.currency}",
+                         "taken": taken})  # fmt: skip
+    return (read, "model") if taken else (option, "rules")
 
 
 def _postcode(rfq: Rfq) -> str:

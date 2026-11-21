@@ -574,12 +574,9 @@ async def test_the_model_cross_checks_a_bid_the_rules_read_and_its_total_wins(ct
         return LlmResult(data=said, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
 
     monkeypatch.setattr(llm, "ask_json", model)
-    await bids.record(ctx, mail("a@truck", "Pickup EUR 45.00"))
+    await bids.record(ctx, mail("a@truck", "Pickup EUR 45.00\nOffer total 181.96"))
     [found] = [o["option"] for o in kinds(ctx, "option.found")]
-    assert (found["pickup"], kinds(ctx, "bid.crosscheck")) == (
-        "181.96",
-        [{"rules": "45.00 EUR", "model": "181.96 EUR"}],
-    )
+    assert (found["pickup"], kinds(ctx, "bid.crosscheck")[0]["taken"]) == ("181.96", True)
 
     async def down(ctx, **kw):
         raise RuntimeError("gateway down")
@@ -587,6 +584,29 @@ async def test_the_model_cross_checks_a_bid_the_rules_read_and_its_total_wins(ct
     monkeypatch.setattr(llm, "ask_json", down)
     await bids.record(ctx, mail("b@truck", "Pickup EUR 90.00"))
     assert [o["option"]["pickup"] for o in kinds(ctx, "option.found")] == ["181.96", "90.00"]
+
+
+@pytest.mark.parametrize(
+    ("body", "said", "total_eur"),
+    [
+        ("EUR 2.10/kg all-in, transit 3 days", {"total": "EUR 2.10", "currency": "EUR"}, "210.00"),
+        ("Total: USD 1,000.00 (1 USD = 0.92 EUR), 3 days", {"total": "1000.00", "currency": "EUR"}, "920.00"),
+    ],
+)
+async def test_a_model_total_the_text_does_not_state_for_the_shipment_never_wins(
+    ctx, monkeypatch, body, said, total_eur
+):
+    """Review of #252: a rate per kg, or the model's currency for a converted amount, replaced the rules' total."""
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq().model_dump(mode="json"))
+    data = {"offer": True, "components": [], "transit_days": "3 days", "eur_per_unit": None, **said}
+
+    async def model(ctx, **kw):
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    await bids.record(ctx, mail("one@air", body))
+    [found] = [o["option"] for o in kinds(ctx, "option.found")]
+    assert found["total_eur"] == total_eur
 
 
 PER_KG_TABLE = "\n".join(

@@ -280,7 +280,7 @@ LABELS = {
     "tariff.failed": "Tariff failed", "llm.call": "Model call", "score": "Scored", "human.note": "Sent by a person",
     "human.takeover": "Taken over", "human.release": "Back on autopilot", "error": "Error",
     "rfq.dangerous_goods": "Dangerous goods", "quote.prose": "Quote text written", "prose.raw": "Model text",
-    "feedback": "Scorer feedback",
+    "feedback": "Scorer feedback", "bid.skipped": "Bid skipped", "carrier.lanes": "Lanes learned",
 }  # fmt: skip
 
 
