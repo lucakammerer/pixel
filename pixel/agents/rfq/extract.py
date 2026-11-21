@@ -636,9 +636,9 @@ SIDE = {"width": 0, "breite": 0, "length": 1, "länge": 1, "laenge": 1, "height"
 COUNT = {"pieces", "pcs", "qty", "quantity", "stück", "stueck"}
 
 
-def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]]] | None:
-    """A packing table: its columns (name, unit) from a header naming width, length, height and pieces, and the
-    rows below it with one number per column."""
+def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]], str] | None:
+    """A packing table: its columns (name, unit) from a header naming width, length, height and pieces, the rows
+    below it with one number per column, and the text around it."""
     lines = text.splitlines()
     for i, header in enumerate(lines):
         columns = [(m["name"].casefold(), m["unit"]) for m in COLUMN.finditer(header)]
@@ -651,13 +651,13 @@ def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]]] | 
             if len(cells) != len(columns):
                 break
             rows.append(cells)
-        return columns, rows
+        return columns, rows, "\n".join(lines[:i] + lines[i + 1 + len(rows) :])
     return None
 
 
 def _table_volume(text: str) -> Decimal | None:
     """The volume a packing table's rows add up to."""
-    columns, rows = _table(text) or ([], [])
+    columns, rows, _ = _table(text) or ([], [], "")
     total = None
     for row in rows:
         cells = [number(c, thousands=False) for c in row]
@@ -677,11 +677,12 @@ def _document_weight(text: str) -> Decimal | None:
     """A document's stated total gross weight when its table's one weight column, headed in kg, adds up to it
     (round 35: the mail said 2644 kg, the spec's total and its row 1751 kg). A row's weight is never multiplied by
     its pieces, and a weight per piece or a second weight column is ambiguous: then the mail stands."""
-    stated = _unique(WEIGHT, text, thousands=True)
-    table = _table(text)
-    if stated is None or EACH_WEIGHT.search(text) or table is None:
+    if (table := _table(text)) is None or EACH_WEIGHT.search(text):
         return None
-    columns, rows = table
+    # Read the total off the table's own lines: "Gross weight (kg)" ending a header runs on into the first row.
+    columns, rows, around = table
+    if (stated := _unique(WEIGHT, around, thousands=True)) is None:
+        return None
     weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name == "gewicht"]
     if len(weights) != 1 or columns[weights[0]][1] not in ("kg", "kgs") or not rows:
         return None

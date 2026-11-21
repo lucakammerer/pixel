@@ -457,6 +457,50 @@ async def test_a_packing_spec_whose_table_bears_out_its_volume_outweighs_the_mai
     assert evidence["volume_cbm"] == ["SLI_53351.pdf"]
 
 
+async def test_a_packing_spec_whose_table_bears_out_its_gross_weight_outweighs_the_mail(conn, emitted):
+    # Round 35: the mail says 2644 kg, the attached spec's total and its one row 1751 kg (19 x 100 x 63 x 100 cm,
+    # 11.97 cbm). On the mail's weight we billed 2644 kg instead of 1998.99 and were rejected as too high.
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures" / "mails" / "rfq-spec-weight-differs-from-mail.json").read_text()
+    )
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(1751), Decimal("11.97"), 19)
+    evidence = next(kw["payload"]["sources"] for kind, kw in emitted if kind == "rfq.evidence")
+    assert evidence["weight_kg"] == ["shipment_details_81971.xlsx"]
+
+
+TABLE = "Length (cm) Width (cm) Height (cm) Pieces {column}\n100 100 63 19 {row}"
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (kg)", row="1751"),
+        "Total gross weight: 1,751 kg\n" + TABLE.format(column="Gross weight (kgs)", row="1,751"),
+    ],
+)
+def test_a_document_weight_borne_out_by_its_kg_column_counts(document):
+    assert extract._document_weight(document) == 1751
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight", row="1751"),  # no unit
+        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (lbs)", row="1751"),
+        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (kg)", row="92"),  # per piece
+        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (kg) Net weight (kg)", row="1751 1700"),
+        "Total gross weight (kg): 1751\nEach piece weighs 92 kg\n"
+        + TABLE.format(column="Gross weight (kg)", row="1751"),
+        "Total gross weight (kg): 1751",  # no table
+    ],
+)
+def test_an_ambiguous_document_weight_leaves_the_mail_standing(document):
+    assert extract._document_weight(document) is None
+
+
 @pytest.mark.parametrize(
     "body, model_kg, model_cbm, pieces, expected",
     [

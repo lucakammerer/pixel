@@ -40,6 +40,8 @@ Captured mails of a request, from the request to the confirmed booking:
 - `rfq-packing-list-volume-differs-from-mail.json`: round 34, MUC-GRU, fastest, the same kind in another layout: a
   "Packing List" whose table starts with the length. The mail says 11.69 cbm (140 x 100 x 167 cm), the list 7.49
   (140 x 100 x 107 cm); quoted on the mail's before #159 was live, rejected as too high.
+- `rfq-spec-weight-differs-from-mail.json`: round 35, MUC-SGN, fastest. The mail says 2644 kg; the attached xlsx
+  spec (embedded) says 1751 kg in its total and its one table row. Quoted on 2644, rejected as too high.
 - `rfq-port-to-port.json`: a request that names both airports and delivers to the airport itself; the rules read
   it without a model.
 - `rfq-port-cheapest-airline-bids.json`: round 28, port to port and cheapest, sent while the portal's rate API
