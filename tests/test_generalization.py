@@ -104,6 +104,14 @@ def test_an_attachment_in_another_container_is_read_like_the_original_or_not_at_
     assert [f"{c.change}: {c.fixture} {c.detail}" for c in reads if c.outcome == "wrong"] == []
 
 
+def test_a_changed_tracking_question_finds_its_shipment_or_asks_never_another():
+    """Every live tracking question finds its shipment as sent; changed one way, it may ask for the reference."""
+    reads = bench.audit_tracking()
+    assert reads
+    assert [f"{r.change}: {r.case_id} {r.outcome}" for r in reads
+            if r.outcome == "wrong" or (r.change == "as sent" and r.outcome != "right")] == []  # fmt: skip
+
+
 def test_spreadsheet_layout_changes_parse_the_same_or_are_refused():
     changes = bench.audit_xlsx_changes()
     assert any(v.outcome == "parsed right" for v in changes)

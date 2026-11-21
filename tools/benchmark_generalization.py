@@ -31,6 +31,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    listed cell a case covers by now. `--gaps` prints the matrix first.
 13. Attachment containers: every captured attachment as an html page, a forwarded mail, a zip archive, without
    or with a capitalised suffix, as UTF-16 or markdown text (`CONTAINERS`): read like the original or not at all.
+14. Tracking questions: every live question about a booked shipment (`tracking-questions.json`) with one change
+   each (`TRACKING_CHANGES`) against the live CRM's shipments: the same shipment, or a question back, never another.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -58,15 +60,29 @@ from pixel import llm
 from pixel.agents.rfq import extract
 from pixel.agents.router import agent as router
 from pixel.agents.tariffs import agent
+from pixel.agents.tracking import agent as tracking
 from pixel.api.mailbox import to_message
 from pixel.config import settings
-from pixel.contracts import LaneTariff, LlmResult, MailKind, Message, Preference, Rfq
+from pixel.contracts import (
+    LaneTariff,
+    LlmResult,
+    MailKind,
+    Message,
+    Preference,
+    Quote,
+    QuoteStatus,
+    RateOption,
+    Rfq,
+    Source,
+)
 from pixel.core import db, poller
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
+from pixel.crm import quotes, shipments
 from pixel.pricing import bids
 from pixel.pricing.calc import chargeable_kg, price_tariff
+from pixel.pricing.pickup import zone_of
 from tools import document_conflicts, simulate
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -954,6 +970,91 @@ def print_matrix(covered: dict[tuple[str, str], int], gaps: dict[str, str]) -> l
     return empty
 
 
+@dataclass
+class TrackingRead:
+    case_id: str
+    change: str
+    outcome: str  # "right", "asks" (a question back for the reference) or "wrong" (another shipment)
+
+
+def _weight(fmt):
+    return lambda t: re.sub(r"(\d+) kg", lambda m: fmt(m[1]), t, count=1)
+
+
+def _lane(fmt: str):
+    return lambda t: re.sub(r"\b([A-Z]{3}|\d{5}) to ([A-Z]{3})\b", lambda m: fmt.format(o=m[1], d=m[2]), t, count=1)
+
+
+def _grouped(sep: str):
+    return _weight(lambda n: (f"{int(n):,}".replace(",", sep) if len(n) > 3 else n) + " kg")
+
+
+# One change each to a live tracking question; the shipment it names stays the same.
+TRACKING_CHANGES = {
+    "as sent": lambda t: t,
+    "the subject alone": None,
+    "thousands comma": _grouped(","),
+    "thousands dot": _grouped("."),
+    "thousands space": _grouped(" "),
+    "kilos": _weight(lambda n: f"{n} kilos"),
+    "kgs": _weight(lambda n: f"{n} kgs"),
+    "kg unspaced": _weight(lambda n: f"{n}kg"),
+    "KG": _weight(lambda n: f"{n} KG"),
+    "kg with decimals": _weight(lambda n: f"{n}.00 kg"),
+    "from X to Y": _lane("from {o} to {d}"),
+    "X-Y": _lane("{o}-{d}"),
+    "X → Y": _lane("{o} → {d}"),
+    "X / Y": _lane("{o} / {d}"),
+    "X nach Y": _lane("{o} nach {d}"),
+    "DE-postcode": _lane("DE-{o} to {d}"),
+    "company without legal form": lambda t: re.sub(r" (?:GmbH|KG)\b", "", t, count=1),
+    "company in capitals": lambda t: re.sub(
+        r"\b[A-Z][a-z]+ [A-Z][a-z]+ (?:GmbH|KG)\b", lambda m: m[0].upper(), t, count=1
+    ),
+}
+
+
+def _tracking_ctx(rows: list[dict]) -> tuple[Context, dict[str, str]]:
+    """The live CRM's booked shipments in a fresh database; returns our id per live shipment id."""
+    conn = db.connect(":memory:")
+    db.init(conn)
+    ctx = Context(settings(), conn, None, None, None, None)
+    ids = {}
+    for i, row in enumerate(rows, 1):
+        kg, postcode = D(row["weight_kg"]), row["pickup_postcode"]
+        rfq = Rfq(session_id=i, message_id=i, customer=row["customer"], origin=row["origin"],
+                  destination=row["destination"], weight_kg=kg, door_pickup=postcode is not None,
+                  pickup_postcode=postcode, pickup_zone=zone_of(postcode) if postcode else None, received_at=NOW,
+                  deadline_at=NOW)  # fmt: skip
+        option = RateOption(source=Source.PORTAL, carrier="c", origin=row["origin"], destination=row["destination"],
+                            chargeable_kg=kg, billed_kg=kg, freight=D(1), total=D(1), currency="EUR",
+                            total_eur=D(1), transit_days=1)  # fmt: skip
+        quote = Quote(id=f"Q-{i}", session_id=i, rfq=rfq, option=option, total=D(1), currency="EUR", subject="",
+                      body="", status=QuoteStatus.SENT, created_at=NOW, sent_at=NOW, sent_message_id=1000 + i)  # fmt: skip
+        quotes.save(ctx, quote)
+        conn.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (?, ?, 'open', ?)",
+                     (i, row["customer"], NOW.isoformat()))  # fmt: skip
+        shipment = shipments.create(ctx, quote).model_copy(update={"status": "confirmed"})
+        shipments.save(ctx, shipment)
+        ids[row["id"]] = shipment.id
+    return ctx, ids
+
+
+def audit_tracking() -> list[TrackingRead]:
+    data = json.loads((FIXTURES / "tracking-questions.json").read_text())
+    ctx, ids = _tracking_ctx(data["shipments"])
+    results = []
+    for n, question in enumerate(data["questions"]):
+        for change, edit in TRACKING_CHANGES.items():
+            text = question["subject"] if edit is None else edit(question["body"])
+            if change != "as sent" and text == question["body"]:
+                continue
+            found = [s.id for s in tracking.described(ctx, text)]
+            outcome = "right" if found == [ids[question["shipment"]]] else "asks" if not found else "wrong"
+            results.append(TrackingRead(f"{n}: {question['subject']}", change, outcome))
+    return results
+
+
 def _print(title: str, report: Report, ok: str) -> None:
     print(f"\n{title}: {report.passed}/{report.total}")
     for failure in report.failures:
@@ -1175,6 +1276,18 @@ def main() -> int:
     for c in containers_wrong:
         print(f"    FAIL {c.change}: {c.fixture} ({c.detail})")
 
+    tracked = audit_tracking()
+    # Another customer's shipment is never right; the question as sent must find its shipment.
+    tracked_wrong = [r for r in tracked if r.outcome == "wrong" or (r.change == "as sent" and r.outcome != "right")]
+    print(f"\n[14] Tracking questions: {sum(r.outcome == 'right' for r in tracked)}/{len(tracked)} found the "
+          f"shipment, {sum(r.outcome == 'asks' for r in tracked)} ask for the reference")  # fmt: skip
+    for change in TRACKING_CHANGES:
+        rows = [r for r in tracked if r.change == change]
+        counts = {o: sum(r.outcome == o for r in rows) for o in ("right", "asks", "wrong")}
+        print(f"    {change:<28} {counts['right']}/{len(rows)} right, {counts['asks']} ask, {counts['wrong']} wrong")
+    for r in tracked_wrong:
+        print(f"    FAIL {r.change}: {r.case_id} ({r.outcome})")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -1189,6 +1302,7 @@ def main() -> int:
         or conflicts_wrong
         or empty
         or containers_wrong
+        or tracked_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")

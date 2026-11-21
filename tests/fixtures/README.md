@@ -59,6 +59,10 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   so does a listed cell that a case covers now: its note goes in the same commit.
 - `bid-plausibility.json`: every bid with peers of its kind from the scored rounds of 21.11.2026, read right, and
   round 67's misread trucker bid with the quote a right reading gives (`selection.implausible`).
+- `tracking-questions.json`: the live CRM's booked shipments of 21.11. and the 44 tracking questions the desk sent
+  about one of them, each with the shipment a person matches from the desk's facts. The benchmark's
+  `TRACKING_CHANGES` changes each question one way (weight notation, lane separator, company form); it must find the
+  same shipment or ask for the reference, never name another.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 
