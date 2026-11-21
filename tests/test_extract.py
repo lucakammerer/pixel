@@ -572,3 +572,7 @@ async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(c
     request = poller.ingest(ctx, request)  # the dimensions without a volume send it to the model
     rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
     assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("CCC", "51115", "51", "model")
+
+
+def test_in_before_a_word_is_no_inch():
+    assert extract._volume("3 pallets 120x80x150 in total, 900 kg", 3) == Decimal("4.32")  # not 70.8 cbm in inches
