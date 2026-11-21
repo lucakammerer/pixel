@@ -329,3 +329,15 @@ async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monk
     by_carrier = {o.carrier: o for o in found}
     assert set(by_carrier) == {"Air One", "Air Two"}
     assert all(o.pickup == D("75.00") for o in found)
+
+
+@pytest.mark.parametrize(
+    "text, price, days",
+    [
+        ("All-in EUR 850.00. Transit: 3 working days.", D("850.00"), 3),
+        ("EUR 850.00 per shipment, all-in. Transit 2-3 business days.", D("850.00"), 2),
+        ("All-in price EUR 850.00 per AWB, transit 3d.", D("850.00"), 3),
+    ],
+)
+def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days):
+    assert bids._price(text, rfq()) == (price, "EUR") and bids._days(text) == days
