@@ -102,6 +102,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier shipment left out, per-piece figures times their
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
   (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers.
+  The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
+  table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
+  1210 kg and raised an alert.
   WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
   implausible price per kg, the language, an expired rate. The check never holds or changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule

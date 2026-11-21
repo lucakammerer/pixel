@@ -15,23 +15,28 @@ PACKING = "Total gross weight: 950 kg\nLength (cm) Width (cm) Height (cm) Pieces
     ],
 )
 def test_explicit_correction_wins_over_a_corroborated_packing_weight(correction):
-    facts, evidence = extract._cargo_sources([("mail", f"2 pallets, 950 kg, 0.8 cbm. {correction}"), ("pack", PACKING)])
+    facts, evidence, document_weight = extract._cargo_sources(
+        [("mail", f"2 pallets, 950 kg, 0.8 cbm. {correction}"), ("pack", PACKING)]
+    )
     assert facts["weight_kg"] == Decimal(700)
     assert evidence["weight_kg"] == ["mail"]
+    assert document_weight is None
 
 
 def test_outdated_comment_without_an_explicit_correction_does_not_override_weight():
-    facts, evidence = extract._cargo_sources(
+    facts, evidence, document_weight = extract._cargo_sources(
         [("mail", "2 pallets, 700 kg, 0.8 cbm. The old invoice had a typo."), ("pack", PACKING)]
     )
     assert facts["weight_kg"] == Decimal(950)
     assert evidence["weight_kg"] == ["pack"]
+    assert document_weight == facts["weight_kg"]
 
 
 def test_correction_of_volume_leaves_corroborated_weight_in_place():
-    facts, evidence = extract._cargo_sources(
+    facts, evidence, document_weight = extract._cargo_sources(
         [("mail", "2 pallets, 700 kg, 0.8 cbm. Korrektur: Das Volumen beträgt jetzt 1,5 cbm."), ("pack", PACKING)]
     )
     assert facts["weight_kg"] == Decimal(950)
     assert facts["volume_cbm"] == Decimal("1.5")
     assert evidence["volume_cbm"] == ["mail"]
+    assert document_weight == facts["weight_kg"]

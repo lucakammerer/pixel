@@ -1,0 +1,4 @@
+Total gross weight: 1729 kg
+Total volume: 8.47 cbm
+Length (cm) Width (cm) Height (cm) Pieces Gross weight (kg)
+100 100 121 7 1729

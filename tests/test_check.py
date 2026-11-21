@@ -12,8 +12,8 @@ from pixel.agents.rfq import agent, check, compose, dangerous, extract
 from pixel.agents.rfq.extract import DG_DOCUMENTS
 from pixel.api import mailbox
 from pixel.contracts import Preference, Quote, RateOption, Rfq, Source
-from pixel.core import events, orchestrator
-from pixel.pricing import calc
+from pixel.core import events, orchestrator, poller
+from pixel.pricing import calc, store
 
 NOW = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
 MAILS = Path(__file__).parent / "fixtures" / "mails"
@@ -279,6 +279,36 @@ def test_a_clean_quote_is_logged_without_an_issue(conn):
     assert feedback.attention(conn, 5) == []
 
 
+async def test_corroborated_packing_list_weight_passes_the_quote_check(conn, monkeypatch):
+    ctx = make_ctx(conn, dry_run=True)
+    raw = json.loads((MAILS / "rfq-door-packing-weight-differs-from-mail.json").read_text())
+    mail = poller.ingest(ctx, mailbox.to_message(raw, "in"))
+    zone = extract._pickup(extract._text(mail))[1][:2]
+    store.save_zones(ctx, [{"zone": zone, "area": "Pickup area", "airport": "AAA"}])
+    packing = (MAILS.parent / "rfqs" / "round-57-packing-list.txt").read_text().splitlines()
+
+    async def attachment_lines(ctx, message):
+        # Reconstruct the corroborated figures from the live event. The mail capture holds only file metadata.
+        return [(message.attachments[0].filename, packing)]
+
+    monkeypatch.setattr(extract, "_attachments", attachment_lines)
+    deadline = orchestrator.Deadline(NOW, NOW, NOW, NOW)
+    request = await extract.extract(ctx, mail, deadline)
+    assert request.weight_kg == extract._document_weight("\n".join(packing))
+    kg = calc.chargeable_kg(request.weight_kg, request.volume_cbm)
+    air = airline("5000.00", kg=str(kg)).model_copy(
+        update={"origin": request.origin, "destination": request.destination}
+    )
+    option = calc.with_pickup(air, Decimal("500.00"), "Trucker")
+    drafted = agent._quote(ctx, request, [option], None, fallback=False)
+    [checked] = _checked(conn)
+    assert not checked["blocking"], checked["findings"]
+
+    wrong = request.model_copy(update={"weight_kg": request.weight_kg - 1})
+    agent._check(ctx, wrong, drafted.model_copy(update={"rfq": wrong}))
+    assert any(f["rule"] == "weight_unexplained" for f in _checked(conn)[-1]["findings"])
+
+
 def test_precheck_off_skips_the_check(conn):
     ctx = make_ctx(conn, precheck="off")
     mail = ingest_rfq(ctx)
@@ -292,7 +322,7 @@ def test_a_check_that_fails_is_an_error_event_never_a_lost_quote(conn, monkeypat
     mail = ingest_rfq(ctx)
     request = rfq(session_id=mail.session_id, message_id=mail.id, customer=mail.sender)
 
-    def broken(*args):
+    def broken(*args, **kwargs):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(check, "run", broken)
