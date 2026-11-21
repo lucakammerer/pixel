@@ -439,6 +439,31 @@ async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(co
     ]
 
 
+async def test_a_request_sent_as_a_voice_message_is_read_by_rules_from_its_transcript(conn, monkeypatch):
+    """Round 65: the whole request was a voice message. Unread, we had to ask the customer for the facts."""
+    from pixel.agents.tariffs import agent as tariffs
+
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    offers = json.loads((Path(__file__).parent / "fixtures" / "pickup-offer-layouts.json").read_text())
+    monkeypatch.setattr(llm, "ask_json", boom)
+    monkeypatch.setattr(tariffs, "_transcribe", lambda content: offers["request_transcript"])
+
+    class Recording:
+        async def attachment(self, message_id, attachment_id):
+            return b"ID3"
+
+    ctx = Context(settings(), conn, Recording(), None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("51943"), "area": "Town", "airport": "AAA"}])
+    message = Message(id=1, session_id=1, direction="in", sender="c@x", to="us@x", subject="Voice message",
+                      body="Please listen to the attached recording.", sent_at=datetime(2026, 11, 21, tzinfo=UTC),
+                      attachments=[Attachment(id=0, filename="voice-message.mp3", content_type="audio/mpeg", size=3)])  # fmt: skip
+    rfq = await extract.extract(ctx, message, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.pickup_postcode) == (
+        "AAA", "LIM", Decimal(1804), Decimal("17.18"), 11, "51943")  # fmt: skip
+
+
 async def test_a_packing_spec_whose_table_bears_out_its_volume_outweighs_the_mail(conn, monkeypatch, emitted):
     async def boom(ctx, **kw):
         raise AssertionError("no model call expected")

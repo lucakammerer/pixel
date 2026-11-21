@@ -53,11 +53,13 @@ TRANSIT = re.compile(
     re.IGNORECASE,
 )
 # "offer valid for 7 days, transit 3 days": the figure after the transit word counts, a validity never does.
-LABELLED_TRANSIT = re.compile(
-    r"\b(?:transit(?:\s*time)?|laufzeit|t/t)\b[^\d\n]{0,24}?" + TRANSIT.pattern, re.IGNORECASE
+# "Laufzeit des Angebots" is the offer's validity and "transit via DXB" names a hub, neither is a transit time.
+TRANSIT_LABEL = r"\b(?:transit(?:\s*time|zeit)?|laufzeit|t/t)\b(?!\s+(?:via\b|de[sr]\s+(?:angebots|offerte)))"
+LABELLED_TRANSIT = re.compile(TRANSIT_LABEL + r"[^\d\n]{0,24}?" + TRANSIT.pattern, re.IGNORECASE)
+VALIDITY = re.compile(
+    r"\b(?:valid(?:ity)?|g(?:ü|ue)ltig\w*|good|laufzeit\s+de[sr]\s+(?:angebots|offerte))\b[^\d\n]{0,20}$", re.IGNORECASE
 )
-VALIDITY = re.compile(r"\b(?:valid(?:ity)?|g(?:ü|ue)ltig\w*|good)\b[^\d\n]{0,20}$", re.IGNORECASE)
-TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
+TRANSIT_HOURS = re.compile(TRANSIT_LABEL + r"[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
 # "10.5 hours" and "4,5 Stunden" are one figure; "09:00 h" is a clock time, not a duration.
 HOURS = re.compile(r"(?<![\d:.,])(\d+(?:[.,]\d+)?)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
 PICKUP_HOURS = re.compile(
@@ -397,7 +399,8 @@ async def _with_attachments(ctx: Context, message: Message) -> str:
     parts = [_own_text(message.body)]
     for attachment in message.attachments:
         try:
-            parts += _lines(attachment.filename, await ctx.mailbox.attachment(message.id, attachment.id))
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            parts += await asyncio.to_thread(_lines, attachment.filename, content)  # a voice message takes seconds
         except Exception as e:  # noqa: BLE001  an unreadable file (a voice message) must not lose the body
             events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
                         payload={"where": "bid_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
@@ -420,10 +423,18 @@ async def record(ctx: Context, message: Message) -> None:
                     payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
                              "ignored": "different or ambiguous lane"})  # fmt: skip
         return
-    if message.attachments:
+
+    def by_rules(message: Message) -> tuple[list[RateOption], RateOption | None]:
+        listed = parse_desk(message, rfq) if kind == "ratedesk" else []
+        return listed, None if listed else parse(message, rfq, needs_transit=not pickup)
+
+    # An attachment counts only when the mail alone holds no price: an airline's terms or a forwarded invoice beside
+    # a priced mail must not hide that price.
+    listed, option = by_rules(message)
+    if message.attachments and not listed and option is None:
         message = message.model_copy(update={"body": await _with_attachments(ctx, message)})
-    listed = parse_desk(message, rfq) if kind == "ratedesk" else []
-    option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
+        listed, option = by_rules(message)
+    read_by = "rules"
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
     if not listed and option is None and kind != "ratedesk" and not DECLINE.search(_own_text(message.body)):
         read_by = "model"

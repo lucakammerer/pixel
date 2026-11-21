@@ -1,11 +1,14 @@
 """Process entry: `uv run uvicorn pixel.app:app`. One process runs poller, push endpoint, handlers and UI."""
 
 import asyncio
+import contextlib
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 
+from pixel.agents.tariffs.agent import speech_model
 from pixel.api.board import Board
 from pixel.api.client import make_client
 from pixel.api.gateway import Gateway
@@ -35,6 +38,11 @@ def build_context(config: Settings | None = None) -> Context:
     )
 
 
+def _preload_speech() -> None:
+    with contextlib.suppress(Exception):  # a failed load is retried by the first voice message, which reports it
+        speech_model()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """build_context, orchestrator.recover, then poller.run as a background task; cancels it on shutdown."""
@@ -42,6 +50,9 @@ async def lifespan(app: FastAPI):
     app.state.ctx = ctx
     await orchestrator.recover(ctx)
     task = None
+    if ctx.settings.api_key and not ctx.settings.dry_run:
+        # The speech model downloads ~145 MB on first use: never inside a voice message's deadline.
+        threading.Thread(target=_preload_speech, daemon=True).start()
     if ctx.settings.api_key:
         task = asyncio.create_task(poller.run(ctx, lambda m: orchestrator.dispatch(ctx, m)))
         ctx.tasks.add(asyncio.create_task(feedback.run(ctx)))

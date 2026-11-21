@@ -98,7 +98,8 @@ HURRY = re.compile(
 )
 DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
-    r"|collection from|collect from|abhol\w*|ab werk|ab haus",
+    r"|collection from|collect from|abhol\w*|ab werk|ab haus"
+    r"|collect (?:the )?(?:goods|cargo|shipment|freight)|arrange (?:the|a) truck",  # a voice message's own words
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
@@ -676,8 +677,8 @@ async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[s
     files = []
     for attachment in message.attachments:
         try:
-            files.append((attachment.filename, _lines(attachment.filename,
-                                                      await ctx.mailbox.attachment(message.id, attachment.id))))  # fmt: skip
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            files.append((attachment.filename, await asyncio.to_thread(_lines, attachment.filename, content)))
         except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
             events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
                         payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
@@ -691,7 +692,7 @@ def names_code(text: str, code: str) -> bool:
 # Column names as whole words: "Stück" in "Gewicht je Stück" and "pcs" in "kg/pcs" say per piece, not a count column.
 COLUMN = re.compile(
     r"(?<![\w/])(?<!je\s)(?<!pro\s)(?<!per\s)(?P<name>width|length|height|breite|l(?:ä|ae)nge|h(?:ö|oe)he|pieces|"
-    r"pcs|qty|quantity|st(?:ü|ue)ck|gross\s+weight|weight|\w*gewicht)\b",
+    r"pcs|qty|quantity|st(?:ü|ue)ck|(?:net(?:to)?|tare|tara)\s*(?:weight|gewicht)|gross\s+weight|weight|\w*gewicht)\b",
     re.IGNORECASE,
 )
 COLUMN_UNIT = re.compile(r"\(\s*(mm|cm|m|kgs?|lbs?)\b", re.IGNORECASE)
@@ -738,7 +739,9 @@ def _table_totals(columns: list[tuple[str, str | None, bool]], rows: list[list[s
     """What a packing table's rows add up to: pieces, volume, and the gross weight when its one weight column is in
     kg or lb (a weight per piece times the row's pieces). {} when a row does not read."""
     counts = [i for i, (name, _, _) in enumerate(columns) if name in COUNT]
-    weights = [i for i, (name, _, _) in enumerate(columns) if "weight" in name or "gewicht" in name]
+    weights = [
+        i for i, (name, _, _) in enumerate(columns) if ("weight" in name or "gewicht" in name) and not NET.match(name)
+    ]
     if len(counts) != 1 or not rows:
         return {}
     weight = weights[0] if len(weights) == 1 and columns[weights[0]][1] in KG_PER else None
@@ -772,6 +775,9 @@ def _agree(field: str, a: Decimal | int, b: Decimal | int) -> bool:
 
 
 CARGO = ("pieces", "weight_kg", "volume_cbm")
+# A net or tare weight is never the gross weight the freight is charged on: its column and its lines are left out.
+NET = re.compile(r"(?:net(?:to)?|tare|tara)\s*(?:weight|gewicht)", re.IGNORECASE)
+NET_LINE = re.compile(rf"(?im)^.*\b{NET.pattern}\b.*$")
 
 
 def _document_facts(text: str) -> dict | None:
@@ -783,7 +789,7 @@ def _document_facts(text: str) -> dict | None:
     pieces = {int(v) for v in PIECES_LABEL.findall(around)}
     stated = {
         "pieces": pieces.pop() if len(pieces) == 1 else None,
-        "weight_kg": None if EACH_WEIGHT.search(around) else _unique(WEIGHT, around, thousands=True),
+        "weight_kg": None if EACH_WEIGHT.search(around) else _unique(WEIGHT, NET_LINE.sub("", around), thousands=True),
         "volume_cbm": None if EACH_VOLUME.search(around) else _unique(VOLUME, around, thousands=False),
     }
     measured = _table_totals(columns, rows)

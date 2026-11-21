@@ -178,7 +178,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "Bruttogewicht gesamt (kg)", "Volume: 7.25 cbm"), the totals of its packing table (`_table_totals`: sum of
   weights, sum of L × W × H × pieces), or both. A weight column marked per piece ("per pc", "each", "/pc", "unit",
   "je Stück") is multiplied by the row's pieces; a weight column in lb is converted; with no unit or a second
-  weight column the table gives no weight. A document whose totals and table disagree settles nothing: the mail
+  weight column the table gives no weight. A net or tare weight ("Net weight", "Nettogewicht", "Tare weight"), as a
+  line or a column, is never the gross weight and is left out. A document whose totals and table disagree settles nothing: the mail
   stands. Several documents count only when they agree. A table header ending in "Gross weight (kg)" ran into the
   first row ('5' kg, volume 0): a labelled figure never comes from the next line, and the totals are read off the
   text around the table. A document that names only another destination but carries the mail's own weight (and
@@ -235,12 +236,18 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `known_gap` is one the rules read wrong today.
 - A carrier's answer can name the offer's validity in days next to the transit time ("valid for 7 days, transit 3
   days"); the first number of days is not always the transit. `pricing/bids.py` `_days` takes the number after
-  "transit", "Laufzeit" or "T/T", else the first one no "valid", "gültig" or "good" stands before.
+  "transit", "Transitzeit", "Laufzeit" or "T/T" (never "Laufzeit des Angebots", the offer's validity, nor
+  "transit via" a hub), else the first one no "valid", "gültig", "good" or "Laufzeit des Angebots" stands before.
   `tests/fixtures/mails/bid_probes.jsonl` holds such answers.
 - A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
-  attachment" (round 63: all four did, one as an mp3). `pricing/bids.py` `record` reads the body together with
-  every attachment code can read (`_with_attachments`); an unreadable file is an `error` event, the others still
-  count.
+  attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message). When the body
+  alone holds no price, `pricing/bids.py` `record` reads it together with every attachment code can read
+  (`_with_attachments`, in a thread: a transcript takes seconds); an unreadable file is an `error` event, the
+  others still count. A priced mail is never read with its attachments: an airline's terms ("unable to accept …")
+  or a forwarded invoice total would hide its price.
+- A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
+  packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
+  we had to ask the customer for every fact.
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

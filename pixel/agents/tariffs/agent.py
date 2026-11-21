@@ -4,6 +4,7 @@ import hashlib
 import io
 import itertools
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -28,6 +29,29 @@ LEAD_COLUMN = re.compile(
     r"\b(?:(?P<transit>transit|laufzeit|t/t)|(?P<minimum>minimum|min\.|mindest\w*))(?!\w)", re.IGNORECASE
 )
 IMAGES = {".jpg", ".jpeg", ".png"}
+AUDIO = {".mp3", ".wav", ".m4a", ".ogg"}
+SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
+# Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
+SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
+SPOKEN_EUR = re.compile(r"(\d[\d,.]*)\s*euros?\b", re.IGNORECASE)
+# Whisper writes small numbers as words: "four hours", "twelve pieces", "vier Stunden" become digits for the rules.
+ONES = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+ONES_DE = ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn"]
+ONES_DE += ["siebzehn", "achtzehn", "neunzehn"]
+TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+TENS_DE = ["zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
+NUMBER_WORDS = {w: i + 1 for words in (ONES, ONES_DE) for i, w in enumerate(words)} | {"ein": 1, "eine": 1, "einen": 1}
+NUMBER_WORDS |= {w: 10 * (i + 2) for words in (TENS, TENS_DE) for i, w in enumerate(words)}
+_ones = "|".join(sorted((w for w, n in NUMBER_WORDS.items() if n < 20), key=len, reverse=True))
+_tens = "|".join(w for w, n in NUMBER_WORDS.items() if n >= 20)
+SPOKEN_NUMBER = re.compile(
+    rf"\b(?:(?P<one_de>{_ones})und(?P<ten_de>{_tens})|(?P<ten>{_tens})(?:[\s-]+(?P<unit>{_ones}))?|(?P<one>{_ones}))"
+    r"(?=\s+(?:working\s+|business\s+)?(?:hours?|hrs?|days?|pieces?|pallets?|boxes|cartons?|crates?|packages?|colli"
+    r"|stunden|tagen?|werktagen?|stück|paletten|kisten|kartons?|packstücke?)\b)",
+    re.IGNORECASE,
+)
+_speech: list = []
+_speech_lock = threading.Lock()
 VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
 RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
@@ -124,11 +148,62 @@ def _lines(filename: str, content: bytes) -> list[str]:
             return content.decode("utf-8").splitlines()
         except UnicodeDecodeError:
             return content.decode("latin-1").splitlines()
+    if suffix in AUDIO:
+        return _spoken(_transcribe(content))
     raise ValueError(f"no code parser for {suffix or filename}")
+
+
+def speech_model():
+    """The local speech model, loaded once. The app loads it at start, so no request waits for its download."""
+    from faster_whisper import WhisperModel
+
+    with _speech_lock:
+        if not _speech:
+            _speech.append(WhisperModel(SPEECH_MODEL, device="cpu", compute_type="int8"))
+        return _speech[0]
+
+
+def _transcribe(content: bytes) -> list[str]:
+    """A voice message as one line per spoken sentence, by a local model: no gateway spend. Slow: run it in a thread."""
+    import av
+    import numpy as np
+
+    with av.open(io.BytesIO(content)) as container:
+        resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
+        pcm = [f.to_ndarray() for frame in container.decode(audio=0) for f in resampler.resample(frame)]
+    audio = np.concatenate(pcm, axis=1).flatten().astype(np.float32) / 32768
+    model = speech_model()
+    with _speech_lock:
+        segments, _ = model.transcribe(audio, beam_size=1)
+        text = " ".join(segment.text.strip() for segment in segments)
+    # Segments break mid-sentence ("Collection at Postcode" / "51943 ..."): a sentence is one line.
+    return re.split(r"(?<=[.!?])\s+", text)
+
+
+def _number(m: re.Match) -> str:
+    if m["one_de"]:
+        return str(NUMBER_WORDS[m["ten_de"].lower()] + NUMBER_WORDS[m["one_de"].lower()])
+    if m["ten"]:
+        return str(NUMBER_WORDS[m["ten"].lower()] + (NUMBER_WORDS[m["unit"].lower()] if m["unit"] else 0))
+    return str(NUMBER_WORDS[m["one"].lower()])
+
+
+def _spoken(lines: list[str]) -> list[str]:
+    lines = [SPOKEN_NUMBER.sub(_number, line) for line in lines]
+    return [
+        SPOKEN_EUR.sub(r"\1 EUR", SPOKEN_CENTS.sub(lambda m: f"{m[1]}.{int(m[2]):02d} EUR", line)) for line in lines
+    ]
 
 
 def _codes(text: str, currency: str | None) -> list[str]:
     return [c for c in CODE.findall(text) if c != currency]
+
+
+def _lead(line: str) -> list[str] | None:
+    named = [m.lastgroup for m in LEAD_COLUMN.finditer(line)]
+    return (
+        named if sorted(named) == ["minimum", "transit"] and not re.search(r"\d", BREAK_TOKEN.sub("", line)) else None
+    )
 
 
 def _read(lines: list[str]) -> Sheet:
@@ -139,9 +214,11 @@ def _read(lines: list[str]) -> Sheet:
     block: tuple[str, str] | None = None
     lead = ["transit", "minimum"]
     per_kg = Decimal(1)
+    above = ""
     for raw in lines:
         line = raw.strip()
         lower = line.lower()
+        previous, above = above, line
         if not line:
             continue
         if sheet.carrier is None:
@@ -167,11 +244,11 @@ def _read(lines: list[str]) -> Sheet:
             codes = _codes(line, sheet.currency)
             origin = codes[-1] if codes else None
             continue
-        named = [m.lastgroup for m in LEAD_COLUMN.finditer(line)]
-        if sorted(named) == ["minimum", "transit"] and not re.search(r"\d", BREAK_TOKEN.sub("", line)):
-            lead = named
         tokens = list(BREAK_TOKEN.finditer(line))
         if len(tokens) >= 2:
+            # The header orders the columns: on the breaks' line or right above it, never a note or legend sentence.
+            if named := _lead(line) or (not re.search(r"[;:]|\.$", previous) and _lead(previous)):
+                lead = named
             breaks = [_break_kg(t) for t in tokens]
             surcharge_columns = "fuel" in lower and "security" in lower
             block = None
