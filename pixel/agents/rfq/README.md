@@ -133,7 +133,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   goes to a person, nothing is booked and the tracking bonus is lost.
 - The yes, the no or the airline's confirmation can stand only in an attachment (a signed letter, a confirmation
   sheet) under a body that says "see attached". `booking.py` `reply_intent` reads every attachment code can read
-  when the reply's own words say nothing; `confirmed_references` reads both references from the body and every
+  when the reply's own words say nothing and ask nothing ("Anbei die Packliste. Bleibt der Preis gleich?" goes to a
+  person); "Auftragsnummer" and "we accept no liability" in a document are no yes. `confirmed_references` reads both references from the body and every
   attachment. A scan, a voice message, and an attachment that disagrees with the mail are open cells of the
   channel matrix (`tests/fixtures/channel-gaps.json`).
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's

@@ -10,7 +10,7 @@ from test_crm import mail, quote
 from pixel.agents.rfq import booking
 from pixel.api.client import ApiError
 from pixel.api.portal import BookingUnavailable, PortalBooking, RateExpired
-from pixel.contracts import BookingStatus, QuoteStatus
+from pixel.contracts import Attachment, BookingStatus, QuoteStatus
 from pixel.crm import bookings, quotes, shipments
 
 pytest_plugins = ["test_crm"]  # the `pipe` fixture
@@ -391,6 +391,8 @@ def test_a_plain_acceptance_books(text):
         "We decided to go ahead with a competitor.",
         "Please go ahead once we confirm pickup.",
         "Bitte buchen Sie erst nach Freigabe.",
+        "Auftragsnummer: 4500123",  # a packing list's order number
+        "We accept no liability for delays.",  # an attached document's terms
     ],
 )
 def test_a_negated_or_held_acceptance_never_books(text):
@@ -426,3 +428,24 @@ async def test_a_decline_word_after_the_booking_keeps_the_quote_accepted(pipe, a
     body = "Thanks! Please cancel our pickup slot request with your colleague."
     await booking.handle_reply(pipe.ctx, mail(22, 1, subject="Re: Booked", body=body))
     assert quotes.get(pipe.ctx, "Q-1").status == QuoteStatus.ACCEPTED
+
+
+PACKLISTE = b"Packliste\nAuftragsnummer: 4500123\nKolli: 2\nBruttogewicht: 150 kg\n"
+
+
+class Files:
+    async def attachment(self, message_id, attachment_id):
+        return PACKLISTE
+
+
+async def test_a_packing_list_in_a_reply_is_no_acceptance(pipe):
+    quotes.save(pipe.ctx, quote(1))
+    pipe.ctx.portal = Portal(None)
+    pipe.ctx.mailbox = Files()
+    reply = mail(20, 1, subject="Re: Your quote", body="Anbei die aktualisierte Packliste. Bleibt der Preis gleich?")
+    reply = reply.model_copy(update={"attachments": (Attachment(id=1, filename="packliste.txt",
+                                                                content_type="text/plain", size=60),)})  # fmt: skip
+    await booking.handle_reply(pipe.ctx, reply)
+    assert pipe.ctx.portal.calls == []
+    assert quotes.get(pipe.ctx, "Q-1").status == QuoteStatus.SENT
+    assert "customer.accepted" not in kinds(pipe.ctx)
