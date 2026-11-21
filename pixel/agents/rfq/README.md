@@ -32,7 +32,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   one optional `rfq.airports` call. Quoted older correspondence is excluded.
 - `agent.py` `fallback` reads the RFQ and the stored options on its current lane. A late complete option can be
   sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30
-  from receipt. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
+  from receipt; a request first seen after 2:30 (a restart, a poll backlog) keeps `handle` until `hard_at`, because
+  recovery asks no airline. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
   A door request waits for a priced trucker until `hard_at`. If pickup is
   still unpriced at that point, the reply states the airport-to-airport price and excludes pickup. A zone hint
   used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
