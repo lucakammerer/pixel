@@ -133,6 +133,15 @@ def _reported(requests: list[dict[str, Any]]) -> Decimal:
     return total
 
 
+def _unscored(row: dict[str, Any], hidden: Decimal | None) -> bool:
+    """An accepted request the board has listed before scoring it: being accepted earns time points, so a row and a
+    total that show none yet are still to come (rounds 27 and 29 got theirs five minutes after the verdict)."""
+    shown = normalize(row)["points"] or {}
+    return (
+        row["verdict"] == "accepted" and not {"accuracy", "time"} & shown.keys() and hidden is not None and hidden <= 0
+    )
+
+
 def _round(ctx: Context, row: dict[str, Any], hidden: Decimal | None) -> None:
     """`hidden`: the accuracy + time the request earned, None when this poll cannot tell."""
     payload: dict[str, Any] = {"round": row["round_no"], "verdict": row["verdict"], "reason": row.get("reason")}
@@ -180,6 +189,7 @@ async def once(ctx: Context) -> int:
     hidden = None
     if total is not None and len(new) == 1 and state.get("reported") is not None:
         hidden = (total - Decimal(state["total"])) - (reported - Decimal(state["reported"]))
+    new = [r for r in new if first or not _unscored(r, hidden)]  # the next poll judges it
     for row in [] if first else new:
         _round(ctx, row, hidden)
     state["verdicts"].update({str(r["round_no"]): r["verdict"] for r in new})

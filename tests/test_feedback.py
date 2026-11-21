@@ -208,3 +208,16 @@ async def test_each_round_earns_its_reported_points_and_the_hidden_change_of_the
     assert (s["points_total"], s["points_reported"], s["points_unreported"]) == (D("176.26"), D("59.76"), D("116.50"))
     assert (s["rank"], s["revealed"], s["rounds_unknown"], s["cost_pending"]) == (6, False, 1, 1)
     assert s["points"] == {"cost": D("39.76"), "tracking": D("20.0")}
+
+
+async def test_an_accepted_verdict_waits_for_its_points(conn):
+    # rounds 27 and 29: the verdict came minutes before its accuracy and time, in the row and in the total alike
+    earlier = board(100, (3, "accepted"))
+    verdict = board(100, (3, "accepted"), (4, "accepted"))
+    scored = board(D("154.32"), (3, "accepted"), (4, "accepted"))
+    scored["requests"][1]["points"] = {"accuracy": 39.32, "time": 15.0}
+    ctx = Context(settings(), conn, None, None, None, Board(earlier, verdict, verdict, scored))
+
+    assert [await feedback.once(ctx) for _ in range(4)] == [0, 0, 0, 1]
+    feedbacks = conn.execute("SELECT payload FROM events WHERE kind = 'feedback'").fetchall()
+    assert [json.loads(row["payload"])["hidden"] for row in feedbacks] == ["54.32"]
