@@ -135,7 +135,7 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     async def model(ctx, **kw):
         calls.append(kw["purpose"])
         events.emit(ctx, "llm.call", "llm", session_id=kw["session_id"], payload={}, cost_usd=D("0.0001"))
-        return LlmResult(data={"sentence": "Thanks for thinking of us."}, model="m", tokens_in=1, tokens_out=1,
+        return LlmResult(data={"first_name": None, "intro": "Thanks for thinking of us.", "closing": None}, model="m", tokens_in=1, tokens_out=1,
                          cost_usd=D("0.0001"))  # fmt: skip
 
     async def send_quote(ctx, quote):
@@ -150,7 +150,7 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     quote = await agent.handle(ctx, request, deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 10
     assert (quote.total, quote.currency, quote.option.source, quote.llm_calls) == (D("260.00"), "EUR", Source.SHEET, 1)
-    assert "260.00 EUR" in quote.body and calls == ["quote.opening"]
+    assert "260.00 EUR" in quote.body and calls == ["quote.prose"]
 
     assert quotes.for_session(ctx, 1) == quote
 
@@ -190,3 +190,62 @@ async def test_the_captured_rate_desk_answer_gives_one_option_per_priced_airline
     ]
     assert found[0]["rate_id"] == "R-C5nfsmcn3aSHlsgp" and found[0]["valid_until"].startswith("2026-11-21T14:38")
     assert [r["priced"] for r in kinds(ctx, "bid.received")] == [True]
+
+
+async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeypatch):
+    store.upsert(ctx, [LaneTariff(
+        carrier="Air One", origin="AAA", destination="BBB", currency="EUR", valid_from=date(2000, 1, 1),
+        valid_to=date(2100, 1, 1), version="v", transit_days=3, minimum=D(50), breaks=((D(0), D("2.00")),),
+        fuel_per_kg=D("0.50"), security_per_kg=D("0.10"), source="test",
+    )])  # fmt: skip
+    ctx.db.execute("DELETE FROM carriers")
+    calls = []
+    intro = "Thanks for the note about the spare parts, we will keep this simple for you."
+
+    async def model(ctx, **kw):
+        calls.append(kw["purpose"])
+        events.emit(ctx, "llm.call", "llm", session_id=kw["session_id"], payload={}, cost_usd=D("0.0001"))
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": "100", "volume_cbm": None, "pieces": None,
+                "preference": "cheapest", "door_pickup": False, "pickup_postcode": None, "currency": None,
+                "language": "en", "first_name": "Tom", "intro": intro, "closing": "Call me for 2 minutes."}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D("0.0001"))
+
+    async def send_quote(ctx, quote):
+        return quote.model_copy(update={"sent_at": datetime.now(UTC), "sent_message_id": 9})
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    monkeypatch.setattr(outbox, "send_quote", send_quote)
+    monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
+    request = mail("c@x", "Some spare parts from our usual airport to the other one, about a hundred kilos.\n\nTom")
+
+    quote = await agent.handle(ctx, request, deadline(30))
+    assert calls == ["rfq.extract"] and quote.llm_calls == 1
+    assert quote.body.startswith(f"Hello Tom,\n\n{intro}") and "2 minutes" not in quote.body
+    assert "260.00 EUR" in quote.body
+
+    backup = await agent.fallback(ctx, 1)
+    assert intro in backup.body and len(calls) == 1
+
+
+async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
+    store.upsert(ctx, [LaneTariff(
+        carrier="Air One", origin="AAA", destination="BBB", currency="EUR", valid_from=date(2000, 1, 1),
+        valid_to=date(2100, 1, 1), version="v", transit_days=3, minimum=D(50), breaks=((D(0), D("2.00")),),
+        fuel_per_kg=D("0.50"), security_per_kg=D("0.10"), source="test",
+    )])  # fmt: skip
+    ctx.db.execute("DELETE FROM carriers")
+
+    async def hangs(ctx, **kw):
+        await asyncio.sleep(60)
+
+    async def send_quote(ctx, quote):
+        return quote.model_copy(update={"sent_at": datetime.now(UTC), "sent_message_id": 9})
+
+    monkeypatch.setattr(agent, "PROSE_WAIT_S", 0.3)
+    monkeypatch.setattr(llm, "ask_json", hangs)
+    monkeypatch.setattr(outbox, "send_quote", send_quote)
+    monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
+    started = datetime.now(UTC)
+    quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg."), deadline(30))
+    assert (datetime.now(UTC) - started).total_seconds() < 2
+    assert quote.body.startswith("Hello,\n\n") and "260.00 EUR" in quote.body

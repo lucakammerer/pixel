@@ -63,11 +63,13 @@ async def ask_json(
     session_id: int | None = None,
     images: tuple[bytes, ...] = (),
     max_output_tokens: int = 300,
+    model: str | None = None,
 ) -> LlmResult:
-    """One gateway call with a JSON schema answer. Raises on a call that would pass the session's budget."""
+    """One gateway call with a JSON schema answer, on `model` or the configured one. Raises on a call that would
+    pass the session's budget."""
     if session_id is not None and spend_usd(ctx, session_id=session_id) >= SESSION_BUDGET_USD:
         raise BudgetExceeded(f"session {session_id} spent its budget")
-    model = ctx.settings.model
+    model = model or ctx.settings.model
     content: list[dict[str, Any]] | str = user
     if images:
         content = [{"type": "text", "text": user}] + [

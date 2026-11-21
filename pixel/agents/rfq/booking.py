@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from pixel.agents.rfq import compose
 from pixel.api.client import ApiError
 from pixel.api.portal import BookingUnavailable, PortalBooking, RateExpired
 from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus
@@ -116,13 +117,9 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None) -> Book
         payload={"booking_reference": done.booking_reference, "shipment": shipment.id, "price": str(done.price),
                  "currency": done.currency, "airline": done.airline},
     )  # fmt: skip
-    await _tell_customer(
-        ctx, quote, reply_to,
-        f"Booked: {_lane(quote)}, {quote.rfq.weight_kg} kg with {done.airline}",
-        f"your shipment {_lane(quote)} ({quote.rfq.weight_kg} kg) is booked with {done.airline} at "
-        f"{done.currency} {done.price}.\n\nYour reference: {shipment.id}\nAirline booking: {done.booking_reference}\n\n"
-        "We will let you know as soon as the airline confirms.",
-    )  # fmt: skip
+    await _tell_customer(ctx, quote, reply_to, "booked", airline=done.airline,
+                         price=compose.money(done.price), currency=done.currency,
+                         reference=shipment.id, airline_reference=done.booking_reference or "-")  # fmt: skip
     return booking
 
 
@@ -152,13 +149,8 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
     )  # fmt: skip
     quote = quotes.get(ctx, booking.quote_id)
     if quote:
-        await _tell_customer(
-            ctx, quote, None,
-            f"Confirmed: {_lane(quote)}, booking {booking.booking_reference}",
-            f"{booking.carrier} has confirmed your booking {booking.booking_reference} for {_lane(quote)} "
-            f"({quote.rfq.weight_kg} kg). Your reference with us: {booking.team_reference}.\n\n"
-            "Ask us any time where your shipment is.",
-        )  # fmt: skip
+        await _tell_customer(ctx, quote, None, "confirmed", airline=booking.carrier,
+                             airline_reference=booking.booking_reference or "-", reference=booking.team_reference)  # fmt: skip
 
 
 async def _portal_book(ctx: Context, rate_id: str, team_reference: str) -> PortalBooking:
@@ -234,10 +226,49 @@ def _save(ctx: Context, booking: Booking, status: str) -> None:
         )  # fmt: skip
 
 
-async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, subject: str, text: str) -> None:
+CUSTOMER = {
+    "en": {
+        "hello_name": "Hello {name},", "hello": "Hello,",
+        "booked": "Thanks for the go-ahead. Your shipment from {origin} to {destination} ({weight} kg) is now booked "
+                  "with {airline} at {price} {currency} all-in.\n\nOur reference for you is {reference}, the "
+                  "airline's is {airline_reference}. I'll let you know as soon as {airline} confirms.",
+        "confirmed": "Good news: {airline} has confirmed your booking {airline_reference} from {origin} to "
+                     "{destination} ({weight} kg).\n\nYour reference with us stays {reference}. If you'd like "
+                     "to know where your shipment is, just ask.",
+        "bye": "Best regards,\n{signer}\n" + compose.COMPANY,
+    },
+    "de": {
+        "hello_name": "Hallo {name},", "hello": "Guten Tag,",
+        "booked": "Danke für Ihre Zusage. Ihre Sendung von {origin} nach {destination} ({weight} kg) ist jetzt bei "
+                  "{airline} gebucht, zu {price} {currency} all-in.\n\nUnsere Referenz für Sie ist {reference}, "
+                  "die der Airline {airline_reference}. Ich melde mich, sobald {airline} bestätigt.",
+        "confirmed": "Gute Nachricht: {airline} hat Ihre Buchung {airline_reference} von {origin} nach "
+                     "{destination} ({weight} kg) bestätigt.\n\nIhre Referenz bei uns bleibt {reference}. Wenn "
+                     "Sie wissen möchten, wo Ihre Sendung gerade ist, fragen Sie einfach.",
+        "bye": "Viele Grüße\n{signer}\n" + compose.COMPANY,
+    },
+}  # fmt: skip
+
+
+def _lang(quote: Quote) -> str:
+    return compose.language_of(quote.rfq)
+
+
+async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what: str, **facts: str) -> None:
+    """A short mail in the customer's language, in the quote's thread, signed by the same person (R24, R31).
+    Numbers are formatted by code; no model call, so the quote's spend stays one call."""
+    lang = _lang(quote)
+    t = CUSTOMER[lang]
+    prose = compose.stored(ctx, quote.session_id)
+    name = prose.first_name if prose else None
+    text = t[what].format(origin=quote.option.origin, destination=quote.option.destination,
+                          weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
+    body = "\n\n".join([t["hello_name"].format(name=name) if name else t["hello"], text,
+                          t["bye"].format(signer=ctx.settings.signer)])  # fmt: skip
+    subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:
         await outbox.send(
-            ctx, to=quote.rfq.customer, subject=subject, body=f"Hello,\n\n{text}\n\nBest regards,\nPIXEL Air Freight",
+            ctx, to=quote.rfq.customer, subject=subject, body=body,
             session_id=quote.session_id, in_reply_to=reply_to or quote.sent_message_id or quote.rfq.message_id,
             purpose="booking",
         )  # fmt: skip

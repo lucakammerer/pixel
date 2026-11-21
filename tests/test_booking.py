@@ -134,3 +134,14 @@ async def test_decline_and_question(pipe, accepted):
 def test_intent_of_the_captured_customer_replies(name, said):
     raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / name).read_text())
     assert booking.intent(f"{raw['subject']}\n{raw['body']}") == said
+
+
+async def test_german_customer_gets_a_german_mail_with_the_total_written_once(pipe):
+    german = quote(1)
+    german = german.model_copy(update={"rfq": german.rfq.model_copy(update={"language": "de"})})
+    quotes.save(pipe.ctx, german)
+    pipe.ctx.portal = Portal(None)
+    await booking.book(pipe.ctx, "Q-1", reply_to=20)
+    (told,) = pipe.sent
+    assert told["body"].startswith("Guten Tag,") and "370.74 EUR all-in" in told["body"]
+    assert "Viele Grüße" in told["body"] and "Decimal" not in told["body"]
