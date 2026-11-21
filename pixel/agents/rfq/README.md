@@ -75,12 +75,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
   `closing`, on `PIXEL_MODEL_PROSE` when set, plus `hook`: the phrase of the customer's mail the opening answers (a
-  friendly remark, an attachment, their buyer, the reason for the request), or null, and then no opening. It also
+  friendly remark, their buyer, the reason for the request; never a file they sent, see `ECHO`), or null, and then no opening. It also
   sees the openings this customer already got (`_history`, `notes`). `_opening_ok` keeps the opening only when the
   hook stands in the mail and is not the small talk `WELL` answers, it has at most `WORDS_MAX` words, no capitalised
   word of the mail (a name or place), and its first two words differ from every earlier opening to this customer;
   `ECHO` drops fillers and echoes ("thank you for your request", "inquiry", "regarding", "I've noted", "here is",
-  "cheapest", "pickup", announcing the offer) and a second sentence. A dropped opening is stored in `quote.prose`
+  "cheapest", "pickup", announcing the offer, a word about their attachment or voice message: "The voice message
+  was clear" went out unheard in round 65) and a second sentence. A dropped opening is stored in `quote.prose`
   as `rejected`; `tests/fixtures/openings.json` holds every live request with the opening we sent. The
   extraction's slots (model path) carry no hook, so those quotes open with the price. The closing slot is no
   longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a
@@ -247,12 +248,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
   attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message). When the body
   alone holds no price, `pricing/bids.py` `record` reads it together with every attachment code can read
-  (`_with_attachments`, in a thread: a transcript takes seconds); an unreadable file is an `error` event, the
-  others still count. A priced mail is never read with its attachments: an airline's terms ("unable to accept …")
-  or a forwarded invoice total would hide its price.
+  (`_with_attachments`, in a thread: a transcript takes seconds); the others still count. A priced mail is never
+  read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
+  price.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
   we had to ask the customer for every fact.
+- A file no code reads (a video, an image outside a tariff mail, an unknown type, a pdf without text) is a deliberate
+  `attachment.unreadable` with its name and type (`tariffs/agent.py` `attachment_lines`, not downloaded when its type
+  has no reader), never an `error`, and the mail goes on as if it held nothing: a carrier who answered only in one
+  is answered and unpriced (`bid.received` with `unread`, no model call when no price stands in the text), a request
+  whose facts sit in one has them missing and asks the one question. A file of a readable type that breaks its
+  reader (a corrupt pdf, an mp3 the decoder refuses) is still an `error`. The gateway takes no audio (text and
+  `image_url` only, no audio model listed), so a voice message is read by the local transcript or not at all.
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

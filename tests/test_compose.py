@@ -372,3 +372,18 @@ def test_a_french_request_is_answered_in_french_with_its_fastest_option():
     assert "marchandises dangereuses" in note
     counts = compose._words_lang(note)
     assert counts["fr"] > 2 * max(counts["en"], counts["de"])
+
+
+@pytest.mark.parametrize(
+    ("request_text", "goods"),
+    [
+        (
+            "Could you quote the fastest air freight option for some electronic control units going to SCL?",
+            "electronic control units",
+        ),  # round 62 sent "For your some electronic control units going"
+        ("Could you quote the cheapest option for our machine parts going to JFK?", "machine parts"),
+        ("We have 10 pieces of laboratory glassware ready on Monday.", "laboratory glassware"),
+    ],
+)
+def test_the_goods_are_named_as_the_customer_calls_them(request_text, goods):
+    assert compose.goods_of(request_text) == goods
