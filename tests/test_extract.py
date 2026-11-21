@@ -432,3 +432,6 @@ async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(co
     rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
     assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("AAA", "GRU", Decimal(715), Decimal("2.65"))
     assert extract.DG_DOCUMENTS in rfq.missing
+    assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
+        (kind, kw["payload"]) for kind, kw in emitted
+    ]
