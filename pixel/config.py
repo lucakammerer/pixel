@@ -15,6 +15,7 @@ class Settings:
     poll_seconds: float
     quote_target_s: int
     quote_hard_s: int
+    webhook_secret: str
 
 
 @cache
@@ -30,4 +31,5 @@ def settings() -> Settings:
         poll_seconds=float(env.get("PIXEL_POLL_SECONDS", "1.0")),
         quote_target_s=int(env.get("PIXEL_QUOTE_TARGET_S", "100")),
         quote_hard_s=int(env.get("PIXEL_QUOTE_HARD_S", "315")),
+        webhook_secret=env.get("PIXEL_WEBHOOK_SECRET", ""),
     )

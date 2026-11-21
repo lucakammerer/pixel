@@ -37,7 +37,7 @@ competition between teams.
 
 | Part | What it does |
 | --- | --- |
-| Mailbox | One per team. Everything arrives there; no push, we poll |
+| Mailbox | One per team. Everything arrives there; we poll, and each new mail is also pushed to a webhook we subscribe |
 | Rate portal | An API with rate IDs and booking (rate limited, a rate ID is valid 15 minutes), a browser page behind a bot challenge, and a desk at `ratedesk@hackloop.mail` that answers by mail |
 | Customer agents | One sends RFQs and follow-ups, one asks tracking questions from `tracking@hackloop.mail` |
 | Carrier agents | 2 to 5 per destination answer bid requests by mail. Airlines also send monthly tariffs, truckers do not |

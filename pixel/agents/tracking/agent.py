@@ -2,14 +2,17 @@
 
 import re
 
+from pixel.agents.rfq.extract import number
 from pixel.contracts import Message, Shipment
 from pixel.core import events, outbox
 from pixel.core.context import Context
-from pixel.crm import shipments
+from pixel.crm import quotes, shipments
 
 REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 LANE = re.compile(r"\b([A-Z]{3})\s*(?:-|–|→|->|to|nach)\s*([A-Z]{3})\b")
+DESCRIBED = re.compile(r"\b(?:([A-Z]{3})|(\d{5}))\s+(?:to|nach)\s+([A-Z]{3})\b")
+WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
 
 STATUS = {
     "booking": "booking requested with {carrier}, waiting for the airline",
@@ -19,6 +22,36 @@ STATUS = {
 }
 
 
+def described(ctx: Context, text: str) -> list[Shipment]:
+    """The tracking desk names no reference. It describes the shipment the way the customer asked for it: the origin
+    airport, or the pickup postcode of a door-to-port request, "to" the destination, the gross weight and the
+    customer's company name. Each of these narrows the shipments to that destination; one of them must fit."""
+    lane = DESCRIBED.search(text)
+    if not lane:
+        return []
+    origin, postcode, destination = lane.groups()
+    weight = WEIGHT.search(text)
+    kg = number(weight.group(1)) if weight else None
+    words = text.lower()
+
+    def from_there(s: Shipment) -> bool:
+        if origin:
+            return s.origin == origin
+        quote = quotes.for_session(ctx, s.session_id)
+        return bool(quote and quote.rfq.pickup_postcode == postcode)
+
+    def company(s: Shipment) -> bool:
+        tokens = [t for t in re.split(r"[^a-z0-9]+", s.customer.split("@")[0].lower()) if len(t) > 2]
+        return bool(tokens) and all(t in words for t in tokens)
+
+    found, fits = shipments.find(ctx, destination=destination), False
+    for check in (from_there, lambda s: kg is not None and s.weight_kg == kg, company):
+        narrowed = [s for s in found if check(s)]
+        if narrowed:
+            found, fits = narrowed, True
+    return found if fits else []
+
+
 def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | None]:
     """Shipments the question means, and the reference it named (if any)."""
     references = [m.group(0).upper() for m in REFERENCE.finditer(text)]
@@ -26,6 +59,9 @@ def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | N
         found = shipments.find(ctx, reference=reference)
         if found:
             return found, reference
+    found = described(ctx, text)
+    if found:
+        return found, None
     customers = [e for e in EMAIL.findall(text) if e.lower() != sender.lower()]
     lane = LANE.search(text)
     origin, destination = lane.groups() if lane else (None, None)
@@ -64,7 +100,8 @@ def answer(found: list[Shipment], reference: str | None) -> str:
 
 
 async def handle(ctx: Context, message: Message) -> None:
-    """Finds the shipment the question means (booking reference, our reference, customer, lane) in the CRM and
+    """Finds the shipment the question means (a reference, or its description: origin or pickup postcode,
+    destination, weight, company) in the CRM and
     answers in the thread from the CRM alone. Says so plainly when we hold no such shipment."""
     found, reference = match(ctx, f"{message.subject}\n{message.body}", message.sender)
     events.emit(

@@ -38,11 +38,11 @@ async def run_briefly(ctx, seen):
 
 async def test_each_mail_once_across_a_restart(conn):
     config = dataclasses.replace(settings(), poll_seconds=0.01)
-    mailbox = FakeMailbox(["synthetic-rfq.json", "synthetic-tracking.json"])
+    mailbox = FakeMailbox(["rfq-door-no-origin.json", "synthetic-tracking.json"])
     seen = []
     await run_briefly(Context(config, conn, mailbox, None, None, None), seen)
-    restarted = FakeMailbox(["synthetic-rfq.json", "synthetic-tracking.json"])
+    restarted = FakeMailbox(["rfq-door-no-origin.json", "synthetic-tracking.json"])
     await run_briefly(Context(config, conn, restarted, None, None, None), seen)
-    assert seen == [1001, 1007]
-    assert restarted.since[0] == 1007
+    assert seen == [m.id for m in mailbox.mails]
+    assert restarted.since[0] == max(seen)
     assert conn.execute("SELECT count(*) FROM events WHERE kind = 'mail.in'").fetchone()[0] == 2
