@@ -234,9 +234,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "transit via" a hub), else the first one no "valid", "gültig", "good" or "Laufzeit des Angebots" stands before.
   `tests/fixtures/mails/bid_probes.jsonl` holds such answers.
 - A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
-  attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message).
-  `pricing/bids.py` `record` reads the body together with every attachment code can read (`_with_attachments`,
-  in a thread: a transcript takes seconds); an unreadable file is an `error` event, the others still count.
+  attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message). When the body
+  alone holds no price, `pricing/bids.py` `record` reads it together with every attachment code can read
+  (`_with_attachments`, in a thread: a transcript takes seconds); an unreadable file is an `error` event, the
+  others still count. A priced mail is never read with its attachments: an airline's terms ("unable to accept …")
+  or a forwarded invoice total would hide its price.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
   we had to ask the customer for every fact.

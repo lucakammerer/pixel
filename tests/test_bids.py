@@ -15,7 +15,7 @@ from pixel.agents.rfq import agent, extract
 from pixel.agents.tariffs.agent import _spoken
 from pixel.api.mailbox import to_message
 from pixel.config import settings
-from pixel.contracts import LaneTariff, LlmResult, Message, RateOption, Rfq, Source
+from pixel.contracts import Attachment, LaneTariff, LlmResult, Message, RateOption, Rfq, Source
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
@@ -396,3 +396,30 @@ def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days
 )
 def test_pickup_hours_read_a_decimal_and_skip_a_clock_time(text, hours):
     assert bids._pickup_hours(text) == hours  # 10.5 read as 5 and 09:00 h as 0 pick the wrong trucker
+
+
+AIRLINE_BODY = "Hello,\nwe can offer EUR 900.00, transit 3 days.\nRegards, Air One"
+ATTACHED = {
+    # the customer's invoice forwarded back, or a company letter: a labelled total that is no freight price
+    "invoice_total": "Commercial invoice\nTotal value: EUR 12,500.00\n",
+    # general terms: a decline word that is no decline of this request
+    "terms_decline_word": "General terms\nThe carrier is unable to accept dangerous goods without a declaration.\n",
+}
+
+
+@pytest.mark.parametrize("case", list(ATTACHED))
+async def test_an_airline_bid_keeps_its_mail_price_beside_an_unrelated_attachment(ctx, monkeypatch, case):
+    class Files:
+        async def attachment(self, message_id, attachment_id):
+            return ATTACHED[case].encode()
+
+    async def no_model(ctx, **kw):
+        raise AssertionError("the mail alone reads by rules")
+
+    monkeypatch.setattr(llm, "ask_json", no_model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq().model_dump(mode="json"))
+    att = Attachment(id=1, filename="terms.txt", content_type="text/plain", size=10)
+    message = mail("one@air", AIRLINE_BODY).model_copy(update={"attachments": (att,)})
+    await bids.record(replace(ctx, mailbox=Files()), message)
+    found = [(o["option"]["total"], o["option"]["transit_days"]) for o in kinds(ctx, "option.found")]
+    assert found == [("900.00", 3)]
