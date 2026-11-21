@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 User=pixel
 WorkingDirectory=/opt/pixel/app
-ExecStart=/opt/pixel/app/.venv/bin/uvicorn pixel.app:app --host 127.0.0.1 --port 8421
+ExecStart=/opt/pixel/app/.venv/bin/uvicorn pixel.app:app --host 127.0.0.1 --port 8421 --timeout-graceful-shutdown 3
 Restart=always
 RestartSec=2
 NoNewPrivileges=true
