@@ -34,7 +34,10 @@ from pixel.core import events, orchestrator, poller
 
 
 class OfflineMailbox(Mailbox):
-    """Serves attachments from the fixture (`attachments[].content_base64`), sends nothing."""
+    """Serves attachments from the fixture (`attachments[].content_base64`), sends nothing. No late mail reaches a
+    replay beyond its captured mails, so the orchestrator does not wait for one (`orchestrator._first_price`)."""
+
+    late_mail = False
 
     def __init__(self, client: httpx.AsyncClient, files: dict[tuple[int, int], bytes]):
         super().__init__(client)

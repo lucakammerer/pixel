@@ -139,8 +139,10 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     from pixel.agents.rfq import agent as rfq
 
     loop = asyncio.get_running_loop()
-    # A dry run (a replay, the offline KPI, a local run) gets no late price: waiting would only hold it up to hard_at.
-    wait = 0.0 if ctx.settings.dry_run else (deadline.hard_at - now()).total_seconds()
+    # A dry run holds its bid requests and a replay gets no mail beyond its captured ones: no late price can reach
+    # either, and waiting would hold every unpriced request of the offline KPI until hard_at.
+    late = not ctx.settings.dry_run and getattr(ctx.mailbox, "late_mail", True)
+    wait = (deadline.hard_at - now()).total_seconds() if late else 0.0
     until = loop.time() + max(0.0, wait)
     failed = waiting = False
     while True:
