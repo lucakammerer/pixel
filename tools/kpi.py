@@ -68,8 +68,8 @@ def _cell(row: dict | None) -> str:
     return f"{row['total']} {row['currency']} · {row['carrier']} · {row['model_calls']} model calls"
 
 
-def _price(was: dict | None, new: dict) -> str:
-    if not (was and was["eur"] and new["eur"]) or was["eur"] == new["eur"]:
+def _price(was: dict | None, new: dict | None) -> str:
+    if not (was and new and was["eur"] and new["eur"]) or was["eur"] == new["eur"]:
         return ""
     return f"{(Decimal(new['eur']) / Decimal(was['eur']) - 1) * 100:+.1f}%"
 
@@ -77,8 +77,9 @@ def _price(was: dict | None, new: dict) -> str:
 def report(rows: list[dict], base: list[dict] | None) -> str:
     """Markdown for the pull request: the totals of both sides, then every request whose answer differs."""
     sides = ([("Base", base)] if base is not None else []) + [("This branch", rows)]
-    old = {r["request"]: r for r in base or ()}
-    changed = [(old.get(r["request"]), r) for r in rows if old.get(r["request"]) != r]
+    old, new = ({r["request"]: r for r in side or ()} for side in (base, rows))
+    # A request the router no longer places as one is missing on the branch: it has to show up as a change.
+    changed = [name for name in sorted(old.keys() | new.keys()) if old.get(name) != new.get(name)]
     out = [
         f"### KPIs on {len(rows)} replayed requests",
         "",
@@ -90,7 +91,10 @@ def report(rows: list[dict], base: list[dict] | None) -> str:
     ]
     if changed:
         out += ["| Request | Base | This branch | Price |", "| --- | --- | --- | --- |"]
-        out += [f"| {new['request']} | {_cell(was)} | {_cell(new)} | {_price(was, new)} |" for was, new in changed]
+        out += [
+            f"| {name} | {_cell(old.get(name))} | {_cell(new.get(name))} | {_price(old.get(name), new.get(name))} |"
+            for name in changed
+        ]
     else:
         out.append("No request changed its answer, price, carrier or model calls.")
     out += ["", "Offline replay on the start kit: sheet prices only, model calls fail, response time is not measured."]
