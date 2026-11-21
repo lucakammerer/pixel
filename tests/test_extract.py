@@ -546,30 +546,28 @@ TABLE = "Length (cm) Width (cm) Height (cm) Pieces {column}\n100 100 63 19 {row}
 
 
 @pytest.mark.parametrize(
-    "document",
+    "document, kg",
     [
-        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (kg)", row="1751"),
-        "Total gross weight: 1,751 kg\n" + TABLE.format(column="Gross weight (kgs)", row="1,751"),
+        ("Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (kg)", row="1751"), 1751),
+        ("Total gross weight: 1,751 kg\n" + TABLE.format(column="Gross weight (kgs)", row="1,751"), 1751),
+        ("Total gross weight (kg): 1751", 1751),  # no table
+        (TABLE.format(column="Gross weight (kg)", row="1751"), 1751),  # no total line
+        (TABLE.format(column="Gewicht je Stück (kg)", row="92"), 1748),  # per piece, "Stück" no count column
     ],
 )
-def test_a_document_weight_borne_out_by_its_kg_column_counts(document):
-    assert extract._document_weight(document) == 1751
+def test_a_document_states_its_weight_in_a_total_its_table_or_both(document, kg):
+    assert extract._document_facts(document)["weight_kg"] == kg
 
 
 @pytest.mark.parametrize(
     "document",
     [
-        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight", row="1751"),  # no unit
         "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (lbs)", row="1751"),
         "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (kg)", row="92"),  # per piece
-        "Total gross weight (kg): 1751\n" + TABLE.format(column="Gross weight (kg) Net weight (kg)", row="1751 1700"),
-        "Total gross weight (kg): 1751\nEach piece weighs 92 kg\n"
-        + TABLE.format(column="Gross weight (kg)", row="1751"),
-        "Total gross weight (kg): 1751",  # no table
     ],
 )
-def test_an_ambiguous_document_weight_leaves_the_mail_standing(document):
-    assert extract._document_weight(document) is None
+def test_a_document_whose_total_and_table_disagree_settles_nothing(document):
+    assert extract._document_facts(document) is None
 
 
 @pytest.mark.parametrize(

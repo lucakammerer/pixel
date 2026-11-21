@@ -31,17 +31,21 @@ DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AI
 # "1 250 kg": a space (also a no-break one) between thousands, not after a date's or a range's digits.
 NUM = r"((?<![\d.,\-/])\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?![\d.,'])|\d[\d.,']*)"
 OTHER_UNIT = r"\s*(?i:lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
+# "Bruttogewicht gesamt (kg):", "Total volume (cbm):"; a label never takes its figure from the next line, where a
+# table header ending in "Gross weight (kg)" would read the first row's first cell.
+TOTAL_WORD = r"(?:\s+(?:gesamt|insgesamt|total))?"
 WEIGHT = (
     re.compile(rf"{NUM}\s*(?i:kgs?|kilos?|kilograms?|kilogramm)\b"),
     re.compile(
-        rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?)\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"
+        rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht){TOTAL_WORD}(?:\s*\(kgs?\))?)[^\S\n]*:?[^\S\n]*{NUM}"
+        rf"(?![\d.,']|{OTHER_UNIT}\b)"
     ),
 )
 POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
-    re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
+    re.compile(rf"(?i:\b(?:cbm|volume|volumen){TOTAL_WORD}(?:\s*\((?:cbm|m3|m³)\))?)[^\S\n]*:?[^\S\n]*{NUM}"),
 )
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s])))?\b",  # "in total": a word, not inches
@@ -74,7 +78,7 @@ LOT_WEIGHT = re.compile(rf"{MODE}{NUM}\s*(?:kgs?|kilos?)\b(?:\s*(?P<kind>gross|b
 LOT_VOLUME = re.compile(rf"{MODE}{NUM}\s*(?:cbm\b|m3\b|m³)", re.IGNORECASE)
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
-    r"(\d+)\s*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
+    r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
     r"|paletten|kartons|kisten)\b",
     re.IGNORECASE,
 )
@@ -415,6 +419,8 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
     door, postcode = _pickup(text)
     if lane is None and door and (destination := _destination_only(text)):
         lane = ("", destination)  # the origin is the pickup zone's airport, set in `extract`
+    if lane and cargo and cargo.get("destination"):
+        lane = (lane[0], cargo["destination"])  # the attached document's (`_cargo_sources`)
     if cargo is None:
         lots = _lots(text)
         pieces = lots[2] if lots else _pieces(text)
@@ -682,24 +688,42 @@ def names_code(text: str, code: str) -> bool:
     return bool(code and re.search(rf"\b{re.escape(code)}\b", text, re.IGNORECASE))
 
 
+# Column names as whole words: "Stück" in "Gewicht je Stück" and "pcs" in "kg/pcs" say per piece, not a count column.
 COLUMN = re.compile(
-    r"(?P<name>width|length|height|breite|l(?:ä|ae)nge|h(?:ö|oe)he|pieces|pcs|qty|quantity|st(?:ü|ue)ck|"
-    r"gross\s+weight|weight|gewicht)(?:\s*\((?P<unit>mm|cm|m|kgs?)\))?",
+    r"(?<![\w/])(?<!je\s)(?<!pro\s)(?<!per\s)(?P<name>width|length|height|breite|l(?:ä|ae)nge|h(?:ö|oe)he|pieces|"
+    r"pcs|qty|quantity|st(?:ü|ue)ck|gross\s+weight|weight|\w*gewicht)\b",
+    re.IGNORECASE,
+)
+COLUMN_UNIT = re.compile(r"\(\s*(mm|cm|m|kgs?|lbs?)\b", re.IGNORECASE)
+PER_PIECE_COLUMN = re.compile(
+    r"\b(?:per\s+(?:pc|pce|pcs|piece|unit)|each|unit|je\s+st(?:ü|ue)ck|pro\s+st(?:ü|ue)ck)\b|/\s*(?:pc|pce|pcs|piece|unit)\b"
+    r"|st(?:ü|ue)ckgewicht|einzelgewicht",
     re.IGNORECASE,
 )
 SIDE = {"width": 0, "breite": 0, "length": 1, "länge": 1, "laenge": 1, "height": 2, "höhe": 2, "hoehe": 2}
 COUNT = {"pieces", "pcs", "qty", "quantity", "stück", "stueck"}
+KG_PER = {"kg": Decimal(1), "kgs": Decimal(1), "lb": LB, "lbs": LB}
+PIECES_LABEL = re.compile(
+    r"(?im)^[^\S\n]*(?:total\s+(?:pieces|packages)|number\s+of\s+(?:pieces|packages)|pieces|packages|colli"
+    r"|packst(?:ü|ue)cke(?:\s+gesamt)?|anzahl(?:\s+packst(?:ü|ue)cke)?|st(?:ü|ue)ckzahl)[^\S\n]*:[^\S\n]*(\d+)\b"
+)
 
 
-def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]], str] | None:
-    """A packing table: its columns (name, unit) from a header naming width, length, height and pieces, the rows
-    below it with one number per column, and the text around it."""
+def _table(text: str) -> tuple[list[tuple[str, str | None, bool]], list[list[str]], str] | None:
+    """A packing table: its columns (name, unit, per piece) from a header naming width, length, height and pieces,
+    the rows below it with one number per column, and the text around it."""
     lines = text.splitlines()
     for i, header in enumerate(lines):
-        columns = [(m["name"].casefold(), m["unit"]) for m in COLUMN.finditer(header)]
-        names = [name for name, _ in columns]
+        found = list(COLUMN.finditer(header))
+        names = [m["name"].casefold() for m in found]
         if not ({0, 1, 2} <= {SIDE.get(n) for n in names} and COUNT & set(names)):
             continue
+        columns = []
+        for m, end in zip(found, [n.start() for n in found[1:]] + [len(header)], strict=True):
+            part = header[m.start() : end]
+            unit = u[1].lower() if (u := COLUMN_UNIT.search(part)) else None
+            each = bool(PER_PIECE_COLUMN.search(part) or re.search(r"(?i)\bunit\s+$", header[: m.start()]))
+            columns.append((m["name"].casefold(), unit, each))
         rows = []
         for row in lines[i + 1 :]:
             cells = re.findall(r"\d[\d.,]*", row)
@@ -710,53 +734,67 @@ def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]], st
     return None
 
 
-def _table_volume(text: str) -> Decimal | None:
-    """The volume a packing table's rows add up to."""
-    columns, rows, _ = _table(text) or ([], [], "")
-    total = None
+def _table_totals(columns: list[tuple[str, str | None, bool]], rows: list[list[str]]) -> dict:
+    """What a packing table's rows add up to: pieces, volume, and the gross weight when its one weight column is in
+    kg or lb (a weight per piece times the row's pieces). {} when a row does not read."""
+    counts = [i for i, (name, _, _) in enumerate(columns) if name in COUNT]
+    weights = [i for i, (name, _, _) in enumerate(columns) if "weight" in name or "gewicht" in name]
+    if len(counts) != 1 or not rows:
+        return {}
+    weight = weights[0] if len(weights) == 1 and columns[weights[0]][1] in KG_PER else None
+    totals = {"pieces": 0, "volume_cbm": Decimal(0)} | ({"weight_kg": Decimal(0)} if weight is not None else {})
     for row in rows:
-        cells = [number(c, thousands=False) for c in row]
-        if None in cells:
-            break
-        volume = Decimal(1)
-        for (name, unit), cell in zip(columns, cells, strict=True):
+        n = number(row[counts[0]], thousands=False)
+        if n is None or n != n.to_integral_value():
+            return {}
+        volume = n
+        for (name, unit, _), cell in zip(columns, row, strict=True):
             if name in SIDE:
-                volume *= cell / _per_m(unit)
-            elif name in COUNT:
-                volume *= cell
-        total = (total or Decimal(0)) + volume
-    return total
+                if (side := number(cell, thousands=False)) is None:
+                    return {}
+                volume *= side / _per_m(unit)
+        totals["pieces"] += int(n)
+        totals["volume_cbm"] += volume
+        if weight is not None:
+            if (kg := number(row[weight])) is None:
+                return {}
+            name, unit, each = columns[weight]
+            totals["weight_kg"] += kg * KG_PER[unit] * (n if each else 1)
+    return totals
 
 
-def _document_weight(text: str) -> Decimal | None:
-    """A document's stated total gross weight when its table's one weight column, headed in kg, adds up to it
-    (round 35: the mail said 2644 kg, the spec's total and its row 1751 kg). A row's weight is never multiplied by
-    its pieces, and a weight per piece or a second weight column is ambiguous: then the mail stands."""
-    if (table := _table(text)) is None or EACH_WEIGHT.search(text):
-        return None
-    # Read the total off the table's own lines: "Gross weight (kg)" ending a header runs on into the first row.
-    columns, rows, around = table
-    if (stated := _unique(WEIGHT, around, thousands=True)) is None:
-        return None
-    weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name == "gewicht"]
-    if len(weights) != 1 or columns[weights[0]][1] not in ("kg", "kgs") or not rows:
-        return None
-    cells = [number(row[weights[0]]) for row in rows]
-    if None in cells or abs(sum(cells) - stated) > Decimal("0.5"):
-        return None
-    return stated
+def _agree(field: str, a: Decimal | int, b: Decimal | int) -> bool:
+    if field == "pieces":
+        return a == b
+    if field == "weight_kg":  # a weight per piece rounded to 0.01 kg, times the pieces
+        return abs(a - b) <= max(Decimal("0.5"), b * Decimal("0.005"))
+    return abs(a - b) <= max(Decimal("0.01"), b * Decimal("0.01"))
 
 
-def _document_volume(text: str, pieces: int | None) -> Decimal | None:
-    """A document's stated total volume when its own table or dimensions bear it out (round 33)."""
-    stated = _unique(VOLUME, text, thousands=False)
-    if stated is None or EACH_VOLUME.search(text):
-        return None
-    one = _dims_volume(text)
-    measured = _table_volume(text) or (one * pieces if one is not None and pieces else None)
-    if measured is None or abs(measured - stated) > max(Decimal("0.01"), stated * Decimal("0.01")):
-        return None
-    return stated
+CARGO = ("pieces", "weight_kg", "volume_cbm")
+
+
+def _document_facts(text: str) -> dict | None:
+    """The pieces, gross weight and volume one attached document states: its labelled totals, the totals of its
+    packing table, or both when they agree (rounds 33 to 35: the scorer priced the document). None when they
+    disagree: a document that contradicts itself settles nothing. A labelled weight or volume beside a figure per
+    piece is ambiguous and left out."""
+    columns, rows, around = _table(text) or ([], [], text)
+    pieces = {int(v) for v in PIECES_LABEL.findall(around)}
+    stated = {
+        "pieces": pieces.pop() if len(pieces) == 1 else None,
+        "weight_kg": None if EACH_WEIGHT.search(around) else _unique(WEIGHT, around, thousands=True),
+        "volume_cbm": None if EACH_VOLUME.search(around) else _unique(VOLUME, around, thousands=False),
+    }
+    measured = _table_totals(columns, rows)
+    facts = {}
+    for field in CARGO:
+        a, b = stated[field], measured.get(field)
+        if a is not None and b is not None and not _agree(field, a, b):
+            return None
+        if (value := a if a is not None else b) is not None:
+            facts[field] = value
+    return facts
 
 
 DOCUMENT_AIRPORT = re.compile(
@@ -779,32 +817,64 @@ NEW_MEASUREMENT = re.compile(
     re.IGNORECASE,
 )
 ORIGIN_FIELDS = {"origin", "departure", "abgangsflughafen"}
+DESTINATION_FIELDS = {"destination", "zielflughafen"}
 CARGO_FIELDS = {
+    "pieces": re.compile(r"\b(?:pieces|piece count|figures|packstücke|stückzahl)\b", re.IGNORECASE),
     "weight_kg": re.compile(r"\b(?:weight|measurements|figures|bruttogewicht|gewicht)\b", re.IGNORECASE),
     "volume_cbm": re.compile(r"\b(?:volume|dimensions|measurements|figures|volumen|maße)\b", re.IGNORECASE),
 }
 
 
+def _mail_cargo(mail: str) -> dict:
+    pieces = _pieces(mail)
+    found = {"pieces": pieces, "weight_kg": _weight(mail, pieces), "volume_cbm": _volume(mail, pieces)}
+    return {k: v for k, v in found.items() if v is not None}
+
+
+def _same_cargo(mail: str, document: str) -> bool:
+    """The document's weight is the mail's, and so are its pieces and volume where both state them."""
+    facts, said = _document_facts(document) or {}, _mail_cargo(mail)
+    return (
+        "weight_kg" in facts
+        and "weight_kg" in said
+        and all(_agree(k, said[k], facts[k]) for k in CARGO if k in facts and k in said)
+    )
+
+
+def _document_destination(text: str) -> str | None:
+    found = {
+        m["code"]
+        for m in DOCUMENT_AIRPORT.finditer(text)
+        if m["label"].lower() in DESTINATION_FIELDS and _airport(m["code"])
+    }
+    return found.pop() if len(found) == 1 else None
+
+
 def _shipment_sources(sources: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Exclude attachments that explicitly name a different airport for this shipment."""
+    """Exclude attachments that name a different airport for this shipment: another shipment (#164). A document
+    that names only another destination and carries the mail's own cargo is this shipment with the lane mistyped in
+    the mail: it stays, and its destination wins in `_cargo_sources`."""
     if len(sources) == 1:
         return sources
     mail = sources[0][1]
     origin, destination = _lane(mail) or (None, _destination_only(mail))
     kept = sources[:1]
     for name, text in sources[1:]:
-        airports = (
-            (m["code"], origin if m["label"].lower() in ORIGIN_FIELDS else destination)
+        conflicts = {
+            m["label"].lower() in ORIGIN_FIELDS
             for m in DOCUMENT_AIRPORT.finditer(text)
             if _airport(m["code"])
-        )
-        if not any(wanted and listed != wanted for listed, wanted in airports):
+            and (wanted := origin if m["label"].lower() in ORIGIN_FIELDS else destination)
+            and m["code"] != wanted
+        }
+        if not conflicts or (conflicts == {False} and _same_cargo(mail, text)):
             kept.append((name, text))
     return kept
 
 
 def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal | None]:
-    """Use explicit corrections, then corroborated measurements from the eligible attachments."""
+    """Explicit corrections in the mail first; then what the eligible attachments state (`_document_facts`) over
+    the mail's own figures, unless the mail says to use its own; the mail's figures where no document states one."""
     clauses = [part.strip() for part in CARGO_CLAUSE.split(sources[0][1])]
     directives = [
         re.split(r"\b(?:not|instead of|rather than)\b", match[1], maxsplit=1, flags=re.IGNORECASE)[0]
@@ -823,6 +893,7 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal 
     if len(named) == 1:
         sources = [sources[0], *named]
     lots = [_lots(text) for _, text in sources]
+    stated = [None, *(_document_facts(text) for _, text in sources[1:])]
     facts, evidence = {}, {}
     document_weight = None
 
@@ -833,35 +904,49 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal 
             facts[field] = values.pop()
             evidence[field] = [name for (name, _), v in zip(sources, readings, strict=True) if v is not None]
 
-    counts = [group[2] if group else _pieces(text) for (_, text), group in zip(sources, lots, strict=True)]
+    def documents_win(field: str, mail: object) -> bool:
+        if mail is not None and any(CARGO_FIELDS[field].search(fields) for fields in mail_fields):
+            return False
+        found = [(name, s[field]) for (name, _), s in zip(sources, stated, strict=True) if s and field in s]
+        if len(values := {v for _, v in found}) != 1:
+            return False
+        facts[field], evidence[field] = values.pop(), [name for name, _ in found]
+        return True
+
+    def reading(i: int, field: str, text: str, read) -> object:
+        """A source's figure: its lots; for a document what it states, nothing when it contradicts itself; else any
+        figure code reads in its text."""
+        if lots[i]:
+            return lots[i][{"weight_kg": 0, "volume_cbm": 1, "pieces": 2}[field]]
+        if i and (stated[i] is None or field in stated[i]):
+            return (stated[i] or {}).get(field)
+        return read(text)
+
+    counts = [reading(i, "pieces", text, _pieces) for i, (_, text) in enumerate(sources)]
     take("pieces", counts)
-    for field, index, reader in (("weight_kg", 0, _weight), ("volume_cbm", 1, _volume)):
-        field_pattern = CARGO_FIELDS[field]
+    documents_win("pieces", counts[0])
+    for field, reader in (("weight_kg", _weight), ("volume_cbm", _volume)):
         corrected = {
             value
             for match in corrections
-            if field_pattern.search(match["field"])
+            if CARGO_FIELDS[field].search(match["field"])
             and (value := reader(match["value"], facts.get("pieces"))) is not None
         }
         if len(corrected) == 1:
             facts[field], evidence[field] = corrected.pop(), [sources[0][0]]
             continue
         readings = [
-            group[index] if group else reader(text, count or facts.get("pieces"))
-            for (_, text), group, count in zip(sources, lots, counts, strict=True)
+            reading(i, field, text, lambda t, c=count, read=reader: read(t, c or facts.get("pieces")))
+            for i, ((_, text), count) in enumerate(zip(sources, counts, strict=True))
         ]
         take(field, readings)
-        if readings[0] is not None and any(field_pattern.search(fields) for fields in mail_fields):
-            continue
-        if field == "weight_kg":
-            documents = [(name, _document_weight(text)) for name, text in sources[1:]]
-        else:
-            documents = [(name, _document_volume(text, facts.get("pieces"))) for name, text in sources[1:]]
-        if len(corroborated := {v for _, v in documents if v is not None}) == 1:
-            facts[field] = corroborated.pop()
-            evidence[field] = [name for name, v in documents if v is not None]
-            if field == "weight_kg":
-                document_weight = facts[field]
+        if documents_win(field, readings[0]) and field == "weight_kg":
+            document_weight = facts[field]
+    mail_destination = (_lane(sources[0][1]) or (None, _destination_only(sources[0][1])))[1]
+    destinations = {d for _, text in sources[1:] if (d := _document_destination(text))}
+    if mail_destination and len(destinations) == 1 and (destination := destinations.pop()) != mail_destination:
+        facts["destination"] = destination
+        evidence["destination"] = [name for name, text in sources[1:] if _document_destination(text) == destination]
     return facts, evidence, document_weight
 
 

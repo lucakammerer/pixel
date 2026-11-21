@@ -294,7 +294,7 @@ async def test_corroborated_packing_list_weight_passes_the_quote_check(conn, mon
     monkeypatch.setattr(extract, "_attachments", attachment_lines)
     deadline = orchestrator.Deadline(NOW, NOW, NOW, NOW)
     request = await extract.extract(ctx, mail, deadline)
-    assert request.weight_kg == extract._document_weight("\n".join(packing))
+    assert request.weight_kg == extract._document_facts("\n".join(packing))["weight_kg"]
     kg = calc.chargeable_kg(request.weight_kg, request.volume_cbm)
     air = airline("5000.00", kg=str(kg)).model_copy(
         update={"origin": request.origin, "destination": request.destination}
