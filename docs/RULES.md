@@ -48,7 +48,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | R22 | When the customer accepts, book by `rate_id` with `POST /v1/portal/bookings` and our CRM id as `team_reference`. One booking per `rate_id`. 201 booked; 200 same booking again (retry); 404 unknown; 409 booked under another reference; 410 expired: fetch a fresh rate and book that; 503: book by mail with the airline as the message says | API | `agents/rfq/booking.py` `book`, `tests/test_booking.py` | done |
 | R23 | A mail "Booking <reference> confirmed" from the airline follows: the shipment is then booked. There is no status call; the booking lives in our CRM | API | `agents/rfq/booking.py` `handle_confirmation`, `crm/bookings.py`, `crm/shipments.py` | done |
 | R24 | Keep the customer informed | Brief | `agents/rfq/booking.py` `_tell_customer`: once when booked, once when confirmed | done |
-| R25 | Tracking questions come from `tracking@hackloop.mail` and are answered from our own CRM | Brief | `agents/tracking/agent.py` `handle` | open |
+| R25 | Tracking questions come from `tracking@hackloop.mail` and are answered from our own CRM | Brief | `agents/tracking/agent.py` `handle`, `crm/shipments.py` `find` | done |
 
 ## Scoring
 
@@ -58,7 +58,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | R27 | Price accuracy, 45 points: full at the best price, fewer the further above it | Brief, Board | `pricing/` | open |
 | R28 | LLM cost, 40 points: gateway spend per accepted quote in the hour; full at no spend, zero at 0.10 USD. A quote made without a gateway call earns no cost points. Cost points are added once an hour, up to about an hour after a quote | Brief, API | `llm.py` `ask_json`, `spend_usd` | open |
 | R29 | Response time, 15 points: full within 2 minutes of the request, zero at 6 minutes | Brief | `core/orchestrator.py` `deadline_for` | open |
-| R30 | +10 for a correct tracking answer on a booked shipment | Brief, Board | `agents/tracking/` | open |
+| R30 | +10 for a correct tracking answer on a booked shipment | Brief, Board | `agents/tracking/agent.py` `answer`, `tests/test_tracking.py` | done |
 | R31 | +10 from the jury for the accepted mail that reads most human | Brief, Board | `agents/rfq/compose.py` | open |
 | R32 | All model calls go through the gateway (`POST /v1/gateway/chat/completions`, `/responses`, `/embeddings`), OpenAI models only, with our own OpenAI key stored once at the gateway | Brief, API | `llm.py`, `tools/set_openai_key.py` | open |
 | R33 | After a few hours the setup changes about once an hour, unannounced. We learn of a change from failed quotes: `GET /v1/board/me` gives per request the verdict (`accepted`, `rejected`, `pending`, `open`, `no answer`, `voided`), a reason code and the points per kind | Brief, API | `tools/board_me.py`, `ui/dashboard.py` | open |

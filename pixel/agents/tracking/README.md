@@ -16,13 +16,18 @@ shipment it matched, or that it matched none.
 
 ## Implementation
 
-`agent.py` `handle`: find the shipment with `crm/shipments.py` `find` by any reference in the mail, else by customer
-and lane; answer from the stored booking and shipment. No gateway call when a reference matches.
+`agent.py` `handle`: `match` looks for references in the mail (`BK-…` from the airline, `PX-…` ours) and finds the
+shipment with `crm/shipments.py` `find`; without a reference it tries a customer address and a lane (`FRA to JFK`,
+`FRA-JFK`). `answer` writes status, airline, lane, weight, booking reference and transit time from the stored
+shipment, for up to five matches. No gateway call at all. Unknown shipment: we say we hold none under that
+reference and ask for the booking reference. The reply goes to the sender, in the thread, through `core.outbox`.
 
 ## Pitfalls
 
-To be filled from the first real mails.
+- The status words come from the shipment (`booking`, `booked`, `confirmed`, `failed`); never promise a flight or a
+  delivery date we do not hold.
 
 ## Open
 
-- Everything: this is the skeleton.
+- Q11: what the tracking agent asks and what makes an answer correct. Adjust `REFERENCE`, `LANE` and `answer` from
+  the first real mails.
