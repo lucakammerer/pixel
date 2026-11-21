@@ -21,6 +21,7 @@ EXPECTED = {
     "customer-accepts.json": MailKind.CUSTOMER_REPLY,
     "customer-thanks.json": MailKind.CUSTOMER_REPLY,
     "booking-confirmed.json": MailKind.BOOKING_CONFIRMATION,
+    "rfq-door-with-packing-list.json": MailKind.CUSTOMER_RFQ,  # a customer attaches files too
     "synthetic-tariff.json": MailKind.TARIFF,
     "synthetic-tracking.json": MailKind.TRACKING_QUESTION,
     "ratedesk-portal-rates.json": MailKind.RATEDESK_REPLY,
