@@ -238,7 +238,7 @@ async def test_bid_wait_counts_only_the_current_enquiries(conn, monkeypatch):
 
 async def test_late_carrier_offer_is_quoted_once_and_the_acceptance_books_once(conn, monkeypatch):
     ctx = make_ctx(conn, quote_target_s=0, quote_hard_s=5, bid_wait_s=0)
-    msg = mail("Please quote AAA to BBB, 100 kg.").model_copy(update={"sent_at": datetime.now(UTC)})
+    msg = mail("Please quote AAA to BBB, 100 kg, 0.3 cbm.").model_copy(update={"sent_at": datetime.now(UTC)})
     store.save_carriers(
         ctx, [{"name": "Test Air", "kind": "airline", "email": "test-air@example.com", "serves": "BBB"}]
     )
