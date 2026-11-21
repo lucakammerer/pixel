@@ -112,6 +112,15 @@ def test_a_changed_tracking_question_finds_its_shipment_or_asks_never_another():
             if r.outcome == "wrong" or (r.change == "as sent" and r.outcome != "right")] == []  # fmt: skip
 
 
+def test_an_answer_naming_another_airport_changes_no_field_of_the_request():
+    """Round 69: the answer to our question named an airport that became the origin. Outside the known gaps every
+    answer leaves the request as it was, or the model reads it; a known gap that reads right fails too."""
+    reads = bench.audit_followups()
+    assert reads
+    assert [f"{f.answer}: {f.fixture} {f.detail}" for f in reads if f.outcome == "wrong" and not f.known_gap] == []
+    assert [f"{f.answer}: {f.fixture}" for f in reads if f.known_gap and f.outcome != "wrong"] == []
+
+
 def test_spreadsheet_layout_changes_parse_the_same_or_are_refused():
     changes = bench.audit_xlsx_changes()
     assert any(v.outcome == "parsed right" for v in changes)
