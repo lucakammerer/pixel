@@ -46,7 +46,6 @@ first quote for it was rejected as too low.
 
 `rfq-door-with-packing-list.json` is a customer's request with a packing specification attached (the file itself
 is not stored); the router once took it for a tariff mail.
-||||||| 30d374d
 
 Every captured request (`rfq-*.json`) is read by `extract.py` `by_rules` without a model; `tests/test_extract.py`
 checks each one:
