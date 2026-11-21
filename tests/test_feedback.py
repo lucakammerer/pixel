@@ -70,18 +70,18 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
 
     monkeypatch.setattr(events, "emit", emit)
     airline, pickups, quoted = captured()
-    # tracking points for an older round land in the same poll: the total rises by 10 more than the request scored
-    scored = board(D("150.62"), (4, "accepted"), (3, "accepted"))
-    scored["requests"][1]["points"] = {"tracking": 10.0}
-    earlier = board(100, (3, "accepted"))
-    ctx = Context(settings(), conn, None, None, None, Board(earlier, earlier, scored))
+    # the verdict appears as soon as we answer; accuracy and time only when the round is scored
+    answered = board(100, (4, "accepted"))
+    scored = board(D("140.62"), (4, "accepted"))
+    scored["requests"][0]["points"] = {"accuracy": 25.62, "time": 15.0}
+    ctx = Context(settings(), conn, None, None, None, Board(board(100), answered, scored))
     conn.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (7, 'c@x', 'quoted', ?)", (T0,))
     for o in (airline, *pickups):
         emit(ctx, "option.found", "pricing", session_id=7, payload={"option": o.model_dump(mode="json")})
     emit(ctx, "quote.drafted", "rfq", session_id=7, payload={"option": quoted.model_dump(mode="json")})
 
     assert await feedback.once(ctx) == 0 and feedback.pickup_rule(ctx) == selection.DEFAULT_RULE
-    assert await feedback.once(ctx) == 0  # nothing new
+    assert await feedback.once(ctx) == 0  # the verdict alone: no points to explain yet
     assert await feedback.once(ctx) == 1
     kind, session_id, payload = stored[-1]
     assert (kind, session_id, payload["trucker"], payload["points"]) == (
@@ -90,8 +90,7 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
         ROUND["scorer_trucker"],
         "40.62",
     )
-    assert payload["hidden"] == "40.62" and quotes.derived_hidden(ctx) == {4: D("40.62")}
-    assert json.loads(db.get(conn, feedback.STATE))["verdicts"] == {"3": "accepted", "4": "accepted"}
+    assert json.loads(db.get(conn, feedback.STATE))["verdicts"] == {"4": "accepted"}
     assert feedback.pickup_rule(ctx) == selection.DEFAULT_RULE  # every rule takes this trucker: no lead, no change
 
 
@@ -185,29 +184,31 @@ async def test_board_total_updates_without_request_changes(conn):
     assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score.total'").fetchone()[0] == 2
 
 
-async def test_each_round_earns_its_reported_points_and_the_hidden_change_of_the_total(conn):
+async def test_an_accepted_round_is_being_scored_until_its_row_has_accuracy_and_time(conn):
     def me(total, *rows):
         requests = [{"round_no": n, "verdict": v, "reason": None, "sent_at": T0, "points": p, "total": None,
                      "cost_pending": v == "accepted" and not p.get("cost")} for n, v, p in rows]  # fmt: skip
         return {"total": total, "rank": 6, "scores_revealed": False, "requests": requests}
 
-    one = (1, "accepted", {"cost": 39.76, "tracking": 10.0})
+    one = (1, "accepted", {"accuracy": 45.0, "time": 15.0, "cost": 39.76, "tracking": 10.0})
     ctx = Context(settings(), conn, None, None, None, Board(
         me("109.76", one),
-        me("166.26", one, (2, "accepted", {})),  # round 2 scores 56.50 accuracy + time
-        me("176.26", one, (2, "accepted", {"tracking": 10.0}), (3, "rejected", {})),  # tracking of 2, 3 rejected
+        me("109.76", one, (2, "accepted", {}), (3, "rejected", {})),  # answered, not scored: the total stays
+        me("166.26", one, (2, "accepted", {"accuracy": 41.5, "time": 15.0}), (3, "rejected", {})),
     ))  # fmt: skip
-    for _ in range(3):
-        await feedback.once(ctx)
-
+    await feedback.once(ctx)
+    assert await feedback.once(ctx) == 1  # round 3, rejected: final at once
     rounds = {r["round"]: r for r in quotes.scored_rounds(ctx)}
-    assert rounds[1]["hidden"] is None and rounds[1]["earned"] is None  # before our first poll: unknown
-    assert (rounds[2]["hidden"], rounds[2]["earned"], rounds[2]["hidden_derived"]) == (D("56.50"), D("66.50"), True)
+    assert (rounds[2]["hidden"], rounds[2]["earned"]) == (None, None)  # not 0: being scored
     assert (rounds[3]["hidden"], rounds[3]["earned"]) == (0, 0)
+    assert quotes.stats(ctx)["rounds_unknown"] == 1
+
+    assert await feedback.once(ctx) == 1  # round 2, now scored
+    rounds = {r["round"]: r for r in quotes.scored_rounds(ctx)}
+    assert (rounds[2]["hidden"], rounds[2]["earned"]) == (D("56.5"), D("56.5"))
     s = quotes.stats(ctx)
-    assert (s["points_total"], s["points_reported"], s["points_unreported"]) == (D("176.26"), D("59.76"), D("116.50"))
-    assert (s["rank"], s["revealed"], s["rounds_unknown"], s["cost_pending"]) == (6, False, 1, 1)
-    assert s["points"] == {"cost": D("39.76"), "tracking": D("20.0")}
+    assert (s["points_total"], s["points_reported"], s["points_unreported"]) == (D("166.26"), D("166.26"), 0)
+    assert (s["rank"], s["rounds_unknown"], s["cost_pending"]) == (6, 0, 1)
 
 
 async def test_an_accepted_verdict_waits_for_its_points(conn):

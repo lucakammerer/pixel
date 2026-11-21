@@ -76,26 +76,6 @@ def board_total(ctx: Context) -> Decimal | None:
     return board_summary(ctx)["total"]
 
 
-def derived_hidden(ctx: Context) -> dict[int, Decimal]:
-    """Accuracy + time per round while the board hides them: the change of the team total, less the change of the
-    reported points, in the poll where the round's verdict appeared (`core/feedback.py`). Older feedback events
-    carry the same reading as `points`."""
-    rows = ctx.db.execute(
-        "SELECT payload FROM events WHERE id IN (SELECT MAX(id) FROM events WHERE kind = 'feedback'"
-        " AND (json_extract(payload, '$.hidden') IS NOT NULL OR json_extract(payload, '$.points') IS NOT NULL)"
-        " GROUP BY CAST(json_extract(payload, '$.round') AS INTEGER))"
-    ).fetchall()
-    found: dict[int, Decimal] = {}
-    for row in rows:
-        p = json.loads(row["payload"])
-        value = p.get("hidden", p.get("points"))
-        try:
-            found[int(p["round"])] = Decimal(str(value))
-        except (KeyError, TypeError, ValueError, ArithmeticError):
-            continue
-    return found
-
-
 def _number(value: Any) -> Decimal | None:
     try:
         return None if value is None or value == "" else Decimal(str(value))
@@ -139,33 +119,24 @@ def cost_estimates(ctx: Context, scores: list[dict[str, Any]]) -> dict[datetime,
 
 def scored_rounds(ctx: Context) -> list[dict[str, Any]]:
     """`latest_scores` with what each round earned, split the way the scorer adds it up:
-    `quote` (accuracy + time + cost, the cost estimated while the scorer's is due; None while accuracy and time are
-    unknown), `hidden` (accuracy + time: from the row, else
-    derived from the change of the team total, `hidden_derived`), `cost_estimate` (while the scorer's cost is due),
-    `reported` (the points the row lists), `scored` (the row's total from the scorer, else reported + derived; None if
-    unknown) and `earned` (`scored` plus the cost estimate)."""
-    revealed = board_summary(ctx)["revealed"]
-    derived = derived_hidden(ctx)
+    `hidden` (accuracy + time; None while an accepted round is not scored yet: its verdict comes first),
+    `quote` (accuracy + time + cost, the cost estimated while the scorer's is due), `cost_estimate`,
+    `reported` (the points the row lists), `scored` (the row's total from the scorer; None while not scored) and
+    `earned` (`scored` plus the cost estimate)."""
     scores = latest_scores(ctx)
     estimates = cost_estimates(ctx, scores)
     out = []
     for score in scores:
         points = {k: v for k, v in ((k, _number(v)) for k, v in (score.get("points") or {}).items()) if v is not None}
         reported = sum(points.values(), Decimal(0))
-        shown = any(k in points for k in HIDDEN)
-        hidden, from_total = None, False
-        if shown:
+        hidden = None
+        if any(k in points for k in HIDDEN):
             hidden = sum((points.get(k, Decimal(0)) for k in HIDDEN), Decimal(0))
         elif score.get("verdict") != "accepted":
             hidden = Decimal(0)  # the scorer gives a rejected or unanswered request no accuracy or time points
-        elif not revealed:
-            try:
-                hidden, from_total = derived.get(int(score.get("round"))), True
-            except (TypeError, ValueError):
-                hidden = None
         total = _number(score.get("total"))
         if total is None and hidden is not None:
-            total = reported + (0 if shown else hidden)
+            total = reported
         estimate = None
         if score.get("cost_pending") and "cost" not in points and score.get("verdict") == "accepted":
             estimate = estimates.get(_hour(score.get("sent_at")))
@@ -173,9 +144,8 @@ def scored_rounds(ctx: Context) -> list[dict[str, Any]]:
         if hidden is not None:
             quote = hidden + (points["cost"] if "cost" in points else estimate or Decimal(0))
         out.append(score | {
-            "points": points, "reported": reported, "hidden": hidden, "hidden_derived": from_total and hidden is not None,
-            "quote": quote, "cost_estimate": estimate, "scored": total,
-            "earned": total + estimate if total is not None and estimate is not None else total,
+            "points": points, "reported": reported, "hidden": hidden, "quote": quote, "cost_estimate": estimate,
+            "scored": total, "earned": total + estimate if total is not None and estimate is not None else total,
         })  # fmt: skip
     return out
 

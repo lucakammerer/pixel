@@ -105,18 +105,16 @@ def test_takeover_edit_send_release(client, pipe):
 
 
 def test_dashboard_renders(client, pipe):
-    pipe.emit(pipe.ctx, "score.total", "board", payload={"total": "876.54", "rank": 6, "revealed": False})
-    pipe.emit(pipe.ctx, "score", "board", payload={"round": 1, "verdict": "accepted", "points": {"cost": 39.76}})
+    pipe.emit(pipe.ctx, "score.total", "board", payload={"total": "136.53", "rank": 6, "revealed": False})
+    pipe.emit(pipe.ctx, "score", "board", payload={
+        "round": 1, "verdict": "accepted", "points": {"accuracy": 41.77, "time": 15.0, "cost": 39.76}})  # fmt: skip
     pipe.emit(
         pipe.ctx, "score", "board", payload={"round": 2, "verdict": "accepted", "points": {}, "cost_pending": True}
     )
-    pipe.emit(pipe.ctx, "feedback", "board", payload={"round": 1, "verdict": "accepted", "hidden": "57.10"})
     page = client.get("/dashboard").text
     assert "Spend per accepted quote" in page and "Median response" in page
-    assert "876.54" in page and "rank 6" in page
-    assert "39.76" in page and "57.10" in page and "96.86" in page  # round 1: cost + accuracy and time
-    assert "836.78" in page  # accuracy + time: team total less the reported cost
-    assert "next hour" in page and "hidden" in page  # round 2: cost due, accuracy and time not derivable
+    assert "136.53" in page and "rank 6" in page and "41.77" in page and "96.53" in page
+    assert "next hour" in page and "being scored" in page and "together" not in page  # round 2: answered only
 
 
 def test_dashboard_orders_rounds_by_number_after_score_updates(client, pipe):

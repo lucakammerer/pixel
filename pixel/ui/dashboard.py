@@ -10,7 +10,6 @@ from pixel.ui.page import clock, esc, layout, page_head, stats, status
 router = APIRouter()
 
 VERDICT_CSS = {"accepted": "ok", "rejected": "bad"}
-DERIVED = "Change of the team total when the verdict appeared, less the points the row reports"
 
 
 def pts(value: Decimal | None) -> str:
@@ -27,14 +26,12 @@ def _muted(text: str) -> str:
 
 
 def _accuracy_time(r: dict[str, Any]) -> str:
-    """Two cells: accuracy and time, or one spanning both while the board hides them."""
+    """Two cells: accuracy and time, or one spanning both while the round is being scored."""
     if "accuracy" in r["points"] or "time" in r["points"]:
         return _cell(pts(r["points"].get("accuracy"))) + _cell(pts(r["points"].get("time")))
-    if r.get("verdict") != "accepted":
-        return _cell("—") + _cell("—")
-    if r["hidden"] is not None:
-        return _cell(f"{pts(r['hidden'])} {_muted('together')}", DERIVED, span=2)
-    return _cell(_muted("hidden"), "Not derivable: another verdict or no total in the same poll", span=2)
+    if r.get("verdict") == "accepted":
+        return _cell(_muted("being scored"), "The scorer adds accuracy and time when the round closes", span=2)
+    return _cell("—") + _cell("—")
 
 
 def _cost(r: dict[str, Any]) -> str:
@@ -124,15 +121,16 @@ async def dashboard(request: Request):
     )
     extra_cols = 2 + adjustment
     cols = 5 + 4 + extra_cols + 1
-    projected = total + estimate if total is not None else None
-    gap = projected - s["points_rows"] if projected is not None else None
+    # rows being scored are not in the sum yet, so neither is their cost estimate
+    due = sum((r["cost_estimate"] for r in rounds if r["earned"] is not None and r["cost_estimate"]), Decimal(0))
+    gap = total + due - s["points_rows"] if total is not None else None
+    note = ""
     if gap is not None and gap.copy_abs() >= Decimal("0.01"):
-        note = (f" · the other {s['rounds_unknown']} rounds, accuracy + time still hidden: {pts(gap)}"
-                if s["rounds_unknown"] else f" · {pts(gap)} of the team total not in any row")  # fmt: skip
+        note = f" · {pts(gap)} of the team total not in any row"
     elif total is not None:
-        note = f" = team total {pts(total)}" + (f" + cost still due {pts(estimate)}" if estimate else "")
-    else:
-        note = ""
+        note = f" = team total {pts(total)}" + (f" + cost still due {pts(due)}" if due else "")
+    if s["rounds_unknown"]:
+        note += f" · {s['rounds_unknown']} {'round' if s['rounds_unknown'] == 1 else 'rounds'} still being scored"
     foot = (
         f"<tfoot><tr><td colspan={cols - 1} class=muted>Sum of the rows{note}</td>"
         f"<td class=n><b>{pts(s['points_rows'])}</b></td></tr></tfoot>"
