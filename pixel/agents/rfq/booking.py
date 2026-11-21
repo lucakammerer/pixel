@@ -50,6 +50,7 @@ ASKS_TO_BOOK = re.compile(
     re.IGNORECASE,
 )
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
+OURS = re.compile(r"\byour reference:?\s*(\S+?)[.,;]?\s*$", re.IGNORECASE | re.MULTILINE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 
@@ -192,7 +193,13 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told."""
     match = CONFIRMED.search(message.subject) or CONFIRMED.search(message.body)
     reference = match.group(1).strip(".,:;") if match else None
-    booking = (reference and bookings.by_reference(ctx, reference)) or bookings.for_session(ctx, message.session_id)
+    # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
+    ours = OURS.search(message.body)
+    booking = (
+        (reference and bookings.by_reference(ctx, reference))
+        or (ours and bookings.by_team_reference(ctx, ours.group(1)))
+        or bookings.for_session(ctx, message.session_id)
+    )
     if booking is None:
         events.emit(
             ctx, "error", "crm", session_id=message.session_id, message_id=message.id,
