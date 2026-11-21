@@ -260,8 +260,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
   price.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
-  packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
-  we had to ask the customer for every fact.
+  packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
+  "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
+  customer for every fact.
 - A file no code reads (a video, an image outside a tariff mail, an unknown type, a pdf without text) is a deliberate
   `attachment.unreadable` with its name and type (`tariffs/agent.py` `attachment_lines`, not downloaded when its type
   has no reader), never an `error`, and the mail goes on as if it held nothing: a carrier who answered only in one
