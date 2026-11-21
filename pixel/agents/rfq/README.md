@@ -53,7 +53,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
-- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as a clerk writes to
+- `compose.py` `render`: a reply (`Re:` the customer's subject) in English, German or French, written as a clerk writes to
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
   by the name they signed with (the model's slot, else `signed_name` by rule). "Hope your week's going well" is
@@ -75,12 +75,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
   `closing`, on `PIXEL_MODEL_PROSE` when set, plus `hook`: the phrase of the customer's mail the opening answers (a
-  friendly remark, an attachment, their buyer, the reason for the request), or null, and then no opening. It also
+  friendly remark, their buyer, the reason for the request; never a file they sent, see `ECHO`), or null, and then no opening. It also
   sees the openings this customer already got (`_history`, `notes`). `_opening_ok` keeps the opening only when the
   hook stands in the mail and is not the small talk `WELL` answers, it has at most `WORDS_MAX` words, no capitalised
   word of the mail (a name or place), and its first two words differ from every earlier opening to this customer;
   `ECHO` drops fillers and echoes ("thank you for your request", "inquiry", "regarding", "I've noted", "here is",
-  "cheapest", "pickup", announcing the offer) and a second sentence. A dropped opening is stored in `quote.prose`
+  "cheapest", "pickup", announcing the offer, a word about their attachment or voice message: "The voice message
+  was clear" went out unheard in round 65) and a second sentence. A dropped opening is stored in `quote.prose`
   as `rejected`; `tests/fixtures/openings.json` holds every live request with the opening we sent. The
   extraction's slots (model path) carry no hook, so those quotes open with the price. The closing slot is no
   longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a
@@ -103,7 +104,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   for (round 15), the lots added up again (round 9), a priced weight no plain reading of the mail's own mass
   figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier shipment left out, per-piece figures times their
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
-  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers.
+  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
+  a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67).
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.
@@ -114,6 +116,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A carrier's answer can carry a number the rules take for its price in a layout they have not seen: round 67
+  quoted a trucker's "45.00 EUR for each hour" of waiting instead of its 181.96 total and was rejected as too low.
+  `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
+  selection and records it (`option.failed`, `error: implausible`); `check.py` `_implausible` blocks a quote that
+  still holds one. Evidence and limits: `docs/calc.md`, when a bid is not trusted.
 - A customer can rule out an airline ("Please do not offer … for this shipment or for any of our future
   inquiries"), and it can be the cheapest bid. Round 42 quoted it and was rejected as `excluded_airline`; the
   exclusion is read by rule and holds for that customer's later requests too (`extract.py` `_ruled_out`).
@@ -141,7 +148,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
 - A door-to-port request names the destination and the pickup address, not the origin airport. The rules read it
-  when it names one destination and a pickup postcode; the origin is the zone's airport.
+  when it names one destination and a pickup postcode; the origin is the zone's airport. "Select the departure airport for
+  the fastest option to JFK" names no origin: `_destination_only` ignores an origin label that points at the destination
+  (round 69, where it dropped the customer's answer and no quote went out).
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
@@ -177,7 +186,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "Bruttogewicht gesamt (kg)", "Volume: 7.25 cbm"), the totals of its packing table (`_table_totals`: sum of
   weights, sum of L × W × H × pieces), or both. A weight column marked per piece ("per pc", "each", "/pc", "unit",
   "je Stück") is multiplied by the row's pieces; a weight column in lb is converted; with no unit or a second
-  weight column the table gives no weight. A document whose totals and table disagree settles nothing: the mail
+  weight column the table gives no weight. A net or tare weight ("Net weight", "Nettogewicht", "Tare weight"), as a
+  line or a column, is never the gross weight and is left out. A document whose totals and table disagree settles nothing: the mail
   stands. Several documents count only when they agree. A table header ending in "Gross weight (kg)" ran into the
   first row ('5' kg, volume 0): a labelled figure never comes from the next line, and the totals are read off the
   text around the table. A document that names only another destination but carries the mail's own weight (and
@@ -215,6 +225,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
+- A request can come in French (round 70: « l'option la plus rapide », signed "Cheers"). `extract.py` `_language`
+  counts each language's common words; anything we have no `TEXT` for is answered in English, which the scorer
+  rejects as `wrong_language`.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says
   "non-dangerous". `extract.py` `dangerous_goods` reads the mail and every attachment; a declaration adds
   `dangerous_goods_documents` to `Rfq.missing` and emits `rfq.dangerous_goods` with the declared text. "Non-dangerous
@@ -238,12 +251,21 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "transit via" a hub), else the first one no "valid", "gültig", "good" or "Laufzeit des Angebots" stands before.
   `tests/fixtures/mails/bid_probes.jsonl` holds such answers.
 - A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
-  attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message).
-  `pricing/bids.py` `record` reads the body together with every attachment code can read (`_with_attachments`,
-  in a thread: a transcript takes seconds); an unreadable file is an `error` event, the others still count.
+  attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message). When the body
+  alone holds no price, `pricing/bids.py` `record` reads it together with every attachment code can read
+  (`_with_attachments`, in a thread: a transcript takes seconds); the others still count. A priced mail is never
+  read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
+  price.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
   we had to ask the customer for every fact.
+- A file no code reads (a video, an image outside a tariff mail, an unknown type, a pdf without text) is a deliberate
+  `attachment.unreadable` with its name and type (`tariffs/agent.py` `attachment_lines`, not downloaded when its type
+  has no reader), never an `error`, and the mail goes on as if it held nothing: a carrier who answered only in one
+  is answered and unpriced (`bid.received` with `unread`, no model call when no price stands in the text), a request
+  whose facts sit in one has them missing and asks the one question. A file of a readable type that breaks its
+  reader (a corrupt pdf, an mp3 the decoder refuses) is still an `error`. The gateway takes no audio (text and
+  `image_url` only, no audio model listed), so a voice message is read by the local transcript or not at all.
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

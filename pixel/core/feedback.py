@@ -196,11 +196,12 @@ async def once(ctx: Context) -> int:
 
 def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
     """What went wrong in the last minutes, newest first: missed, rejected and point-losing requests, tracking
-    questions we matched to no shipment, customer replies left to a person, errors."""
+    questions we matched to no shipment, customer replies left to a person, errors, bids read implausibly low."""
     since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
     rows = conn.execute(
         "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
-        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked') ORDER BY id DESC",
+        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'option.failed')"
+        " ORDER BY id DESC",
         (since,)
     ).fetchall()  # fmt: skip
     issues = []
@@ -220,6 +221,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "reply_unhandled"
         elif row["kind"] == "quote.checked" and p.get("blocking"):
             issue = "quote_doubtful"
+        elif row["kind"] == "option.failed" and p.get("error") == "implausible":
+            issue = "bid_distrusted"
         if issue:
             issues.append({"issue": issue, "event": row["id"], "at": row["ts"][:19], "session": row["session_id"],
                            "detail": p})  # fmt: skip

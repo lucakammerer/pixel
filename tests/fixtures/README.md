@@ -16,6 +16,10 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   keyword rules.
 - `rfqs/partial_cases.jsonl`: incomplete requests that still have a price basis, and ambiguous or contradictory
   ones, with the facts that may be inferred and those that must stay unknown.
+- `voice/`: two captured mails whose content is only a voice message (mp3 embedded, 200 KB and 218 KB): `rfq-voice-message.json`
+  (round 65, every fact of the request spoken) and `bid-pickup-voice-message.json` (round 67, a trucker's
+  pickup offer spoken). Outside `mails/`, so `tools.kpi` and the rules' corpus do not run the local speech model
+  on every gate; `uv run python -m tools.replay tests/fixtures/voice/<file>` replays one with its transcript.
 - `rfqs/live.jsonl`: one row per captured customer request (`mails/rfq-*.json`) with the fields a person read
   from the mail itself: lane, gross weight, volume, pieces, wish, pickup and its postcode, currency, language. A
   field left out is not judged (the origin of a door-to-port request comes from the pickup zone, not the mail);
@@ -50,6 +54,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   disagreeing) that no captured mail, kit sheet, pickup offer or generated case covers yet, keyed
   `"<kind> <channel>"`, each note ending `Owner: <role>.`. A cell with neither fails the benchmark and the tests; a
   listed cell that a case covers now is printed so its note goes.
+- `bid-plausibility.json`: every bid with peers of its kind from the scored rounds of 21.11.2026, read right, and
+  round 67's misread trucker bid with the quote a right reading gives (`selection.implausible`).
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 

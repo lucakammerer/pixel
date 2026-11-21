@@ -741,7 +741,7 @@ def channel_coverage() -> dict[tuple[str, str], int]:
         if channel:
             found[kind, channel] = found.get((kind, channel), 0) + 1
 
-    for path in sorted(MAILS.glob("*.json")):
+    for path in sorted([*MAILS.glob("*.json"), *(FIXTURES / "voice").glob("*.json")]):
         kind = next((k for prefix, k in CAPTURED.items() if path.name.startswith(prefix)), None)
         attachments = json.loads(path.read_text()).get("attachments") or []
         for a in attachments if kind else []:

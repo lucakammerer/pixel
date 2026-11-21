@@ -15,6 +15,7 @@ from pixel.core.context import Context
 
 # USD per 1M tokens (input, output) per model id, from OpenAI's price list (standard tier, read on 2026-11-21).
 # The gateway reports tokens but no cost. A model missing here is logged with `cost_unknown`.
+# It takes text and image_url content only and lists no audio model (21.11.2026): audio is transcribed locally.
 PRICES: dict[str, tuple[str, str]] = {
     "gpt-4o-mini": ("0.15", "0.60"),
     "gpt-4.1-mini": ("0.40", "1.60"),

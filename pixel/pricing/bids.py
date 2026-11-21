@@ -391,20 +391,18 @@ def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool
     return None, all(tuple(lane) == current for lane in lanes)
 
 
-async def _with_attachments(ctx: Context, message: Message) -> str:
+async def _with_attachments(ctx: Context, message: Message) -> tuple[str, list[str]]:
     """The carrier's own words and the text of every attachment code can read: truckers send their offer as a pdf
-    or docx and write only "see the attachment" in the mail."""
-    from pixel.agents.tariffs.agent import _lines
+    or docx and write only "see the attachment" in the mail. Also the files code cannot read (a video, a scan)."""
+    from pixel.agents.tariffs.agent import attachment_lines
 
-    parts = [_own_text(message.body)]
+    parts, unread = [_own_text(message.body)], []
     for attachment in message.attachments:
-        try:
-            content = await ctx.mailbox.attachment(message.id, attachment.id)
-            parts += await asyncio.to_thread(_lines, attachment.filename, content)  # a voice message takes seconds
-        except Exception as e:  # noqa: BLE001  an unreadable file (a voice message) must not lose the body
-            events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "bid_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
-    return "\n".join(parts)
+        if (lines := await attachment_lines(ctx, message, attachment, "pricing")) is None:
+            unread.append(attachment.filename)
+        else:
+            parts += lines
+    return "\n".join(parts), unread
 
 
 async def record(ctx: Context, message: Message) -> None:
@@ -423,12 +421,29 @@ async def record(ctx: Context, message: Message) -> None:
                     payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
                              "ignored": "different or ambiguous lane"})  # fmt: skip
         return
-    if message.attachments:
-        message = message.model_copy(update={"body": await _with_attachments(ctx, message)})
-    listed = parse_desk(message, rfq) if kind == "ratedesk" else []
-    option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
-    # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
-    if not listed and option is None and kind != "ratedesk" and not DECLINE.search(_own_text(message.body)):
+
+    def by_rules(message: Message) -> tuple[list[RateOption], RateOption | None]:
+        listed = parse_desk(message, rfq) if kind == "ratedesk" else []
+        return listed, None if listed else parse(message, rfq, needs_transit=not pickup)
+
+    # An attachment counts only when the mail alone holds no price: an airline's terms or a forwarded invoice beside
+    # a priced mail must not hide that price.
+    listed, option = by_rules(message)
+    unread: list[str] = []
+    if message.attachments and not listed and option is None:
+        body, unread = await _with_attachments(ctx, message)
+        message = message.model_copy(update={"body": body})
+        listed, option = by_rules(message)
+    read_by = "rules"
+    # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call. An offer
+    # only in a file code cannot read leaves no price in the text for a model to copy either.
+    if (
+        not listed
+        and option is None
+        and kind != "ratedesk"
+        and not DECLINE.search(_own_text(message.body))
+        and not (unread and not PRICED.search(message.body))
+    ):
         read_by = "model"
         try:
             option = await _read_with_model(ctx, message, rfq, needs_transit=not pickup)
@@ -456,7 +471,8 @@ async def record(ctx: Context, message: Message) -> None:
             "request_id": enquiry,
             "origin": rfq.origin,
             "destination": rfq.destination,
-        },
+        }
+        | ({"unread": unread} if unread else {}),
     )
     for option in listed:
         events.emit(ctx, "option.found", "pricing", session_id=message.session_id, message_id=message.id,

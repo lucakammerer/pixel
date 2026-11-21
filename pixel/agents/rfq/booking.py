@@ -334,11 +334,26 @@ CUSTOMER = {
                      "{destination} ({weight} kg) bestätigt.\n\nIhre Referenz bei uns bleibt {reference}. Wenn "
                      "Sie wissen möchten, wo Ihre Sendung gerade ist, fragen Sie einfach.",
     },
+    "fr": {
+        "booked": "Merci pour votre accord. Votre envoi de {origin} à {destination} ({weight} kg) est maintenant "
+                  "réservé avec {airline} à {price} {currency} {scope}.\n\nNotre référence pour vous est "
+                  "{reference}, celle de la compagnie {airline_reference}. Je reviens vers vous dès que {airline} "
+                  "confirme.",
+        "confirmed": "Bonne nouvelle : {airline} a confirmé votre réservation {airline_reference} de {origin} à "
+                     "{destination} ({weight} kg).\n\nVotre référence chez nous reste {reference}. Si vous souhaitez "
+                     "savoir où se trouve votre envoi, il suffit de demander.",
+    },
 }  # fmt: skip
 # The quote's voice carries on into its booking mail: a thank-you a person adds, once per thread.
 THANKS = {
     "en": " Thanks again, great to have you on board! 😊",
     "de": " Nochmals danke, schön, dass Sie mit uns fliegen! 😊",
+    "fr": " Encore merci, ravis de vous compter parmi nos clients ! 😊",
+}
+AIR_ONLY = {
+    "en": "for airport-to-airport transport, excluding pickup",
+    "de": "für den Flughafen-zu-Flughafen-Transport ohne Abholung",
+    "fr": "pour le transport d'aéroport à aéroport, sans enlèvement",
 }
 
 
@@ -360,11 +375,7 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
     bye = compose.sign_off(request, lang, name)[1]
     scope = "all-in"
     if quote.rfq.door_pickup and not quote.option.trucker:
-        scope = (
-            "für den Flughafen-zu-Flughafen-Transport ohne Abholung"
-            if lang == "de"
-            else "for airport-to-airport transport, excluding pickup"
-        )
+        scope = AIR_ONLY[lang]
     text = t[what].format(scope=scope, origin=quote.option.origin, destination=quote.option.destination,
                           weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
     if what == "booked" and compose.register(request) != "formal":  # once per thread; a formal mail ends calm

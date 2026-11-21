@@ -21,6 +21,7 @@ KINDS = (
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",
     "tracking.answered",
     "tariff.ingested", "tariff.failed",
+    "attachment.unreadable",  # a file code cannot read (audio, video, an image, a scan): treated as holding nothing
     "llm.call",
     "score",  # one row of /v1/board/me
     "score.total",  # team total from /v1/board/me
