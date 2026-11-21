@@ -62,11 +62,9 @@ VARIANTS = [
     ("surcharge-missing", "one lane has no surcharge line", {"surcharges": "missing_one"}, None, None),
 ]
 ONLY_REFUSAL_IS_SAFE = {"surcharge-missing"}  # a lane without surcharges cannot be priced right
-GAPS = {
-    "usd": "pricing/calc.py price_tariff needs an exchange rate for a non-EUR sheet and sheets carry none, so "
-    "engine.sheet_options drops the whole sheet (option.failed). A carrier switching currency disappears from sheet "
-    "pricing. Owner: accuracy.",
-}
+GAPS: dict[str, str] = {}
+# A sheet in another currency is priced with the rate the portal last quoted for it (`engine._fx_eur`).
+FX_EUR = {"USD": "0.92"}
 
 
 def price(lane: str, kg: str, rates: dict[int, str], minimum: str) -> tuple[D, D]:
@@ -163,6 +161,8 @@ def main() -> None:
             },
             "spots": spots,
         }
+        if currency := options.get("currency"):
+            row["fx_eur"] = FX_EUR[currency]
         rows.append(row)
     (OUT / "variants.jsonl").write_text("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in rows))
 

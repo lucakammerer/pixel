@@ -16,7 +16,7 @@ from pixel.api.client import ApiError
 from pixel.contracts import LaneTariff, Message
 from pixel.core import events
 from pixel.core.context import Context
-from pixel.pricing import store
+from pixel.pricing import bids, store
 
 NUM = r"\d+(?:[.,]\d+)?"
 CODE = re.compile(r"\b[A-Z]{3}\b")
@@ -389,7 +389,22 @@ def _pdf_pages(content: bytes) -> tuple[bytes, ...]:
         return tuple(pages)
 
 
-async def _ingest(ctx: Context, source: str, files: list[tuple[str, bytes]], session_id: int | None = None) -> None:
+def _stated_fx(files: list[tuple[str, bytes]], currency: str, mail: str) -> Decimal | None:
+    """EUR per unit of a non-EUR sheet's currency as the sheet or its mail states it ("1 USD = 0.92 EUR")."""
+    if currency == "EUR":
+        return None
+    for name, content in files:
+        try:
+            if fx := bids._fx("\n".join(_lines(name, content)), currency):
+                return fx
+        except ValueError:  # a scan or image: no text to read
+            continue
+    return bids._fx(mail, currency)
+
+
+async def _ingest(
+    ctx: Context, source: str, files: list[tuple[str, bytes]], session_id: int | None = None, mail: str = ""
+) -> None:
     filename = files[0][0]
     try:
         if Path(filename).suffix.lower() in IMAGES:
@@ -416,13 +431,10 @@ async def _ingest(ctx: Context, source: str, files: list[tuple[str, bytes]], ses
         )
         return
     store.upsert(ctx, tariffs)
-    events.emit(
-        ctx,
-        "tariff.ingested",
-        "tariffs",
-        session_id=session_id,
-        payload={"source": source, "carrier": tariffs[0].carrier, "version": tariffs[0].version, "lanes": len(tariffs)},
-    )
+    payload = {"source": source, "carrier": tariffs[0].carrier, "version": tariffs[0].version, "lanes": len(tariffs)}
+    if fx := _stated_fx(files, tariffs[0].currency, mail):
+        payload["fx_eur"] = str(fx)  # read by `pricing/engine.py` `_fx_eur`
+    events.emit(ctx, "tariff.ingested", "tariffs", session_id=session_id, payload=payload)
 
 
 def _documents(files: list[tuple[str, bytes]]) -> dict[str, list[tuple[str, bytes]]]:
@@ -453,7 +465,7 @@ async def handle(ctx: Context, message: Message) -> None:
     for key, document in _documents(files).items():
         if key.lower().endswith(".csv") and _reference_csv(ctx, document[0][1]):
             continue
-        await _ingest(ctx, f"mail:{message.id}:{key}", document, message.session_id)
+        await _ingest(ctx, f"mail:{message.id}:{key}", document, message.session_id, message.body)
 
 
 async def ingest_folder(ctx: Context, folder: Path) -> None:

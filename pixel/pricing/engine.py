@@ -1,7 +1,8 @@
 import asyncio
+from decimal import Decimal
 
 from pixel.api.mailbox import RATEDESK
-from pixel.contracts import RateOption, Rfq, Source
+from pixel.contracts import LaneTariff, RateOption, Rfq, Source
 from pixel.core import events, feedback, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
@@ -15,11 +16,32 @@ def _found(ctx: Context, rfq: Rfq, option: RateOption) -> None:
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
 
 
+def _fx_eur(ctx: Context, tariff: LaneTariff) -> Decimal | None:
+    """EUR per unit of a sheet's currency: as the sheet or its tariff mail states it (`tariff.ingested`), else the
+    newest the portal quoted for that currency. Never a constant: without either the sheet is not priced."""
+    stated = (
+        ctx.db.execute(
+            "SELECT json_extract(payload,'$.fx_eur') FROM events WHERE kind='tariff.ingested'"
+            " AND json_extract(payload,'$.source')=? AND json_extract(payload,'$.fx_eur') IS NOT NULL"
+            " ORDER BY id DESC LIMIT 1",
+            (tariff.source,),
+        ).fetchone()
+        or ctx.db.execute(
+            "SELECT json_extract(payload,'$.option.fx_eur') FROM events WHERE kind='option.found'"
+            " AND json_extract(payload,'$.option.source')=? AND json_extract(payload,'$.option.currency')=?"
+            " AND json_extract(payload,'$.option.fx_eur') IS NOT NULL ORDER BY id DESC LIMIT 1",
+            (Source.PORTAL.value, tariff.currency),
+        ).fetchone()
+    )
+    return Decimal(str(stated[0])) if stated else None
+
+
 def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
     found = []
     for tariff in store.lookup(ctx, rfq.origin, rfq.destination, rfq.received_at.date()):
         try:
-            option = calc.price_tariff(tariff, rfq)
+            fx = None if tariff.currency == "EUR" else _fx_eur(ctx, tariff)
+            option = calc.price_tariff(tariff, rfq, fx)
         except ValueError as exc:
             events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                         payload={"source": "sheet", "carrier": tariff.carrier, "error": str(exc)})  # fmt: skip

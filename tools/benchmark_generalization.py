@@ -439,7 +439,7 @@ class Variant:
     known_gap: str | None = None
 
 
-def _spot_price(tariff: LaneTariff, kg: str) -> tuple[D, D]:
+def _spot_price(tariff: LaneTariff, kg: str, fx_eur: D | None = None) -> tuple[D, D]:
     rfq = Rfq(
         session_id=1,
         message_id=1,
@@ -450,7 +450,7 @@ def _spot_price(tariff: LaneTariff, kg: str) -> tuple[D, D]:
         received_at=NOW,
         deadline_at=NOW,
     )
-    option = price_tariff(tariff, rfq)
+    option = price_tariff(tariff, rfq, fx_eur)
     return option.total, option.billed_kg
 
 
@@ -492,7 +492,9 @@ def audit_variants() -> list[Variant]:
                         wrong.append(f"{spot['lane']} missing")
                         continue
                     try:
-                        total, billed = _spot_price(lane, spot["weight_kg"])
+                        total, billed = _spot_price(
+                            lane, spot["weight_kg"], D(row["fx_eur"]) if "fx_eur" in row else None
+                        )
                     except ValueError as exc:
                         unpriced = f"price_tariff: {exc}"
                         continue
