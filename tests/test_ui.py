@@ -8,7 +8,7 @@ from test_crm import T0, quote
 from pixel.contracts import QuoteStatus
 from pixel.core import events
 from pixel.crm import quotes, shipments
-from pixel.ui import dashboard, routes
+from pixel.ui import crm, dashboard, routes
 
 pytest_plugins = ["test_crm"]  # the `pipe` fixture
 
@@ -18,6 +18,7 @@ def client(pipe):
     app = FastAPI()
     app.include_router(routes.router)
     app.include_router(dashboard.router)
+    app.include_router(crm.router)
     app.state.ctx = pipe.ctx
     db = pipe.ctx.db
     for sid, customer in ((1, "buyer@acme.example"), (2, "ops@globex.example")):
@@ -92,4 +93,24 @@ def test_takeover_edit_send_release(client, pipe):
 
 def test_dashboard_renders(client):
     page = client.get("/dashboard").text
-    assert "Spend per accepted quote" in page and "BK-AB12CD34" in page
+    assert "Spend per accepted quote" in page and "Median response" in page
+
+
+def test_crm_lists_customers_quotes_and_shipments(client):
+    assert client.get("/crm", follow_redirects=False).headers["location"] == "/crm/customers"
+    customers = client.get("/crm/customers").text
+    assert "buyer@acme.example" in customers and "ops@globex.example" in customers
+    assert 'href="/crm/customers/buyer@acme.example"' in customers
+    assert "ops@globex.example" not in client.get("/crm/customers", params={"q": "acme"}).text
+    quotes_page = client.get("/crm/quotes").text
+    assert "Q-1" in quotes_page and "EUR 370.74" in quotes_page and "Kestrel Airways" in quotes_page
+    shipments_page = client.get("/crm/shipments").text
+    assert "BK-AB12CD34" in shipments_page and 'href="/sessions/1"' in shipments_page
+    assert "BK-AB12CD34" not in client.get("/crm/shipments", params={"q": "globex"}).text
+
+
+def test_customer_profile_shows_requests_and_shipments(client):
+    page = client.get("/crm/customers/Buyer@Acme.example").text
+    assert "Air freight request 1" in page and "BK-AB12CD34" in page and "FRA → JFK" in page
+    assert "Air freight request 2" not in page
+    assert client.get("/crm/customers/nobody@example.com").status_code == 404

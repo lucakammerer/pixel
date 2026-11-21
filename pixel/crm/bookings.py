@@ -31,3 +31,8 @@ def _one(ctx: Context, where: str, value) -> Booking | None:
         f"SELECT data FROM bookings WHERE {where} ORDER BY created_at DESC, rowid DESC LIMIT 1", (value,)
     ).fetchone()
     return Booking.model_validate_json(row["data"]) if row else None
+
+
+def all_by_id(ctx: Context) -> dict[str, Booking]:
+    """Every booking by its id, for joining onto shipments."""
+    return {r["id"]: Booking.model_validate_json(r["data"]) for r in ctx.db.execute("SELECT id, data FROM bookings")}

@@ -118,3 +118,9 @@ def _parse(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def recent(ctx: Context, limit: int = 300) -> list[Quote]:
+    """Every quote, newest first."""
+    rows = ctx.db.execute("SELECT data FROM quotes ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    return [Quote.model_validate_json(r["data"]) for r in rows]
