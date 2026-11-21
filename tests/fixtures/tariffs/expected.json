@@ -1,0 +1,43 @@
+{
+  "_": "Hand-checked against the start kit files: lane count per file and selected lanes. breaks: [from kg, rate].",
+  "files": {
+    "cobalt-skylift-tariff-2026-11.pdf": {"carrier": "Cobalt Skylift", "lanes": 21},
+    "elbflug-air-freight-tariff-2026-11.xlsx": {"carrier": "Elbflug Air Freight", "lanes": 19},
+    "helix-air-freight-tariff-2026-11.pdf": {"carrier": "Helix Air Freight", "lanes": 12},
+    "kestrel-airways-tariff-2026-11.xlsx": {"carrier": "Kestrel Airways", "lanes": 18},
+    "orion-cargo-air-tariff-2026-11.pdf": {"carrier": "Orion Cargo Air", "lanes": 14},
+    "quetzal-air-freight-tariff-2026-11.docx": {"carrier": "Quetzal Air Freight", "lanes": 11},
+    "vega-skyfreight-tariff-2026-11.xlsx": {"carrier": "Vega Skyfreight", "lanes": 13},
+    "wayzata-air-cargo-tariff-2026-11.xlsx": {"carrier": "Wayzata Air Cargo", "lanes": 26},
+    "yellowtail-air-freight-tariff-2026-11.txt": {"carrier": "Yellowtail Air Freight", "lanes": 15}
+  },
+  "lanes": [
+    {"file": "cobalt-skylift-tariff-2026-11.pdf", "lane": "DUS-SYD", "transit": 4, "minimum": "68.00",
+     "breaks": [[0, "6.53"], [45, "4.90"], [100, "3.63"], [300, "2.61"], [500, "2.24"], [1000, "2.02"], [2000, "1.47"]],
+     "fuel": "0.85", "security": "0.11"},
+    {"file": "elbflug-air-freight-tariff-2026-11.xlsx", "lane": "STR-ORD", "transit": 2, "minimum": "140.98",
+     "breaks": [[0, "4.08"], [45, "3.30"], [100, "3.04"], [300, "2.52"], [500, "2.29"], [1000, "1.66"]],
+     "fuel": "0.87", "security": "0.25"},
+    {"file": "helix-air-freight-tariff-2026-11.pdf", "lane": "FRA-LAX", "transit": 1, "minimum": "112.00",
+     "breaks": [[0, "3.33"], [45, "2.73"], [100, "2.24"], [250, "2.24"], [500, "1.62"], [1000, "1.25"], [2000, "1.25"]],
+     "fuel": "1.40", "security": "0.21"},
+    {"file": "kestrel-airways-tariff-2026-11.xlsx", "lane": "FRA-BOM", "transit": 2, "minimum": "134.62",
+     "breaks": [[0, "4.25"], [45, "3.23"], [100, "2.34"], [250, "2.34"], [500, "1.93"], [1000, "1.70"], [2000, "1.30"]],
+     "fuel": "0.81", "security": "0.13"},
+    {"file": "orion-cargo-air-tariff-2026-11.pdf", "lane": "FRA-NBO", "transit": 4, "minimum": "96.46",
+     "breaks": [[0, "4.56"], [45, "4.01"], [100, "3.05"], [300, "2.37"], [500, "2.10"], [1000, "1.64"]],
+     "fuel": "1.00", "security": "0.17"},
+    {"file": "quetzal-air-freight-tariff-2026-11.docx", "lane": "STR-SCL", "transit": 2, "minimum": "111.30",
+     "breaks": [[0, "4.82"], [45, "4.14"], [100, "3.64"], [300, "3.16"], [500, "2.75"], [1000, "2.39"], [2000, "2.39"]],
+     "fuel": "1.23", "security": "0.24"},
+    {"file": "vega-skyfreight-tariff-2026-11.xlsx", "lane": "DUS-PEK", "transit": 2, "minimum": "118.72",
+     "breaks": [[0, "3.88"], [45, "3.42"], [100, "2.46"], [300, "1.8"], [500, "1.53"], [1000, "1.22"], [2000, "1.22"]],
+     "fuel": "1.34", "security": "0.24"},
+    {"file": "wayzata-air-cargo-tariff-2026-11.xlsx", "lane": "FRA-DOH", "transit": 1, "minimum": "136",
+     "breaks": [[0, "3.44"], [45, "2.64"], [100, "2.2"], [300, "1.67"], [500, "1.48"], [1000, "1.15"]],
+     "fuel": "1.21", "security": "0.19"},
+    {"file": "yellowtail-air-freight-tariff-2026-11.txt", "lane": "HAM-BOG", "transit": 2, "minimum": "127.20",
+     "breaks": [[0, "4.62"], [45, "4.06"], [100, "3.53"], [250, "3.53"], [500, "2.44"], [1000, "1.76"], [2000, "1.29"]],
+     "fuel": "1.43", "security": "0.23"}
+  ]
+}

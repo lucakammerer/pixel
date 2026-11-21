@@ -1,0 +1,28 @@
+[
+  {"carrier": "Danube Wings Cargo", "currency": "EUR", "valid_from": "2026-11-01", "valid_to": "2026-11-30",
+   "breaks_kg": ["0", "45", "100", "300", "500", "1000"],
+   "lanes": [
+     {"origin": "CGN", "destination": "SYD", "transit_days": "4 days", "minimum": "134,00", "rates": ["6,28", "5,34", "4,28", "3,89", "3,27", "2,84"]},
+     {"origin": "DUS", "destination": "MEX", "transit_days": "5 days", "minimum": "101,00", "rates": ["3,02", "2,36", "1,89", "1,57", "1,32", "1,00"]},
+     {"origin": "DUS", "destination": "SYD", "transit_days": "5 days", "minimum": "110,00", "rates": ["5,78", "4,45", "3,92", "2,90", "2,20", "1,89"]},
+     {"origin": "DUS", "destination": "YYZ", "transit_days": "4 days", "minimum": "62,00", "rates": ["3,08", "2,62", "2,07", "1,61", "1,22", "0,96"]},
+     {"origin": "FRA", "destination": "DXB", "transit_days": "2 days", "minimum": "138,86", "rates": ["2,90", "2,23", "2,05", "1,66", "1,45", "1,33"]},
+     {"origin": "FRA", "destination": "EZE", "transit_days": "2 days", "minimum": "126,00", "rates": ["4,57", "3,34", "2,74", "2,52", "1,92", "1,48"]},
+     {"origin": "MUC", "destination": "JNB", "transit_days": "7 days", "minimum": "105,00", "rates": ["3,74", "2,81", "2,19", "1,62", "1,39", "1,22"]},
+     {"origin": "MUC", "destination": "TPE", "transit_days": "5 days", "minimum": "69,00", "rates": ["4,10", "3,73", "3,21", "2,57", "2,36", "2,03"]},
+     {"origin": "STR", "destination": "SGN", "transit_days": "5 days", "minimum": "83,00", "rates": ["4,63", "4,21", "3,45", "2,93", "2,40", "2,18"]}
+   ],
+   "surcharges": []},
+  {"carrier": null, "currency": null, "valid_from": null, "valid_to": null, "breaks_kg": [], "lanes": [],
+   "surcharges": [
+     {"origin": "CGN", "destination": "SYD", "fuel": "1,13", "security": "0,23"},
+     {"origin": "DUS", "destination": "MEX", "fuel": "0,74", "security": "0,24"},
+     {"origin": "DUS", "destination": "SYD", "fuel": "0,69", "security": "0,16"},
+     {"origin": "DUS", "destination": "YYZ", "fuel": "0,88", "security": "0,21"},
+     {"origin": "FRA", "destination": "DXB", "fuel": "1,12", "security": "0,22"},
+     {"origin": "FRA", "destination": "EZE", "fuel": "1,06", "security": "0,21"},
+     {"origin": "MUC", "destination": "JNB", "fuel": "0,85", "security": "0,24"},
+     {"origin": "MUC", "destination": "TPE", "fuel": "1,15", "security": "0,21"},
+     {"origin": "STR", "destination": "SGN", "fuel": "1,09", "security": "0,11"}
+   ]}
+]

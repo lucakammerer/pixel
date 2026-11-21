@@ -27,7 +27,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | R11 | Chargeable weight = max(weight in kg, volume in cbm × 167); the bracket is picked by the chargeable weight | Kit, API (`Rate.chargeable_weight_kg`) | `pricing/calc.py` `chargeable_kg` | open |
 | R12 | Sheet price: rate per kg of the bracket × billed weight, at least the lane's minimum, which applies to the freight before surcharges; plus fuel and security per kg of the billed weight | Kit | `pricing/calc.py` `price_tariff` | open |
 | R13 | The best price is not always the obvious one: read the sheets closely (breaks differ per airline, a higher break can be cheaper, neighbouring breaks can carry the same rate) | Brief, Kit | `pricing/calc.py` `price_tariff`, `tests/test_calc.py` | open |
-| R14 | A tariff has a currency and a validity (from, to); airlines send new tariffs by mail every month | Kit, Brief | `agents/tariffs/agent.py`, `pricing/store.py` `lookup` | open |
+| R14 | A tariff has a currency and a validity (from, to); airlines send new tariffs by mail every month | Kit, Brief | `agents/tariffs/agent.py` `parse`, `check`, `handle`; `pricing/store.py` `lookup` | done |
 | R15 | Among carrier bids the right one is the most balanced: price and speed weigh 50/50 | Brief | `pricing/selection.py` `balanced` | open |
 | R16 | A door-to-port request adds a trucker pickup: the pickup zone belongs to one airport (`pickup_zones.csv`), truckers serve zones (`carrier-list.csv`) | Brief, Kit | `pricing/pickup.py` | open |
 | R17 | No margin is added: margins are out of scope, the score compares our total with the best price | Brief | `pricing/calc.py` | open |

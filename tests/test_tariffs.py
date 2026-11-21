@@ -1,0 +1,80 @@
+import json
+from datetime import date
+from decimal import Decimal as D
+from pathlib import Path
+
+import pytest
+
+from pixel import llm
+from pixel.agents.tariffs import agent
+from pixel.config import settings
+from pixel.contracts import LlmResult
+from pixel.core import events
+from pixel.core.context import Context
+from pixel.pricing import store
+
+FIXTURES = Path(__file__).parent / "fixtures" / "tariffs"
+EXPECTED = json.loads((FIXTURES / "expected.json").read_text())
+
+
+@pytest.fixture
+def ctx(conn, monkeypatch):
+    emitted = []
+    monkeypatch.setattr(events, "emit", lambda ctx, kind, actor, **kw: emitted.append((kind, kw.get("payload"))))
+    context = Context(settings=settings(), db=conn, mailbox=None, portal=None, gateway=None, board=None)
+    context.emitted = emitted
+    return context
+
+
+@pytest.mark.parametrize("filename", sorted(EXPECTED["files"]))
+def test_every_code_parsed_sheet(start_kit, filename):
+    tariffs = agent.parse(filename, (start_kit / filename).read_bytes())
+    want = EXPECTED["files"][filename]
+    assert (tariffs[0].carrier, len(tariffs)) == (want["carrier"], want["lanes"])
+    assert {(t.currency, t.valid_from, t.valid_to) for t in tariffs} == {("EUR", date(2026, 11, 1), date(2026, 11, 30))}
+    assert agent.check(tariffs) == []
+
+
+@pytest.mark.parametrize("want", EXPECTED["lanes"], ids=lambda w: f"{w['file']}:{w['lane']}")
+def test_hand_checked_lanes(start_kit, want):
+    tariffs = agent.parse(want["file"], (start_kit / want["file"]).read_bytes())
+    t = next(t for t in tariffs if f"{t.origin}-{t.destination}" == want["lane"])
+    assert (t.transit_days, t.minimum, t.fuel_per_kg, t.security_per_kg) == (
+        want["transit"], D(want["minimum"]), D(want["fuel"]), D(want["security"]),
+    )  # fmt: skip
+    assert t.breaks == tuple((D(k), D(r)) for k, r in want["breaks"])
+
+
+def test_check_flags_rates_rising_with_weight(start_kit):
+    t = agent.parse("x.txt", (start_kit / "yellowtail-air-freight-tariff-2026-11.txt").read_bytes())[0]
+    broken = t.model_copy(update={"breaks": ((D(0), D("2.00")), (D(45), D("3.00")))})
+    assert agent.check([broken])
+
+
+def test_unknown_layout_is_refused():
+    with pytest.raises(ValueError):
+        agent.parse("x.txt", b"Some Air | Air export tariff\nCurrency EUR\nFRA-JFK 3 100,00 1,00 2,00\n")
+
+
+async def test_folder_reads_the_scan_through_the_model_once(ctx, start_kit, monkeypatch):
+    pages = json.loads((FIXTURES / "danube-model-pages.json").read_text())
+    calls = []
+
+    async def fake_ask_json(ctx, **kw):
+        calls.append(kw["images"])
+        return LlmResult(data=pages[len(calls) - 1], model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask_json)
+    await agent.ingest_folder(ctx, start_kit)
+    assert len(calls) == 2
+    assert [kind for kind, _ in ctx.emitted].count("tariff.ingested") == 10
+    assert "tariff.failed" not in [kind for kind, _ in ctx.emitted]
+    lane = pages[0]["lanes"][0]
+    found = store.lookup(ctx, lane["origin"], lane["destination"], date(2026, 11, 21))
+    assert pages[0]["carrier"] in {t.carrier for t in found}
+    assert store.carriers(ctx, "airline", lane["destination"])
+    zone = ctx.db.execute("SELECT zone, airport FROM pickup_zones LIMIT 1").fetchone()
+    assert store.airport_of(ctx, zone["zone"]) == zone["airport"]
+
+    await agent.ingest_folder(ctx, start_kit)
+    assert len(calls) == 2

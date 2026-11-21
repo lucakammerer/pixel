@@ -18,9 +18,25 @@ the findings of `check`.
 
 ## Implementation
 
-`agent.py` `parse` (code parsers for xlsx, docx, txt, text PDF), `read_with_model` (images and layouts `parse`
-refuses, one gateway call per document), `check` (code checks on every result), `handle` (a tariff mail),
-`ingest_folder` (the start kit, including the carrier list and the pickup zones).
+- `parse`: every text format becomes lines (`_lines`: xlsx rows, docx paragraphs and tables in order, PDF text,
+  txt), and one reader (`_read`) interprets them: title (`<carrier> | ...`), `Currency`, `Valid from/to` (any of
+  the date formats in `DATE_FORMATS`), `Origin:` headings, a break header (`from 0 kg`, `-45`/`+45`, `0 kg+`; `-45`
+  is the 0 kg break; `Fuel`/`Security` in the header mean surcharge columns), table rows (lane, transit, minimum,
+  one rate per break), lane blocks (`Transit`, `Minimum`, `from N kg R`, `Fuel`, `Security` on their own lines,
+  across page breaks) and surcharge sentences (`<lane>: fuel X per kg, security Y per kg`). A lane is the first two
+  IATA codes before the first number, or one code under an `Origin:` heading. A row with the wrong count of numbers
+  refuses the whole file (ValueError) instead of guessing.
+- `read_with_model`: images (and pages a code parser refuses) through `llm.ask_json`, one call per page. The model
+  only transcribes cells as strings; code merges the pages (rates on one, surcharges on the other), parses the
+  numbers and builds the rows like `parse`.
+- `check`: on every result: lane codes, currency, dates, minimum > 0, transit 1 to 30 days, first break at 0 kg,
+  breaks ascending, rates positive and never rising with weight, surcharges below the first rate.
+- Version: `<valid from>#<sha256 of the file, 8 chars>`, so a re-sent identical file changes nothing and a new
+  version of the same month is a new row. `store.lookup` takes per carrier the newest version valid on the day.
+- `ingest_folder` and `handle`: CSVs with `name,kind,email,serves` go to the carrier list (any file name, so
+  `carriers.csv` works too), `zone,area,airport` to the pickup zones; `name-p1.jpg`, `name-p2.jpg` are one
+  document. A scan already in the store (`store.has_source`) is not read again. Results are `tariff.ingested` or
+  `tariff.failed` with the findings; a failed sheet is never stored.
 
 ## Pitfalls
 
@@ -30,7 +46,9 @@ refuses, one gateway call per document), `check` (code checks on every result), 
 - Surcharges come as columns, as a second table or as one sentence per lane below the rates.
 - Lanes are written as codes, as city names with codes, or grouped under an origin heading.
 - The scanned sheet is skewed and split over two pages: rates on one, surcharges on the other.
+- `check` cannot know whether a code is a real airport; it only checks the form.
 
 ## Open
 
-- Everything: this is the skeleton.
+- A text layout `parse` refuses is reported as failed; it is not yet sent to the model as text.
+- Scanned PDFs (no text layer) are refused; only image files go to the model.
