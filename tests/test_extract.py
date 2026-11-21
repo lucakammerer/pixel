@@ -547,3 +547,7 @@ async def test_a_customer_with_one_known_site_is_still_asked_and_a_town_answer_g
 def test_dimensions_in_inches_and_more_piece_words(body, cbm, pieces):
     rfq = extract.by_rules(mail(body), DEADLINE)
     assert (round(rfq.volume_cbm, 6), rfq.pieces) == (round(cbm, 6), pieces)
+
+
+def test_in_before_a_word_is_no_inch():
+    assert extract._volume("3 pallets 120x80x150 in total, 900 kg", 3) == Decimal("4.32")  # not 70.8 cbm in inches
