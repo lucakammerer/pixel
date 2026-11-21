@@ -189,3 +189,9 @@ def test_rules_count_per_piece_figures_and_read_wishes(body, expected):
 def test_a_volume_the_rules_cannot_settle_is_left_to_the_model():
     body = "AAA-BBB, total 500 kg: 2 pallets 120x80x150 cm and 3 boxes 60x40x40 cm."
     assert extract.by_rules(mail(body), DEADLINE) is None  # volume 0 would under-price the chargeable weight
+
+
+def test_a_lot_line_code_cannot_read_leaves_the_whole_list_to_the_model():
+    text = "Lot 1: 4 drums, together 730 kg, together 1.68 cbm\nLot 2: 4 cartons, each 48 kg, each 110 x 110 x 52 cm\n"
+    assert extract._lots(text + "Lot 3: one crate, 900 kg gross, 2 cbm") is None  # summing two lots: 922 kg, not 1822
+    assert extract._lots(text.replace("Lot 1:", "-").replace("Lot 2:", "-") + "- 1x crate, 900 kg, 2 cbm") is None
