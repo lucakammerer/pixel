@@ -859,3 +859,8 @@ async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
 )
 def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
     assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"})[0]) == excluded
+
+
+def test_the_origin_airport_named_after_to_is_no_destination():
+    body = "Pickup from our site in 60311 Frankfurt, our truck goes to departure airport FRA. Air freight to New York."
+    assert extract._destination_only(body + " 300 kg, 1 cbm.") is None  # FRA is the origin; the model reads the rest

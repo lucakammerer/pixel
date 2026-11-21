@@ -147,8 +147,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
 - A door-to-port request names the destination and the pickup address, not the origin airport. The rules read it
   when it names one destination and a pickup postcode; the origin is the zone's airport. "Select the departure airport for
-  the fastest option to JFK" names no origin: `_destination_only` ignores an origin label that points at the destination
-  (round 69, where it dropped the customer's answer and no quote went out).
+  the fastest option to JFK" names no origin: in `_destination_only` a code both labels reach belongs to the nearer
+  one (round 69, where it dropped the customer's answer and no quote went out), so "our truck goes to departure
+  airport FRA" stays an origin and never becomes the destination.
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
