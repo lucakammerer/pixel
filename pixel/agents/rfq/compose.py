@@ -5,7 +5,7 @@ dropped, never the quote (P1, R9)."""
 import json
 import re
 from dataclasses import asdict, dataclass
-from datetime import UTC
+from datetime import UTC, date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from pixel import llm
@@ -49,6 +49,27 @@ TEXT = {
         "bye": "Best regards,\n{signer}\n" + COMPANY,
         "day": "day",
         "days": "days",
+        "arrival": "With the cargo ready on {ready}, the earliest arrival at {destination} would be {arrive}.",
+        "arrival_pickup": "With pickup on {ready}, the earliest arrival at {destination} would be {arrive}.",
+        "one_awb": "All lots travel together as one consignment under a single air waybill, as you asked.",
+        "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
+        "as soon as I have it.",
+        "months": (
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ),
+        "weekdays": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
+        "date": "{weekday} {day} {month}",
     },
     "de": {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
@@ -80,6 +101,27 @@ TEXT = {
         "bye": "Viele Grüße\n{signer}\n" + COMPANY,
         "day": "Tag",
         "days": "Tage",
+        "arrival": "Ist die Ware am {ready} bereit, wäre sie frühestens am {arrive} in {destination}.",
+        "arrival_pickup": "Mit Abholung am {ready} wäre die Ware frühestens am {arrive} in {destination}.",
+        "one_awb": "Alle Positionen reisen wie gewünscht zusammen als eine Sendung unter einem Luftfrachtbrief.",
+        "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
+        "weiter, sobald ich ihn habe.",
+        "months": (
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember",
+        ),
+        "weekdays": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"),
+        "date": "{weekday}, den {day}. {month}",
     },
 }
 
@@ -120,6 +162,10 @@ INFORMAL_DE = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer|eure\w*)\b", re.IGNO
 NAME = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]{1,19}")
 LIMITS = {"intro": 260, "closing": 140}
 SUBJECT_MAX = 150
+DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
+READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
+ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
+CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
 MORE_EN = {"i", "it", "this", "that", "will", "be", "are", "in", "on", "have", "good", "great", "day", "thank",
            "happy", "hope", "glad", "here", "get", "keep", "so", "as", "all", "my", "me", "us", "an", "at"}  # fmt: skip
@@ -168,7 +214,45 @@ def _sentence(text: str) -> str:
     return text if text[-1] in ".!?…" else f"{text}."
 
 
-def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str) -> str:
+def ready_date(text: str) -> date | None:
+    """The date the cargo is ready: the first date after "ready", else the only date in the request."""
+    found = READY.search(text)
+    dates = DATE.findall(text)
+    groups = found.groups()[1:] if found else dates[0] if len(dates) == 1 else None
+    if not groups:
+        return None
+    y, m, d, dd, mm, yy = groups
+    try:
+        return date(int(y), int(m), int(d)) if y else date(int(yy), int(mm), int(dd))
+    except ValueError:
+        return None
+
+
+def _day(d: date, t: dict) -> str:
+    return t["date"].format(weekday=t["weekdays"][d.weekday()], day=d.day, month=t["months"][d.month - 1])
+
+
+def answers(rfq: Rfq, option: RateOption, request: str) -> str:
+    """What the request asked beyond the price, answered by code: the earliest arrival (ready date, a day for a
+    pickup to reach the airport, the transit), one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
+    try:
+        t = TEXT[language_of(rfq)]
+        said = []
+        ready = ready_date(request)
+        if ready:
+            arrive = ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
+            said.append(t["arrival_pickup" if option.trucker else "arrival"].format(
+                ready=_day(ready, t), arrive=_day(arrive, t), destination=option.destination))  # fmt: skip
+        if ONE_AWB.search(request):
+            said.append(t["one_awb"])
+        if CUTOFF.search(request):
+            said.append(t["cutoff"].format(origin=option.origin))
+        return " ".join(said)
+    except Exception:  # noqa: BLE001  an extra answer must never cost the quote
+        return ""
+
+
+def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "") -> str:
     lang = language_of(rfq)
     t = TEXT[lang]
     pick = rfq.session_id % 2
@@ -193,6 +277,7 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str) -> str:
         "",
         " ".join(offer),
         "",
+        *([said, ""] if said else []),
         " ".join(ending),
         "",
         t["bye"].format(signer=signer),
@@ -217,6 +302,7 @@ def render(
     prose: Prose | None = None,
     subject: str | None = None,
     signer: str = DEFAULT_SIGNER,
+    request: str = "",
 ) -> tuple[str, str]:
     """Subject and body of the quote: one option, one all-in total with its currency and transit time, in the
     customer's language. Numbers are formatted by code from `option`, never by a model. `subject` is the
@@ -226,14 +312,15 @@ def render(
     title = reply_subject(subject) or TEXT[lang]["subject"].format(
         origin=option.origin, destination=option.destination, weight=weight(rfq.weight_kg, lang)
     )
+    said = answers(rfq, option, request)
     if prose and prose != Prose():
         try:
-            body = _body(rfq, option, prose, signer)
+            body = _body(rfq, option, prose, signer, said)
             if check(body, rfq, option):
                 return title, body
         except Exception:  # noqa: BLE001, S110  a slot must never cost the quote; render it plain
             pass
-    return title, _body(rfq, option, Prose(), signer)
+    return title, _body(rfq, option, Prose(), signer, said)
 
 
 def _words_lang(text: str) -> tuple[int, int]:
@@ -345,8 +432,16 @@ def stored(ctx: Context, session_id: int) -> Prose | None:
 
 
 def customer_subject(ctx: Context, message_id: int) -> str | None:
+    return _customer(ctx, message_id, "subject")
+
+
+def customer_body(ctx: Context, message_id: int) -> str:
+    return _customer(ctx, message_id, "body") or ""
+
+
+def _customer(ctx: Context, message_id: int, field: str) -> str | None:
     try:
-        row = ctx.db.execute("SELECT subject FROM messages WHERE id = ?", (message_id,)).fetchone()
-    except Exception:  # noqa: BLE001  without it the quote keeps our own subject
+        row = ctx.db.execute(f"SELECT {field} FROM messages WHERE id = ?", (message_id,)).fetchone()
+    except Exception:  # noqa: BLE001  without it the quote keeps our own subject and fixed text
         return None
-    return row["subject"] if row else None
+    return row[field] if row else None
