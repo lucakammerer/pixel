@@ -34,3 +34,6 @@ Captured mails of a request, from the request to the confirmed booking:
 - `customer-thanks.json`: the customer's answer to our booking notice; nothing to do, no acceptance.
 - `booking-confirmed.json`: the airline's confirmation, a thread of its own about 40 seconds after the booking, with
   the booking reference, our reference, lane and price.
+
+`tracking-door-to-port.json` is the tracking desk's question about a door-to-port shipment: no reference, the
+shipment described by pickup postcode, destination, weight and company.
