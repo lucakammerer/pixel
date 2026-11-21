@@ -29,3 +29,10 @@ def test_preview_seeds_every_page(tmp_path):
 def test_preview_refuses_the_configured_database():
     with pytest.raises(SystemExit):
         preview.build(preview.Path(preview.settings().db_path), reseed=False, count=1, seed=1)
+
+
+def test_reseed_deletes_only_its_own_database(tmp_path):
+    live = tmp_path / "pixel.sqlite3"
+    live.write_text("live")
+    preview.build(tmp_path / "pixel", reseed=True, count=1, seed=1)  # a typo'd --db that prefixes the live file
+    assert live.read_text() == "live"
