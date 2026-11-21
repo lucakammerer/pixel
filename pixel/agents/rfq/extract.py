@@ -305,8 +305,15 @@ def _text(message: Message) -> str:
     return f"{message.subject}\n\n{message.body}"
 
 
-def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
-    """Regex and lookup tables. None unless origin, destination and weight are certain."""
+def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:
+    """The largest figure: the total beside per-piece and net figures."""
+    values = [v for p in patterns for m in p.findall(text) if (v := number(m, thousands)) is not None and v > 0]
+    return max(values, default=None)
+
+
+def by_rules(message: Message, deadline: Deadline, guess: bool = False) -> Rfq | None:
+    """Regex and lookup tables. None unless origin, destination and weight are certain. With `guess`, for a model
+    that cannot be reached: the largest gross weight and volume the mail names, rather than no quote at all."""
     text = _text(message)
     lane = _lane(text)
     door, postcode = _pickup(text)
@@ -316,7 +323,10 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
     pieces = lots[2] if lots else _pieces(text)
     weight = lots[0] if lots else _weight(text, pieces)
     volume = lots[1] if lots else _volume(text, pieces)
-    if volume is None and (DIMS.search(text) or any(p.search(text) for p in VOLUME)):
+    if guess:
+        weight = weight or _largest(WEIGHT, text, thousands=True)
+        volume = volume or _largest(VOLUME, text, thousands=False)
+    elif volume is None and (DIMS.search(text) or any(p.search(text) for p in VOLUME)):
         return None  # a volume is given but not certain: under-reading it under-prices the chargeable weight
     if lane is None or weight is None:
         return None
@@ -484,17 +494,27 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text))).origin:
         rfq = None
     if rfq is None:
-        result = await llm.ask_json(
-            ctx,
-            purpose="rfq.extract",
-            system=SYSTEM,
-            user=_text(message),
-            schema=SCHEMA,
-            session_id=message.session_id,
-            max_output_tokens=500,
-        )
-        rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text))
-        prose = {k: result.data.get(k) for k in PROSE}
+        try:
+            result = await llm.ask_json(
+                ctx,
+                purpose="rfq.extract",
+                system=SYSTEM,
+                user=_text(message),
+                schema=SCHEMA,
+                session_id=message.session_id,
+                max_output_tokens=500,
+            )
+        except Exception as e:
+            # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
+            guessed = by_rules(message, deadline, guess=True)
+            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text))).origin:
+                raise
+            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
+                        payload={"where": "rfq_extract_model", "error": f"{type(e).__name__}: {e}", "default": "guess"})  # fmt: skip
+            rfq = guessed.model_copy(update={"extracted_by": "guess"})
+        else:
+            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text))
+            prose = {k: result.data.get(k) for k in PROSE}
     if dg := await dangerous_goods(ctx, message):
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})

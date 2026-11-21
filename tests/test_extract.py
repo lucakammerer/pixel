@@ -393,3 +393,16 @@ def test_a_negated_superlative_or_a_quick_reply_is_no_wish_for_speed(text):
 )
 def test_code_converts_pounds_and_tonnes(body, kg):
     assert extract.by_rules(mail(body), DEADLINE).weight_kg == kg
+
+
+async def test_a_gateway_that_refuses_the_model_still_gives_a_reading(monkeypatch, emitted):
+    async def refused(ctx, **kw):
+        raise RuntimeError("model not allowed")
+
+    monkeypatch.setattr(llm, "ask_json", refused)
+    body = "AAA to BBB, 2 boxes: one 40 kg, one 60 kg, 100 kg in total, 0.3 cbm and 0.5 cbm"
+    rfq = await extract.extract(None, mail(body), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.extracted_by) == (Decimal(100), Decimal("0.5"), "guess")
+    assert emitted[0][1]["payload"]["where"] == "rfq_extract_model"
+    with pytest.raises(RuntimeError):  # nothing to guess from
+        await extract.extract(None, mail("Could you help us with a shipment next week?"), DEADLINE)

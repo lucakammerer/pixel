@@ -86,6 +86,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   takes the zone whose area the mail names, only when it names exactly one (a signature can name another town).
 - "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
   weight in kg, the kg wins.
+- A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the
+  fallback. `extract` then takes `by_rules(guess=True)`, the largest gross weight and volume the mail names,
+  `extracted_by: guess`, and emits `error`; with no lane at all it still raises.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
