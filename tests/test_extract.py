@@ -82,7 +82,7 @@ async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
     assert emitted[0][0] == "rfq.extracted"
 
 
-async def test_the_model_cross_checks_the_rules_and_its_figure_wins(conn, monkeypatch, emitted):
+async def test_the_model_cross_checks_the_rules_and_its_wish_wins(conn, monkeypatch, emitted):
     """Rounds 33 to 35: the rules took the mail's figure over the packing list's; gpt-4.1 read the list's."""
     ctx = Context(settings(), conn, None, None, None, None)
     said = {"origin": "AAA", "destination": "CCC", "weight_kg": "480", "volume_cbm": None, "pieces": None,
@@ -95,8 +95,8 @@ async def test_the_model_cross_checks_the_rules_and_its_figure_wins(conn, monkey
 
     monkeypatch.setattr(llm, "ask_json", model)
     rfq = await extract.extract(ctx, mail("AAA → BBB, 500 kg, 2 cbm. The packing list says 480."), DEADLINE)
-    assert (rfq.extracted_by, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("rules", "BBB", 480, 2)
-    assert rfq.preference == Preference.FASTEST  # a value the rules did not read; CCC is not in the mail
+    assert (rfq.extracted_by, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("rules", "BBB", 500, 2)
+    assert rfq.preference == Preference.FASTEST  # the wish wins as read; 480 stands without its unit
 
     async def boom(ctx, **kw):
         raise RuntimeError("gateway down")
@@ -963,3 +963,34 @@ async def test_a_figure_in_another_unit_is_never_taken_as_kg_or_cbm(conn, monkey
     body = "HAM to SGN: 3 pieces, a gross weight of 1413.17 lb and a total volume of 95.00 cubic feet. Fastest please."
     rfq = await extract.extract(ctx, mail(body), DEADLINE)
     assert (round(rfq.weight_kg, 2), round(rfq.volume_cbm, 2)) == (Decimal("641.00"), Decimal("2.69"))
+
+
+async def test_the_cross_check_never_takes_a_net_figure_or_a_destination(conn, monkeypatch, emitted):
+    """Review of #250: a net weight beat the packing list's gross, and an airport the customer's answer names in
+    passing became the destination."""
+    ctx = Context(settings(), conn, None, None, None, None)
+    said = {"origin": "AAA", "destination": "CCC", "weight_kg": "400", "volume_cbm": "2.00", "pieces": None,
+            "lots": [], "preference": "cheapest", "door_pickup": False, "pickup_postcode": None, "currency": None,
+            "language": "en", "first_name": None, "intro": None, "closing": None}  # fmt: skip
+
+    async def model(ctx, **kw):
+        return LlmResult(data=said, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    async def attachments(ctx, message):
+        return [("packing.pdf", ["Gross weight (kg): 450", "Net weight (kg): 400", "Total volume (cbm): 2.00"])]
+
+    async def asked(*args, **kwargs):
+        return "It is 2 cbm. Our sister company ships to CCC as well, but this one goes as stated."
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    monkeypatch.setattr(extract, "_attachments", attachments)
+    packing = Attachment(id=1, filename="packing.pdf", content_type="application/pdf", size=1)
+    message = mail("Please quote AAA to BBB, see the packing list attached.").model_copy(
+        update={"attachments": (packing,)}
+    )
+    assert (await extract.extract(ctx, message, DEADLINE)).weight_kg == 450
+
+    monkeypatch.setattr(extract, "_unknown", lambda rfq: ["volume"] if not rfq.volume_cbm else [])
+    monkeypatch.setattr(extract, "_ask", asked)
+    rfq = await extract.extract(ctx, mail("Please quote AAA to BBB, 500 kg."), DEADLINE)
+    assert (rfq.destination, rfq.weight_kg) == ("BBB", 500)

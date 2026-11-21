@@ -117,7 +117,7 @@ watchdog            core/watchdog.py every 5 s: a request without our quote 90 s
 | `pixel/agents/tracking/` | Answers tracking questions from the CRM |
 | `pixel/agents/tariffs/` | Reads tariff files and tariff mails into the store |
 | `pixel/pricing/` | `store.py` (tariffs, carriers, zones), `calc.py` (all arithmetic), `portal_rates.py`, `bids.py`, `pickup.py`, `selection.py`, `engine.py` (all sources at once) |
-| `pixel/crm/` | `quotes.py`, `bookings.py`, `shipments.py`, `schema.py` |
+| `pixel/crm/` | `quotes.py`, `bookings.py`, `shipments.py`, `customers.py`, `carriers.py` (scorecard per carrier from the event log), `schema.py` |
 | `pixel/ui/` | `routes.py` (sessions list, session view, event stream, step in), `dashboard.py` |
 | `pixel/llm.py` | The only module that calls the gateway; counts tokens and cost |
 | `tools/` | `replay.py`, `kpi.py` and `kpi_pr.sh` (accuracy, cost and speed on replayed requests, compared with the base in every pull request), `board_me.py`, `set_openai_key.py`, `webhook.py` |

@@ -19,9 +19,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 ## Implementation
 
 - `agent.py` `handle`: `extract.extract`; when rules read the request, gpt-4.1 reads the same text too
-  (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s): where both read a value for weight, volume, pieces,
-  preference or a destination the text names and they differ, the model's wins, as an `rfq.crosscheck` event; on
-  any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
+  (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s), as an `rfq.crosscheck` event. Pieces and the wish win as
+  the model reads them; its weight or volume only when code reads that figure as a gross total with its unit in the
+  customer's own words or documents (`_gross`: never net, tare, per piece, superseded, forwarded or in pounds); a
+  destination never, it is only reported. On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
   the prose (`prose.raw`) and `compose.adopt` checks it; only without either, `compose.prose` runs in parallel. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
   failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (no bid
   to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by
@@ -60,8 +61,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English, German or French, written as a clerk writes to
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
-  by the name they signed with (the model's slot, else `signed_name` by rule). "Hope your week's going well" is
-  answered first (`WELL`), then the model's opening when it passed (no stock opening), then the offer: the goods in
+  by the name they signed with (the model's slot, else `signed_name` by rule). The offer follows the greeting
+  directly, as in the six rounds that earned Humanity points. It states the goods in
   the customer's words when the mail names them (`goods_of`, "For your machine parts, …"), total and currency,
   carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
   our desk's clock ("until 17:22 today") with the booking line; the signature with the signer's full name. No
@@ -70,28 +71,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does. Code formats every
   number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
   proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
-  is rendered without the model's slots (R9, P1).
+  is rendered with the rule-based greeting (R9, P1).
 - `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
   own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
   transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
   when they ask for the earliest departure, the pickup date said outright when they ask for the earliest pickup
   (`PICKUP_ASK`), one air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
-- `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
-  `closing`, on `PIXEL_MODEL_PROSE` when set, plus `hook`: the phrase of the customer's mail the opening answers (a
-  friendly remark, their buyer, the reason for the request; never a file they sent, see `ECHO`), or null, and then no opening. It also
-  sees the openings this customer already got (`_history`, `notes`). `_opening_ok` keeps the opening only when the
-  hook stands in the mail and is not the small talk `WELL` answers, it has at most `WORDS_MAX` words, no capitalised
-  word of the mail (a name or place), and its first two words differ from every earlier opening to this customer;
-  `ECHO` drops fillers and echoes ("thank you for your request", "inquiry", "regarding", "I've noted", "here is",
-  "cheapest", "pickup", announcing the offer, a word about their attachment or voice message: "The voice message
-  was clear" went out unheard in round 65) and a second sentence. A dropped opening is stored in `quote.prose`
-  as `rejected`; `tests/fixtures/openings.json` holds every live request with the opening we sent. The
-  extraction's slots (model path) carry no hook, so those quotes open with the price. The closing slot is no
-  longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a
-  currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German
-  `du`, or is too long; the first name must stand in the customer's mail. The checked slots are stored as
-  `quote.prose`, so the fallback quote and the booking mails use them too.
+- `compose.py` `prose` / `clean` / `adopt` (R31): the model reads the customer's signed first name
+  on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
+  The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
+  Older `quote.prose` events can contain opening and closing text. The quote renderer only uses the name.
 - `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
@@ -299,8 +289,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   before another unit (`_only_with`) is replaced by code's reading, so the cross-check never takes 95 cbm.
 - The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
   181.96 EUR offer). Every answer the rules price is read by the model too (`pricing/bids.py` `_crosscheck`, the
-  same text, code adds the charges up, at most 6 s); where the totals differ the model's wins, as a `bid.crosscheck`
-  event. `PIXEL_MODEL_CHECK` empty turns it off with the request's second reader.
+  same text, at most 3 s, so no answer misses `collect`'s cutoff); a `bid.crosscheck` event reports a difference. The
+  model's total wins only in the rules' currency and when the text states it as the shipment's amount (`_stated`:
+  not per kg, per hour or another unit). `PIXEL_MODEL_CHECK` empty turns it off with the request's second reader.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the

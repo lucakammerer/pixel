@@ -38,6 +38,7 @@ from pixel.contracts import (
 from pixel.core import db, events, feedback
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
+from pixel.pricing import store
 from pixel.ui import crm, dashboard, home, nightshift, routes
 
 KIT = Path("data/start-kit")
@@ -68,6 +69,7 @@ class Kit:
             rows = list(csv.DictReader(f))
         with open(folder / "pickup_zones.csv") as f:
             zones = list(csv.DictReader(f))
+        self.carriers = rows
         self.airlines = [r for r in rows if r["kind"] == "airline"]
         self.truckers = [r for r in rows if r["kind"] == "trucker"]
         self.origins = sorted({z["airport"] for z in zones})
@@ -206,10 +208,7 @@ class Seeder:
             source = r.choice([Source.SHEET, Source.SHEET, Source.PORTAL, Source.BID, Source.RATEDESK])
             when = at + timedelta(seconds=3 * i)
             if source == Source.BID:
-                self.emit(when, "bid.requested", "rfq", session_id=sid, payload={"to": airline["email"]})
-                when += timedelta(seconds=r.randint(20, 70))
-                self.mail(when, sid, "in", airline["email"], US, f"Re: Rate request {rfq.origin}-{rfq.destination}",
-                          f"Our offer for {chargeable} kg: see rates below.", kind=MailKind.CARRIER_BID)  # fmt: skip
+                when = self.bid(sid, rfq, airline, when, f"Our offer for {chargeable} kg: see rates below.")
             if r.random() < 0.08:
                 self.emit(when, "option.failed", "pricing", session_id=sid,
                           payload={"carrier": airline["name"], "why": "no rate for this weight"})  # fmt: skip
@@ -229,7 +228,45 @@ class Seeder:
             found.append(option)
             self.emit(when + timedelta(seconds=1), "option.found", "pricing", session_id=sid,
                       payload={"option": option.model_dump(mode="json")})  # fmt: skip
+        self.decline(sid, rfq, at)
         return found
+
+    def bid(self, sid: int, rfq: Rfq, airline: dict, at: datetime, answer: str, priced: bool = True) -> datetime:
+        """Our bid request and the airline's answer, as `pricing/bids.py` records them. Returns the answer's time."""
+        subject = f"Rate request {rfq.origin}-{rfq.destination}"
+        out = self.mail(at, sid, "out", US, airline["email"], subject, "Please quote.")
+        lane = {"origin": rfq.origin, "destination": rfq.destination, "pickup": False}
+        self.emit(at, "bid.requested", "pricing", session_id=sid, message_id=out.id,
+                  payload={"carrier": airline["name"], "email": airline["email"]} | lane)  # fmt: skip
+        at += timedelta(seconds=self.rng.randint(25, 70))
+        m = self.mail(at, sid, "in", airline["email"], US, f"Re: {subject}", answer, kind=MailKind.CARRIER_BID)
+        self.emit(at, "bid.received", "pricing", session_id=sid, message_id=m.id,
+                  payload={"carrier": airline["name"], "priced": priced, "request_id": out.id} | lane)  # fmt: skip
+        return at
+
+    def decline(self, sid: int, rfq: Rfq, at: datetime) -> None:
+        """Now and then an airline serving the destination declines the lane and lists the lanes it flies; one whose
+        fresh list leaves the lane out is skipped instead."""
+        r = self.rng
+        serving = [a for a in self.kit.airlines if rfq.destination in a["serves"].split()]
+        if not serving or r.random() < 0.5:
+            return
+        airline = r.choice(serving)
+        known = self.ctx.db.execute(
+            "SELECT 1 FROM events WHERE kind='carrier.lanes' AND json_extract(payload,'$.carrier')=?",
+            (airline["name"],),
+        ).fetchone()
+        if known:
+            self.emit(at, "bid.skipped", "pricing", session_id=sid,
+                      payload={"carrier": airline["name"], "origin": rfq.origin, "destination": rfq.destination})  # fmt: skip
+            return
+        flies = sorted({f"{r.choice(self.kit.origins)}-{d}" for d in airline["serves"].split()} - {
+            f"{rfq.origin}-{rfq.destination}"})  # fmt: skip
+        text = f"We do not serve this lane/zone: {rfq.origin}-{rfq.destination}.\nWe fly {', '.join(flies)}."
+        when = self.bid(sid, rfq, airline, at, text, priced=False)
+        self.emit(
+            when, "carrier.lanes", "pricing", session_id=sid, payload={"carrier": airline["name"], "lanes": flies}
+        )
 
     def book(self, q: Quote, out: Message, at: datetime, fate: str) -> None:
         r = self.rng
@@ -284,8 +321,9 @@ class Seeder:
         if verdict != "pending":
             seconds = (sent_at - q.rfq.received_at).total_seconds()
             self.emit(at, "feedback", "board", session_id=q.session_id,
-                      payload={"round": self.round, "verdict": verdict, "reason": reason or None,
-                               "points": str(45 + feedback.time_points(seconds)) if verdict == "accepted" else None})  # fmt: skip
+                      payload={"round": self.round, "verdict": verdict, "reason": reason or None}
+                      | ({"points": str(45 + feedback.time_points(seconds)), "carrier": q.option.carrier,
+                          "trucker": q.option.trucker} if verdict == "accepted" else {}))  # fmt: skip
         if reason == LOST:
             self.emit(at, "error", "outbox", session_id=q.session_id,
                       payload={"where": "pdf", "error": "offer PDF read as truncated"})  # fmt: skip
@@ -435,6 +473,7 @@ def build(path: Path, *, reseed: bool, count: int, seed: int) -> tuple[Context, 
     ctx = Context(settings=config, db=conn, mailbox=None, portal=None, gateway=None, board=None)
     seeder = Seeder(ctx, Kit(KIT), random.Random(seed))
     if not conn.execute("SELECT 1 FROM messages LIMIT 1").fetchone():
+        store.save_carriers(ctx, seeder.kit.carriers)
         seeder.history(count)
         print(f"seeded {count} requests into {path}")
     nightshift.CD_LOG = path.with_name(path.name + "-cd.log")  # ignored like the database

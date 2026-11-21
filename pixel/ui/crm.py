@@ -1,4 +1,5 @@
-"""CRM viewer: customers, quotes and shipments (with their bookings), read from the CRM tables."""
+"""CRM viewer: customers, quotes, shipments (with their bookings) and carriers, read from the CRM tables and the
+event log."""
 
 from urllib.parse import quote as urlquote
 
@@ -6,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pixel.contracts import QuoteStatus
-from pixel.crm import bookings, customers, quotes, shipments
+from pixel.crm import bookings, carriers, customers, quotes, shipments
 from pixel.ui import names
 from pixel.ui.page import (
     company,
@@ -44,7 +45,12 @@ def _frame(section: str, q: str, content: str, counts: dict[str, int]) -> str:
     bar = tabs(
         [
             (f"/crm/{key}", label, key == section, counts.get(key))
-            for key, label in (("customers", "Customers"), ("quotes", "Quotes"), ("shipments", "Shipments"))
+            for key, label in (
+                ("customers", "Customers"),
+                ("quotes", "Quotes"),
+                ("shipments", "Shipments"),
+                ("carriers", "Carriers"),
+            )
         ],
         big=True,
     )
@@ -52,6 +58,7 @@ def _frame(section: str, q: str, content: str, counts: dict[str, int]) -> str:
         "customers": "Search company, person, lane",
         "quotes": "Search customer, lane, carrier, Q- id",
         "shipments": "Search customer, lane, carrier, PX- or BK- reference",
+        "carriers": "Search carrier, airline or trucker, lane",
     }[section]
     return (
         page_head("CRM", "Who we work for, what we quoted them and what we booked.")
@@ -66,6 +73,7 @@ def _counts(ctx) -> dict[str, int]:
         "customers": db.execute("SELECT COUNT(DISTINCT LOWER(customer)) FROM sessions").fetchone()[0],
         "quotes": db.execute("SELECT COUNT(*) FROM quotes").fetchone()[0],
         "shipments": db.execute("SELECT COUNT(*) FROM shipments").fetchone()[0],
+        "carriers": db.execute("SELECT COUNT(*) FROM carriers").fetchone()[0],
     }
 
 
@@ -191,6 +199,42 @@ async def shipment_list(request: Request, q: str = ""):
     rows = shipment_rows(ctx, shipments.recent(ctx, 500), q)
     content = _table(SHIP_HEAD, rows, 7, "No shipment yet." if not q else "No shipment matches.")
     return layout("Shipments", _frame("shipments", q, content, _counts(ctx)), nav="crm", script=_live())
+
+
+def _n(value: int, line2: str = "") -> str:
+    shown = value or "<span class=muted>—</span>"
+    return f"<td class=n>{shown}" + (f"<div class=line2>{line2}</div>" if line2 else "") + "</td>"
+
+
+@router.get("/crm/carriers", response_class=HTMLResponse)
+async def carrier_list(request: Request, q: str = ""):
+    ctx = request.app.state.ctx
+    rows = []
+    for c in carriers.scorecard(ctx):
+        lanes = sorted(c["lanes"])
+        if q and not _matches(q, c["carrier"], c["kind"], *lanes):
+            continue
+        learned = f"<div class=line2>listed {when(c['learned_at'])}</div>" if c["learned_at"] else ""
+        answer = f"{c['median_s']} s" if c["median_s"] is not None else "<span class=muted>—</span>"
+        rows.append(
+            f"<tr><td>{esc(c['carrier'])}<div class=line2>{esc(c['kind'])}</div></td>"
+            f'<td class=n title="{esc(", ".join(lanes))}">{len(lanes) or "<span class=muted>—</span>"}'
+            f"{learned}</td>"
+            + _n(c["requested"], f"{c['skipped']} skipped" if c["skipped"] else "")
+            + _n(c["answers"], f"{c['priced']} priced" if c["answers"] else "")
+            + f"<td class='n hide-sm'>{answer}</td>"
+            + _n(c["best"])
+            + _n(c["quoted"])
+            + _n(c["confirmed"])
+            + "</tr>"
+        )
+    head = (
+        "<th>Carrier</th><th class=n>Lanes known</th><th class=n>Bid requests</th><th class=n>Answers</th>"
+        "<th class='n hide-sm'>Median answer</th><th class=n>Best price</th><th class=n>Quoted</th>"
+        "<th class=n>Confirmed</th>"
+    )
+    content = _table(head, rows, 8, "No carrier yet." if not q else "No carrier matches.")
+    return layout("Carriers", _frame("carriers", q, content, _counts(ctx)), nav="crm", script=_live())
 
 
 @router.get("/crm/customers/{email}", response_class=HTMLResponse)
