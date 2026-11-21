@@ -4,7 +4,7 @@ transcribes an answer the rules cannot read, and code does every sum."""
 import asyncio
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
@@ -305,8 +305,12 @@ def _answers(ctx: Context, session_id: int, pickup: bool) -> int:
 async def collect(
     ctx: Context, session_id: int, deadline: Deadline, expected: int, *, pickup: bool = False
 ) -> list[RateOption]:
-    """Waits until all expected bids are in or the deadline's target, whichever comes first."""
-    while _answers(ctx, session_id, pickup) < expected and datetime.now(UTC) < deadline.target_at:
+    """Waits until all expected bids are in, or until the later of `target_at` and `bid_wait_s` after the ask
+    (called right after it), never past `hard_at`. A late start (restart, re-dispatch, slow extraction) still
+    gives the answers their time: a quote without the pickup is too low, a few seconds late cost little."""
+    until = min(max(deadline.target_at, datetime.now(UTC) + timedelta(seconds=ctx.settings.bid_wait_s)),
+                deadline.hard_at)  # fmt: skip
+    while _answers(ctx, session_id, pickup) < expected and datetime.now(UTC) < until:
         await asyncio.sleep(POLL_S)
     return [
         o
