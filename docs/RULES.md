@@ -45,9 +45,9 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 
 | # | Rule | Source | Lives in | Status |
 | --- | --- | --- | --- | --- |
-| R22 | When the customer accepts, book by `rate_id` with `POST /v1/portal/bookings` and our CRM id as `team_reference`. One booking per `rate_id`. 201 booked; 200 same booking again (retry); 404 unknown; 409 booked under another reference; 410 expired: fetch a fresh rate and book that; 503: book by mail with the airline as the message says | API | `agents/rfq/booking.py` `book` | open |
-| R23 | A mail "Booking <reference> confirmed" from the airline follows: the shipment is then booked. There is no status call; the booking lives in our CRM | API | `agents/rfq/booking.py` `handle_confirmation`, `crm/` | open |
-| R24 | Keep the customer informed | Brief | `agents/rfq/booking.py` | open |
+| R22 | When the customer accepts, book by `rate_id` with `POST /v1/portal/bookings` and our CRM id as `team_reference`. One booking per `rate_id`. 201 booked; 200 same booking again (retry); 404 unknown; 409 booked under another reference; 410 expired: fetch a fresh rate and book that; 503: book by mail with the airline as the message says | API | `agents/rfq/booking.py` `book`, `tests/test_booking.py` | done |
+| R23 | A mail "Booking <reference> confirmed" from the airline follows: the shipment is then booked. There is no status call; the booking lives in our CRM | API | `agents/rfq/booking.py` `handle_confirmation`, `crm/bookings.py`, `crm/shipments.py` | done |
+| R24 | Keep the customer informed | Brief | `agents/rfq/booking.py` `_tell_customer`: once when booked, once when confirmed | done |
 | R25 | Tracking questions come from `tracking@hackloop.mail` and are answered from our own CRM | Brief | `agents/tracking/agent.py` `handle` | open |
 
 ## Scoring

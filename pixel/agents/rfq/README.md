@@ -21,7 +21,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `agent.py` `handle`: extract, price, select, write, send. `fallback`: the best stored option, by code alone.
 - `extract.py` `by_rules`, `extract`: the request as an `Rfq`; rules first, one model call otherwise.
 - `compose.py` `render`: the mail text. Numbers come from the `RateOption`, formatted by code.
-- `booking.py` `handle_reply`, `book`, `handle_confirmation`: acceptance to confirmed shipment.
+- `booking.py` `handle_reply`: `intent` reads accept, decline or other by rules (English and German, a decline
+  wins); anything else becomes a `human.note` for a person, no model call. `book`: one shipment (`PX-…`, our
+  `team_reference`), one portal booking by `rate_id`; a lost connection is retried once (the portal answers 200 with
+  the same booking), 410 fetches a fresh rate and books that, 503 or a quote without `rate_id` books by mail with the
+  airline (address from the 503 message, else the carrier list), 404 and 409 are `booking.failed`. A second
+  acceptance books nothing twice. `handle_confirmation`: "Booking <reference> confirmed" marks booking and shipment
+  confirmed and tells the customer once.
 
 ## Pitfalls
 
