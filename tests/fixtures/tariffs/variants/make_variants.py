@@ -66,10 +66,6 @@ GAPS = {
     "usd": "pricing/calc.py price_tariff needs an exchange rate for a non-EUR sheet and sheets carry none, so "
     "engine.sheet_options drops the whole sheet (option.failed). A carrier switching currency disappears from sheet "
     "pricing. Owner: accuracy.",
-    "minimum-before-transit-small": "agents/tariffs/agent.py reads columns by position, not by header: with Minimum "
-    "and Transit swapped it takes the minimum as transit days and the transit as the minimum, and check() passes "
-    "while transit <= 30 days. Wrong transit breaks fastest and balanced choices, a wrong minimum underprices small "
-    "shipments. Owner: accuracy.",
 }
 
 

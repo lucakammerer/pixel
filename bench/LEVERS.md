@@ -355,7 +355,7 @@ Columns: **Ex.** = the one-factor mutation · **Live** = round · **Code** · **
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | d1 | **New xlsx/docx/txt layout** | merged header, extra column | – | **NO**: `tariffs._ingest` sends only images/PDF to `read_with_model`; a refused xlsx/docx/txt/csv is `tariff.failed` and dropped (bench 5/8 count "refused" as safe on a false premise) | bench 5, 8 | **H** | 60 per lane |
 | d2 | Sheet in USD/GBP | "Currency: USD" | – | NO (known gap): `calc.to_eur` no fx, sheet dropped | bench 5 GAP | H | 60 |
-| d3 | Minimum/Transit columns swapped | – | – | NO when minimum <30 (positional `_read`) | bench 5 GAP | M | 60 |
+| d3 | Minimum/Transit columns swapped | – | – | YES: `_read` maps them by header; `check` refuses a minimum that looks like days | bench 5, bench 8 | M | – |
 | d4 | Date formats | "Nov 2026", "01.12.–31.12.2026", "1st December" | – | NO: `DATE_FORMATS` fixed list → refused/dropped | bench 5 ISO only | M | 60 |
 | d5 | New month tariff / validity | Dec sheet arrives 25.11. | – | PARTIAL: `store.lookup` by received date; ready-date use UNKNOWN | test_tariffs | M | 60 |
 | d6 | Corrected version, same validity | "v2 replaces v1" | – | YES (ingested_at order) | test_tariffs | M | – |

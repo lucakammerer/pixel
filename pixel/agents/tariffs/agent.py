@@ -23,6 +23,10 @@ CODE = re.compile(r"\b[A-Z]{3}\b")
 BREAK = r"(?:from\s+(\d+)\s*kg|(\d+)\s*kg\s*\+|([-+])(\d+))"
 BREAK_TOKEN = re.compile(rf"(?:(?<=\s)|^){BREAK}(?=\s|$)", re.IGNORECASE)
 BREAK_LINE = re.compile(rf"^\s*{BREAK}\s+({NUM})\s*$", re.IGNORECASE)
+# The columns before the weight breaks, by header: "Minimum  Transit" as often as "Transit  Minimum".
+LEAD_COLUMN = re.compile(
+    r"\b(?:(?P<transit>transit|laufzeit|t/t)|(?P<minimum>minimum|min\.|mindest\w*))(?!\w)", re.IGNORECASE
+)
 IMAGES = {".jpg", ".jpeg", ".png"}
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
 
@@ -123,6 +127,7 @@ def _read(lines: list[str]) -> Sheet:
     breaks: list[Decimal] = []
     surcharge_columns = False
     block: tuple[str, str] | None = None
+    lead = ["transit", "minimum"]
     for raw in lines:
         line = raw.strip()
         lower = line.lower()
@@ -145,6 +150,9 @@ def _read(lines: list[str]) -> Sheet:
             codes = _codes(line, sheet.currency)
             origin = codes[-1] if codes else None
             continue
+        named = [m.lastgroup for m in LEAD_COLUMN.finditer(line)]
+        if sorted(named) == ["minimum", "transit"] and not re.search(r"\d", BREAK_TOKEN.sub("", line)):
+            lead = named
         tokens = list(BREAK_TOKEN.finditer(line))
         if len(tokens) >= 2:
             breaks = [_break_kg(t) for t in tokens]
@@ -180,7 +188,8 @@ def _read(lines: list[str]) -> Sheet:
         if not breaks or len(numbers) != expected:
             raise ValueError(f"row with {len(numbers)} numbers, expected {expected}: {line!r}")
         values = [_num(n) for n in numbers]
-        row = {"transit": int(values[0]), "minimum": values[1], "breaks": list(zip(breaks, values[2:], strict=False))}
+        row = dict(zip(lead, values[:2], strict=True)) | {"breaks": list(zip(breaks, values[2:], strict=False))}
+        row["transit"] = int(row["transit"])
         if surcharge_columns:
             row["fuel"], row["security"] = values[-2], values[-1]
         sheet.lanes[lane] = row
@@ -328,8 +337,8 @@ async def read_with_model(ctx: Context, filename: str, pages: tuple[bytes, ...])
 
 
 def check(tariffs: list[LaneTariff]) -> list[str]:
-    """Code checks on every parse: rates fall as weight rises, minimum > 0, lane codes known, dates sane.
-    A sheet with findings is stored as failed, not used for pricing."""
+    """Code checks on every parse: rates fall as weight rises, minimum > 0 and no transit days, lane codes known,
+    dates sane. A sheet with findings is stored as failed, not used for pricing."""
     if not tariffs:
         return ["no lanes"]
     findings = []
@@ -350,6 +359,8 @@ def check(tariffs: list[LaneTariff]) -> list[str]:
             findings.append(f"{lane}: valid from after valid to")
         if t.minimum <= 0:
             findings.append(f"{lane}: minimum {t.minimum}")
+        elif t.breaks and t.minimum <= 30 and t.minimum == int(t.minimum) and t.minimum < 2 * t.breaks[0][1]:
+            findings.append(f"{lane}: minimum {t.minimum} looks like transit days")  # columns read swapped
         if not 0 < t.transit_days <= 30:
             findings.append(f"{lane}: transit {t.transit_days}")
         if not t.breaks or t.breaks[0][0] != 0:
