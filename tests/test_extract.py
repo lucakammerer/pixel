@@ -168,3 +168,24 @@ def test_a_lot_whose_figures_are_not_certain_is_left_to_the_model():
     text = "Lot 1: 4 drums, 730 kg, 1.68 cbm\nLot 2: 4 cartons, each 48 kg gross (41 kg net)"
     assert extract._lots(text) is None  # no volume for lot 2
     assert extract._lots("Lot 1: 2 crates, each 50 kg, each 100 x 100 x 100 cm") is None  # one lot is no lot list
+
+
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        ("AAA to BBB, 4 cartons, each 48 kg, 0.5 cbm each.", ("192", "2.0", Preference.CHEAPEST)),
+        ("AAA to BBB, 3 pallets of 250 kg per pallet, 120x80x100 cm.", ("750", "2.88", Preference.CHEAPEST)),
+        ("AAA-BBB, 500 kg, 2 cbm. Not urgent, no rush, the cheapest please.", ("500", "2", Preference.CHEAPEST)),
+        ("AAA-BBB:\n- 4 cartons, each 48 kg, 110 x 110 x 52 cm\n- 2 pallets, together 400 kg, 2.1 cbm",
+         ("592", "4.6168", Preference.CHEAPEST)),
+        ("AAA nach BBB: 3 Kartons à 30 kg, je 60x40x50 cm. Bitte schnellstmöglich.", ("90", "0.360", Preference.FASTEST)),
+    ],
+)  # fmt: skip
+def test_rules_count_per_piece_figures_and_read_wishes(body, expected):
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.preference) == (Decimal(expected[0]), Decimal(expected[1]), expected[2])
+
+
+def test_a_volume_the_rules_cannot_settle_is_left_to_the_model():
+    body = "AAA-BBB, total 500 kg: 2 pallets 120x80x150 cm and 3 boxes 60x40x40 cm."
+    assert extract.by_rules(mail(body), DEADLINE) is None  # volume 0 would under-price the chargeable weight
