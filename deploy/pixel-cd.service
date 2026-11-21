@@ -4,5 +4,5 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh /opt/pixel/app/deploy/cd.sh
+ExecStart=/bin/sh /opt/pixel/cd/cd.sh
 TimeoutStartSec=15min
