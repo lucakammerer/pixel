@@ -68,3 +68,6 @@ stores the mail without the file). The mail says "general cargo, non-dangerous";
   flammable", the request written as labelled bullets. A quote at the normal price that named the goods and asked
   for the DGD and the MSDS was accepted.
 
+`rfq-import-no-pickup.json`: the buyer abroad imports, our customer delivers to the airport, "so there's no pickup
+needed". Quoted like any export from the named airport; accepted.
+
