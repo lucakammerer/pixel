@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from itertools import count
@@ -299,3 +300,32 @@ async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
     quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg."), deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 2
     assert quote.body.startswith("Hello,\n\n") and "260.00 EUR" in quote.body
+
+
+async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monkeypatch):
+    # Round 17: handling started 75 s after receipt, the truckers answered 30 s after the ask, and the quote had
+    # already gone out at target_at with no pickup. Scaled: target 0.1 s away, answers 0.5 s after the ask.
+    store.upsert(ctx, [LaneTariff(
+        carrier="Air One", origin="AAA", destination="BBB", currency="EUR", valid_from=date(2000, 1, 1),
+        valid_to=date(2100, 1, 1), version="v", transit_days=3, minimum=D(50), breaks=((D(0), D("2.00")),),
+        fuel_per_kg=D("0.50"), security_per_kg=D("0.10"), source="test",
+    )])  # fmt: skip
+    ctx.settings = replace(ctx.settings, bid_wait_s=2)
+    request = rfq(door_pickup=True, pickup_postcode="12345", pickup_zone="12")
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    now = datetime.now(UTC)
+    late = Deadline(received_at=now - timedelta(seconds=75), target_at=now + timedelta(seconds=0.1),
+                    hard_at=now + timedelta(seconds=5), expires_at=now + timedelta(seconds=6))  # fmt: skip
+
+    async def answer():
+        while len(kinds(ctx, "bid.requested")) < 3:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.5)
+        await bids.record(ctx, mail("two@air", "All-in EUR 400.00, transit 4 days"))
+        await bids.record(ctx, mail("a@truck", "Pickup EUR 90.00"))
+        await bids.record(ctx, mail("b@truck", "We can do it for 75,00 EUR"))
+
+    found, _ = await asyncio.gather(engine.options(ctx, request, late), answer())
+    by_carrier = {o.carrier: o for o in found}
+    assert set(by_carrier) == {"Air One", "Air Two"}
+    assert all(o.pickup == D("75.00") for o in found)

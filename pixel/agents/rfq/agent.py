@@ -13,7 +13,7 @@ from pixel.pricing import engine, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
-AIRPORT_CHECK_MAX_S = 5.0
+AIRPORTS_WAIT_S = 5.0
 AIRPORTS_SYSTEM = (
     "You check the airports of an air freight request. A code read from the mail is on none of the lanes we "
     "price. Answer the IATA codes of the departure and the destination airport. Keep a code the mail names "
@@ -124,7 +124,7 @@ async def served_airports(
         return rfq
     # The optional check shares one short budget across both APIs. Leave at least 90% of the remaining
     # sourcing window to actual prices, including when a restart picks this RFQ up close to its deadline.
-    available = AIRPORT_CHECK_MAX_S
+    available = AIRPORTS_WAIT_S
     if deadline:
         remaining = (min(deadline.target_at, deadline.hard_at) - timing.now()).total_seconds()
         available = min(available, remaining / 10)

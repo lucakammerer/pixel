@@ -154,11 +154,18 @@ mail, not from when we polled it:
 | `expires_at` | +360 s | The request is lost (R1) |
 
 Sheets are priced locally. The portal publishes actual-weight prices before optional higher-break reads. Carrier
-mail can start while portal reads are pending. When the agent finishes without a complete price, the fallback checks
-the current lane's stored options until a complete price arrives or `hard_at` is reached. A door request needs a
-priced trucker before then. At `hard_at`, an available airport-to-airport price may be sent with pickup excluded
-and `complete_service=false`. A missing postcode prompts a request for the pickup address in that quote. If air
-freight itself is still unpriced, the orchestrator emits `quote.missed`.
+mail can start while portal reads are pending. Bid collection ends when all expected replies arrive or its window
+closes. That window runs until the later of `target_at` and `PIXEL_BID_WAIT_S` after the enquiries, capped at
+`hard_at`. A late start therefore still leaves time for a trucker to price the pickup.
+
+If the live agent finishes without a complete price, the fallback checks stored options for the current lane
+until a complete price arrives or `hard_at` is reached. A door request needs a priced trucker before then. At
+`hard_at`, an available airport-to-airport price may be sent with pickup excluded and `complete_service=false`.
+A missing postcode prompts a request for the pickup address in that quote. If air freight itself is still
+unpriced, the orchestrator emits `quote.missed`.
+
+Offline KPI replay advances its clock through bid waits and deadlines. A replay with scheduled replies can still
+receive a captured late bid. A single-request online replay can skip the final wait for incoming mail.
 
 `orchestrator.recover` repairs receipts, resumes unfinished handlers and applies the original expiry to RFQs.
 `tools.window` measures the deployment window from the latest RFQ's stored receipt time when available.

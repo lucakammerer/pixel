@@ -35,7 +35,7 @@ from pixel.core import events, orchestrator, poller, timing
 
 
 class OfflineMailbox(Mailbox):
-    """Serves attachments from the fixture (`attachments[].content_base64`), sends nothing."""
+    """Serves captured attachments and outbound receipts locally."""
 
     def __init__(self, client: httpx.AsyncClient, files: dict[tuple[int, int], bytes]):
         super().__init__(client)
@@ -160,6 +160,8 @@ async def _run(raws: list[dict], online: bool, db: str | None, as_live: bool) ->
         original if online else httpx.AsyncClient(base_url=config.api_base, transport=httpx.MockTransport(_offline))
     )
     ctx.mailbox = OfflineMailbox(client, _files(raws))
+    # Captured replies arrive on schedule. The offline clock also exercises the full production deadline.
+    ctx.mailbox.late_mail = not online or len(raws) > 1
     ctx.portal.book = _no_booking  # `as_live` is not dry, but a replay must never book a replayed acceptance
     if not online:
         ctx.portal.client = ctx.gateway.client = ctx.board.client = client

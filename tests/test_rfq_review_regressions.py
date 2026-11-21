@@ -117,7 +117,7 @@ async def test_optional_validation_returns_to_sourcing_with_slow_portal_and_mode
 
     monkeypatch.setattr(portal_rates, "lanes", slow_portal)
     monkeypatch.setattr(agent.llm, "ask_json", slow_model)
-    monkeypatch.setattr(agent, "AIRPORT_CHECK_MAX_S", 0.04)
+    monkeypatch.setattr(agent, "AIRPORTS_WAIT_S", 0.04)
     original = request("XXX", "DDD")
     result = await asyncio.wait_for(agent.served_airports(ctx, original, mail("Freight to DDD.")), timeout=0.5)
     assert result == original and called == ["portal", "model"]
@@ -140,7 +140,7 @@ async def test_fallback_never_prices_the_previous_lane_after_an_airport_correcti
 
 
 async def test_a_corrected_lane_requests_a_fresh_bid_and_ignores_the_old_carrier_reply(conn, monkeypatch):
-    ctx = make_ctx(conn, quote_target_s=0)
+    ctx = make_ctx(conn, quote_target_s=0, bid_wait_s=0)
     msg = mail("Revised origin for this shipment.")
     old = make_quote(msg)
     corrected = old.rfq.model_copy(update={"origin": "CCC"})
@@ -237,7 +237,7 @@ async def test_bid_wait_counts_only_the_current_enquiries(conn, monkeypatch):
 
 
 async def test_late_carrier_offer_is_quoted_once_and_the_acceptance_books_once(conn, monkeypatch):
-    ctx = make_ctx(conn, quote_target_s=0, quote_hard_s=5)
+    ctx = make_ctx(conn, quote_target_s=0, quote_hard_s=5, bid_wait_s=0)
     msg = mail("Please quote AAA to BBB, 100 kg.").model_copy(update={"sent_at": datetime.now(UTC)})
     store.save_carriers(
         ctx, [{"name": "Test Air", "kind": "airline", "email": "test-air@example.com", "serves": "BBB"}]

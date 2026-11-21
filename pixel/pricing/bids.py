@@ -4,7 +4,7 @@ transcribes an answer the rules cannot read, and code does every sum."""
 import asyncio
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -416,11 +416,13 @@ async def record(ctx: Context, message: Message) -> None:
 async def collect(
     ctx: Context, session_id: int, deadline: Deadline, expected: list[int] | int, *, pickup: bool = False
 ) -> list[RateOption]:
-    """Only replies to the enquiries actually sent for this search can complete its wait."""
+    """Give the current lane's enquiries their response window after mailing, up to the hard deadline."""
     rfq = session.rfq(ctx, session_id)
     if rfq is None:
         return []
-    while expected and timing.now() < deadline.target_at:
+    after_ask = timing.now() + timedelta(seconds=ctx.settings.bid_wait_s)
+    until = min(max(deadline.target_at, after_ask), deadline.hard_at)
+    while expected and timing.now() < until:
         rows = ctx.db.execute(
             "SELECT json_extract(payload,'$.request_id'), json_extract(payload,'$.carrier') FROM events "
             "WHERE session_id=? AND kind='bid.received' AND json_extract(payload,'$.origin')=? "
@@ -432,7 +434,7 @@ async def collect(
                 break
         elif set(expected).issubset(row[0] for row in rows):
             break
-        await asyncio.sleep(POLL_S)
+        await asyncio.sleep(min(POLL_S, max(0.0, (until - timing.now()).total_seconds())))
     return [
         o
         for o in session.for_request(ctx, rfq)

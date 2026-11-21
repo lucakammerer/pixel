@@ -17,6 +17,7 @@ class Settings:
     quote_hard_s: int
     webhook_secret: str
     alert_url: str
+    bid_wait_s: int = 45  # how long a bid may take from our ask, also past target_at
     model_prose: str = ""  # the mail's prose slots; empty: `model`
     signer: str = "Lena Berger"  # the person who signs our mails (R31)
 
@@ -34,6 +35,7 @@ def settings() -> Settings:
         poll_seconds=float(env.get("PIXEL_POLL_SECONDS", "1.0")),
         quote_target_s=int(env.get("PIXEL_QUOTE_TARGET_S", "100")),
         quote_hard_s=int(env.get("PIXEL_QUOTE_HARD_S", "315")),
+        bid_wait_s=int(env.get("PIXEL_BID_WAIT_S", "45")),
         webhook_secret=env.get("PIXEL_WEBHOOK_SECRET", ""),
         alert_url=env.get("PIXEL_ALERT_URL", ""),
         model_prose=env.get("PIXEL_MODEL_PROSE", ""),

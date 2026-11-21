@@ -166,7 +166,10 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     from pixel.agents.rfq import agent as rfq
 
     loop = asyncio.get_running_loop()
-    until = loop.time() + max(0.0, (deadline.hard_at - now()).total_seconds())
+    # A dry run holds outgoing bids. Replays report whether a later captured reply can still arrive.
+    late = not ctx.settings.dry_run and getattr(ctx.mailbox, "late_mail", True)
+    wait = (deadline.hard_at - now()).total_seconds() if late else 0.0
+    until = loop.time() + max(0.0, wait)
     failed = waiting = False
     while True:
         if outbox.quoted(ctx, message.session_id):

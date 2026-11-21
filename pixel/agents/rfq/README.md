@@ -21,7 +21,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `agent.py` `handle`: `extract.extract`; when rules read the request, `compose.prose` runs in parallel as the
   one gateway call of the quote (R28); when the model read it, that call already drafted the prose (`prose.raw`)
   and `compose.adopt` checks it. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
-  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options`; `selection.select`; `compose.render`;
+  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (bids by
+  mail, pickup and airline, are waited for until all are in, or until the later of `target_at` and
+  `PIXEL_BID_WAIT_S` after the ask, never past `hard_at`: `pricing/bids.py` `collect`); `selection.select`; `compose.render`;
   `outbox.send_quote`. A request missing origin, destination or weight emits `error` and returns None; the
   orchestrator's fallback and the UI take over. Every drafted quote is saved to the CRM (`crm/quotes.py` `save`),
   the sent one again after `send_quote`, so booking finds it also when the fallback sent it.
@@ -120,12 +122,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A pickup "from our warehouse" can name no postcode and no town but the signature's (round 15): truckers then answer
   "To quote we need: the pickup postcode", and a quote without the pickup is too low. They price by zone: the
   request names the zone's first postcode (`pricing/bids.py` `_postcode`) when the mail has none.
+- A request handled late (round 17: 75 s after receipt, after a restart) asked the truckers 24 s before
+  `target_at`; they answer about 30 s after the ask, so the quote went out without the pickup and was too low. The
+  bid wait counts from the ask (`PIXEL_BID_WAIT_S`), not only from receipt.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
-- The same guess can hit a request without a pickup zone, or a destination (a city code, a nearby airfield): no
-  lane starts or ends there and every rate and bid request for it is wasted. `agent.py` `served_airports` asks once
-  more with the airports we serve; a request still without a price waits for a late one until `hard_at`
-  (`core/orchestrator.py` `_first_price`) instead of being missed at once.
+- A guessed origin or destination can be a nearby airfield that no carrier serves. `agent.py` `served_airports`
+  can ask the model once about an unresolved code within the airport-check time budget. If sourcing finishes
+  without a complete price, `core/orchestrator.py` `_first_price` checks for late options until `hard_at`
+  in the live mailbox. Offline KPI replay advances its clock through this wait and can deliver captured bids.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
