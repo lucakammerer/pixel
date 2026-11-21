@@ -17,6 +17,8 @@ class Settings:
     quote_hard_s: int
     webhook_secret: str
     alert_url: str
+    model_prose: str = ""  # the mail's prose slots; empty: `model`
+    signer: str = "Lena Berger"  # the person who signs our mails (R31)
 
 
 @cache
@@ -34,4 +36,6 @@ def settings() -> Settings:
         quote_hard_s=int(env.get("PIXEL_QUOTE_HARD_S", "315")),
         webhook_secret=env.get("PIXEL_WEBHOOK_SECRET", ""),
         alert_url=env.get("PIXEL_ALERT_URL", ""),
+        model_prose=env.get("PIXEL_MODEL_PROSE", ""),
+        signer=env.get("PIXEL_SIGNER", "Lena Berger"),
     )
