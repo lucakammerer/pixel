@@ -227,7 +227,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `known_gap` is one the rules read wrong today.
 - A carrier's answer can name the offer's validity in days next to the transit time ("valid for 7 days, transit 3
   days"); the first number of days is not always the transit. `pricing/bids.py` `_days` takes the number after
-  "transit", "Laufzeit" or "T/T", else the first one no "valid", "gültig" or "good" stands before.
+  "transit", "Transitzeit", "Laufzeit" or "T/T" (never "Laufzeit des Angebots", the offer's validity, nor
+  "transit via" a hub), else the first one no "valid", "gültig", "good" or "Laufzeit des Angebots" stands before.
   `tests/fixtures/mails/bid_probes.jsonl` holds such answers.
 - A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
   attachment" (round 63: all four did, one as an mp3). `pricing/bids.py` `record` reads the body together with
