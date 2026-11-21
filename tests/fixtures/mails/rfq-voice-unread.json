@@ -1,0 +1,18 @@
+{
+  "id": 19210,
+  "from": "auer-maschinenbau@hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "Voice message: quotation request from Auer Maschinenbau GmbH",
+  "body": "Hello,\n\nI am on the road today, so I recorded our quotation request as a voice message. Please listen to the attached recording (voice-message.mp3). It has all details of the shipment.\n\nPlease reply by mail with your all-in price in EUR.\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+  "in_reply_to": null,
+  "references": [],
+  "received_at": "2026-11-21T21:53:55.524611+00:00",
+  "attachments": [
+    {
+      "id": 569,
+      "filename": "voice-message.mp3",
+      "content_type": "audio/mpeg",
+      "size": 157797
+    }
+  ]
+}

@@ -198,5 +198,21 @@
   "subject": "Air freight quote request to EZE",
   "request": "Dear Air Freight Team,\n\nCould you please quote an all-in price in EUR for the fastest air freight option to EZE (Buenos Aires, AR)? Please include truck pickup from our site in Stuttgart, Germany (postcode 70498), and transport to the departure airport.\n\nThe shipment consists of 11 pieces of furniture samples, with a gross weight of 544 kg and a total volume of 1.86 cbm. It will be ready for pickup on 2026-11-28.\n\nPlease let me know the earliest pickup and arrival you can offer. Thank you for your assistance.\n\nMit freundlichen Gruessen / Kind regards\nJonas Kessler\nLogistics Coordinator\nKessler Feinmechanik GmbH, Ulm",
   "sent": "Thank you for reaching out about your furniture samples."
+ },
+ {
+  "session": 18005,
+  "customer": null,
+  "kind": "attachment",
+  "subject": null,
+  "request": "Hello,\n\nI am on the road today, so I recorded our quotation request as a voice message. Please listen to the attached recording (voice-message.mp3). It has all details of the shipment.\n\nPlease reply by mail with your all-in price in EUR.\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+  "sent": "The voice message was clear and helpful."
+ },
+ {
+  "session": 17569,
+  "customer": null,
+  "kind": "attachment",
+  "subject": null,
+  "request": "Hello,\n\nplease find our request for an air freight quotation attached, as a Word document (quotation-request.docx). It has all details of the shipment.\n\nPlease reply by mail with your all-in price in EUR.\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+  "sent": "The attachment you included was very helpful."
  }
 ]

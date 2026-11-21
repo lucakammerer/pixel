@@ -222,10 +222,11 @@ def _lane(text: str) -> tuple[str, str] | None:
 
 
 def _destination_only(text: str) -> str | None:
-    """The one destination of a mail that names no origin airport (door-to-port)."""
-    if any(_airport(c) for c in ORIGIN_LABEL.findall(text)):
-        return None
+    """The one destination of a mail that names no origin airport (door-to-port). "Select the departure airport for
+    the fastest option to JFK" labels the destination, not an origin (round 69)."""
     found = {c for c in DEST_LABEL.findall(text) if _airport(c)}
+    if {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - found:
+        return None
     return found.pop() if len(found) == 1 else None
 
 
