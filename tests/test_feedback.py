@@ -162,6 +162,6 @@ async def test_first_poll_and_later_updates_feed_scorer_stats(conn):
     assert (stats["accepted"], stats["rejected"]) == (1, 1)
 
     assert await feedback.once(ctx) == 0
-    assert quotes.latest_scores(ctx)[0]["booked"] is True
+    assert {row["round"]: row["booked"] for row in quotes.latest_scores(ctx)}[1] is True
     assert await feedback.once(ctx) == 0
     assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score'").fetchone()[0] == 3

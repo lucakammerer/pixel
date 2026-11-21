@@ -48,7 +48,8 @@ def latest_scores(ctx: Context) -> list[dict[str, Any]]:
     """The newest `score` event per round, newest round first."""
     rows = ctx.db.execute(
         "SELECT payload FROM events WHERE id IN (SELECT MAX(id) FROM events WHERE kind = 'score'"
-        " GROUP BY json_extract(payload, '$.round')) ORDER BY id DESC"
+        " GROUP BY CAST(json_extract(payload, '$.round') AS INTEGER))"
+        " ORDER BY CAST(json_extract(payload, '$.round') AS INTEGER) DESC"
     ).fetchall()
     return [json.loads(r["payload"]) for r in rows]
 
