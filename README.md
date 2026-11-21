@@ -62,6 +62,8 @@ customer omitted the postcode, the quote asks for the pickup address. With no ai
 as missed. A customer question about an offer goes to the operator. An affirmative instruction to book a delivered
 offer starts the booking.
 
+The Performance dashboard shows the team total from `GET /v1/board/me`. Its component cards sum the points available in the per-request rows.
+
 ## Team
 
 Five people, five roles. Each role has one number it answers for and files it reviews

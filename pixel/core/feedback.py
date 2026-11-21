@@ -136,8 +136,12 @@ def _round(ctx: Context, row: dict[str, Any], delta: Decimal | None) -> None:
 
 
 async def once(ctx: Context) -> int:
-    """Store finalized score updates and return the number of new verdicts processed for feedback."""
+    """Store board totals and finalized score updates, and return the number of new feedback verdicts."""
     data = await ctx.board.me()
+    reported_total = data.get("total")
+    total = Decimal(str(reported_total)) if reported_total is not None else None
+    if total is not None and total != quotes.board_total(ctx):
+        events.emit(ctx, "score.total", "board", payload={"total": str(total)})
     requests = [r for r in data.get("requests", []) if r.get("verdict") in FINAL]
     stored = {str(score["round"]): score for score in quotes.latest_scores(ctx)}
     for row in requests:
@@ -146,13 +150,12 @@ async def once(ctx: Context) -> int:
             events.emit(ctx, "score", "board", payload=score)
             stored[str(score["round"])] = score
     state = json.loads(db.get(ctx.db, STATE) or '{"total": null, "verdicts": {}}')
-    total = Decimal(str(data.get("total") or 0))
     new = [r for r in requests if state["verdicts"].get(str(r["round_no"])) != r["verdict"]]
     first = state["total"] is None  # nothing to compare the total with: remember the verdicts, explain nothing
     for row in [] if first else new:
-        _round(ctx, row, total - Decimal(state["total"]) if len(new) == 1 else None)
+        _round(ctx, row, total - Decimal(state["total"]) if total is not None and len(new) == 1 else None)
     state["verdicts"].update({str(r["round_no"]): r["verdict"] for r in new})
-    db.put(ctx.db, STATE, json.dumps({"total": str(total), "verdicts": state["verdicts"]}))
+    db.put(ctx.db, STATE, json.dumps({"total": str(total) if total is not None else None, "verdicts": state["verdicts"]}))
     return 0 if first else len(new)
 
 
