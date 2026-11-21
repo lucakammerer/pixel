@@ -286,3 +286,10 @@ async def test_the_language_is_codes_reading_not_the_models(monkeypatch, emitted
 def test_no_pickup_needed_is_no_door_pickup():
     rfq = extract.by_rules(mail("AAA to BBB, 300 kg, 1 cbm. No pickup needed, the goods are at the airport."), DEADLINE)
     assert rfq.door_pickup is False
+
+
+@pytest.mark.parametrize(
+    "text", ["Pickup from our site in 61391, no pickup before 9:00 please.", "Abholung in 61391, keine Abholung am Freitag."]
+)
+def test_a_pickup_time_window_keeps_the_door_pickup(text):
+    assert extract._pickup(text) == (True, "61391")
