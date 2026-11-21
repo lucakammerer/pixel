@@ -155,13 +155,27 @@ async def test_a_dry_run_never_books_at_the_portal(pipe, accepted):
     assert pipe.ctx.portal.calls == []
 
 
-@pytest.mark.parametrize("text", [
-    "We will not go ahead.", "We can't accept.", "Please do not book.", "We won't proceed.",
-    "Don't confirm.", "We are unable to take it.", "We would rather not move forward.",
-    "We won’t be moving forward.", "Too low.", "Too high.", "Not competitive.", "We will pass on this.",
-    "Bitte nicht buchen.", "Wir können das Angebot nicht annehmen.", "Wir möchten nicht fortfahren.",
-    "Leider nicht.",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We will not go ahead.",
+        "We can't accept.",
+        "Please do not book.",
+        "We won't proceed.",
+        "Don't confirm.",
+        "We are unable to take it.",
+        "We would rather not move forward.",
+        "We won’t be moving forward.",
+        "Too low.",
+        "Too high.",
+        "Not competitive.",
+        "We will pass on this.",
+        "Bitte nicht buchen.",
+        "Wir können das Angebot nicht annehmen.",
+        "Wir möchten nicht fortfahren.",
+        "Leider nicht.",
+    ],
+)
 def test_decline_phrases(text):
     assert booking.intent(text) == "decline"
 
@@ -173,8 +187,15 @@ async def test_captured_decline_never_books(pipe):
     sent_quote = quote(session_id, customer=raw["from"]).model_copy(update={"sent_message_id": raw["in_reply_to"]})
     quotes.save(pipe.ctx, sent_quote)
     pipe.ctx.portal = Portal()
-    reply = mail(raw["id"], session_id, sender=raw["from"], to=raw["to"], subject=raw["subject"],
-                 body=raw["body"], in_reply_to=raw["in_reply_to"])
+    reply = mail(
+        raw["id"],
+        session_id,
+        sender=raw["from"],
+        to=raw["to"],
+        subject=raw["subject"],
+        body=raw["body"],
+        in_reply_to=raw["in_reply_to"],
+    )
     await booking.handle_reply(pipe.ctx, reply)
     assert quotes.get(pipe.ctx, sent_quote.id).status == QuoteStatus.DECLINED
     assert kinds(pipe.ctx) == ["customer.declined"]
@@ -191,3 +212,15 @@ async def test_unsent_draft_reply_needs_a_person(pipe, body):
     assert quotes.get(pipe.ctx, draft.id).status == QuoteStatus.DRAFT
     assert kinds(pipe.ctx) == ["human.note"]
     assert pipe.ctx.portal.calls == [] and pipe.sent == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Looks good, please book it and pass on the AWB number.",
+        "Please go ahead. Leider nicht vor Montag abholbereit.",
+        "Price is fine, not too high. Book it.",
+    ],
+)
+def test_an_acceptance_that_names_a_decline_word_still_books(text):
+    assert booking.intent(text) == "accept"

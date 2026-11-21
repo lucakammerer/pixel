@@ -20,11 +20,12 @@ ACCEPT = re.compile(
     re.IGNORECASE,
 )
 DECLINE = re.compile(
-    r"\b(decline|no thanks|too (?:low|high)|not competitive|pass on|not interested|too expensive|went with|"
+    r"\b(decline|no thanks|(?<!not )too (?:low|high)|not competitive|pass on (?:this|it|that|your offer)|not interested|"
+    r"too expensive|went with|"
     r"another (?:offer|forwarder)|"
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:go ahead|accept|book|proceed|confirm|take it|move forward|be moving forward)|"
-    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
+    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
     re.IGNORECASE,
 )
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
