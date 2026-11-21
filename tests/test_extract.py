@@ -416,3 +416,19 @@ def test_an_older_mail_quoted_below_the_request_is_not_read():
     assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode) == (
         "", "PEK", Decimal(1081), Decimal("8.03"), "42401"
     )  # fmt: skip
+
+
+async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures" / "mails" / "synthetic-rfq-facts-in-attachment.json").read_text()
+    )
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    store.save_zones(ctx, [{"zone": zone_of("61391"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("AAA", "GRU", Decimal(715), Decimal("2.65"))
+    assert extract.DG_DOCUMENTS in rfq.missing

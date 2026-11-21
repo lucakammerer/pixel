@@ -97,6 +97,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   to the model.
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself.
+- A request can leave its weight to the attached packing list ("Total gross weight (kg): 715"): when the mail names
+  no weight, `extract` reads the attachments' text with it, for the rules and the model. A document number ("No.
+  53839") is no postcode.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC

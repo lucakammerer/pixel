@@ -29,13 +29,15 @@ NUM = r"(\d[\d.,']*)"
 OTHER_UNIT = r"\s*(?i:lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
 WEIGHT = (
     re.compile(rf"{NUM}\s*(?i:kgs?|kilos?|kilograms?|kilogramm)\b"),
-    re.compile(rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht))\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"),
+    re.compile(
+        rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?)\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"
+    ),
 )
 POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
-    re.compile(rf"(?i:\b(?:cbm|volume|volumen))\s*:?\s*{NUM}"),
+    re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
 )
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\b", re.IGNORECASE
@@ -85,7 +87,9 @@ OWN_DELIVERY = re.compile(
     r"|\bkeine\s+abholung\s+(?:nötig|notwendig|erforderlich)\b",
     re.IGNORECASE,
 )
-POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
+POSTCODE = re.compile(
+    r"(?<![\d.,])(?<!No\. )(?<!Nr\. )(?<!#)(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE
+)
 # "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
 DANGEROUS = re.compile(
     r"(?<!non-)(?<!non )(?<!no )(?<!not )(?<!kein )(?<!keine )(?<!kein)"
@@ -486,28 +490,42 @@ def _declared(lines: list[str]) -> str | None:
     return next((" ".join((m[1] or m[2]).split()) for m in found), None)
 
 
-async def dangerous_goods(ctx: Context, message: Message) -> tuple[str, str] | None:
-    """What the mail or one of its attachments (packing list, letter of instruction) declares as dangerous goods,
-    and where: also when the mail itself says "non-dangerous"."""
+async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[str]]]:
+    """The text lines of every attachment code can read (packing list, letter of instruction)."""
     from pixel.agents.tariffs.agent import _lines
 
-    if declared := _declared(_body(message).splitlines()):
-        return declared, "mail"
+    files = []
     for attachment in message.attachments:
         try:
-            lines = _lines(attachment.filename, await ctx.mailbox.attachment(message.id, attachment.id))
+            files.append((attachment.filename, _lines(attachment.filename,
+                                                      await ctx.mailbox.attachment(message.id, attachment.id))))  # fmt: skip
         except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
             events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
                         payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
-            continue
+    return files
+
+
+async def dangerous_goods(
+    ctx: Context, message: Message, files: list[tuple[str, list[str]]] | None = None
+) -> tuple[str, str] | None:
+    """What the mail or one of its attachments (packing list, letter of instruction) declares as dangerous goods,
+    and where: also when the mail itself says "non-dangerous"."""
+    if declared := _declared(_body(message).splitlines()):
+        return declared, "mail"
+    for filename, lines in files if files is not None else await _attachments(ctx, message):
         if declared := _declared(lines):
-            return declared, attachment.filename
+            return declared, filename
     return None
 
 
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
+    files = await _attachments(ctx, message) if message.attachments else []
+    if files and not any(p.search(_body(message)) for p in WEIGHT):
+        # "Please see the attached packing list": the weight stands only in the attachment, so it is read too.
+        attached = "\n".join(line for _, lines in files for line in lines)
+        message = message.model_copy(update={"body": f"{_body(message)}\n\n{attached}"})
     text = _text(message)
     rfq, prose = by_rules(message, deadline), None
     if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text), text)).origin:
@@ -545,7 +563,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
         else:
             rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text), text)
             prose = {k: result.data.get(k) for k in PROSE}
-    if dg := await dangerous_goods(ctx, message):
+    if dg := await dangerous_goods(ctx, message, files):
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
         events.emit(ctx, "rfq.dangerous_goods", "rfq", session_id=message.session_id, message_id=message.id,
