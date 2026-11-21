@@ -13,7 +13,7 @@ from pixel.core.context import Context
 KINDS = (
     "mail.in", "mail.out", "mail.held",  # held: dry run, or a session a person took over
     "route",
-    "rfq.extracted", "option.found", "option.failed", "bid.requested", "bid.received",
+    "rfq.extracted", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received",
     "quote.drafted", "quote.sent", "quote.fallback", "quote.missed", "quote.prose", "prose.raw",
     "customer.accepted", "customer.declined",
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",

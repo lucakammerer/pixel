@@ -69,6 +69,13 @@ DOOR = re.compile(
 )
 OWN_DELIVERY = re.compile(r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b", re.IGNORECASE)
 POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
+# "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
+DANGEROUS = re.compile(
+    r"\b(?:dangerous goods|hazardous goods|dgr|gefahrgut)\b\s*:?\s*"
+    r"(?!no\b|none\b|n/?a\b|nein\b|kein\w*|non\b|not\b|-|$)(.+)|(.*\bUN\s?\d{4}\b.*)",
+    re.IGNORECASE,
+)
+DG_DOCUMENTS = "dangerous_goods_documents"
 CURRENCY_ASK = re.compile(r"(?i:\b(?:in|currency:?|währung:?))\s+([A-Z]{3})\b")
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
@@ -345,6 +352,30 @@ def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 
 
+def _declared(lines: list[str]) -> str | None:
+    found = (m for line in lines if (m := DANGEROUS.search(line)))
+    return next((" ".join((m[1] or m[2]).split()) for m in found), None)
+
+
+async def dangerous_goods(ctx: Context, message: Message) -> tuple[str, str] | None:
+    """What the mail or one of its attachments (packing list, letter of instruction) declares as dangerous goods,
+    and where: also when the mail itself says "non-dangerous"."""
+    from pixel.agents.tariffs.agent import _lines
+
+    if declared := _declared(message.body.splitlines()):
+        return declared, "mail"
+    for attachment in message.attachments:
+        try:
+            lines = _lines(attachment.filename, await ctx.mailbox.attachment(message.id, attachment.id))
+        except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
+            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
+                        payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+            continue
+        if declared := _declared(lines):
+            return declared, attachment.filename
+    return None
+
+
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
@@ -363,6 +394,11 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
         )
         rfq = _zone_origin(ctx, _from_model(result.data, message, deadline))
         prose = {k: result.data.get(k) for k in PROSE}
+    if dg := await dangerous_goods(ctx, message):
+        # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
+        rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
+        events.emit(ctx, "rfq.dangerous_goods", "rfq", session_id=message.session_id, message_id=message.id,
+                    payload={"declared": dg[0], "source": dg[1]})  # fmt: skip
     events.emit(
         ctx,
         "rfq.extracted",
