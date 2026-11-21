@@ -33,6 +33,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    or with a capitalised suffix, as UTF-16 or markdown text (`CONTAINERS`): read like the original or not at all.
 14. Tracking questions: every live question about a booked shipment (`tracking-questions.json`) with one change
    each (`TRACKING_CHANGES`) against the live CRM's shipments: the same shipment, or a question back, never another.
+15. Follow-up answers: every captured request with the customer's answer appended as `read_request` appends it,
+   each naming another airport beside the request's (`rfqs/followup-answers.json`): every field stays the request's.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -452,6 +454,41 @@ def audit_containers() -> list[Container]:
                                                   if k != "origin" and _live_value(rfq, k) != _live_want(k, v)]  # fmt: skip
             outcome = "wrong" if wrong else "unread" if unread else "right" if wrong == [] else "model"
             results.append(Container(path.name, change, outcome, "; ".join(wrong or [])))
+    return results
+
+
+@dataclass
+class Followup:
+    fixture: str
+    answer: str
+    outcome: str  # "right", "model" or "wrong"
+    detail: str = ""
+    known_gap: str | None = None
+
+
+def audit_followups() -> list[Followup]:
+    """Each captured request with each answer of `rfqs/followup-answers.json`; {other} is the next captured request's
+    destination that differs from this one's, so no airport is written here."""
+    rows = [r for r in _jsonl(RFQ_FIXTURES / "live.jsonl") if (MAILS / r["fixture"]).exists()]
+    data = json.loads((RFQ_FIXTURES / "followup-answers.json").read_text())
+    answers, gaps = data["answers"], data.get("known_gaps", {})
+    deadline, results = _deadline(), []
+    for i, row in enumerate(rows):
+        exp, raw = row["expected"], json.loads((MAILS / row["fixture"]).read_text())
+        dest = exp.get("destination")
+        others = [r["expected"].get("destination") for r in rows[i + 1 :] + rows[:i]]
+        other = next((o for o in others if o and o != dest), None)
+        if not dest or not other or row.get("known_gap") or UNREAD in exp.values():
+            continue
+        for name, answer in answers.items():
+            body = f"{raw['body']}\n\n{extract.own_words(answer.format(dest=dest, other=other))}"
+            rfq = _rules_with_attachments(raw | {"body": body}, deadline)
+            wrong = [f"{k}: {_live_value(rfq, k)} != {v}" for k, v in exp.items()
+                     if rfq and _live_value(rfq, k) != _live_want(k, v)]  # fmt: skip
+            outcome = "model" if rfq is None else "wrong" if wrong else "right"
+            results.append(
+                Followup(row["fixture"], name, outcome, "; ".join(wrong), gaps.get(f"{name}:{row['fixture']}"))
+            )
     return results
 
 
@@ -1288,6 +1325,20 @@ def main() -> int:
     for r in tracked_wrong:
         print(f"    FAIL {r.change}: {r.case_id} ({r.outcome})")
 
+    followups = audit_followups()
+    followups_wrong = [f for f in followups if f.outcome == "wrong" and not f.known_gap]
+    print(f"\n[15] Follow-up answers: {sum(f.outcome == 'right' for f in followups)}/{len(followups)} keep the "
+          f"request, {sum(f.outcome == 'model' for f in followups)} left to the model")  # fmt: skip
+    for name in json.loads((RFQ_FIXTURES / "followup-answers.json").read_text())["answers"]:
+        rows = [f for f in followups if f.answer == name]
+        counts = {o: sum(f.outcome == o for f in rows) for o in ("right", "model", "wrong")}
+        print(f"    {name:<24} {counts['right']}/{len(rows)} right, {counts['model']} model, {counts['wrong']} wrong")
+    for f in followups:
+        if f.outcome == "wrong":
+            print(f"    {'GAP ' if f.known_gap else 'FAIL'} {f.answer}: {f.fixture} ({f.known_gap or f.detail})")
+        elif f.known_gap:
+            print(f"    ok   {f.answer}: {f.fixture} reads right now, remove its known gap")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -1303,6 +1354,7 @@ def main() -> int:
         or empty
         or containers_wrong
         or tracked_wrong
+        or followups_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")

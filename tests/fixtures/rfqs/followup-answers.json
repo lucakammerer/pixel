@@ -1,0 +1,18 @@
+{
+  "note": "A customer's answer to our one question, appended to the request as `extract.read_request` appends it. Each names another airport ({other}: a destination of another captured request) beside this request's ({dest}); none changes the shipment, so every field stays the request's. Round 69 read the answer's airport as the origin.",
+  "answers": {
+    "an earlier shipment": "Hi Lena,\n\nthanks for getting back to me. The goods go to {dest}; last month we shipped the same goods to {other}.\n\nBest regards",
+    "a sister company": "Hello,\n\nour sister company ships from {other}, but this shipment is ours, as in my request.\n\nKind regards",
+    "a hub allowed": "Hi,\n\nrouting via {other} is fine with us.\n\nThanks",
+    "a hub refused": "Hello,\n\nplease no transit via {other}; the goods must reach {dest} directly.\n\nRegards",
+    "not that airport": "Hi Lena,\n\nthe consignee collects at {dest}, not at {other}.\n\nCheers",
+    "an old request closed": "Hello,\n\nour previous request to {other} is closed, please ignore it. This one stands as written.\n\nKind regards",
+    "German, not via": "Hallo,\n\ndie Ware geht nach {dest}. Bitte nicht über {other}.\n\nViele Grüße",
+    "the customer's office": "Thanks! PS: the invoice goes to our office near {other} airport.\n\nBest",
+    "our question quoted": "The destination is {dest}.\n\n> Which destination airport should we quote?\n> We could also quote {other}.\n\nRegards",
+    "a later shipment": "Hello,\n\nfrom {other} to {dest} might come later in the year, but for now please quote this shipment as stated.\n\nThanks"
+  },
+  "known_gaps": {
+    "a later shipment:rfq-door-request-in-txt.json": "The request stands only in its .txt attachment; the answer's \"from X to Y might come later\" is the only lane in the mail, and `read_request`'s rules read the mail before the documents, so the request turns port-to-port from X without the pickup. Owner: Cost."
+  }
+}
