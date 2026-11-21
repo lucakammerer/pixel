@@ -1,4 +1,6 @@
+import json
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import pytest
@@ -126,3 +128,9 @@ async def test_decline_and_question(pipe, accepted):
     await booking.handle_reply(pipe.ctx, mail(22, 1, body="No thanks, we went with another offer."))
     assert kinds(pipe.ctx) == ["human.note", "customer.declined"]
     assert quotes.get(pipe.ctx, "Q-1").status == QuoteStatus.DECLINED and pipe.sent == []
+
+
+@pytest.mark.parametrize(("name", "said"), [("customer-accepts.json", "accept"), ("customer-thanks.json", "other")])
+def test_intent_of_the_captured_customer_replies(name, said):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / name).read_text())
+    assert booking.intent(f"{raw['subject']}\n{raw['body']}") == said

@@ -105,3 +105,15 @@ async def test_a_captured_door_request_without_an_origin_takes_the_pickup_zones_
     store.save_zones(ctx, [{"zone": zone_of("51447"), "area": "Town", "airport": "AAA"}])
     rfq = await extract.extract(ctx, message, DEADLINE)
     assert (rfq.origin, rfq.destination, rfq.door_pickup, rfq.missing) == ("AAA", "ORD", True, ())
+
+
+def test_rules_read_the_captured_port_to_port_request():
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-port-to-port.json").read_text())
+    rfq = extract.by_rules(to_message(raw, "in"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == (
+        "DUS",
+        "JFK",
+        Decimal(1540),
+        Decimal("5.90"),
+    )
+    assert (rfq.preference, rfq.door_pickup, rfq.currency) == (Preference.FASTEST, False, "EUR")

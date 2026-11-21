@@ -41,7 +41,7 @@ def make_ctx(conn, mailbox=None, **changes):
 
 
 def ingest_rfq(ctx):
-    rfq = poller.ingest(ctx, to_message(json.loads((MAILS / "synthetic-rfq.json").read_text()), "in"))
+    rfq = poller.ingest(ctx, to_message(json.loads((MAILS / "rfq-door-no-origin.json").read_text()), "in"))
     ctx.db.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (?, ?, 'open', ?)",
                    (rfq.id, rfq.sender, rfq.sent_at.isoformat()))  # fmt: skip
     return rfq
