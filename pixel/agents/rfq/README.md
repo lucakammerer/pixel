@@ -62,10 +62,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 ## Pitfalls
 
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
-  ("Dangerous goods: UN…, Class …") while the mail calls the goods non-dangerous. `dangerous.py` reads the
-  attachments; `agent.py` `handle` then names the goods in the quote and asks for the shipper's declaration and the
-  safety data sheet. Without that the scorer rejects the quote (`dg_docs_missing`); with it, at the unchanged price,
-  it accepted one. The deadline fallback does not add the note yet.
+  ("Dangerous goods: UN…, Class …") while the mail calls the goods non-dangerous. `extract.py`
+  `dangerous_goods` reads them and marks the request; `agent.py` `_noted` then names the goods in the quote and asks
+  for the shipper's declaration and the safety data sheet (`dangerous.py`), in the deadline fallback too. Without that the scorer rejects the quote (`dg_docs_missing`); with it, at the unchanged price,
+  it accepted one.
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
