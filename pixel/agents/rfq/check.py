@@ -197,6 +197,141 @@ def _weight(q: Quote, request: str, options: list[RateOption], files: tuple[str,
     return []
 
 
+# --- weight accounting: the priced weight must be one the mail's own figures explain --------------------------------
+#
+# Independent of how `extract` read the mail: every mass figure the customer wrote (kg, lb, t, or a labelled
+# "weight: 480") is collected with what stands next to it (net, per piece, a piece count on the same line). The priced
+# weight passes only when one plain reading of those figures gives it: one figure, one figure times its pieces, the
+# sum of all of them, or the lots added up. Every live misread so far fails this test: "480 lbs" priced as 480 kg,
+# "4 cartons, each 48 kg" as 48 kg, a lot left out of the sum. It makes no model call and changes no price.
+
+MASS_UNIT = r"(?P<unit>kgs?|kilo(?:gram(?:m|s)?|s)?|lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
+MASS = re.compile(
+    rf"(?P<num>\d{{1,3}}(?:[ \u00a0\u202f]\d{{3}})+(?![\d.,])|\d[\d.,']*\d|\d)\s*{MASS_UNIT}(?![\w])", re.IGNORECASE
+)
+MASS_LABEL = re.compile(  # "Gross weight: 480" without a unit is read as kg by the rules; read it the same way here
+    r"\b(?:gross\s+weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?\s*:\s*(?P<num>\d[\d.,']*\d|\d)(?![\d.,']*\s*[a-z])",
+    re.IGNORECASE,
+)
+MASS_NET = re.compile(r"\s*(?:kg|kgs)?\s*\)?\s*(?:net|netto|nett)\b|\s*\(\s*net", re.IGNORECASE)
+MASS_NET_BEFORE = re.compile(r"(?:net|netto|nett)(?:\s+weight|gewicht)?\s*[:=]?\s*$", re.IGNORECASE)
+MASS_EACH_BEFORE = re.compile(r"(?:each|apiece|je|à|per\s+\w+|pro\s+\w+)\s*(?:of\s+)?$", re.IGNORECASE)
+MASS_EACH_AFTER = re.compile(
+    r"\s*(?:gross\s*|brutto\s*)?(?:each|apiece|je|per\s+(?:piece|unit|pc|carton|case|drum|pallet|box|crate|stück)"
+    r"|pro\s+(?:stück|palette|karton))\b",
+    re.IGNORECASE,
+)
+# Figures that are not the shipment's gross weight: a limit, a capacity, a chargeable or volume weight.
+MASS_OTHER = re.compile(
+    r"(?:max(?:imum|\.)?|up\s+to|bis\s+zu|limit|capacity|chargeable|volumetric|volume\s+weight|frachtpflichtig\w*"
+    r"|volumengewicht)\s*(?:weight\s*)?(?:of\s+)?:?\s*$",
+    re.IGNORECASE,
+)
+MASS_COUNT = re.compile(
+    r"(\d+)\s*(?:x\s+)?(?:pcs|pieces?|pallets?|colli|packages?|cartons?|boxes|box|cases?|drums?|crates?|units?|stück"
+    r"|stk|paletten|kartons?|kisten?|fässer)\b",
+    re.IGNORECASE,
+)
+MASS_FACTOR = re.compile(r"(\d+)\s*[x×]\s*$", re.IGNORECASE)  # "2 x 300 kg"
+TO_KG = {"lb": Decimal("0.45359237"), "t": Decimal(1000)}
+
+
+@dataclass(frozen=True)
+class Mass:
+    """One mass figure of the mail: its readings in kg (1.234 may be 1234 or 1.234), and the pieces it is for when
+    the mail says it is per piece (None for a figure of the whole lot or shipment; 0 for "each" without a count)."""
+
+    kg: frozenset[Decimal]
+    per_piece: int | None
+    other: bool  # a limit, capacity or chargeable weight: never required to add up, may still match
+
+
+def masses(text: str) -> list[Mass]:
+    found = []
+    for line in text.splitlines():
+        if len(line) > LINE_MAX * 2:
+            continue
+        hits = [(m, m.group("unit")) for m in MASS.finditer(line)]
+        hits += [(m, "kg") for m in MASS_LABEL.finditer(line) if not any(h.start() <= m.start("num") < h.end()
+                                                                         for h, _ in hits)]  # fmt: skip
+        for m, unit in hits:
+            before, after = line[: m.start("num")], line[m.end() :]
+            if MASS_NET.match(after) or MASS_NET_BEFORE.search(before[-20:]):
+                continue
+            u = unit.lower()
+            factor = TO_KG["lb"] if u.startswith(("lb", "pound")) else TO_KG["t"] if u.startswith("t") else Decimal(1)
+            raw = m.group("num")
+            parts = {raw, raw.split()[-1]} if raw.split()[1:] else {raw}  # "1 250 kg" is 1250, or "1" then 250
+            readings = {v * factor for r in parts for t in (True, False) if (v := number(r, t)) is not None and v > 0}
+            if not readings:
+                continue
+            per_piece = None
+            if (f := MASS_FACTOR.search(before)) is not None:
+                per_piece = int(f.group(1))
+            elif MASS_EACH_BEFORE.search(before[-25:]) or MASS_EACH_AFTER.match(after):
+                counts = MASS_COUNT.findall(before)
+                per_piece = int(counts[-1]) if counts else 0
+            found.append(Mass(frozenset(readings), per_piece, bool(MASS_OTHER.search(before[-30:]))))
+    return found
+
+
+def explanations(figures: list[Mass], listed: bool) -> set[Decimal]:
+    """Every weight in kg a plain reading of the figures gives. A mail that lists its shipment line by line
+    (`listed`) is explained only by the sum of its lines, or by a total line that equals that sum: a single line
+    alone is a lot left out (922 kg priced for 1822 kg). Any other mail by its largest figure (a total stands beside
+    the per-piece and part figures) or the sum of all of them."""
+
+    def values(f: Mass) -> set[Decimal]:
+        if f.per_piece is None:
+            return set(f.kg)
+        return {kg * f.per_piece for kg in f.kg} if f.per_piece else set()
+
+    shipment = [f for f in figures if not f.other and values(f)]
+    if not shipment:
+        return {v for f in figures for v in values(f)}
+    low = [min(values(f)) for f in shipment]  # the usual reading: 1.234 kg is 1234 kg, 1,5 t is 1500 kg
+    high = [max(values(f)) for f in shipment]
+    for i, f in enumerate(shipment):  # a total line: one figure that is the sum of all the others
+        rest = sum(low[:i] + low[i + 1 :], Decimal(0))
+        if len(shipment) > 2 and any(_close(v, rest) for v in values(f)):
+            return {v for v in values(f)}
+    out = {sum(low, Decimal(0)), sum(high, Decimal(0))}
+    if not listed or len(shipment) == 1:
+        out |= {max(low), max(high)}
+    return out
+
+
+LISTED = re.compile(r"^\s*(?:[-*•]|(?:lot|pos(?:ition)?|item|part|teil|los)\s*\.?\s*\d+\s*[:.)-])", re.IGNORECASE)
+
+
+def listed(text: str) -> bool:
+    """Two or more list lines that each carry a weight: the shipment is given line by line."""
+    return sum(1 for line in text.splitlines() if LISTED.match(line) and masses(line)) >= 2
+
+
+def _close(a: Decimal, b: Decimal) -> bool:
+    return abs(a - b) <= max(Decimal("0.5"), b * Decimal("0.005"))
+
+
+def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """The priced weight is one the mail's own figures explain, else BLOCK. A mail that writes no weight at all
+    only warns: the weight may come from an attachment the check cannot read."""
+    text = own_words(request)
+    weight = q.rfq.weight_kg
+    figures = masses(text)
+    if not figures:  # nothing to hold the weight against: an attachment, a mail we could not load
+        return [Finding("weight_unexplained", WARN, f"priced on {weight} kg, the mail writes no weight")]
+    ways = explanations(figures, listed(text))
+    if (lots := lot_weight(text)) is not None:
+        ways.add(lots)
+    if any(_close(weight, w) for w in ways):
+        return []
+    shown = ", ".join(f"{w:g} kg" for w in sorted(ways)[:6]) if ways else "none"
+    each = [f for f in figures if f.per_piece == 0]
+    hint = "; a weight per piece without a piece count" if each else ""
+    return [Finding("weight_unexplained", BLOCK, f"priced on {weight} kg; the mail's figures give {shown}{hint}")]
+
+
 NEGATED = r"(?<!non-)(?<!non )(?<!no )(?<!not )(?<!kein )(?<!keine )(?<!nicht )"
 DG_STRONG = re.compile(
     rf"\bUN\s?\d{{4}}\b|\bclass\s+[1-9](?:\.\d)?\b|\b{NEGATED}(?:dangerous goods|hazardous|hazmat|gefahrgut|"
@@ -310,5 +445,5 @@ def _pct(value: Decimal, best: Decimal) -> str:
     return f"{(value / best - 1) * 100:.1f}%" if best else "?"
 
 
-RULES = (_required, _lane, _arithmetic, _chargeable, _pickup, _best_price, _per_kg, _weight, _dangerous, _text,
+RULES = (_required, _lane, _arithmetic, _chargeable, _pickup, _best_price, _per_kg, _weight, _accounting, _dangerous, _text,
          _language, _validity)  # fmt: skip
