@@ -127,3 +127,6 @@ round 11: the latest one counts.
 `tests/fixtures/warehouse-rounds.json` lists rounds 15 to 19 with what we read, what we quoted, the verdict and the
 bound it gives on the scorer's best price.
 
+`rfq-voice-unread.json`: round 69, the whole request was a voice message we could not read, so we asked.
+`customer-answers-every-fact.json`: the answer 13 s later with every fact, door-to-port to JFK; "select the departure
+airport for the fastest option to JFK" read JFK as an origin and the answer was dropped.
