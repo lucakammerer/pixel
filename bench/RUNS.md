@@ -122,6 +122,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   Kessler,", no guessed Mr or Ms), in quote and booking mails. Next: the human column.
 - 21.11. 18:50 CET: round 26 accepted (60) and booked. "We are shipping spare parts for packaging machines: 8 pieces"
   gave no goods, so the stock opening went out; `goods_of` now reads it. Next: the human column.
+- 21.11. 18:55 CET: after #124 (the opening thread: no stock thank-you, often no opening at all) the answer to the
+  customer's small talk thanks them again ("All good here, thanks for asking!"), and `goods_of` is gone, as nothing
+  called it any more. Read three fixtures without a model opening: the mail goes straight to the offer and reads as
+  one person. Next: the first live quotes after #124, `quote.prose` `rejected` beside them.
 
 ### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
 
