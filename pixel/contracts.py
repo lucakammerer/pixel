@@ -51,6 +51,7 @@ class BookingStatus(StrEnum):
     BOOKED = "booked"  # portal answered 201/200
     CONFIRMED = "confirmed"  # the airline's confirmation mail arrived
     FAILED = "failed"
+    CANCELLED = "cancelled"  # the customer withdrew; the portal cancelled it
 
 
 class Attachment(Model):
