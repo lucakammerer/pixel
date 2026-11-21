@@ -57,10 +57,12 @@ def test_total_is_written_once_without_a_thousands_separator_in_every_language(s
     assert compose.check(en, rfq("en"), OPTION) and compose.check(de, rfq("de"), OPTION)
 
 
-def test_pickup_is_named():
+def test_pickup_is_named_at_the_place_the_customer_names():
     option = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
     _, body = compose.render(rfq("en"), option)
-    assert "Example Trucks" in body
+    assert "your site by Example Trucks" in body
+    _, body = compose.render(rfq("en"), option, request="Hi,\n\nplease include pickup from our warehouse.\n\nSara")
+    assert "your warehouse by Example Trucks" in body
 
 
 def test_reply_subject_name_and_signer():
