@@ -12,9 +12,9 @@ question is deleted here.
 
 | # | Question | Until answered we assume |
 | --- | --- | --- |
-| Q1 | Does build-time work count as gateway spend: must parsing the start kit (the scanned tariff) go through the gateway, and does that spend land in "spend per accepted quote in the hour"? | Yes to both: ingestion runs through `llm.py`, once per file, outside the hours we score in where possible |
-| Q2 | How is a gateway call tied to a quote for "a quote made without a gateway call earns no cost points": by a time window, by the hour, or by something we send with the call? | By time: one call between the request and our reply |
-| Q3 | Is the hourly cost the team's whole gateway spend in that hour divided by its accepted quotes, so spend on rejected quotes, tariff mails and tracking answers counts too? | Yes |
+| Q1 | Does build-time work count as gateway spend: must parsing the start kit (the scanned tariff) go through the gateway, and does that spend land in the window's spend per accepted quote? | Yes to both: ingestion runs through `llm.py`, once per file, outside the hours we score in where possible |
+| Q2 | How is a gateway call tied to a quote? | Answered on 21.11.: not at all. The spend of an 18-minute window is shared over the quotes accepted in it; only a window without any spend earns no cost points (R28) |
+| Q3 | Is the cost the team's whole gateway spend in that window divided by its accepted quotes, so spend on rejected quotes, tariff mails and tracking answers counts too? | Yes |
 | Q4 | What exactly is the "best price": the cheapest all-in total over every source (sheets, portal, bids, desk, browser page), or the best of the option the customer asked for (the fastest one for "fastest")? Does it include the pickup for door-to-port? | The all-in total of the option the customer asked for, pickup included |
 | Q6 | The 50/50 rule among carrier bids: what is the formula (normalised how?), and how does it combine with "cheapest or fastest": does it only pick among mail bids, and do sheets and portal then compete on price alone? | Among trucker bids only, price and speed as multiples of the best (`docs/calc.md`); airline bids compete one by one with the other sources by the customer's wish (round 28) |
 | Q7 | Which currency must the total be in when the cheapest rate is not in EUR? Which exchange rate and rounding does the scorer use? | The rate's own currency and total, compared in EUR with the rate's exchange rate |
@@ -36,8 +36,9 @@ question is deleted here.
 1. **Acceptance is a cliff.** A quote more than 5% above the best price scores 0 on all three kinds. Being right
    comes before being cheap or fast: 45 points for accuracy, and the other 55 only exist for accepted quotes.
 2. **Cost is nearly free if we are disciplined.** 40 points for staying far below 0.10 USD per accepted quote, but
-   zero without any gateway call. One small call per quote keeps almost all of them. The hourly figure is spend per
-   *accepted* quote: every wasted call and every rejected quote makes each accepted one more expensive.
+   zero for an 18-minute window without any gateway call. One small call per quote keeps almost all of them. The
+   figure is the window's spend per *accepted* quote: every wasted call and every rejected quote makes each
+   accepted one more expensive.
 3. **Time is the smallest prize and the hardest limit.** 15 points for answering within 2 minutes, nothing at all
    after 6. We aim for 100 seconds and never miss 6 minutes.
 4. **The sheets are instant and free.** A request on a lane we hold a tariff for is priced in milliseconds by code.
@@ -334,7 +335,7 @@ Once quotes are being accepted, nobody follows packages any more. Five people, o
 
 | Role | Answers for | Owns | First tasks |
 | --- | --- | --- | --- |
-| **Cost** | 40 points | `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, prompts | Spend per accepted quote per hour; smallest model that extracts reliably; more rules, fewer calls |
+| **Cost** | 40 points | `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, prompts | Spend per accepted quote per 18-minute window; smallest model that extracts reliably; more rules, fewer calls |
 | **Speed** | 15 points, and the 6 minute limit | `pixel/core/`, `pixel/agents/router/`, `pixel/api/`, `pixel/app.py` | Response-time histogram; the wait-for-bids rule; no missed request across restarts and API errors; the alert on two failed quotes |
 | **Accuracy** | 45 points, and the 5% cliff | `pixel/pricing/`, `pixel/agents/tariffs/`, `tests/` except fixtures | Every rejected quote from `/v1/board/me` becomes a replay fixture and a fix; new tariff versions; Q4–Q7 |
 | **Generalization** | Accepted rate after every change | `tests/fixtures/`, Pitfalls sections, the change log in `bench/RUNS.md` | Hand-calculated prices as a second opinion on `calc.py`; parsed tariffs read against their files; written variants of requests and carrier answers; every real mail labelled |

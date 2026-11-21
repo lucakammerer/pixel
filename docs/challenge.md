@@ -81,7 +81,7 @@ Each accepted quote earns up to 100 points; a team's score is the sum over all r
 | Kind | Points | How |
 | --- | --- | --- |
 | Price accuracy | 45 | Full at the best price, fewer the further above it |
-| LLM cost | 40 | Gateway spend per accepted quote in the hour: full at no spend, zero at 0.10 USD. A quote made without a gateway call earns none. Added once an hour |
+| LLM cost | 40 | Gateway spend of each 18-minute window, shared over all quotes accepted in it: full at no spend per quote, zero at 0.10 USD. A window without any gateway spend earns none (scoring update of 21.11.) |
 | Response time | 15 | Full within 2 minutes of the request, zero at 6 |
 | Tracking bonus | +10 | A correct tracking answer on a booked shipment |
 | Human bonus | +10 | From the jury, for the accepted mail that reads most human |

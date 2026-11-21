@@ -205,7 +205,7 @@ How I worked: I read the docs, RUNS, REVIEWS, the full `git log`, every fixture,
 Conventions:
 - **Times are UTC.** Fixture `received_at` is UTC and commits are CET (+0100). Round N arrives at about 15:01 UTC + 6·(N−1) min (r35 = 18:27:27).
 - **Code column:** YES means code plus a test. PARTIAL(model) means only the model path covers it. NO means the lever is not handled. UNKNOWN means it depends on the scorer.
-- **Impact:** a rejected or missed request costs about 60 pts (45 accuracy + 15 time), up to 100 with cost, because cost is spend per accepted quote and a rejected quote also loses its share of the hourly cost points. A lost tracking answer costs 10.
+- **Impact:** a rejected or missed request costs about 60 pts (45 accuracy + 15 time), up to 100 with cost, because cost is spend per accepted quote and a rejected quote also loses its share of the window's cost points. A lost tracking answer costs 10.
 
 ---
 

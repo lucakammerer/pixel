@@ -56,7 +56,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | --- | --- | --- | --- | --- |
 | R26 | A quote is accepted when it is within 5% of the best price (first reply only, within 6 minutes). Only accepted quotes score, up to 100 points each; the score is the sum over all requests | Brief, Slides | — | n/a |
 | R27 | Price accuracy, 45 points: full at the best price, fewer the further above it | Brief, Board | `pricing/`, `tools/kpi.py` `measure` (offline delivery, price and scope checked against fixtures), `core/feedback.py` `once` (scorer verdicts) | open |
-| R28 | LLM cost, 40 points: gateway spend per accepted quote in the hour; full at no spend, zero at 0.10 USD. A quote made without a gateway call earns no cost points. Cost points are added once an hour, up to about an hour after a quote | Brief, API | `llm.py` `ask_json`, `spend_usd`, `agents/rfq/agent.py` `handle` (one call by default) | done |
+| R28 | LLM cost, 40 points: the gateway spend of each 18-minute window, shared over all quotes accepted in that window, also those answered without a call; full at no spend per quote, zero at 0.10 USD. A window without any gateway spend earns no cost points. Every USD costs 400 points however many quotes share it, and the scorer counts what a tool or another machine spends with our key. Cost points are added when the window is over | Brief, API, scoring update of 21.11. | `llm.py` `ask_json`, `spend_usd`, `agents/rfq/agent.py` `handle` (one call by default), `crm/quotes.py` `cost_estimates` | done |
 | R29 | Response time, 15 points: full within 2 minutes of the request, zero at 6 minutes | Brief | `core/orchestrator.py` `deadline_for` | open |
 | R30 | +10 for a correct tracking answer on a booked shipment | Brief, Board | `agents/tracking/agent.py` `answer`, `tests/test_tracking.py` | done |
 | R31 | +10 from the jury for the accepted mail that reads most human | Brief, Board | `agents/rfq/compose.py` `render`, `register`, `greeting`, `sign_off`, `signature`, `in_kind`, `prose`, `clean`, `_opening_ok`; `agents/rfq/booking.py` `_tell_customer` | done |
@@ -76,7 +76,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | # | Rule | Lives in |
 | --- | --- | --- |
 | P1 | Code does the arithmetic and the selection (Decimal, tested). A model only reads what code cannot: the customer's request, an odd carrier reply, an unknown tariff format | `pricing/calc.py`, `pricing/selection.py` |
-| P2 | One small gateway call per quote by default: rules first, the model as fallback, and where the rules sufficed one minimal call that still earns the cost points (R28). Tokens and cost are logged per call | `llm.py` |
+| P2 | One small gateway call per quote by default: rules first, the model as fallback, and where the rules sufficed one minimal call for the quote's prose (R31), which also keeps every window above no spend (R28). Tokens and cost are logged per call | `llm.py` |
 | P3 | Always answer: every request has its own deadline; before it runs out we send the best price we have | `core/orchestrator.py` `quote_with_deadline` |
 | P4 | Every mail in and out, every decision and every model call is an event. CRM and UI read that log | `core/events.py` |
 | P5 | Nothing from one dataset version is hardcoded; tariffs carry a version and a validity | `pricing/store.py` |

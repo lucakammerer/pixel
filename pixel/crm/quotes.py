@@ -12,6 +12,7 @@ HIDDEN = ("accuracy", "time")  # the board may leave these out of each row until
 QUOTE = ("accuracy", "time", "cost")  # what the quote itself earns (R26 to R29)
 # humanity (a reply the scorer finds human-written) and tracking (R30) come on top; the board's `booking` is always 0
 COST_POINTS, COST_ZERO_USD = Decimal(40), Decimal("0.10")  # R28
+COST_WINDOW_S = 18 * 60  # R28; on the clock, which is where the scorer's windows of rounds 31 to 62 began
 
 
 def new_id(ctx: Context) -> str:
@@ -88,37 +89,37 @@ def _number(value: Any) -> Decimal | None:
         return None
 
 
-def _hour(value: Any) -> datetime | None:
+def _window(value: Any) -> datetime | None:
     sent = _parse(value)
-    return sent.astimezone(UTC).replace(minute=0, second=0, microsecond=0) if sent else None
+    return datetime.fromtimestamp(sent.timestamp() // COST_WINDOW_S * COST_WINDOW_S, UTC) if sent else None
 
 
 def cost_estimates(ctx: Context, scores: list[dict[str, Any]]) -> dict[datetime, Decimal]:
-    """Cost points per clock hour (UTC) the scorer has not added yet, as R28 computes them from our own log:
-    COST_POINTS × (1 − gateway spend in the hour / accepted quotes in the hour / COST_ZERO_USD). An estimate: the
-    scorer counts the spend at its gateway."""
+    """Cost points per 18-minute window the scorer has not added yet, as R28 computes them from our own log:
+    COST_POINTS × (1 − gateway spend in the window / accepted quotes in the window / COST_ZERO_USD). An estimate:
+    the scorer counts the spend at its gateway, also what a tool or another machine spent with our key."""
     accepted: dict[datetime, int] = {}
     due: set[datetime] = set()
     for s in scores:
-        hour = _hour(s.get("sent_at"))
-        if hour is None or s.get("verdict") != "accepted":
+        window = _window(s.get("sent_at"))
+        if window is None or s.get("verdict") != "accepted":
             continue
-        accepted[hour] = accepted.get(hour, 0) + 1
+        accepted[window] = accepted.get(window, 0) + 1
         if s.get("cost_pending") and _number((s.get("points") or {}).get("cost")) is None:
-            due.add(hour)
+            due.add(window)
     out = {}
-    for hour in due:
+    for window in due:
         spend = sum(
             (Decimal(r[0]) for r in ctx.db.execute(
                 "SELECT cost_usd FROM events WHERE ts >= ? AND ts < ?",
-                (hour.isoformat(), (hour + timedelta(hours=1)).isoformat()),
+                (window.isoformat(), (window + timedelta(seconds=COST_WINDOW_S)).isoformat()),
             )),
             Decimal(0),
         )  # fmt: skip
         if not spend:
-            continue  # no logged spend: no basis for an estimate (a quote without a gateway call earns no cost points)
-        share = spend / accepted[hour] / COST_ZERO_USD
-        out[hour] = (COST_POINTS * max(Decimal(0), 1 - share)).quantize(Decimal("0.01"))
+            continue  # no logged spend: no basis for an estimate (a window without gateway spend earns no cost points)
+        share = spend / accepted[window] / COST_ZERO_USD
+        out[window] = (COST_POINTS * max(Decimal(0), 1 - share)).quantize(Decimal("0.01"))
     return out
 
 
@@ -144,7 +145,7 @@ def scored_rounds(ctx: Context) -> list[dict[str, Any]]:
             total = reported
         estimate = None
         if score.get("cost_pending") and "cost" not in points and score.get("verdict") == "accepted":
-            estimate = estimates.get(_hour(score.get("sent_at")))
+            estimate = estimates.get(_window(score.get("sent_at")))
         quote = None
         if hidden is not None:
             quote = hidden + (points["cost"] if "cost" in points else estimate or Decimal(0))

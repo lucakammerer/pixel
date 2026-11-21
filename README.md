@@ -88,7 +88,7 @@ changes, the fifth makes the jury see it.
 
 - **Thinks:** a model call is a purchase. What did it buy that a rule could not?
 - **Owns:** `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, every prompt.
-- **Watches:** spend per accepted quote per hour, calls per quote, tokens per call, share of requests read by rules alone.
+- **Watches:** spend per accepted quote per 18-minute window, calls per quote, tokens per call, share of requests read by rules alone.
 - **Asks of every change:** does this add a call, a longer prompt or a bigger model, and is one call per quote still true?
 - **First tasks:** the smallest model that extracts reliably; a rule for every request the model read twice the same way;
   a budget per session that a runaway loop cannot pass.

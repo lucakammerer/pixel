@@ -40,10 +40,10 @@ def _cost(r: dict[str, Any]) -> str:
         return _cell(pts(value))
     if r["cost_estimate"] is not None:
         return _cell(
-            _muted(pts(r["cost_estimate"])), "Estimated from our gateway spend: the scorer adds it after the hour"
+            _muted(pts(r["cost_estimate"])), "Estimated from our gateway spend: the scorer adds it after the window"
         )
     if r.get("cost_pending"):
-        return _cell(_muted("next hour"), "The scorer adds cost points once the hour is over")
+        return _cell(_muted("next window"), "The scorer adds cost points once the 18-minute window is over")
     return _cell("—")
 
 

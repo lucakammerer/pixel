@@ -6,10 +6,10 @@ uv run python -m tools.replay --capture 123 > tests/fixtures/mails/rfq-door.json
 uv run python -m tools.replay --db data/pixel.sqlite3 --session 123    # with the stored tariffs, carriers and bids
 
 A replay runs dry and with an API client that refuses every call unless `--online` is given (then portal
-and gateway are real, mail still is not). It runs on a fresh database, or with `--db` on a copy of that database,
-never on the file itself: tariffs, carriers, zones and the mails we sent take part, and what the replayed mails
-left behind (their sessions, quotes and events) is removed from the copy first. The mail's stored time is moved to
-now, so its deadline starts with the replay.
+and gateway are real, mail still is not, and the scorer counts the spend in that 18-minute window, R28). It runs
+on a fresh database, or with `--db` on a copy of that database, never on the file itself: tariffs, carriers, zones
+and the mails we sent take part, and what the replayed mails left behind (their sessions, quotes and events) is
+removed from the copy first. The mail's stored time is moved to now, so its deadline starts with the replay.
 """
 
 import argparse

@@ -1,7 +1,8 @@
 #!/bin/sh
 # Measure a pull request and its base on the live host, online, on a copy of its database, and post the comparison
-# into the pull request. It reads portal rates on the live key's budget and spends through the gateway (R28):
-# start it right after a quote went out, or the next live request waits for its rates.
+# into the pull request. It reads portal rates on the live key's budget and spends through the gateway, which the
+# scorer counts in the 18-minute window it happens in (R28): start it right after a quote went out, or the next
+# live request waits for its rates.
 set -eu
 pr=$1
 host=${PIXEL_HOST:-luca-kammerer}
