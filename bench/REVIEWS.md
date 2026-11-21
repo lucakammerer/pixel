@@ -5,6 +5,11 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #88 | lucakammerer | review/tracking-relaxed | own | tracking lost shipments with a remembered site postcode or a replaced origin (#76) |
+| #87 | lucakammerer | review/acceptances | own | "Bitte buchen Sie", "We accept the quote", "Please go ahead" read as other: no booking (#76) |
+| #85 | lucakammerer | 2b7b594 | own | "3 working days" and "EUR 850.00 per shipment" dropped a priced bid (#76) |
+| #76 | maxihuang123-svg | f9e1f41 | fixed after merge (#82, #85, #87, #88) | merged by its author unreviewed and went live; a failed quote send left the request unanswered |
+| #81 | lucakammerer | 83a4d5f | ok | docs and fixture only: the balanced rule fits every round with a known pickup place |
 | #82 | lucakammerer | 587985d | own, URGENT | a quote's claim survived a 503 or lost receipt: the request was never answered (#76) |
 | #67 | TripleCF | 91c52e7 | ok, merged | UI only; endpoints unchanged, output escaped; CRM tabs re-read all quotes per event burst |
 | #63 | maxihuang123-svg | 48403b3 | merged, superseded by #76 | all 11 live tracking questions still match; zone via `pickup.zone_of` |
