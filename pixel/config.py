@@ -20,6 +20,7 @@ class Settings:
     bid_wait_s: int = 45  # how long a bid may take from our ask, also past target_at
     model_prose: str = ""  # the mail's prose slots; empty: `model`
     signer: str = "Lena Berger"  # the person who signs our mails (R31)
+    precheck: str = "on"  # agents/rfq/check.py: on (every quote is checked, findings alert a person) or off
 
 
 @cache
@@ -40,4 +41,5 @@ def settings() -> Settings:
         alert_url=env.get("PIXEL_ALERT_URL", ""),
         model_prose=env.get("PIXEL_MODEL_PROSE", ""),
         signer=env.get("PIXEL_SIGNER", "Lena Berger"),
+        precheck=env.get("PIXEL_PRECHECK", "on").strip().lower(),
     )

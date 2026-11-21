@@ -3,7 +3,7 @@ import json
 from datetime import timedelta
 
 from pixel import llm
-from pixel.agents.rfq import compose, dangerous, extract
+from pixel.agents.rfq import check, compose, dangerous, extract
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import events, feedback, outbox, poller, timing
 from pixel.core.context import Context
@@ -55,11 +55,32 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
         created_at=timing.now(),
     )
     quote = _noted(ctx, rfq, quote)
+    _check(ctx, rfq, quote)
     events.emit(ctx, "quote.drafted", "rfq", session_id=rfq.session_id,
                 payload={"quote_id": quote.id, "option": option.model_dump(mode="json"), "fallback": fallback,
                          "options": len(options), "complete_service": not rfq.door_pickup or bool(option.trucker)})  # fmt: skip
     quotes.save(ctx, quote)  # booking finds the session's quote in the CRM, also when the fallback sends it
     return quote
+
+
+def _check(ctx: Context, rfq: Rfq, quote: Quote) -> None:
+    """The last look before the quote can leave (`check.py`): a `quote.checked` event with what it found. It never
+    holds or changes the quote; a BLOCK finding is an issue for `feedback.alert`, so a person sees it at once.
+    PIXEL_PRECHECK=off skips it. Never raises."""
+    if ctx.settings.precheck == "off":
+        return
+    try:
+        row = ctx.db.execute("SELECT data FROM messages WHERE id = ?", (rfq.message_id,)).fetchone()
+        message = Message.model_validate_json(row["data"]) if row else None
+        request = extract._text(message) if message else ""
+        files = tuple(a.filename for a in message.attachments) if message else ()
+        findings = check.run(quote, request, session.for_request(ctx, rfq), files)
+        events.emit(ctx, "quote.checked", "rfq", session_id=rfq.session_id,
+                    payload={"quote": quote.id, "blocking": check.blocking(findings), "fallback": quote.fallback,
+                             "total": str(quote.total), "findings": check.as_payload(findings)})  # fmt: skip
+    except Exception as exc:  # noqa: BLE001  the check must never cost the quote
+        events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                    payload={"where": "check", "error": f"{type(exc).__name__}: {exc}"})  # fmt: skip
 
 
 def _noted(ctx: Context, rfq: Rfq, quote: Quote) -> Quote:

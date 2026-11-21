@@ -144,7 +144,7 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
 @pytest.mark.parametrize(
     "name, expected",
     [
-        ("rfq-port-to-port.json", ("DUS", "JFK", "1540", "5.90", None, False, None)),
+        ("rfq-port-to-port.json", ("DUS", "JFK", "1540", "5.90", 1, False, None)),
         ("rfq-door-no-origin.json", ("", "ORD", "676", "5.79", 12, True, "51447")),
         ("rfq-door-trucking.json", ("", "JFK", "1233", "10.78", 6, True, "61018")),
         ("rfq-door-ready-for-pickup.json", ("", "ORD", "679", "4.19", 6, True, "51896")),
@@ -560,3 +560,45 @@ def test_one_request_written_many_ways(variant):
         "weight_kg": Decimal(want["weight_kg"]),
         "volume_cbm": Decimal(want["volume_cbm"]),
     }
+
+
+@pytest.mark.parametrize(
+    "body, cbm, pieces",
+    [
+        ("AAA to BBB, 2,400 lbs, 5 skids 48x40x50 in, cheapest.", 5 * 48 * 40 * 50 * Decimal("0.0254") ** 3, 5),
+        ("AAA nach BBB: 6 Packstücke, 300 kg, je 120 x 80 x 100 cm.", Decimal("5.76"), 6),
+        ("AAA to BBB, 1 piece, 300 kg, 1200 x 800 x 1000 mm.", Decimal("0.96"), 1),
+    ],
+)
+def test_dimensions_in_inches_and_more_piece_words(body, cbm, pieces):
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert (round(rfq.volume_cbm, 6), rfq.pieces) == (round(cbm, 6), pieces)
+
+
+async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(conn, monkeypatch):
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": None, "destination": "SGN", "weight_kg": "874", "volume_cbm": "1.92", "pieces": 2,
+                "lots": [], "preference": "cheapest", "door_pickup": True, "pickup_postcode": None,
+                "currency": "EUR", "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "51", "area": "Bergisch Gladbach", "airport": "CCC"}])
+    answer = captured("customer-names-pickup.json")
+    answer = answer.model_copy(update={"body": "Hi Lena,\n\nSorry, it is 51115.\n\nSara"})
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        poller.ingest(ctx, answer)
+        return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    body = "Please quote SGN with truck pickup from our warehouse. 874 kg gross, two crates of 120x100x80 cm."
+    request = mail(body).model_copy(update={"id": 4370, "session_id": 4370, "sender": answer.sender})
+    request = poller.ingest(ctx, request)  # the dimensions without a volume send it to the model
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("CCC", "51115", "51", "model")
+
+
+def test_in_before_a_word_is_no_inch():
+    assert extract._volume("3 pallets 120x80x150 in total, 900 kg", 3) == Decimal("4.32")  # not 70.8 cbm in inches

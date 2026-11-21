@@ -40,7 +40,15 @@ VERSION = subprocess.run(
     ["git", "rev-parse", "--short", "HEAD"], check=False, capture_output=True, text=True
 ).stdout.strip()
 STARTED = datetime.now(UTC).isoformat()[:19]  # this commit answers for what happens from here on
-REPAIRABLE = {"missed", "rejected", "no_answer", "lost_points", "tracking_unmatched", "error"}
+REPAIRABLE = {
+    "missed",
+    "rejected",
+    "no_answer",
+    "lost_points",
+    "tracking_unmatched",
+    "error",
+    "quote_doubtful",
+}
 
 
 def time_points(seconds: float) -> Decimal:
@@ -154,7 +162,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
     since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
     rows = conn.execute(
         "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
-        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note') ORDER BY id DESC", (since,)
+        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked') ORDER BY id DESC",
+        (since,)
     ).fetchall()  # fmt: skip
     issues = []
     for row in rows:
@@ -171,6 +180,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "error"
         elif row["kind"] == "human.note" and p.get("note"):
             issue = "reply_unhandled"
+        elif row["kind"] == "quote.checked" and p.get("blocking"):
+            issue = "quote_doubtful"
         if issue:
             issues.append({"issue": issue, "event": row["id"], "at": row["ts"][:19], "session": row["session_id"],
                            "detail": p})  # fmt: skip

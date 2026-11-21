@@ -5,6 +5,10 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #94 | Konstantin-mody | 49cca71 | ok, merged | pre-send check only observes; BLOCK alerts (offline: air-only door quotes only) |
+| #93 | lucakammerer | a8898f5 | ok | tracking sign-off reuses `compose.in_kind`: one register reading |
+| #92 | lucakammerer | 6ed8188 | ok | wording only |
+| #91 | lucakammerer | 14136e8 | ok | consistent with #88: names the desk's postcode for a remembered site |
 | #86 | lucakammerer | 3190757 | ok, a bet | one question before the quote when the pickup place is missing: Q9 open, watch the first round it fires |
 | #84 | lucakammerer | ca6080f | ok | small talk answered in code; `compose.check` still guards the total |
 | #80 | lucakammerer | 5f7de3f | ok | bench notes only |

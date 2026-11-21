@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
-from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, ready_date
+from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, TEXT, in_kind, ready_date
 from pixel.agents.rfq.extract import number
 from pixel.contracts import Message, Shipment
 from pixel.core import events, outbox
@@ -53,14 +53,15 @@ def day(d: date) -> str:
 
 
 def greeting(text: str) -> tuple[str, str]:
-    """Hello and goodbye in the asker's register, with the name they signed with."""
+    """Hello and goodbye in the asker's register, with the name they signed with; the goodbye goes to the town they
+    greet from, or is their own "Viele Grüße" or "Cheers", as in the quote's thread."""
     register = "formal" if FORMAL.search(text) else "casual" if CASUAL.search(text) else "neutral"
     blocks = [b for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
-    for line in blocks[-1].splitlines() if blocks else []:
-        line = line.strip().rstrip(",")
-        if NAME.match(line) and not NOT_A_NAME.search(line):
-            return HELLO[register].format(first=line.split()[0], full=line), BYE[register]
-    return "Hello,", BYE[register]
+    first = next((line.strip().rstrip(",") for line in (blocks[-1].splitlines() if blocks else [])
+                  if NAME.match(line.strip().rstrip(",")) and not NOT_A_NAME.search(line)), None)  # fmt: skip
+    own = in_kind(text, "en", register, first.split()[0] if first else None)[1]
+    bye = own.rstrip(",") if own != TEXT["en"]["bye"][register] else BYE[register]
+    return (HELLO[register].format(first=first.split()[0], full=first) if first else "Hello,"), bye
 
 
 def described(ctx: Context, text: str) -> list[Shipment]:
