@@ -24,6 +24,7 @@ BREAK = r"(?:from\s+(\d+)\s*kg|(\d+)\s*kg\s*\+|([-+])(\d+))"
 BREAK_TOKEN = re.compile(rf"(?:(?<=\s)|^){BREAK}(?=\s|$)", re.IGNORECASE)
 BREAK_LINE = re.compile(rf"^\s*{BREAK}\s+({NUM})\s*$", re.IGNORECASE)
 IMAGES = {".jpg", ".jpeg", ".png"}
+VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
 RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
 
@@ -59,6 +60,14 @@ def _date(value: object) -> date:
         except ValueError:
             continue
     raise ValueError(f"unknown date: {text!r}")
+
+
+def _span(start: str, end: str) -> tuple[date, date] | None:
+    """Both ends of a validity written on one line, or None when either is not a date."""
+    try:
+        return _date(start), _date(end)
+    except ValueError:
+        return None
 
 
 def _break_kg(match: re.Match) -> Decimal:
@@ -139,6 +148,9 @@ def _read(lines: list[str]) -> Sheet:
             continue
         if m := re.match(r"currency\b[\s:|]*([A-Z]{3})\b", line, re.IGNORECASE):
             sheet.currency = m.group(1).upper()
+            continue
+        if (m := VALIDITY.match(line)) and (span := _span(m.group(1), m.group(2))):
+            sheet.valid_from, sheet.valid_to = span
             continue
         if m := re.match(r"valid\s+from\b[\s:|]*(.+)$", line, re.IGNORECASE):
             sheet.valid_from = _date(m.group(1))

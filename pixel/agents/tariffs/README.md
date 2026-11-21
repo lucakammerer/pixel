@@ -19,9 +19,9 @@ the findings of `check`.
 ## Implementation
 
 - `parse`: every text format becomes lines (`_lines`: xlsx rows, docx paragraphs and tables in order, PDF text,
-  txt), and one reader (`_read`) interprets them: title (`<carrier> | ...`), `Currency`, `Valid from/to` (any of
-  the date formats in `DATE_FORMATS`), the rate unit (`All rates are per 100 kg` divides every rate by 100),
-  `Origin:` headings, a break header (`from 0 kg`, `-45`/`+45`, `0 kg+`; `-45`
+  txt), and one reader (`_read`) interprets them: title (`<carrier> | ...`), `Currency`, `Valid from/to` (also on one
+  line, `Valid 01.11.2026 - 30.11.2026`; any of the date formats in `DATE_FORMATS`), the rate unit (`All rates are
+  per 100 kg` divides every rate by 100), `Origin:` headings, a break header (`from 0 kg`, `-45`/`+45`, `0 kg+`; `-45`
   is the 0 kg break; `Fuel`/`Security` in the header mean surcharge columns), table rows (lane, transit, minimum,
   one rate per break), lane blocks (`Transit`, `Minimum`, `from N kg R`, `Fuel`, `Security` on their own lines,
   across page breaks) and surcharge sentences (`<lane>: fuel X per kg, security Y per kg`). A lane is the first two
@@ -58,8 +58,8 @@ the findings of `check`.
   divided them. The model's page reader copies cells and does not see that sentence. A minimum on freight plus
   surcharges has no field in `LaneTariff` yet and is read as the kit's rule (wrong only where the minimum binds).
 - A refused text, xlsx or docx sheet is dropped (`tariff.failed`), not read by the model: the carrier's older
-  version keeps pricing. A validity on one line (`Valid 01.11.2026 - 30.11.2026`), a minimum written `1,250.00`
-  and a remarks column holding a number are refused today (`tests/fixtures/tariffs/variants/`).
+  version keeps pricing. A minimum written `1,250.00` and a remarks column holding a number are refused today
+  (`tests/fixtures/tariffs/variants/`).
 
 ## Open
 
