@@ -27,7 +27,7 @@ Decimal only; a model never computes, compares or writes a price (P1).
   code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
   business days alike, and a range ("2-3 days") its first figure.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
-  and validity it states.
+  and validity it states. Asked only when a rate read answered 503 (`engine._ask_desk`), together with the airlines.
 - **Pickup** (`calc.with_pickup`): a trucker's price in EUR, added to every airline option, converted into the
   option's currency with its exchange rate when that is not EUR. Truckers price by zone and quote only with a
   five-digit postcode: a pickup known by its town alone is asked with the zone's first one (`bids._postcode`; two
