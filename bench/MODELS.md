@@ -24,7 +24,10 @@ and gpt-4.1-mini on every priced carrier answer, 0.0079 USD for rounds 81 to 83 
 1.6 cost points per quote in place of 0.14. Rounds 33 to 35, the case for gpt-4.1, all had a packing list
 attached, and the rules refuse round 67's waiting rate themselves, so gpt-4.1 now reads only a request with
 attachments (27 % of requests since 17:00 UTC) and a carrier answer costs a call only when the rules cannot read
-it: about 0.4 cost points per quote. Measure offline, or right after a quote went out and on few mails.
+it: about 0.4 cost points per quote. Round 67's offer stood in a trucker's attachment, a layout the rules had not
+seen, so gpt-4.1-mini still reads an offer that stands only in an attachment (about 0.0002 USD, 0.07 cost points
+per answer); an answer in the mail itself costs no call. Measure offline, or right after a quote went out and on
+few mails.
 
 ## 21.11.2026, round 74: a second reader for every request
 

@@ -579,8 +579,66 @@ def test_a_surcharge_or_a_per_kg_rate_is_never_the_offer_price(text, wrong):
     assert price is None or price[0] != wrong
 
 
+def attached(monkeypatch, sender: str, text: str) -> Message:
+    """An answer whose offer stands only in its file: the mail says "see the attachment"."""
+
+    async def read(ctx, message):
+        return f"{message.body}\n{text}", []
+
+    monkeypatch.setattr(bids, "_with_attachments", read)
+    file = Attachment(id=1, filename="offer.pdf", content_type="application/pdf", size=1)
+    return mail(sender, "Please see the attached offer.").model_copy(update={"attachments": (file,)})
+
+
+async def test_the_model_cross_checks_an_attached_offer_and_its_total_wins(ctx, monkeypatch):
+    """Round 67: in a trucker's offer layout the rules had not seen, they read a waiting-time line (45.00 EUR) as the
+    price; the model read 181.96. On any failure the rules' reading stands."""
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
+    said = {"offer": True, "total": "181.96 EUR", "components": [], "currency": "EUR", "transit_days": None,
+            "eur_per_unit": None}  # fmt: skip
+
+    async def model(ctx, **kw):
+        return LlmResult(data=said, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    await bids.record(ctx, attached(monkeypatch, "a@truck", "Pickup EUR 45.00\nOffer total 181.96"))
+    [found] = [o["option"] for o in kinds(ctx, "option.found")]
+    assert (found["pickup"], kinds(ctx, "bid.crosscheck")[0]["taken"]) == ("181.96", True)
+
+    async def down(ctx, **kw):
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(llm, "ask_json", down)
+    await bids.record(ctx, attached(monkeypatch, "b@truck", "Pickup EUR 90.00"))
+    assert [o["option"]["pickup"] for o in kinds(ctx, "option.found")] == ["181.96", "90.00"]
+
+
+@pytest.mark.parametrize(
+    ("text", "said", "total_eur"),
+    [
+        ("EUR 2.10/kg all-in, transit 3 days", {"total": "EUR 2.10", "currency": "EUR"}, "210.00"),
+        ("Total: USD 1,000.00 (1 USD = 0.92 EUR), 3 days", {"total": "1000.00", "currency": "EUR"}, "920.00"),
+    ],
+)
+async def test_a_model_total_the_text_does_not_state_for_the_shipment_never_wins(
+    ctx, monkeypatch, text, said, total_eur
+):
+    """Review of #252: a rate per kg, or the model's currency for a converted amount, replaced the rules' total."""
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq().model_dump(mode="json"))
+    data = {"offer": True, "components": [], "transit_days": "3 days", "eur_per_unit": None, **said}
+
+    async def model(ctx, **kw):
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    await bids.record(ctx, attached(monkeypatch, "one@air", text))
+    [found] = [o["option"] for o in kinds(ctx, "option.found")]
+    assert found["total_eur"] == total_eur
+
+
 async def test_an_answer_the_rules_price_costs_no_model_call(ctx, monkeypatch):
-    """Rounds 81 to 83: a model read of every priced answer cost a call per carrier answer and read no other total."""
+    """Rounds 81 to 83: a model read of every priced answer cost a call per carrier answer and read no other total;
+    an offer in the mail itself costs none."""
     events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
     calls = []
 
