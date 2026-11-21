@@ -5,6 +5,16 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #136 | lucakammerer | 29fa7fd | ok (mine) | plan Q6 states the live bid rule |
+| #135 | lucakammerer | 5048723 | ok | round 28 test reads its options from a fixture, no carrier names in tests |
+| #133 | lucakammerer | 77c435c | ok | round 28 lost too_high: cheapest asked, only the balanced airline bid competed and the 390.45 bid never did; now every airline bid competes by the wish, truckers stay balanced; the only live session with two airline bids |
+| #126 | lucakammerer | dbe4409 | ok, a measured bet | tracking variant b; back to a without +10 on the next tracking round |
+| #125 | lucakammerer | 2f35e55 | ok | the small-talk answer thanks once; `goods_of` removed, nothing called it |
+| #124 | lucakammerer | 56f3b19 | ok | an opening only as a reaction to a phrase in the mail, else none; 2 of 2 live openings dropped, one filler; nit: a None body skips the gateway call (no cost points) |
+| #123 | rayan-bandy | 1102f08 | ok | benchmark replays stored model answers, spends nothing |
+| #122 | maxihuang123-svg | cb990a5 | ok | strict xfails record extract holes; currency words and symbols latent (32 of 32 live requests asked EUR) |
+| #121 | lucakammerer | eac7952 | ok, superseded by #125 | "we are shipping …:" goods |
+| #119, #120 | lucakammerer | 174a544, bbcad38 | second reviewer's own fixes | not re-reviewed |
 | #117 | lucakammerer | 9ca8e7f | ok | second reviewer's ledger |
 | #116 | lucakammerer | e9630bd | ok, a measured bet | tracking variant a drops the address line; roll back after the first answer without +10 |
 | #115 | lucakammerer | f798435 | ok | asks for a missing volume too; no live request lacked one; Q9 caveat as #86 |
