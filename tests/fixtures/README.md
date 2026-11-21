@@ -47,6 +47,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   says so. The generator computes each case's answer from its own figures and this table, never from the code.
   `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
   `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right.
+- `bid-plausibility.json`: every bid with peers of its kind from the scored rounds of 21.11.2026, read right, and
+  round 67's misread trucker bid with the quote a right reading gives (`selection.implausible`).
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 

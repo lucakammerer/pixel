@@ -773,6 +773,35 @@ async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(c
     assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("CCC", "51115", "51", "model")
 
 
+async def test_an_answer_that_gives_every_fact_is_read_after_the_model_could_read_nothing(conn, monkeypatch):
+    """Round 69: the recording could not be read, we asked, the customer answered with everything. "Select the
+    departure airport for the fastest option to JFK" read JFK as the origin, so the answer was dropped: no quote."""
+
+    async def nothing_read(ctx, **kw):
+        data = {k: None for k in extract.SCHEMA["required"]} | {"lots": [], "preference": "cheapest",
+                                                                "door_pickup": False, "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    class Unreadable:
+        async def attachment(self, message_id, attachment_id):
+            raise ValueError
+
+    monkeypatch.setattr(llm, "ask_json", nothing_read)
+    ctx = Context(settings(), conn, Unreadable(), None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("42925"), "area": "Town", "airport": "AAA"}])
+    request, answer = captured("rfq-voice-unread.json"), captured("customer-answers-every-fact.json")
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        poller.ingest(ctx, answer)
+        return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    request = poller.ingest(ctx, request)
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode, rfq.preference) == (
+        "AAA", "JFK", Decimal(959), Decimal("8.04"), "42925", Preference.FASTEST)  # fmt: skip
+
+
 def test_in_before_a_word_is_no_inch():
     assert extract._volume("3 pallets 120x80x150 in total, 900 kg", 3) == Decimal("4.32")  # not 70.8 cbm in inches
 

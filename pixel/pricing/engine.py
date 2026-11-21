@@ -67,10 +67,32 @@ def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
     return bool(down) and not asked
 
 
-def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE) -> list[RateOption]:
+def _distrusted(ctx: Context, rfq: Rfq, option: RateOption) -> None:
+    """Once per bid: an `option.failed` that `feedback.attention` shows, so the reading can be repaired."""
+    name = option.trucker or option.carrier
+    seen = ctx.db.execute(
+        "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.error')="
+        "'implausible' AND json_extract(payload,'$.carrier')=? AND json_extract(payload,'$.total_eur')=?",
+        (rfq.session_id, name, str(option.total_eur)),
+    ).fetchone()
+    if not seen:
+        events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
+                    message_id=option.evidence_message_id,
+                    payload={"source": "pickup" if option.trucker else "bid", "carrier": name,
+                             "total_eur": str(option.total_eur), "error": "implausible"})  # fmt: skip
+
+
+def combine(
+    rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE, ctx: Context | None = None
+) -> list[RateOption]:
     """Airline options, each with the balanced pickup added for door-to-port (Q4: the best price includes it).
-    Without a pickup price a door-to-port request is priced port-to-port rather than not at all."""
+    Without a pickup price a door-to-port request is priced port-to-port rather than not at all. A bid
+    `selection.implausible` distrusts takes no part; with `ctx` it is recorded."""
     matching = [o for o in options if session.on_lane(o, rfq)]
+    distrusted = [o for o in matching if selection.implausible(o, matching)]
+    for option in distrusted if ctx is not None else ():
+        _distrusted(ctx, rfq, option)
+    matching = [o for o in matching if o not in distrusted]
     airline = [o for o in matching if o.trucker is None]
     pickups = [o for o in matching if o.trucker is not None]
     if not (rfq.door_pickup and pickups):
@@ -118,4 +140,4 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     # Also reuse same-lane bids published before recovery or while another price source was still running.
     carried = [o for o in session.for_request(ctx, rfq) if o.source in (Source.PORTAL, Source.BID, Source.RATEDESK)]
     all_options = dict.fromkeys(sheets + portal + offers + pickups + carried)
-    return combine(rfq, list(all_options), feedback.pickup_rule(ctx))
+    return combine(rfq, list(all_options), feedback.pickup_rule(ctx), ctx)
