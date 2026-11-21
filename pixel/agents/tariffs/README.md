@@ -38,8 +38,8 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
   once per page. The model transcribes cells. Code merges rates and surcharges across pages, parses numbers
   and applies the same validation as for text tariffs before making rates available to pricing.
 - `attachment_lines`: the text lines of a request's or a carrier's attachment for `agents/rfq/extract.py` and
-  `pricing/bids.py`, in a thread. A type `_lines` has no reader for (`READABLE`: xlsx, docx, pdf, html, eml, zip,
-  text, audio) is not downloaded; it and a pdf without text raise `Unreadable` and become an `attachment.unreadable`
+  `pricing/bids.py`, in a thread. A type `_lines` has no reader for (`READABLE`: xlsx, xls, docx, pdf, html, eml,
+  zip, text, audio) is not downloaded; it and a pdf without text raise `Unreadable` and become an `attachment.unreadable`
   event, not an `error`. A file without a suffix is known by its first bytes (`_kind`); a forwarded mail gives its
   subject, text and attachments, a zip each file it holds (none nested, none over `ZIP_MEMBER_BYTES`), text with a
   byte order mark or in UTF-16 its characters.
