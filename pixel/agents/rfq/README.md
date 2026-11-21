@@ -282,6 +282,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`_with_attachments`, in a thread: a transcript takes seconds); the others still count. A priced mail is never
   read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
   price.
+- The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
+  181.96 EUR offer). Every answer the rules price is read by the model too (`pricing/bids.py` `_crosscheck`, the
+  same text, code adds the charges up, at most 6 s); where the totals differ the model's wins, as a `bid.crosscheck`
+  event. `PIXEL_MODEL_CHECK` empty turns it off with the request's second reader.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
