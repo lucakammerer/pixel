@@ -117,6 +117,9 @@ async def test_confirmation_marks_confirmed_and_tells_once(pipe, accepted):
         ("Bitte buchen Sie die Sendung.", "accept"),
         ("Thanks, but too expensive for us.", "decline"),
         ("We cannot accept this price.", "decline"),
+        # rounds 15 and 16: both were booked at the portal, "go ahead" read as the acceptance
+        ("Thank you for your offer. That seems too low to be right, so we will not go ahead with it.", "decline"),
+        ("Thank you for your offer, but your price is too high for us, so we will not go ahead with it.", "decline"),
         ("Does the price include pickup?", "other"),
     ],
 )
@@ -146,6 +149,19 @@ async def test_german_customer_gets_a_german_mail_with_the_total_written_once(pi
     (told,) = pipe.sent
     assert told["body"].startswith("Guten Tag,") and "370.74 EUR all-in" in told["body"]
     assert "Viele Grüße" in told["body"] and "Decimal" not in told["body"]
+
+
+async def test_the_booking_mail_greets_and_signs_as_the_quote_did(pipe, accepted):
+    """The quote said "Hi Klaus … Cheers", the booking mail "Hello," and "Best regards": two writers in one thread."""
+    pipe.ctx.db.execute(
+        "INSERT INTO messages (id, session_id, direction, sender, recipient, subject, body, sent_at, data)"
+        " VALUES (1, 1, 'in', 'buyer@acme.example', 'us@pixel', 'RFQ', ?, 't', '{}')",
+        ("Hi there,\n\nplease quote FRA to JFK.\n\nCheers,\nKlaus Example\nExample GmbH",),
+    )
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    (told,) = pipe.sent
+    assert told["body"].startswith("Hi Klaus,\n\n") and "\n\nCheers,\nLena Berger\n" in told["body"]
 
 
 async def test_a_dry_run_never_books_at_the_portal(pipe, accepted):

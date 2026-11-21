@@ -228,7 +228,26 @@ def test_reads_like_a_clerk_in_the_customers_register():
     assert body.startswith("Dear Petra,") and "Kind regards,\nLena Berger" in body
     assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
     _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
-    assert casual.startswith("Hi Tom,") and "Best wishes," in casual
+    assert casual.startswith("Hi Tom,") and "Cheers,\nLena Berger" in casual
+    _, both = compose.render(
+        rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Gruesse / Many greetings\nDeniz"
+    )
+    assert "Viele Grüße,\nLena Berger" in both
+
+
+def test_the_customers_own_closing_is_answered_in_kind():
+    """Rounds 12 to 16: every customer closes in a voice of their own; ours answered all of them alike."""
+    request = (
+        "Hi there,\n\nplease quote to BBB (Example City, XX), ready on 2026-11-25.\n\n"
+        "Thanks a lot and have a lovely day!\nBest greetings from Exampletown\nPetra Hofmann\nExport Desk"
+    )
+    _, body = compose.render(rfq("en"), OPTION, request=request)
+    assert "Have a lovely day too!\n\nBest regards to Exampletown,\nLena Berger" in body
+    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 5
+    assert body.count("1234.57 EUR") == 1 and compose.check(body, rfq("en"), OPTION)
+    german = "Guten Tag,\n\nbitte um ein Angebot.\n\nEin schönes Wochenende und Grüße aus Exampletown\nAnna Muster"
+    _, body = compose.render(rfq("de"), OPTION, request=german)
+    assert "Ihnen auch ein schönes Wochenende!\n\nViele Grüße nach Exampletown\nLena Berger" in body
 
 
 def test_an_opening_that_repeats_the_mail_back_is_dropped():
@@ -263,3 +282,31 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
     mail = captured("rfq-door-quoted-old-request.json")
     _, body = compose.render(rfq("en"), OPTION, request=mail.body)
     assert body.startswith("Hi Petra,") and "Best wishes," in body
+
+
+@pytest.mark.parametrize(
+    ("line", "goods"),
+    [
+        ("It’s 12 pieces of printed marketing material, 676 kg gross and 5.79 cbm.", "printed marketing material"),
+        ("The shipment will be ready on 2026-11-25. It is 1 piece of machine parts, with 40 kg.", "machine parts"),
+        ("quote the cheapest option to BBB (Example City, XX) for automotive sensors?", "automotive sensors"),
+        ("- Commodity: maintenance spray cans, 4 pieces", "maintenance spray cans"),
+        ("Our buyer is importing some control units from us in Germany.", "control units"),
+        ("The sports equipment will be ready for pickup on 2026-12-02: 11 pieces", "sports equipment"),
+        ("The shipment will be ready on 2026-11-25: 4 cartons, each 48 kg gross.", None),
+        ("Please send both lots together for this import shipment to BBB.", None),
+    ],
+)
+def test_the_goods_are_named_in_the_customers_own_words(line, goods):
+    assert compose.goods_of(line) == goods
+    _, body = compose.render(rfq("en"), OPTION, request=f"Hello,\n\n{line}\n\nAnna")
+    assert (f"the {goods}." in body.split("\n\n")[1]) if goods else ("the shipment." not in body)
+
+
+def test_the_earliest_departure_is_answered_only_when_asked():
+    asked = "Ready on 2026-11-25 at our site. Please confirm the earliest available departure and arrival."
+    pickup = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
+    _, body = compose.render(rfq("en"), pickup, request=asked)
+    assert "departure from AAA on Thursday 26 November" in body and "Sunday 29 November" in body
+    _, body = compose.render(rfq("en"), pickup, request="Ready on 2026-11-25, truck to the departure airport please.")
+    assert "departure from" not in body

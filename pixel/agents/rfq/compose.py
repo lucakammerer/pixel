@@ -32,6 +32,12 @@ TEXT = {
             "Thank you for getting in touch.",
             "Many thanks for your request.",
         ),
+        "intro_goods": (
+            "Thanks for your request, happy to help with the {goods}.",
+            "Thanks for the enquiry about the {goods}.",
+            "Thank you for getting in touch about the {goods}.",
+            "Many thanks for your request for the {goods}.",
+        ),
         "core": {
             "cheapest": (
                 (
@@ -50,6 +56,10 @@ TEXT = {
                     "My best price from {origin} to {destination} is {total} {currency} all-in, flying with {carrier}, "
                     "{transit} in transit."
                 ),
+                (
+                    "I've compared the airlines on {origin} to {destination}, and {carrier} comes out best at {total} "
+                    "{currency} all-in, with {transit} in transit."
+                ),
             ),
             "fastest": (
                 (
@@ -67,6 +77,10 @@ TEXT = {
                 (
                     "{carrier} gets your shipment from {origin} to {destination} in {transit}, for {total} {currency} "
                     "all-in."
+                ),
+                (
+                    "I've compared the airlines on {origin} to {destination}, and {carrier} is the quickest: "
+                    "{transit} in transit, {total} {currency} all-in."
                 ),
             ),
         },
@@ -103,13 +117,18 @@ TEXT = {
             "Let me know if you would like to go ahead and I'll book it straight away.",
         ),
         "bye": {"formal": "Kind regards,", "neutral": "Best regards,", "casual": "Best wishes,"},
+        "bye_town": "Best regards to {town},",
+        "wish_back": "Have a {wish} too!",
+        "in_city": "in {place}",
+        "at_airport": "at {place}",
         "day": "day",
         "days": "days",
-        "arrival": "With the cargo ready on {ready}, the earliest arrival at {destination} would be {arrive}.",
-        "arrival_pickup": "With pickup on {ready}, the earliest arrival at {destination} would be {arrive}.",
+        "arrival": "With the cargo ready on {ready}, the earliest arrival {where} would be {arrive}.",
+        "arrival_pickup": "With pickup on {ready}, the earliest arrival {where} would be {arrive}.",
         "arrival_air_only": (
-            "If you deliver the cargo to {origin} on {ready}, the earliest arrival at {destination} would be {arrive}."
+            "If you deliver the cargo to {origin} on {ready}, the earliest arrival {where} would be {arrive}."
         ),
+        "departure": "That is with a departure from {origin} on {depart}.",
         "one_awb": "All lots travel together as one consignment under a single air waybill, as you asked.",
         "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
         "as soon as I have it.",
@@ -153,6 +172,10 @@ TEXT = {
                     "Mein bester Preis von {origin} nach {destination} ist {total} {currency} all-in mit {carrier}, "
                     "Laufzeit {transit}."
                 ),
+                (
+                    "Ich habe die Airlines von {origin} nach {destination} verglichen: Am besten liegt {carrier} mit "
+                    "{total} {currency} all-in, Laufzeit {transit}."
+                ),
             ),
             "fastest": (
                 (
@@ -166,6 +189,10 @@ TEXT = {
                 (
                     "Am schnellsten geht es von {origin} nach {destination} mit {carrier}, Laufzeit {transit}, zu "
                     "{total} {currency} all-in."
+                ),
+                (
+                    "Ich habe die Airlines von {origin} nach {destination} verglichen: Am schnellsten ist {carrier}, "
+                    "Laufzeit {transit}, zu {total} {currency} all-in."
                 ),
             ),
         },
@@ -204,13 +231,18 @@ TEXT = {
             "Antworten Sie einfach auf diese Mail, wenn Sie buchen möchten, den Rest übernehme ich.",
         ),
         "bye": {"formal": "Mit freundlichen Grüßen", "neutral": "Viele Grüße", "casual": "Viele Grüße"},
+        "bye_town": "Viele Grüße nach {town}",
+        "wish_back": "Ihnen auch {wish}!",
+        "in_city": "in {place}",
+        "at_airport": "in {place}",
         "day": "Tag",
         "days": "Tage",
-        "arrival": "Ist die Ware am {ready} bereit, wäre sie frühestens am {arrive} in {destination}.",
-        "arrival_pickup": "Mit Abholung am {ready} wäre die Ware frühestens am {arrive} in {destination}.",
+        "arrival": "Ist die Ware am {ready} bereit, wäre sie frühestens am {arrive} {where}.",
+        "arrival_pickup": "Mit Abholung am {ready} wäre die Ware frühestens am {arrive} {where}.",
         "arrival_air_only": (
-            "Wenn Sie die Ware am {ready} in {origin} anliefern, wäre sie frühestens am {arrive} in {destination}."
+            "Wenn Sie die Ware am {ready} in {origin} anliefern, wäre sie frühestens am {arrive} {where}."
         ),
+        "departure": "Der Abflug ab {origin} wäre dann am {depart}.",
         "one_awb": "Alle Positionen reisen wie gewünscht zusammen als eine Sendung unter einem Luftfrachtbrief.",
         "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
         "weiter, sobald ich ihn habe.",
@@ -279,9 +311,36 @@ NOT_SIGNED = re.compile(
     r"\b(?:Thanks|Thank|Regards|Cheers|Best|Kind|Many|Greetings|Danke|Viele|Beste|Team|Department|Logistics|"
     r"Shipping|Purchasing|Sales|Export|Import|Manager|Coordinator|Office|Desk|GmbH|AG|Ltd|Inc)\b"
 )
+# What a clerk answers in kind: a wish for the day, greetings from the customer's town, "Cheers".
+WISH = {
+    "en": re.compile(
+        r"\bhave a ((?:lovely|nice|great|good|wonderful|pleasant) (?:day|afternoon|evening|weekend|week))\b",
+        re.IGNORECASE,
+    ),
+    "de": re.compile(
+        r"\b(einen sch(?:ö|oe)nen (?:Tag|Abend|Feierabend)|ein sch(?:ö|oe)nes Wochenende)\b", re.IGNORECASE
+    ),
+}
+FROM_TOWN = re.compile(
+    r"\b(?i:greetings|regards|wishes|gr(?:ü|ue)(?:ß|ss)e)[ \t]+(?i:from|aus)[ \t]+"
+    r"([A-ZÄÖÜ][\wäöüß-]+(?: [A-ZÄÖÜ][\wäöüß-]+)?)"
+)
+OWN_BYE = re.compile(r"^\s*(cheers|viele gr(?:ü|ue)(?:ß|ss)e)\b", re.IGNORECASE | re.MULTILINE)
 SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
+DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
+# The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
+GOODS = re.compile(
+    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from )"
+    r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
+    r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
+    r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
+    r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
+    r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
+)
+NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
+             "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
@@ -351,16 +410,22 @@ def _day(d: date, t: dict) -> str:
 
 def answers(rfq: Rfq, option: RateOption, request: str) -> str:
     """What the request asked beyond the price, answered by code: the earliest arrival (ready date, a day for a
-    pickup to reach the airport, the transit), one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
+    pickup to reach the airport, the transit), the departure that goes with it, one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
     try:
         t = TEXT[language_of(rfq)]
         said = []
         ready = ready_date(request)
         if ready:
             arrive = ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
+            city = city_of(request, option.destination)
+            where = t["in_city" if city else "at_airport"].format(place=city or option.destination)
             arrival = "arrival_pickup" if option.trucker else "arrival_air_only" if rfq.door_pickup else "arrival"
-            said.append(t[arrival].format(
-                ready=_day(ready, t), arrive=_day(arrive, t), origin=option.origin, destination=option.destination))  # fmt: skip
+            said.append(
+                t[arrival].format(ready=_day(ready, t), arrive=_day(arrive, t), origin=option.origin, where=where)
+            )
+            if DEPARTURE.search(request):
+                depart = arrive - timedelta(days=option.transit_days)
+                said.append(t["departure"].format(origin=option.origin, depart=_day(depart, t)))
         if ONE_AWB.search(request):
             said.append(t["one_awb"])
         if CUTOFF.search(request):
@@ -368,6 +433,36 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
         return " ".join(said)
     except Exception:  # noqa: BLE001  an extra answer must never cost the quote
         return ""
+
+
+def goods_of(request: str) -> str | None:
+    """What is shipped, as the customer calls it ("precision instruments"); None when the mail names only "the
+    shipment" or words it another way."""
+    for found in GOODS.finditer(request):
+        goods = next(g for g in found.groups() if g).strip(" -")
+        if not set(goods.split()) & NOT_GOODS:
+            return goods
+    return None
+
+
+def city_of(request: str, airport: str) -> str | None:
+    """The city the customer wrote behind the airport's code, "XXX (City, CC)": theirs, never from a list of ours."""
+    found = re.search(rf"\b{re.escape(airport)}\s*\(\s*([^()\d,]{{2,40}}?)\s*(?:,[^()]*)?\)", request)
+    return found.group(1) if found else None
+
+
+def in_kind(request: str, lang: str, tone: str, name: str | None) -> tuple[str | None, str]:
+    """The customer's own closing answered: their wish for the day returned, and the sign-off sent to the town
+    they greet from, or as "Cheers" or "Viele Grüße" when they write it in an English mail. Without either, the sign-off of their register."""
+    t = TEXT[lang]
+    wished = WISH[lang].search(request)
+    wish = t["wish_back"].format(wish=wished.group(1)[0].lower() + wished.group(1)[1:]) if wished else None
+    town = FROM_TOWN.search(request)
+    if town and town.group(1).split()[0] != name:
+        return wish, t["bye_town"].format(town=town.group(1))
+    if lang == "en" and (own := OWN_BYE.search(request)):
+        return wish, "Cheers," if own.group(1).lower() == "cheers" else "Viele Grüße,"
+    return wish, t["bye"][tone]
 
 
 def register(request: str) -> str:
@@ -411,28 +506,33 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         origin=option.origin, destination=option.destination, carrier=option.carrier,
         total=money(option.total), currency=option.currency, transit=_transit(option, t),
     )  # fmt: skip
-    offer = [price_line, basis.format(trucker=option.trucker)]
+    goods = goods_of(request) if "intro_goods" in t else None
+    if prose.intro and not air_only:
+        intro = _sentence(prose.intro)
+    elif goods:
+        intro = pick(t["intro_goods"]).format(goods=goods)
+    else:
+        intro = pick(t["intro"])
+    offer = [intro, price_line, basis.format(trucker=option.trucker)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
-    if option.valid_until:
-        offer.append(pick(t["valid"]).format(until=_until(rfq, option, t)))
-    name = prose.first_name or signed_name(request, signer)
-    intro = _sentence(prose.intro) if prose.intro and not air_only else pick(t["intro"])
+    book = [pick(t["valid"]).format(until=_until(rfq, option, t))] if option.valid_until else []
     if needs_address:
-        next_step = t["pickup_address"]
+        book.append(t["pickup_address"])
     else:
-        next_step = t["book_air_only"] if air_only else pick(t["book"])
+        book.append(t["book_air_only"] if air_only else pick(t["book"]))
+    name = prose.first_name or signed_name(request, signer)
+    wish, bye = in_kind(request, lang, tone, name)
     lines = [
         t["hello_name"][tone].format(name=name) if name else t["hello"],
-        "",
-        intro,
         "",
         " ".join(offer),
         "",
         *([said, ""] if said else []),
-        next_step,
+        " ".join(book),
         "",
-        f"{t['bye'][tone]}\n{signer}\n{COMPANY}",
+        *([wish, ""] if wish else []),
+        f"{bye}\n{signer}\n{COMPANY}",
     ]
     return "\n".join(lines)
 

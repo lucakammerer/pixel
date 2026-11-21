@@ -483,18 +483,43 @@ def _plain(text: str) -> str:
     return text.lower().translate(str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}))
 
 
+PLACE_WORDS = re.compile(r"\b(?:site|warehouse|premises|plant|factory|lager|werk|standort)\b", re.IGNORECASE)
+
+
+def _known_postcode(ctx: Context, rfq: Rfq) -> str | None:
+    """The pickup postcode this customer gave in an earlier request (the CRM's memory of their site)."""
+    row = ctx.db.execute(
+        "SELECT json_extract(payload, '$.pickup_postcode') AS postcode FROM events WHERE kind = 'rfq.extracted'"
+        " AND json_extract(payload, '$.customer') = ? AND session_id != ? AND postcode IS NOT NULL"
+        " ORDER BY id DESC LIMIT 1",
+        (rfq.customer, rfq.session_id),
+    ).fetchone()
+    return row["postcode"] if row else None
+
+
 def _town_zone(ctx: Context, rfq: Rfq, text: str) -> Rfq:
-    """A pickup named by its town and no postcode ("from our warehouse in Augsburg"): the zone whose area it is."""
+    """A door-to-port pickup without a postcode: the zone of the town named where the pickup is described ("from
+    our warehouse in Augsburg"), else the site this customer gave in an earlier request. "Pickup from our warehouse"
+    with no place came twice (rounds 15, 16); both customers had named their site before. A town anywhere else in
+    the mail, such as the signature's ("Best greetings from Regensburg"), only when nothing else is known."""
     if not rfq.door_pickup or rfq.pickup_zone:
         return rfq
-    plain = _plain(text)
     areas = {_plain(r["area"]): r["zone"] for r in ctx.db.execute("SELECT zone, area FROM pickup_zones")}
-    named = {a for a in areas if re.search(rf"\b{re.escape(a)}\b", plain)}
-    zones = {areas[a] for a in named if not any(a != b and a in b for b in named)}  # "Munich" in "Munich South"
+
+    def towns(part: str) -> set[str]:
+        named = {a for a in areas if re.search(rf"\b{re.escape(a)}\b", _plain(part))}
+        return {areas[a] for a in named if not any(a != b and a in b for b in named)}  # "Munich" in "Munich South"
+
+    zones = towns("\n".join(line for line in text.splitlines() if DOOR.search(line) or PLACE_WORDS.search(line)))
+    postcode = None
+    if len(zones) != 1 and (postcode := _known_postcode(ctx, rfq)):
+        zones = {zone_of(postcode)}
+    if len(zones) != 1:
+        zones = towns(text)
     if len(zones) != 1:
         return rfq
-    return rfq.model_copy(update={"pickup_zone": zones.pop(), "missing": tuple(m for m in rfq.missing
-                                                                               if m != "pickup_postcode")})  # fmt: skip
+    return rfq.model_copy(update={"pickup_zone": zones.pop(), "pickup_postcode": postcode,
+                                  "missing": tuple(m for m in rfq.missing if m != "pickup_postcode")})  # fmt: skip
 
 
 def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
