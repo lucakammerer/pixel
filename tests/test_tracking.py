@@ -169,3 +169,21 @@ def test_a_company_inside_a_compound_word_is_recognised_and_never_answered_with_
     pipe.ctx.db.execute("INSERT INTO sessions (id, customer, state, received_at, deadline_at) VALUES "
                         "(3, 'lindqvist-medtech@hackloop.mail', 'open', '', '')")  # fmt: skip
     assert agent.described(pipe.ctx, "Lindqvist Medtech GmbH | 51447 to ORD | 676 kg") == []
+
+
+async def test_a_question_in_spanish_is_answered_in_spanish(pipe, monkeypatch):
+    from pixel import llm
+    from pixel.contracts import LlmResult
+
+    s = booked(pipe.ctx)
+
+    async def fake_ask(ctx, **kw):
+        assert kw["purpose"] == "tracking.translate" and "es" in kw["system"]
+        return LlmResult(data={"body": "Hola:\n\n" + kw["user"].split("\n\n", 1)[1]}, model="m", tokens_in=1,
+                         tokens_out=1, cost_usd=Decimal(0))  # fmt: skip
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask)
+    await agent.handle(pipe.ctx, mail(41, 41, sender="tracking@hackloop.mail", subject="Estado del envío",
+                                      body="Hola, ¿dónde está la reserva BK-AB12CD34? Muchas gracias."))  # fmt: skip
+    (sent,) = pipe.sent
+    assert sent["body"].startswith("Hola:") and s.id in sent["body"] and "BK-AB12CD34" in sent["body"]

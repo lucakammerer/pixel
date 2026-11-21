@@ -33,7 +33,8 @@ town they greet from, or with their own "Viele Grüße" or "Cheers".
 going back is that one line. Every variant carries our reference, the airline's, the airline, "booked and ready to
 ship", transit days, lane and weight. If there are several plausible shipments or none,
 the reply asks for a booking reference and includes no shipment records. The reply goes through the outbox
-in the inbound thread and uses no gateway call.
+in the inbound thread and uses no gateway call, except for a question that is not in English: the English answer
+is translated (`compose.localize`) and sent only when every reference, name and figure survives.
 
 ## Pitfalls
 

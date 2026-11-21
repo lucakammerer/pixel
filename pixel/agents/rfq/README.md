@@ -98,6 +98,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
   signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`), except to a formal customer.
+  They stay in the request's language for the whole thread, also when the customer accepts in English: a language
+  without `booking.CUSTOMER` text gets the English notice translated (`compose.localize`, at most
+  `booking.TRANSLATE_WAIT_S`), sent only when `compose.kept` finds every reference, name and figure; the question
+  for a missing fact (`extract.py` `_ask`) likewise for a language without `ASK` text.
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
@@ -232,12 +236,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request can come in French (round 70: « l'option la plus rapide », signed "Cheers") or Chinese (round 72,
   signed "Thanks a lot and have a lovely day!"; the model said "en" too). `extract.py` `_language` takes the
   script's language when most of the mail is not Latin (`_script`, `SCRIPTS`), else counts each language's common
-  words (`LANGUAGES`; Spanish, Italian, Portuguese and Dutch need two of theirs, `TWO_WORDS`: "per kg" or a
+  words (`LANGUAGES`; every language but English, German and French needs two of its words, `TWO_WORDS`: "per kg" or a
   "Saludos" sign-off alone made an English mail Italian or Spanish and its quote was translated); the model's ISO code counts only for a language those lists do not know, in a script that
   is not Latin or when the lists find almost nothing. A language we have no `TEXT` for gets the code-written
   English quote translated by one model call (`compose.py` `translate`, from `agent.py` `_in_language`, at most
   `TRANSLATE_WAIT_S`), kept only when `translated_ok` finds the total once, the currency, carrier, trucker, transit
   days and no new figure; else the English quote goes out and an `error` event says why.
+- The persona's sign-off stays English or German whatever language the mail is in ("Thanks and regards" under a
+  Polish line). `_language` reads the words above it first (`_unsigned`, `SIGN_OFF`), then the attachment or voice
+  message when the mail says nothing else, the sign-off last. A quoted older mail is cut in the customer's
+  language too ("El jue … escribió:", "-----原始邮件-----", "发件人: …@…": `HISTORY`). `tests/fixtures/rfqs/
+  languages.jsonl` holds one probe per case.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says
   "non-dangerous". `extract.py` `dangerous_goods` reads the mail and every attachment; a declaration adds
   `dangerous_goods_documents` to `Rfq.missing` and emits `rfq.dangerous_goods` with the declared text. "Non-dangerous

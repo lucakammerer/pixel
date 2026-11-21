@@ -62,6 +62,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | R31 | +10 from the jury for the accepted mail that reads most human | Brief, Board | `agents/rfq/compose.py` `render`, `register`, `greeting`, `sign_off`, `signature`, `in_kind`, `prose`, `clean`, `_opening_ok`; `agents/rfq/booking.py` `_tell_customer` | done |
 | R32 | All model calls go through the gateway (`POST /v1/gateway/chat/completions`, `/responses`, `/embeddings`), OpenAI models only, with our own OpenAI key stored once at the gateway. At most 20 gateway calls in flight per team, then 429 `too_many_in_flight` | Brief, API | `llm.py`, `api/gateway.py`, `tools/set_openai_key.py` | done |
 | R33 | After a few hours the setup changes about once an hour, unannounced. We learn of a change from failed quotes: `GET /v1/board/me` gives per request the verdict (`accepted`, `rejected`, `pending`, `open`, `no answer`, `voided`), a reason code and the points per kind | Brief, API | `core/feedback.py`, `tools/board_me.py` `run`, `crm/quotes.py` `stats`, `ui/dashboard.py` | done |
+| R37 | A quote not in the language the customer wrote in is rejected (`wrong_language`), whatever its price. Requests come in any language with the persona's own English or German sign-off (French in round 70, Chinese in round 72); the thread keeps that language after the quote | Board (rounds 70, 72) | `agents/rfq/extract.py` `_language`, `_unsigned`, `_script`, `HISTORY`; `agents/rfq/compose.py` `translate`, `localize`, `kept`; `agents/rfq/booking.py` `_tell_customer`; `agents/rfq/extract.py` `_ask`; `agents/tracking/agent.py` `handle`; `tests/fixtures/rfqs/languages.jsonl` | done |
 
 ## The final
 
@@ -76,7 +77,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | # | Rule | Lives in |
 | --- | --- | --- |
 | P1 | Code does the arithmetic and the selection (Decimal, tested). A model only reads what code cannot: the customer's request, an odd carrier reply, an unknown tariff format | `pricing/calc.py`, `pricing/selection.py` |
-| P2 | One small gateway call per quote by default: rules first, the model as fallback, and where the rules sufficed one minimal call for the quote's prose (R31), which also keeps every window above no spend (R28); a customer language we have no text for adds one call to translate the quote (`agents/rfq/compose.py` `translate`). Tokens and cost are logged per call | `llm.py` |
+| P2 | One small gateway call per quote by default: rules first, the model as fallback, and where the rules sufficed one minimal call for the quote's prose (R31), which also keeps every window above no spend (R28); a customer language we have no text for adds one call to translate the quote (`agents/rfq/compose.py` `translate`), and one per booking notice, question or tracking answer in that language (`compose.localize`). Tokens and cost are logged per call | `llm.py` |
 | P3 | Always answer: every request has its own deadline; before it runs out we send the best price we have | `core/orchestrator.py` `quote_with_deadline` |
 | P4 | Every mail in and out, every decision and every model call is an event. CRM and UI read that log | `core/events.py` |
 | P5 | Nothing from one dataset version is hardcoded; tariffs carry a version and a validity | `pricing/store.py` |
