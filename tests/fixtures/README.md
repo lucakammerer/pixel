@@ -53,8 +53,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `channel-gaps.json`: the cells of the channel matrix (`tools/benchmark_generalization.py` section 12: every mail
   kind against where its information sits, body, pdf, scan, docx, xlsx, txt or csv, audio, or body and attachment
   disagreeing) that no captured mail, kit sheet, pickup offer or generated case covers yet, keyed
-  `"<kind> <channel>"`, each note ending `Owner: <role>.`. A cell with neither fails the benchmark and the tests; a
-  listed cell that a case covers now is printed so its note goes.
+  `"<kind> <channel>"`, each note ending `Owner: <role>.`. A cell with neither fails the benchmark and the tests, and
+  so does a listed cell that a case covers now: its note goes in the same commit.
 - `bid-plausibility.json`: every bid with peers of its kind from the scored rounds of 21.11.2026, read right, and
   round 67's misread trucker bid with the quote a right reading gives (`selection.implausible`).
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
