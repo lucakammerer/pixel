@@ -9,6 +9,7 @@ import pytest
 
 from pixel import llm
 from pixel.agents.rfq import agent
+from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import LaneTariff, LlmResult, Message, Rfq, Source
 from pixel.core import events, outbox
@@ -157,6 +158,19 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     assert (backup.total, backup.fallback, len(calls)) == (D("260.00"), True, 1)
 
 
+def captured(name: str) -> Message:
+    return to_message(json.loads((Path(__file__).parent / "fixtures" / "mails" / name).read_text()), "in")
+
+
 def test_a_captured_lane_decline_is_recognised_without_a_model():
-    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "bid-decline-lane.json").read_text())
-    assert bids.DECLINE.search(raw["body"])
+    assert bids.DECLINE.search(captured("bid-decline-lane.json").body)
+
+
+def test_rules_read_the_captured_airline_bid_and_pickup_bid():
+    """The airline writes its total ungrouped; both mails carry a validity time with a time zone after a number."""
+    airline = bids.parse(captured("bid-airline-priced.json"), rfq())
+    assert (airline.total, airline.currency, airline.transit_days) == (D("1195.90"), "EUR", 3)
+    labelled = bids.parse(captured("bid-airline-priced-labelled.json"), rfq())
+    assert (labelled.total, labelled.currency, labelled.transit_days) == (D("586.80"), "EUR", 6)
+    pickup = bids.parse(captured("bid-pickup-priced.json"), rfq(), needs_transit=False)
+    assert (pickup.total, pickup.currency) == (D("182.62"), "EUR")

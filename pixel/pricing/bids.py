@@ -15,10 +15,16 @@ from pixel.core.orchestrator import Deadline
 from pixel.pricing import calc, session, store
 
 POLL_S = 0.5
-AMOUNT = r"\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"
+# Grouped thousands only when a separator is there: an ungrouped "1195.90" is one amount, not "119".
+AMOUNT = r"\d{1,3}(?:[.,\s]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"
+# ISO 4217. Any other three capitals after a number is no price: a time zone, an airport, a unit.
+CURRENCY = (
+    "EUR|USD|GBP|CHF|JPY|CNY|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|PLN|CZK|HUF|TRY|AED|SAR|QAR|ILS|INR|KRW|TWD|THB|MYR|"
+    "IDR|PHP|VND|ZAR|EGP|KES|NGN|BRL|MXN|ARS|CLP|COP|PEN"
+)
 SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
 PRICED = re.compile(
-    rf"(?P<c1>[A-Z]{{3}}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>[A-Z]{{3}}|[€$£])(?![A-Za-z])"
+    rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£])(?![A-Za-z])"
 )
 TOTAL_WORDS = re.compile(r"total|all[- ]in|gesamt|in total|overall", re.IGNORECASE)
 TRANSIT = re.compile(r"(\d+)\s*(?:calendar\s+)?(?:days?|tage?n?)\b|transit\D{0,20}(\d+)", re.IGNORECASE)
