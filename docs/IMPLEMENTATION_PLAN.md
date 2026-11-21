@@ -348,4 +348,6 @@ Everyone takes a night shift at the dashboard.
 
 Every pull request states what it changes in accepted rate, response time or spend per quote, measured on replayed
 fixtures or on `/v1/board/me`, and may not make another KPI worse without saying so. The replayed part is posted
-by CI: `tools/kpi.py` `report`, run by `.github/workflows/ci.yml` on the base and on the branch.
+by CI: `tools/kpi.py` `report`, run by `.github/workflows/ci.yml` on the base and on the branch, offline on the
+mail fixtures. `tools/kpi_pr.sh` runs it on the live host instead: the stored requests with the carriers' answers,
+the real portal and gateway, cost in USD and time to the quote in seconds, each with its points (R28, R29).

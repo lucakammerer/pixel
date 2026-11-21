@@ -30,6 +30,7 @@ from pixel.app import build_context
 from pixel.config import settings
 from pixel.contracts import Event, Message
 from pixel.core import events, orchestrator, poller
+from pixel.core.context import Context
 
 
 class OfflineMailbox(Mailbox):
@@ -85,8 +86,8 @@ def _copy(source: str, target: str, raws: list[dict]) -> int:
     return last
 
 
-async def run(raws: list[dict], online: bool, db: str | None = None) -> list[Event]:
-    """The events the mails left behind."""
+async def run(raws: list[dict], online: bool, db: str | None = None) -> tuple[Context, list[Event]]:
+    """The replay's context and the events the mails left behind."""
     config = dataclasses.replace(settings(), dry_run=True, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3"))
     last_event = _copy(db, config.db_path, raws) if db else 0
     ctx = build_context(config)
@@ -101,11 +102,11 @@ async def run(raws: list[dict], online: bool, db: str | None = None) -> list[Eve
         if stored:
             session_id = session_id or stored.session_id
             await orchestrator.dispatch(ctx, stored)
-    return events.since(ctx, last_event, limit=10_000)
+    return ctx, events.since(ctx, last_event, limit=10_000)
 
 
 async def replay(raws: list[dict], online: bool, db: str | None = None) -> int:
-    for event in await run(raws, online, db):
+    for event in (await run(raws, online, db))[1]:
         usage = {"tokens_in": event.tokens_in, "tokens_out": event.tokens_out, "cost_usd": event.cost_usd,
                  "ms": event.duration_ms} if event.kind == "llm.call" else {}  # fmt: skip
         print(json.dumps({**event.payload, **usage, "ts": event.ts.isoformat(timespec="seconds"),

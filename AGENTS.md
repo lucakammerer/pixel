@@ -87,7 +87,8 @@ uv run pytest -q                                # seconds, no network
 uv run ruff check . && uv run ruff format .
 uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored mail through the pipeline
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
-uv run python -m tools.kpi                      # answered, price and model calls per replayed request, as JSON
+uv run python -m tools.kpi                      # accuracy, cost and speed on the replayed request fixtures, as JSON
+tools/kpi_pr.sh <pull request>                  # the same online on the live host, posted as a comment
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
@@ -109,8 +110,9 @@ Foundation: `a/<topic>`, `b/<topic>`, `c/<topic>` from `main`. Afterwards: `accu
 `cost/<topic>`. Rebase on `main` before merging; `uv run pytest -q` and `uv run ruff check .` pass on every commit
 that reaches `main`; `.github/workflows/ci.yml` runs both on every push to `main` and every pull request. On a pull
 request it also replays the mail fixtures on the base and on the branch (`tools/kpi.py`) and posts the comparison
-as a comment: answered requests, model calls, and every request whose price or carrier changed. Small commits, the
-subject says what changed, no trailers.
+as a comment: accuracy, cost and speed, and every request whose price or carrier changed. Offline it has sheet
+prices only and no model; `tools/kpi_pr.sh` measures the same on the live host with the real portal and gateway.
+Small commits, the subject says what changed, no trailers.
 
 ## Glossary
 

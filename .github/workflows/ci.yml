@@ -43,7 +43,8 @@ jobs:
           enable-cache: true
       # The base runs its own code on this branch's fixtures. Without its result the comment shows this branch alone.
       - run: (cd base && uv run --locked python -m tools.kpi ../tests/fixtures/mails > ../base.json) || rm -f base.json
-      - run: uv run --locked python -m tools.kpi --base base.json > kpi.md
+      - run: uv run --locked python -m tools.kpi > branch.json
+      - run: uv run --locked python -m tools.kpi --report branch.json --base base.json > kpi.md
       - run: gh pr comment ${{ github.event.pull_request.number }} --body-file kpi.md --edit-last --create-if-none
         env:
           GH_TOKEN: ${{ github.token }}
