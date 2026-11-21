@@ -64,8 +64,8 @@ offer starts the booking.
 
 The Performance dashboard shows the team total from `GET /v1/board/me`, split into what the quotes earned
 (accuracy, time, cost) and what comes on top (human writing, tracking); the board's `booking` field is always 0. Per round it lists every kind. Where
-the board leaves accuracy and time out of a row, it takes them from the change of the team total when the verdict
-appeared, less the change of the reported points (`core/feedback.py`). Cost points the scorer adds only after the
+the board leaves accuracy and time out of a row, it takes them from the change of the team total when its points
+arrived (an accepted verdict can come minutes before them), less the change of the reported points (`core/feedback.py`). Cost points the scorer adds only after the
 hour are estimated from our own gateway spend in that hour (R28), counted in the round's quote and total, and shown as a
 projected total.
 
