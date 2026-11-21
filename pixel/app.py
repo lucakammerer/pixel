@@ -1,4 +1,4 @@
-"""Process entry: `uv run uvicorn pixel.app:app`. One process runs the poller, the handlers and the UI."""
+"""Process entry: `uv run uvicorn pixel.app:app`. One process runs poller, push endpoint, handlers and UI."""
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
@@ -12,7 +12,7 @@ from pixel.api.gateway import Gateway
 from pixel.api.mailbox import Mailbox
 from pixel.api.portal import Portal
 from pixel.config import Settings, settings
-from pixel.core import db, orchestrator, poller
+from pixel.core import db, orchestrator, poller, webhook
 from pixel.core.context import Context
 from pixel.core.events import emit
 from pixel.ui import dashboard, routes
@@ -58,5 +58,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PIXEL", lifespan=lifespan)
+app.include_router(webhook.router)
 app.include_router(routes.router)
 app.include_router(dashboard.router)
