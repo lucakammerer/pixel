@@ -52,34 +52,20 @@ async def test_each_mail_once_across_a_restart(conn):
     assert conn.execute("SELECT count(*) FROM events WHERE kind = 'mail.in'").fetchone()[0] == 2
 
 
-@pytest.mark.parametrize(
-    ("subject", "body", "known"),
-    [
-        ("Booking BK-123456 confirmed", "", True),
-        ("Confirmation", "Booking bk-123456, is confirmed.", True),
-        ("Booking BK-unknown confirmed", "", False),
-    ],
-)
+@pytest.mark.parametrize(("subject", "body", "known"), [
+    ("Booking BK-123456 confirmed", "", True),
+    ("Confirmation", "Booking bk-123456, is confirmed.", True),
+    ("Booking BK-unknown confirmed", "", False),
+])
 def test_standalone_confirmation_session(conn, subject, body, known):
     template = FakeMailbox(["synthetic-tracking.json"]).mails[0]
-    message = template.model_copy(
-        update={
-            "subject": subject,
-            "body": body,
-            "in_reply_to": None,
-            "references": (),
-        }
-    )
+    message = template.model_copy(update={
+        "subject": subject, "body": body, "in_reply_to": None, "references": (),
+    })
     ctx = Context(settings(), conn, None, None, None, None)
     booking = Booking(
-        id="booking",
-        quote_id="quote",
-        session_id=message.id + 1,
-        team_reference="team",
-        via="portal",
-        carrier="carrier",
-        booking_reference="BK-123456",
-        created_at=message.sent_at,
+        id="booking", quote_id="quote", session_id=message.id + 1, team_reference="team",
+        via="portal", carrier="carrier", booking_reference="BK-123456", created_at=message.sent_at,
     )
     bookings.save(ctx, booking)
     expected = booking.session_id if known else message.id
