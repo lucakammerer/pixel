@@ -325,7 +325,25 @@ def _preference(text: str) -> Preference:
 # our future inquiries", quoted anyway and rejected as excluded_airline).
 RULED_OUT = re.compile(
     r"\b(?:not|never|exclud\w*|avoid\w*|without|except|other than"
-    r"|nicht|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)\w*)\b",
+    r"|nicht|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)\w*)\b|n['’]t\b",
+    re.IGNORECASE,
+)
+# A negation that lifts an exclusion: "Do not exclude Lagoon", "we don't mind", "nichts dagegen".
+UNDONE = re.compile(
+    r"(?:\b(?:not|never|no|nicht|nichts|kein\w*)\b|n['’]t)\s+(?:\w+\s+){0,2}?"
+    r"(?:exclud\w*|avoid\w*|rule\w*\s+out|mind|object\w*|hesitate|against|ausschlie(?:ß|ss)\w*|vermeid\w*|dagegen)\b",
+    re.IGNORECASE,
+)
+# Where a negation's reach ends: "Do not offer ZS, but Lagoon is fine".
+CLAUSE_BREAK = re.compile(
+    r"\b(?:but|however|though|although|whereas|while|instead|otherwise|since|because|unless|if|when"
+    r"|aber|jedoch|sondern|allerdings|obwohl|weil|wenn|falls|stattdessen)\b|[;:–—]",
+    re.IGNORECASE,
+)
+JOIN = re.compile(r",|&|/|\b(?:and|or|nor|und|oder|sowie)\b", re.IGNORECASE)
+LIST_FILLER = re.compile(r"(?:\s|\b(?:also|auch|either|neither|the|with|via|mit)\b)*", re.IGNORECASE)
+APPROVED = re.compile(
+    r"\b(?:fine|ok(?:ay)?|good|great|prefer\w*|welcome|acceptable|happy|yes|gerne?|passt|ja|willkommen|bevorzugt)\b",
     re.IGNORECASE,
 )
 LASTING = re.compile(
@@ -334,7 +352,7 @@ LASTING = re.compile(
     re.IGNORECASE,
 )
 AIRLINE_WORD = re.compile(r"\s+(?:air\s+cargo|air\s+freight|airways|airlines?|air|cargo)$", re.IGNORECASE)
-CODE_IN_BRACKETS = re.compile(r"\(([A-Z0-9]{2})\)")
+CODE = re.compile(r"(?<![\w-])([A-Z][A-Z0-9])(?![\w-])")
 
 
 def _calls(name: str) -> set[str]:
@@ -343,17 +361,82 @@ def _calls(name: str) -> set[str]:
     return {name.casefold()} | ({short.casefold()} if len(short) >= 4 else set())
 
 
-def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], bool]:
-    """The airlines a sentence with a negation names, from `airlines`, plus a two-letter code in brackets in it; and
-    whether the customer means later requests too. A negation that names no known airline rules nothing out."""
+def _mentions(sentence: str, airlines: set[str], codes: dict[str, set[str]]) -> list[tuple[int, int, set[str]]]:
+    """Where a sentence names an airline: by name, or by a two-letter code, with the airlines the directory gives
+    that code."""
+    found = [(m.start(), m.end(), {a}) for a in airlines for c in _calls(a)
+             for m in re.finditer(rf"(?<!\w){re.escape(c)}(?!\w)", sentence, re.IGNORECASE)]  # fmt: skip
+    for m in CODE.finditer(sentence):
+        if not (RULED_OUT.fullmatch(m[1]) or APPROVED.fullmatch(m[1]) or m[1] in ("NO", "AN", "OR")):
+            found.append((m.start(1), m.end(1), {m[1], *codes.get(m[1], ())}))
+    # "Beta Cargo" is one mention, not also "Beta" inside it
+    found = [f for f in found if not any(g[0] <= f[0] and f[1] <= g[1] and g[:2] != f[:2] for g in found)]
+    return sorted(found, key=lambda f: f[0])
+
+
+def _negated(sentence: str, mentions: list[tuple[int, int, set[str]]]) -> set[str]:
+    """The airlines a negation in this sentence reaches. A negation reaches its own clause only: a clause ends at
+    "but", "because" and the like, and at a comma or "and" unless it joins two airlines ("not ZS or Pampero"). An
+    airline before the negation is ruled out unless the customer approves it first ("Lagoon is fine, ..."); one
+    joined on after it is spared when approved ("Do not offer ZS, Lagoon is fine")."""
+    inside = lambda i: any(s <= i < e for s, e, _ in mentions)
+    undone = [m.span() for m in UNDONE.finditer(sentence)]
+    items = [(m.start(), "neg", m.end()) for m in RULED_OUT.finditer(sentence)
+             if not inside(m.start()) and not any(s <= m.start() < e for s, e in undone)]  # fmt: skip
+    items += [(m.start(), "break", m.end()) for m in CLAUSE_BREAK.finditer(sentence) if not inside(m.start())]
+    items += [(m.start(), "join", m.end()) for m in JOIN.finditer(sentence) if not inside(m.start())]
+    items += [(m.start(), "approved", m.end()) for m in APPROVED.finditer(sentence) if not inside(m.start())]
+    items += [(s, "airline", e, names) for s, e, names in mentions]
+    items.sort(key=lambda i: i[0])
+    out: set[str] = set()
+    clause: list[dict] = []
+    negated = False
+
+    def close() -> None:
+        nonlocal clause, negated
+        if negated:
+            out.update(n for m in clause if not m["approved"] for n in m["names"])
+        clause, negated = [], False
+
+    for i, item in enumerate(items):
+        kind = item[1]
+        if kind == "break":
+            close()
+        elif kind == "join":
+            after = items[i + 1] if i + 1 < len(items) else None
+            joins_airlines = (
+                i > 0 and items[i - 1][1] == "airline" and after is not None and after[1] == "airline"
+                and LIST_FILLER.fullmatch(sentence[item[2] : after[0]]) is not None
+            )  # fmt: skip
+            if not joins_airlines:
+                close()
+        elif kind == "neg":
+            negated = True
+            for m in clause:
+                m["spoken_for"] = True  # an approval after this negation no longer reaches what came before it
+        elif kind == "approved":
+            for m in clause:  # before the negation, or joined on in a list after it ("..., Lagoon is fine")
+                if not m["spoken_for"] and (not m["after_neg"] or m["joined"]):
+                    m["approved"] = True
+        else:
+            joined = i > 0 and items[i - 1][1] == "join"
+            clause.append({"names": item[3], "after_neg": negated, "joined": joined, "approved": False,
+                           "spoken_for": False})  # fmt: skip
+    close()
+    return out
+
+
+def excluded_airlines(
+    text: str, airlines: set[str], codes: dict[str, set[str]] | None = None
+) -> tuple[tuple[str, ...], bool]:
+    """The airlines a negation reaches, from `airlines`, plus two-letter codes it reaches (with the airlines `codes`,
+    the directory's code to names, gives them); and whether the customer means later requests too."""
     found, lasting = set(), False
     for sentence in re.split(r"(?<=[.!?;])\s+|\n+", text):
-        if not RULED_OUT.search(sentence):
+        if not RULED_OUT.search(sentence) or not (mentions := _mentions(sentence, airlines, codes or {})):
             continue
-        lowered = sentence.casefold()
-        names = {a for a in airlines if any(re.search(rf"(?<!\w){re.escape(c)}(?!\w)", lowered) for c in _calls(a))}
-        if names:
-            found |= names | set(CODE_IN_BRACKETS.findall(sentence))
+        if names := _negated(sentence, mentions):
+            found |= names
             lasting = lasting or bool(LASTING.search(sentence))
     return tuple(sorted(found)), lasting
 
@@ -363,7 +446,7 @@ def _ruled_out(ctx: Context, rfq: Rfq, text: str) -> Rfq:
     exclusion is kept as a `customer.excludes` event."""
     if ctx is None:  # the offline benchmark reads without a store
         return rfq
-    names, lasting = excluded_airlines(text, store.airline_names(ctx))
+    names, lasting = excluded_airlines(text, store.airline_names(ctx), store.airline_codes(ctx))
     rows = ctx.db.execute(
         "SELECT payload FROM events WHERE kind = 'customer.excludes' AND lower(json_extract(payload, '$.customer')) = ?",
         (rfq.customer.lower(),),

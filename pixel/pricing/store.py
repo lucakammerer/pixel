@@ -109,6 +109,18 @@ def airline_names(ctx: Context) -> set[str]:
     return {row[0] for row in rows}
 
 
+def airline_codes(ctx: Context) -> dict[str, set[str]]:
+    """The portal's and the rate desk's two-letter airline codes, each with the airlines that priced under it."""
+    rows = ctx.db.execute(
+        "SELECT DISTINCT json_extract(payload, '$.option.carrier_code') AS code, json_extract(payload, '$.option.carrier')"
+        " AS name FROM events WHERE kind = 'option.found' AND code IS NOT NULL"
+    )
+    out: dict[str, set[str]] = {}
+    for row in rows:
+        out.setdefault(row["code"], set()).add(row["name"])
+    return out
+
+
 def carrier_by_email(ctx: Context, email: str) -> tuple[str, str] | None:
     """(name, kind) of the carrier writing from this address."""
     row = ctx.db.execute("SELECT name, kind FROM carriers WHERE lower(email) = lower(?)", (email,)).fetchone()

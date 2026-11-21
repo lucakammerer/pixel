@@ -11,6 +11,7 @@
   ],
   "excluded": "Zephyr Steppe Cargo",
   "code": "ZS",
+  "allowed_cheapest": "Lagoon Isles Airways",
   "quoted": "3028.54",
   "verdict": "rejected",
   "reason": "excluded_airline"

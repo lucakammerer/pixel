@@ -776,6 +776,14 @@ async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
     other = later.model_copy(update={"id": later.id + 1, "session_id": later.id + 1, "sender": "someone@else"})
     rfq, _ = await extract.read_request(ctx, other, deadline_for(other.sent_at, settings()))
     assert rfq.excluded_carriers == ()
+    # A code alone names an airline only through a code the portal or the rate desk priced it under.
+    events.emit(ctx, "option.found", "pricing", session_id=other.session_id,
+                payload={"option": {"carrier": scored["excluded"], "carrier_code": scored["code"]}})  # fmt: skip
+    by_code = other.model_copy(update={"id": other.id + 1, "session_id": other.id + 1, "sender": "third@else",
+                                       "body": f"{other.body}\n\nDo not offer {scored['code']}, but "
+                                               f"{scored['allowed_cheapest']} is fine."})  # fmt: skip
+    rfq, _ = await extract.read_request(ctx, by_code, deadline_for(by_code.sent_at, settings()))
+    assert set(rfq.excluded_carriers) == {scored["excluded"], scored["code"]}
 
 
 @pytest.mark.parametrize(
@@ -786,7 +794,17 @@ async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
         ("Any airline except Alpha is fine.", {"Alpha Air"}),
         ("We flew Alpha Air last time and were happy.", set()),
         ("We are not in a hurry.", set()),
+        ("We do not need pickup and prefer Beta Cargo.", set()),
+        ("Do not offer AB, but Beta Cargo is fine.", {"AB", "Alpha Air"}),
+        ("Do not offer AB, Beta Cargo is fine.", {"AB", "Alpha Air"}),
+        ("Do not exclude Beta Cargo.", set()),
+        ("Don't offer Alpha Air or Beta Cargo.", {"Alpha Air", "Beta Cargo"}),
+        ("Alpha Air is not acceptable to us.", {"Alpha Air"}),
+        ("Beta Cargo is fine, but not Alpha Air.", {"Alpha Air"}),
+        ("Bitte kein Alpha Air, sondern Beta Cargo.", {"Alpha Air"}),
     ],
 )
-def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
-    assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"})[0]) == excluded
+def test_excluded_airlines_reach_the_negated_clause_only(text, excluded):
+    """Round 42's rule read a whole sentence: any negation in it ruled out every airline it named."""
+    directory = {"AB": {"Alpha Air"}}
+    assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"}, directory)[0]) == excluded
