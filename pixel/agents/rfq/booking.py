@@ -50,6 +50,7 @@ ASKS_TO_BOOK = re.compile(
     re.IGNORECASE,
 )
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
+AIRLINE_REFERENCE = re.compile(r"\bbooking reference:?\s*(\S+)", re.IGNORECASE)
 OURS = re.compile(r"\byour reference:?\s*(\S+?)[.,;]?\s*$", re.IGNORECASE | re.MULTILINE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
@@ -191,7 +192,9 @@ async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to:
 
 async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told."""
-    match = CONFIRMED.search(message.subject) or CONFIRMED.search(message.body)
+    match = (
+        CONFIRMED.search(message.subject) or CONFIRMED.search(message.body) or AIRLINE_REFERENCE.search(message.body)
+    )
     reference = match.group(1).strip(".,:;") if match else None
     # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
     ours = OURS.search(message.body)
