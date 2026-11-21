@@ -9,7 +9,9 @@ real mail has arrived of yet: a tariff mail, a tracking question, a request the 
 with a captured mail of the same kind as soon as one arrives, then delete the synthetic one. `tests/test_router.py`
 stores our own mails the captured ones answer (the bid request, the quote, a request to the rate desk) first.
 
-A fixture may carry `content_base64` on an attachment; `tools/replay.py` serves it instead of downloading.
+A fixture may carry `content_base64` on an attachment; `tools/replay.py` serves it instead of downloading. The
+benchmark's `CONTAINERS` (section 13) wraps each embedded file as html, a forwarded mail, a zip, without a suffix or
+as other text, and reads it again against the same hand-read answers.
 
 `tools/kpi.py` replays each `rfq-*` and `synthetic-rfq-*` fixture, plus any names listed in
 `tests/fixtures/kpi-expectations.json`. A misrouted request stays in the denominator. An answer requires a

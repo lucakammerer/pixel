@@ -97,6 +97,13 @@ def test_carrier_bids_are_read_right_or_refused():
     assert [f"{b.case_id}: {b.got}" for b in reads if not b.ok and not b.known_gap] == []
 
 
+def test_an_attachment_in_another_container_is_read_like_the_original_or_not_at_all():
+    """A captured attachment as html, a forwarded mail, a zip or other text: never read into other figures."""
+    reads = bench.audit_containers()
+    assert reads
+    assert [f"{c.change}: {c.fixture} {c.detail}" for c in reads if c.outcome == "wrong"] == []
+
+
 def test_spreadsheet_layout_changes_parse_the_same_or_are_refused():
     changes = bench.audit_xlsx_changes()
     assert any(v.outcome == "parsed right" for v in changes)

@@ -29,6 +29,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    disagreeing). A cell counts the captured mails, kit sheets, pickup offers and `tools/simulate.py` cases that put
    it there; a cell without one is listed in `channel-gaps.json` with its owner, or the run fails, and so does a
    listed cell a case covers by now. `--gaps` prints the matrix first.
+13. Attachment containers: every captured attachment as an html page, a forwarded mail, a zip archive, without
+   or with a capitalised suffix, as UTF-16 or markdown text (`CONTAINERS`): read like the original or not at all.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -40,12 +42,15 @@ Scanned sheets are read by the real `agents.tariffs.agent.read_with_model`, with
 import asyncio
 import base64
 import csv
+import io
 import json
 import re
 import sys
+import zipfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal as D
+from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import patch
 
@@ -331,11 +336,19 @@ def _live_want(key: str, want):
     return D(want) if key in ("weight_kg", "volume_cbm") and want is not None else want
 
 
+def _readable(filename: str, content: bytes) -> list[str] | None:
+    """`tariffs.agent.attachment_lines` without the mailbox: a file code cannot read holds nothing."""
+    try:
+        return agent._lines(filename, content)
+    except agent.Unreadable:
+        return None
+
+
 def _rules_with_attachments(raw: dict, deadline) -> Rfq | None:
     """`extract.read_request`'s rules on a captured mail and its embedded attachments, without its question."""
     message = to_message(raw, "in")
-    files = [(a["filename"], agent._lines(a["filename"], base64.b64decode(a["content_base64"])))
-             for a in raw.get("attachments", []) if a.get("content_base64")]  # fmt: skip
+    files = [(a["filename"], lines) for a in raw.get("attachments", []) if a.get("content_base64")
+             if (lines := _readable(a["filename"], base64.b64decode(a["content_base64"]))) is not None]  # fmt: skip
     if not files:
         return extract.by_rules(message, deadline)
     documents = [(name, extract.own_words("\n".join(lines))) for name, lines in files]
@@ -343,6 +356,87 @@ def _rules_with_attachments(raw: dict, deadline) -> Rfq | None:
     cargo = extract._cargo_sources(sources)[0]
     combined = message.model_copy(update={"subject": "", "body": "\n\n".join(content for _, content in sources)})
     return extract.by_rules(message, deadline, cargo=cargo) or extract.by_rules(combined, deadline, cargo=cargo)
+
+
+def _text(name: str, data: bytes) -> str:
+    return "\n".join(agent._lines(name, data))
+
+
+def _as_html(name: str, data: bytes) -> tuple[str, bytes]:
+    cells = lambda line: "".join(f"<td>{c.strip()}</td>" for c in re.split(r"\s{2,}", line) if c.strip())
+    rows = "".join(f"<tr>{cells(line)}</tr>" if re.search(r"\S\s{2,}\S", line) else f"<p>{line}</p>"
+                   for line in _text(name, data).splitlines())  # fmt: skip
+    return f"{Path(name).stem}.html", f"<html><body><table>{rows}</table></body></html>".encode()
+
+
+def _as_mail(name: str, data: bytes, *, attach: bool) -> tuple[str, bytes]:
+    mail = EmailMessage()
+    mail["From"], mail["Subject"] = "colleague@example.com", f"Fwd: {name}"
+    mail.set_content("Please see the attached file." if attach else _text(name, data))
+    if attach:
+        mail.add_attachment(data, maintype="application", subtype="octet-stream", filename=name)
+    return f"{Path(name).stem}.eml", mail.as_bytes()
+
+
+def _as_zip(name: str, data: bytes) -> tuple[str, bytes]:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(name, data)
+    return f"{Path(name).stem}.zip", buffer.getvalue()
+
+
+# One container change each to a captured attachment; the facts it holds stay the same.
+CONTAINERS = {
+    "html page": _as_html,
+    "forwarded mail, text in its body": lambda n, d: _as_mail(n, d, attach=False),
+    "forwarded mail, file attached": lambda n, d: _as_mail(n, d, attach=True),
+    "zip archive": _as_zip,
+    "no file suffix": lambda n, d: (Path(n).stem, d),
+    "suffix in capitals": lambda n, d: (Path(n).stem + Path(n).suffix.upper(), d),
+    "text in UTF-16": lambda n, d: (f"{Path(n).stem}.txt", _text(n, d).encode("utf-16")),
+    "markdown": lambda n, d: (f"{Path(n).stem}.md", _text(n, d).encode()),
+}
+
+
+@dataclass
+class Container:
+    fixture: str
+    change: str
+    outcome: str  # "right", "unread" (the file held nothing for the code), "model" or "wrong"
+    detail: str = ""
+
+
+def audit_containers() -> list[Container]:
+    """Every captured attachment (requests against `rfqs/live.jsonl`, the trucker's offer against its hand-read
+    total) in another container: read like the original, or at worst unread; never into other figures."""
+    rows = {r["fixture"]: r["expected"] for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
+    deadline, results = _deadline(), []
+    for path in sorted(MAILS.glob("*.json")):
+        raw = json.loads(path.read_text())
+        embedded = [a for a in raw.get("attachments") or [] if a.get("content_base64")]
+        offer = path.name == "bid-pickup-in-attachment.json"
+        if not embedded or not (offer or path.name in rows):
+            continue
+        first = embedded[0]
+        for change, wrap in CONTAINERS.items():
+            name, data = wrap(first["filename"], base64.b64decode(first["content_base64"]))
+            changed = dict(raw, attachments=[first | {"filename": name, "content_base64": base64.b64encode(data).decode()},
+                                             *embedded[1:]])  # fmt: skip
+            unread = _readable(name, data) is None
+            if offer:
+                body = "\n".join([bids._own_text(raw["body"]), *(_readable(name, data) or [])])
+                found = bids.parse(_message("Re: Pickup request", body), Rfq(session_id=1, message_id=1,
+                                   customer="bench", origin="CGN", destination="CGN", weight_kg=D(1410),
+                                   received_at=NOW, deadline_at=NOW, door_pickup=True), needs_transit=False)  # fmt: skip
+                got = None if found is None else (str(found.total), bids._pickup_hours(body))
+                wrong = [] if got == ("165.70", 29) else [f"{got} != ('165.70', 29)"] if got else None
+            else:
+                rfq = _rules_with_attachments(changed, deadline)
+                wrong = None if rfq is None else [f"{k}: {_live_value(rfq, k)} != {v}" for k, v in rows[path.name].items()
+                                                  if k != "origin" and _live_value(rfq, k) != _live_want(k, v)]  # fmt: skip
+            outcome = "wrong" if wrong else "unread" if unread else "right" if wrong == [] else "model"
+            results.append(Container(path.name, change, outcome, "; ".join(wrong or [])))
+    return results
 
 
 def audit_live() -> list[Live]:
@@ -1069,6 +1163,18 @@ def main() -> int:
     for line in empty:
         print(f"    FAIL {line}")
 
+    containers = audit_containers()
+    containers_wrong = [c for c in containers if c.outcome == "wrong"]
+    print(f"\n[13] Attachment containers: {sum(c.outcome == 'right' for c in containers)}/{len(containers)} read like "
+          f"the original, {sum(c.outcome == 'unread' for c in containers)} unread")  # fmt: skip
+    for change in CONTAINERS:
+        rows = [c for c in containers if c.change == change]
+        counts = {o: sum(c.outcome == o for c in rows) for o in ("right", "unread", "model", "wrong")}
+        print(f"    {change:<34} {counts['right']}/{len(rows)} right, {counts['unread']} unread, "
+              f"{counts['model']} model, {counts['wrong']} wrong")  # fmt: skip
+    for c in containers_wrong:
+        print(f"    FAIL {c.change}: {c.fixture} ({c.detail})")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -1082,6 +1188,7 @@ def main() -> int:
         or mutated_wrong
         or conflicts_wrong
         or empty
+        or containers_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")
