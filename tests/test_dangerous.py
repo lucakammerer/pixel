@@ -20,7 +20,7 @@ def test_the_quote_takes_the_declared_goods_from_the_marked_request(conn):
     ctx = Context(settings(), conn, None, None, None, None)
     conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES (?, 7, 'rfq.dangerous_goods', 'rfq', ?)",
                  (NOW.isoformat(), json.dumps({"declared": "UN1950, Class 2.1, Aerosols, flammable", "source": "x.pdf"})))  # fmt: skip
-    assert dangerous.declared(ctx, rfq(DG_DOCUMENTS)) == "UN1950, Class 2.1, Aerosols, flammable"
+    assert dangerous.declared(ctx, rfq(DG_DOCUMENTS)) == ("UN1950, Class 2.1, Aerosols, flammable", "x.pdf")
     assert dangerous.declared(ctx, rfq()) is None  # ordinary goods: no note, whatever events exist
 
 
@@ -32,3 +32,8 @@ def test_the_note_names_the_goods_and_asks_for_the_papers_before_the_closing():
     assert "Gefahrgut" in dangerous.with_note(BODY, "UN1133", "de") and "DGD" in dangerous.with_note(
         BODY, "UN1133", "de"
     )
+
+
+def test_goods_the_mail_itself_declares_point_to_no_attachment():
+    body = dangerous.with_note(BODY, "UN1263, Paint, Class 3", "en", "mail")
+    assert "attached" not in body and "UN1263, Paint, Class 3" in body and "DGD" in body and "MSDS" in body
