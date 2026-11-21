@@ -33,6 +33,7 @@ FINAL = {"accepted", "rejected", "no answer"}
 STATE = "feedback.state"
 ALERTED = "feedback.alerted"
 ALERT_MINUTES = 15
+RULE_LEAD = 2  # explained requests a rule must lead the default by before it is used
 VERSION = subprocess.run(
     ["git", "rev-parse", "--short", "HEAD"], check=False, capture_output=True, text=True
 ).stdout.strip()
@@ -71,7 +72,9 @@ def explain(points: Decimal, seconds: float, quoted: RateOption, options: list[R
 
 
 def pickup_rule(ctx: Context) -> str:
-    """The balanced rule (`selection.RULES`) that picks the scorer's trucker in the most explained requests."""
+    """The balanced rule (`selection.RULES`) that picks the scorer's trucker in the most explained requests. It
+    replaces the default only when it picks the scorer's trucker in RULE_LEAD more requests: one misread round
+    must not change how every next door-to-port request is priced."""
     rows = ctx.db.execute(
         "SELECT session_id, json_extract(payload, '$.trucker') AS trucker FROM events"
         " WHERE kind = 'feedback' AND json_extract(payload, '$.trucker') IS NOT NULL"
@@ -84,7 +87,9 @@ def pickup_rule(ctx: Context) -> str:
                 hits[rule] += selection.balanced(bids, lambda o: o.pickup_hours, rule).trucker == row["trucker"]
     except Exception:  # noqa: BLE001  a stored option we cannot read must not cost the quote: keep the default rule
         return next(iter(selection.RULES))
-    return max(hits, key=lambda rule: hits[rule])
+    default = next(iter(selection.RULES))
+    best = max(hits, key=lambda rule: hits[rule])
+    return best if hits[best] >= hits[default] + RULE_LEAD else default
 
 
 def _session(ctx: Context, sent_at: str) -> int | None:

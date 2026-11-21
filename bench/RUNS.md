@@ -36,3 +36,8 @@ Three lines per scenario: what we tried, what changed, what is next.
   fastest, two sets of dimensions as volume 0, bulleted groups not at all. The rules now multiply by the pieces,
   give an unsettled volume to the model and read bullets as lots. Next: the model path, which still adds
   up unlabelled groups itself; pounds; city names.
+- 21.11. 17:35, setup change: since 15:55 requests carry a packing list or letter of instruction declaring
+  dangerous goods; round 10 was rejected (`dg_docs_missing`). `extract.py` now finds the declaration in the mail or
+  any attachment and marks the request; naming it in the quote is compose's. Next: labelled-bullet requests by rules,
+  and the language read by code, not the model.
+

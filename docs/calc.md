@@ -43,7 +43,8 @@ Decimal only; a model never computes, compares or writes a price (P1).
 - The rule is not fixed: `core/feedback.py` reads our points after every request, works back to the scorer's best
   price (accuracy falls linearly to 0 at 10% off the best price, in either direction: fitted on scored requests, not
   stated by 5U) and finds the option that total belongs to. `pickup_rule` then uses the entry of `selection.RULES`
-  that picks the scorer's trucker most often, so a request that loses points on the rule corrects the next one.
+  that picks the scorer's trucker most often, once it leads the default by `feedback.RULE_LEAD` requests: two
+  requests that lost points on the rule correct the next one, a single misread round does not.
 
 ## Assumptions until 5U answers (plan §0)
 
