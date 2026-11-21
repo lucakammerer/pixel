@@ -12,6 +12,7 @@ from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.crm import quotes, shipments
 from pixel.pricing import store
+from pixel.pricing.pickup import zone_of
 
 REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -74,7 +75,7 @@ def described(ctx: Context, text: str) -> list[Shipment]:
     weight = WEIGHT.search(text)
     kg = number(weight.group(1)) if weight else None
     words = set(re.findall(r"[a-z0-9]+", text.lower()))
-    pickup_airport = store.airport_of(ctx, postcode[:2]) if postcode else None
+    pickup_airport = store.airport_of(ctx, zone_of(postcode)) if postcode else None
 
     def from_there(s: Shipment) -> bool:
         if origin:
