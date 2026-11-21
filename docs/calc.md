@@ -24,7 +24,8 @@ Decimal only; a model never computes, compares or writes a price (P1).
   `portal_rates._at_next_break` reads the airline's next weight break as well and bills that break when its total
   is lower (R13); the option then carries the break as billed weight and that read's rate id.
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
-  code adds them up.
+  code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
+  business days alike, and a range ("2-3 days") its first figure.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
   and validity it states.
 - **Pickup** (`calc.with_pickup`): a trucker's price in EUR, added to every airline option, converted into the

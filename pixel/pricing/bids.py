@@ -37,8 +37,12 @@ TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE
 KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
 KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
-OTHER_BASIS = re.compile(r"^\s*(?:/\s*(?:\d|[a-z])|(?:per|pro)\s+(?:\d|[a-z]))", re.IGNORECASE)
-TRANSIT = re.compile(r"(\d+)\s*(?:calendar\s+)?(days?|tage?n?)\b", re.IGNORECASE)
+# A basis other than the whole shipment ("per pallet", "/ 100 kg"); "per shipment" or "per AWB" is the flat total.
+FLAT = r"(?!(?:shipment|consignment|awb|air\s*waybill|sendung|auftrag)\b)"
+OTHER_BASIS = re.compile(rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE)
+TRANSIT = re.compile(
+    r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b", re.IGNORECASE
+)
 TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
 HOURS = re.compile(r"(\d+)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
 PICKUP_HOURS = re.compile(
