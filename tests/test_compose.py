@@ -296,6 +296,7 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
         ("Our buyer is importing some control units from us in Germany.", "control units"),
         ("The sports equipment will be ready for pickup on 2026-12-02: 11 pieces", "sports equipment"),
         ("The cargo is electronic control units, packed in 5 pieces, with 1403 kg.", "electronic control units"),
+        ("We’ll have 10 pieces of laboratory glassware ready for pickup on 2026-11-25.", "laboratory glassware"),
         ("The shipment will be ready on 2026-11-25: 4 cartons, each 48 kg gross.", None),
         ("Please send both lots together for this import shipment to BBB.", None),
     ],
@@ -328,4 +329,5 @@ def test_the_customers_small_talk_is_answered_before_the_price(opening, answered
     _, body = compose.render(rfq("en"), OPTION, request=f"Hi there,\n\n{opening}\n\nCheers,\nKlaus")
     paragraph = body.split("\n\n")[1]
     assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]) == answered
+    assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
     assert body.count("1234.57 EUR") == 1
