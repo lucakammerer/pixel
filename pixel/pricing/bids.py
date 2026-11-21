@@ -41,7 +41,8 @@ KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
 FLAT = r"(?!(?:shipment|consignment|awb|air\s*waybill|sendung|auftrag)\b)"
 OTHER_BASIS = re.compile(rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE)
 TRANSIT = re.compile(
-    r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b", re.IGNORECASE
+    r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b",
+    re.IGNORECASE,
 )
 TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
 # "10.5 hours" and "4,5 Stunden" are one figure; "09:00 h" is a clock time, not a duration.
