@@ -1,7 +1,9 @@
+import asyncio
 import re
 from decimal import Decimal, InvalidOperation
 
 from pixel import llm
+from pixel.agents.tariffs.agent import _lines
 from pixel.contracts import Message, Preference, Rfq
 from pixel.core import events
 from pixel.core.context import Context
@@ -19,8 +21,12 @@ CODE = r"\b([A-Z]{3})\b"
 ARROW = r"(?:->|→|–|—|-|>|(?i:\bto\b)|(?i:\bnach\b))"
 PAIR = re.compile(rf"{CODE}\s*{ARROW}\s*{CODE}")
 PAIR_NAMED = re.compile(rf"\(([A-Z]{{3}})\)[^()\n]{{0,60}}?{ARROW}[^()\n]{{0,60}}?\(([A-Z]{{3}})\)")
-ORIGIN_LABEL = re.compile(rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b)\s*:?[^\n:]{{0,30}}?{CODE}")
-DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b)\s*:?[^\n:]{{0,30}}?{CODE}")
+ORIGIN_LABEL = re.compile(
+    rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)(?:\s+airport)?\b)\s*:?[^\n:]{{0,30}}?{CODE}"
+)
+DEST_LABEL = re.compile(
+    rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)(?:\s+airport)?\b)\s*:?[^\n:]{{0,30}}?{CODE}"
+)
 
 NUM = r"(\d[\d.,']*)"
 WEIGHT = (
@@ -56,6 +62,19 @@ DOOR = re.compile(
 OWN_DELIVERY = re.compile(r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b", re.IGNORECASE)
 POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
 CURRENCY_ASK = re.compile(r"(?i:\b(?:in|currency:?|währung:?))\s+([A-Z]{3})\b")
+DG_UN = re.compile(r"\bUN\s?\d{4}\b")
+DG_LABEL = re.compile(
+    r"(?im)^[^\w\n]*(?:dangerous goods|gefahrgut|hazardous goods|hazmat|dgr)\b[^:\n]{0,20}:[ \t]*(.*)$"
+)
+DG_NEGATIVE = re.compile(
+    r"^(?:no|none|nil|n/?a|not applicable|non[\s-]?(?:dangerous|dg|hazardous)\w*|nein|kein\w*|general cargo|ohne)\b"
+    r"|^\W*$",
+    re.IGNORECASE,
+)
+DG_YES = re.compile(r"^(?:yes|ja|y|x)\W*$", re.IGNORECASE)
+DG_MAX = 120
+ATTACHMENT_SUFFIXES = (".xlsx", ".csv", ".txt", ".docx", ".pdf")
+ATTACHMENT_TIMEOUT_S = 5
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
@@ -221,6 +240,46 @@ def _text(message: Message) -> str:
     return f"{message.subject}\n\n{message.body}"
 
 
+def _dg_line(text: str) -> str:
+    return " ".join(text.split()).strip(" ,;:.")[:DG_MAX]
+
+
+def dangerous_goods(text: str) -> str | None:
+    """An explicit dangerous goods declaration: a UN number, or a "Dangerous goods:" / "Gefahrgut:" row whose
+    value is not a no. "non-dangerous" prose alone is none."""
+    un = next((line[m.start() :] for line in text.splitlines() if (m := DG_UN.search(line))), None)
+    for match in DG_LABEL.finditer(text):
+        value = match.group(1).strip()
+        if not DG_NEGATIVE.search(value):
+            return _dg_line(un if un and DG_YES.match(value) else value)
+    return _dg_line(un) if un else None
+
+
+async def _attachment_text(ctx: Context | None, message: Message) -> str:
+    """The text of the request's readable attachments; "" on any failure, which never blocks the quote."""
+    if ctx is None or ctx.mailbox is None or not message.attachments:
+        return ""
+    lines: list[str] = []
+
+    async def read() -> None:
+        for att in message.attachments:
+            if not att.filename.lower().endswith(ATTACHMENT_SUFFIXES):
+                continue
+            try:
+                content = await ctx.mailbox.attachment(message.id, att.id)
+                lines.extend(await asyncio.to_thread(_lines, att.filename, content))
+            except Exception as exc:  # noqa: BLE001  a bad attachment must never cost the quote
+                events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
+                            payload={"where": "rfq.attachment", "file": att.filename, "error": type(exc).__name__})  # fmt: skip
+
+    try:
+        await asyncio.wait_for(read(), ATTACHMENT_TIMEOUT_S)
+    except TimeoutError:
+        events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
+                    payload={"where": "rfq.attachment", "error": "TimeoutError"})  # fmt: skip
+    return "\n".join(lines)
+
+
 def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
     """Regex and lookup tables. None unless origin, destination and weight are certain."""
     text = _text(message)
@@ -306,31 +365,45 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     )
 
 
-def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
-    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16)."""
-    if rfq.origin or not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
+def _zone_origin(ctx: Context, rfq: Rfq, text: str = "") -> Rfq:
+    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16).
+    If the model guessed an airport code that never appears in the mail, the pickup zone's airport wins."""
+    if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
+        return rfq
+    if rfq.origin and (not text or re.search(rf"\b{re.escape(rfq.origin)}\b", text)):
         return rfq
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 
 
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
-    quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
+    quote still costs one call. Reads `dangerous_goods` from the attachments, then the mail. Emits `rfq.extracted`
+    with `extracted_by`."""
+    text = _text(message)
+    attached = asyncio.create_task(_attachment_text(ctx, message))  # alongside the model call, never after it
     rfq, prose = by_rules(message, deadline), None
-    if rfq is not None and not (rfq := _zone_origin(ctx, rfq)).origin:
+    if rfq is not None and not (rfq := _zone_origin(ctx, rfq, text)).origin:
         rfq = None
     if rfq is None:
-        result = await llm.ask_json(
-            ctx,
-            purpose="rfq.extract",
-            system=SYSTEM,
-            user=_text(message),
-            schema=SCHEMA,
-            session_id=message.session_id,
-            max_output_tokens=350,
-        )
-        rfq = _zone_origin(ctx, _from_model(result.data, message, deadline))
+        try:
+            result = await llm.ask_json(
+                ctx,
+                purpose="rfq.extract",
+                system=SYSTEM,
+                user=text,
+                schema=SCHEMA,
+                session_id=message.session_id,
+                max_output_tokens=350,
+            )
+        except BaseException:
+            attached.cancel()
+            raise
+        rfq = _zone_origin(ctx, _from_model(result.data, message, deadline), text)
         prose = {k: result.data.get(k) for k in PROSE}
+    # the attachment first: a packing list that declares UN1133 outweighs a mail that says "non-dangerous"
+    dg = dangerous_goods(await attached) or dangerous_goods(text)
+    if dg:
+        rfq = rfq.model_copy(update={"dangerous_goods": dg})
     events.emit(
         ctx,
         "rfq.extracted",

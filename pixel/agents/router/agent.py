@@ -6,6 +6,7 @@ from pixel.core.context import Context
 from pixel.core.events import emit
 
 TARIFF_FILES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "jpeg", "docx")
+TARIFF_TEXT = re.compile(r"\b(?:tariffs?|rate[ -]sheets?)\b", re.IGNORECASE)
 BOOKING_CONFIRMED = re.compile(r"\bbooking\b.+\bconfirmed\b", re.IGNORECASE)
 WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
@@ -59,15 +60,17 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
         return MailKind.CARRIER_BID, "thread:bid_request"
     carrier = _carrier_kind(ctx, sender)
     has_files = any(a.filename.rsplit(".", 1)[-1].lower() in TARIFF_FILES for a in message.attachments)
-    if has_files and (carrier or not in_thread):
-        return MailKind.TARIFF, "attachment:tariff"
     if carrier:
+        if has_files:
+            return MailKind.TARIFF, "attachment:tariff"
         return MailKind.CARRIER_BID, "sender:carrier"
     if any(p.endswith("quote") for p in purposes):
         return MailKind.CUSTOMER_REPLY, "thread:quote"
     text = f"{message.subject}\n{message.body}"
     if not in_thread and (WEIGHT.search(text) or LANE.search(text)):
         return MailKind.CUSTOMER_RFQ, "new_thread"
+    if not in_thread and has_files and TARIFF_TEXT.search(text):
+        return MailKind.TARIFF, "attachment:tariff"
     return None, "new_thread_unclear" if not in_thread else "unknown_thread"
 
 

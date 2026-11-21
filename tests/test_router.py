@@ -64,6 +64,12 @@ async def test_carrier_answer_joins_the_rfq_session(ctx):
     assert poller.ingest(ctx, mail("bid-airline-priced.json")).session_id == mail(RFQ).id
 
 
+async def test_customer_rfq_with_spreadsheet_attachment(ctx):
+    attachment = mail("synthetic-tariff.json").attachments[0].model_copy(update={"filename": "packing-list.xlsx"})
+    message = mail(RFQ).model_copy(update={"attachments": [attachment]})
+    assert await classify(ctx, message) == MailKind.CUSTOMER_RFQ
+
+
 async def test_the_rate_desks_answer_joins_the_session_of_the_request_it_names(ctx):
     assert poller.ingest(ctx, mail("ratedesk-portal-rates.json")).session_id == mail(RFQ).id
 

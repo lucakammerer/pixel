@@ -95,7 +95,11 @@ async def send(
         reason = "recipient"
     elif ctx.settings.dry_run:
         reason = "dry_run"
-    elif purpose not in (HUMAN, "fallback_quote") and taken_over(ctx, session_id):
+    elif (
+        purpose not in (HUMAN, "fallback_quote", "ratedesk")
+        and not purpose.startswith("bid")
+        and taken_over(ctx, session_id)
+    ):
         reason = HUMAN
     if reason:
         emit(ctx, "mail.held", "outbox", session_id=session_id, payload={**held, "reason": reason})

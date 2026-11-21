@@ -205,3 +205,17 @@ def test_unreadable_stored_prose_is_none(ctx):
 def test_adopt_never_raises(ctx, monkeypatch):
     monkeypatch.setattr(compose, "clean", lambda *a, **k: 1 / 0)
     assert compose.adopt(ctx, rfq("en"), message(), {"intro": "x"}) == compose.Prose()
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_dangerous_goods_ask_for_the_declaration_and_the_safety_data_sheet(language):
+    dg = rfq(language).model_copy(update={"dangerous_goods": "UN1133, Class 3, Adhesives"})
+    _, body = compose.render(dg, OPTION)
+    assert "UN1133, Class 3, Adhesives" in body
+    assert "Shipper's Declaration for Dangerous Goods (DGD)" in body and "MSDS/SDS" in body
+    assert compose.check(body, dg, OPTION)
+
+
+def test_general_cargo_asks_for_no_dangerous_goods_documents():
+    _, body = compose.render(rfq("en"), OPTION)
+    assert "DGD" not in body and "MSDS" not in body

@@ -145,3 +145,41 @@ async def test_german_customer_gets_a_german_mail_with_the_total_written_once(pi
     (told,) = pipe.sent
     assert told["body"].startswith("Guten Tag,") and "370.74 EUR all-in" in told["body"]
     assert "Viele Grüße" in told["body"] and "Decimal" not in told["body"]
+
+
+@pytest.mark.parametrize("text", [
+    "We will not go ahead.", "We can't accept.", "Please do not book.", "We won't proceed.",
+    "Don't confirm.", "We are unable to take it.", "We would rather not move forward.",
+    "We won’t be moving forward.", "Too low.", "Too high.", "Not competitive.", "We will pass on this.",
+    "Bitte nicht buchen.", "Wir können das Angebot nicht annehmen.", "Wir möchten nicht fortfahren.",
+    "Leider nicht.",
+])
+def test_decline_phrases(text):
+    assert booking.intent(text) == "decline"
+
+
+async def test_captured_decline_never_books(pipe):
+    path = Path(__file__).parent / "fixtures/mails/customer-declines-too-low.json"
+    raw = json.loads(path.read_text(encoding="utf8"))
+    session_id = raw["references"][0]
+    sent_quote = quote(session_id, customer=raw["from"]).model_copy(update={"sent_message_id": raw["in_reply_to"]})
+    quotes.save(pipe.ctx, sent_quote)
+    pipe.ctx.portal = Portal()
+    reply = mail(raw["id"], session_id, sender=raw["from"], to=raw["to"], subject=raw["subject"],
+                 body=raw["body"], in_reply_to=raw["in_reply_to"])
+    await booking.handle_reply(pipe.ctx, reply)
+    assert quotes.get(pipe.ctx, sent_quote.id).status == QuoteStatus.DECLINED
+    assert kinds(pipe.ctx) == ["customer.declined"]
+    assert bookings.for_session(pipe.ctx, session_id) is None
+    assert pipe.ctx.portal.calls == [] and pipe.sent == []
+
+
+@pytest.mark.parametrize("body", ["Please book it.", "No thanks."])
+async def test_unsent_draft_reply_needs_a_person(pipe, body):
+    draft = quote(status=QuoteStatus.DRAFT)
+    quotes.save(pipe.ctx, draft)
+    pipe.ctx.portal = Portal()
+    await booking.handle_reply(pipe.ctx, mail(20, draft.session_id, body=body))
+    assert quotes.get(pipe.ctx, draft.id).status == QuoteStatus.DRAFT
+    assert kinds(pipe.ctx) == ["human.note"]
+    assert pipe.ctx.portal.calls == [] and pipe.sent == []

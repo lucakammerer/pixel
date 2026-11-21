@@ -42,6 +42,8 @@ TEXT = {
         "basis_pickup": "That is based on {chargeable} kg chargeable weight and covers pickup at your door by "
         "{trucker}, air freight, fuel and security surcharges.",
         "valid": "The rate holds until {until} UTC.",
+        "dg": "Your documents show this shipment as dangerous goods ({dg}), so for the booking we need the Shipper's "
+        "Declaration for Dangerous Goods (DGD) and the Safety Data Sheet (MSDS/SDS); please send both along.",
         "book": (
             "If that works for you, just reply and I'll book it right away.",
             "Just reply to this mail if you'd like to go ahead, and I'll take care of the booking.",
@@ -73,6 +75,9 @@ TEXT = {
         "basis_pickup": "Grundlage sind {chargeable} kg frachtpflichtiges Gewicht; enthalten sind die Abholung bei "
         "Ihnen durch {trucker}, Luftfracht, Treibstoff- und Sicherheitszuschlag.",
         "valid": "Der Preis gilt bis {until} UTC.",
+        "dg": "Laut Ihren Unterlagen handelt es sich um Gefahrgut ({dg}). Für die Buchung benötigen wir daher die "
+        "Shipper's Declaration for Dangerous Goods (DGD) und das Sicherheitsdatenblatt (MSDS/SDS); bitte senden "
+        "Sie uns beides mit.",
         "book": (
             "Wenn das für Sie passt, antworten Sie einfach kurz, dann buche ich sofort.",
             "Antworten Sie einfach auf diese Mail, wenn Sie buchen möchten, den Rest übernehme ich.",
@@ -186,12 +191,14 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str) -> str:
     if option.valid_until:
         offer.append(t["valid"].format(until=option.valid_until.astimezone(UTC).strftime("%d.%m.%Y %H:%M")))
     ending = [t["book"][pick]] + ([_sentence(prose.closing)] if prose.closing else [])
+    dg = " ".join((rfq.dangerous_goods or "").split())
     lines = [
         t["hello_name"].format(name=prose.first_name) if prose.first_name else t["hello"],
         "",
         _sentence(prose.intro) if prose.intro else t["intro"][pick],
         "",
         " ".join(offer),
+        *(["", t["dg"].format(dg=dg)] if dg else []),
         "",
         " ".join(ending),
         "",
