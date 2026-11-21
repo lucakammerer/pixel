@@ -7,7 +7,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from pixel.contracts import QuoteStatus
 from pixel.crm import bookings, customers, quotes, shipments
+from pixel.ui import names
 from pixel.ui.page import (
+    company,
     customer_link,
     days,
     esc,
@@ -47,7 +49,7 @@ def _frame(section: str, q: str, content: str, counts: dict[str, int]) -> str:
         big=True,
     )
     hint = {
-        "customers": "Search by address",
+        "customers": "Search company, person, lane",
         "quotes": "Search customer, lane, carrier, Q- id",
         "shipments": "Search customer, lane, carrier, PX- or BK- reference",
     }[section]
@@ -86,13 +88,14 @@ async def customer_list(request: Request, q: str = ""):
     ctx = request.app.state.ctx
     rows = []
     for c in customers.summary(ctx):
-        if q and not _matches(q, c["customer"], *c["lanes"]):
+        who = names.who(ctx, c["customer"])
+        if q and not _matches(q, c["customer"], who.name, who.contact, who.city, *c["lanes"]):
             continue
         top = ", ".join(lane_ for lane_, _ in c["lanes"].most_common(2))
         href = _customer_href(c["customer"])
+        sub = " · ".join(x for x in (who.contact, top.replace("-", " → ")) if x) or who.email
         rows.append(
-            f'<tr data-href="{href}"><td><a class=id href="{href}">{esc(c["customer"])}</a>'
-            f"<div class=line2>{esc(top.replace('-', ' → '))}</div></td>"
+            f'<tr data-href="{href}"><td>{company(who, href=href, line2=esc(sub))}</td>'
             f"<td class=n>{c['requests']}</td><td class=n>{c['quoted']}</td><td class=n>{c['won']}</td>"
             f"<td class=n>{c['lost']}</td><td class=n>{c['shipments']}</td>"
             f"<td class=n>{money(c['won_eur'], 'EUR') if c['won'] else '<span class=muted>—</span>'}</td>"
@@ -113,7 +116,14 @@ async def quote_list(request: Request, q: str = ""):
     for x in quotes.recent(ctx):
         o = x.option
         if q and not _matches(
-            q, x.id, x.rfq.customer, o.carrier, o.origin, o.destination, f"{o.origin}-{o.destination}"
+            q,
+            x.id,
+            x.rfq.customer,
+            names.who(ctx, x.rfq.customer).name,
+            o.carrier,
+            o.origin,
+            o.destination,
+            f"{o.origin}-{o.destination}",
         ):
             continue
         href = f"/sessions/{x.session_id}"
@@ -123,7 +133,7 @@ async def quote_list(request: Request, q: str = ""):
         state = "draft" if x.sent_at is None else str(x.status)
         rows.append(
             f'<tr data-href="{href}"><td class=num>{when(x.created_at)}<div class="line2 mono">{esc(x.id)}</div></td>'
-            f"<td>{customer_link(x.rfq.customer)}<div class=line2>{esc(x.rfq.weight_kg)} kg · "
+            f"<td>{customer_link(x.rfq.customer, names.who(ctx, x.rfq.customer))}<div class=line2>{esc(x.rfq.weight_kg)} kg · "
             f"{esc(x.rfq.preference)}</div></td><td>{lane(o.origin, o.destination)}</td>"
             f"<td>{esc(o.carrier)}<div class=line2>via {esc(o.source)} · {days(o.transit_days)}</div></td>"
             f"<td class=n>{money(x.total, x.currency)}</td><td class='n hide-sm'>{response}</td>"
@@ -145,13 +155,21 @@ def shipment_rows(ctx, items, q: str = "") -> list[str]:
     for s in items:
         b = by_id.get(s.booking_id)
         if q and not _matches(
-            q, s.id, s.customer, s.carrier, s.booking_reference, s.origin, s.destination, f"{s.origin}-{s.destination}"
+            q,
+            s.id,
+            s.customer,
+            names.who(ctx, s.customer).name,
+            s.carrier,
+            s.booking_reference,
+            s.origin,
+            s.destination,
+            f"{s.origin}-{s.destination}",
         ):
             continue
         href = f"/sessions/{s.session_id}"
         rows.append(
             f'<tr data-href="{href}"><td><a class="id mono" href="{href}">{esc(s.id)}</a>'
-            f"<div class=line2>{when(s.updated_at)}</div></td><td>{customer_link(s.customer)}</td>"
+            f"<div class=line2>{when(s.updated_at)}</div></td><td>{customer_link(s.customer, names.who(ctx, s.customer))}</td>"
             f"<td>{lane(s.origin, s.destination)}<div class=line2>{esc(s.weight_kg)} kg</div></td>"
             f"<td>{esc(s.carrier)}<div class=line2>{f'via {esc(b.via)}' if b else ''}</div></td>"
             f"<td class=mono>{esc(s.booking_reference or '—')}</td>"
@@ -181,6 +199,7 @@ async def customer(request: Request, email: str):
     p = customers.profile(ctx, email)
     if p is None:
         raise HTTPException(404, "no such customer")
+    who = names.who(ctx, p["customer"])
     win_rate = f"{round(100 * p['won'] / p['quoted'])} %" if p["quoted"] else None
     numbers = stats([
         ("Requests", p["requests"], ""),
@@ -194,7 +213,12 @@ async def customer(request: Request, email: str):
     requests = list_sessions(ctx, customer=p["customer"])
     ships = shipment_rows(ctx, p["shipments"])
     body = (
-        page_head(esc(p["customer"]), f"Last seen {when(p['last_seen'])}", crumb="<a href='/crm'>CRM</a> / Customers")
+        page_head(
+            esc(who.name),
+            " · ".join(esc(x) for x in (who.contact, who.city, who.email) if x)
+            + f" · last seen {when(p['last_seen'])}",
+            crumb="<a href='/crm'>CRM</a> / Customers",
+        )
         + numbers
         + (f"<h2>Lanes</h2><div class=chips>{lanes}</div>" if lanes else "")
         + f"<h2>Requests<span class=count>{len(requests)}</span></h2>"
@@ -202,7 +226,7 @@ async def customer(request: Request, email: str):
         + f"<h2>Shipments<span class=count>{len(ships)}</span></h2>"
         + f"<div class=panel>{_table(SHIP_HEAD, ships, 7, 'Nothing booked for this customer yet.')}</div>"
     )
-    return layout(p["customer"], body, nav="crm", script=_live())
+    return layout(who.name, body, nav="crm", script=_live())
 
 
 def _live() -> str:

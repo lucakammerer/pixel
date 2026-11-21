@@ -9,7 +9,7 @@ from test_crm import T0, quote
 from pixel.contracts import QuoteStatus
 from pixel.core import events
 from pixel.crm import quotes, shipments
-from pixel.ui import crm, dashboard, routes
+from pixel.ui import crm, dashboard, home, routes
 
 pytest_plugins = ["test_crm"]  # the `pipe` fixture
 
@@ -17,6 +17,7 @@ pytest_plugins = ["test_crm"]  # the `pipe` fixture
 @pytest.fixture
 def client(pipe):
     app = FastAPI()
+    app.include_router(home.router)
     app.include_router(routes.router)
     app.include_router(dashboard.router)
     app.include_router(crm.router)
@@ -46,7 +47,7 @@ def client(pipe):
 
 @pytest.mark.parametrize("q", ["acme", "FRA-JFK", "fra jfk", "bk-ab12cd34", "Kestrel"])
 def test_list_finds_session_by_customer_lane_reference(client, q):
-    page = client.get("/", params={"q": q}).text
+    page = client.get("/requests", params={"q": q}).text
     assert 'href="/sessions/1"' in page and 'href="/sessions/2"' not in page
 
 
@@ -57,14 +58,14 @@ def test_list_filter_with_zero_matching_sessions_returns_200(client, pipe):
         ({"state": "quoted", "q": "globex"}, "Quoted"),
         ({"state": "missed"}, "Missed"),
     ):
-        resp = client.get("/", params=params)
+        resp = client.get("/requests", params=params)
         assert resp.status_code == 200
         assert "No request matches." in resp.text and tab_label in resp.text
 
     # Empty database: every valid filter tab returns 200 without KeyError.
     pipe.ctx.db.execute("DELETE FROM events")
     for state in ("tariff", "quoted", "open"):
-        resp = client.get("/", params={"state": state})
+        resp = client.get("/requests", params={"state": state})
         assert resp.status_code == 200 and "No request matches." in resp.text
 
 
@@ -72,7 +73,7 @@ def test_a_filter_no_session_matches_still_renders(client, pipe):
     """Live 500: ?state=tariff with no matching session raised KeyError on the tab counts."""
     pipe.ctx.db.execute("DELETE FROM events")
     for state in ("tariff", "quoted", "open", "missed"):
-        resp = client.get("/", params={"state": state})
+        resp = client.get("/requests", params={"state": state})
         assert resp.status_code == 200 and "No request matches." in resp.text
 
 

@@ -13,8 +13,10 @@ from pixel.contracts import Event, QuoteStatus
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
+from pixel.ui import names
 from pixel.ui.page import (
     clock,
+    company,
     customer_link,
     days,
     esc,
@@ -45,6 +47,7 @@ STATUS = (  # first match wins: (event kind, label, css class)
     ("tracking.answered", "tracking", ""), ("tariff.ingested", "tariff", ""),
     ("tariff.failed", "tariff failed", "bad"),
 )  # fmt: skip
+FIRST = 8  # requests shown before "See more"
 FILTERS = ("open", "quoted", "accepted", "booked", "confirmed", "booking", "declined", "missed", "tracking", "tariff")
 
 
@@ -76,15 +79,17 @@ def list_sessions(ctx: Context, q: str = "", state: str = "", limit: int = 300, 
         shipment = shipments.for_session(ctx, row["id"])
         label, css = status_of(set((row["kinds"] or "").split(",")))
         lane_text = f"{quote.option.origin} → {quote.option.destination}" if quote else ""
+        email = (quote.rfq.customer if quote else row["sender"]) or ""
+        who = names.who(ctx, email)
         item = {
-            "id": row["id"], "first_ts": row["first_ts"], "last_ts": row["last_ts"], "cost": row["cost"] or 0,
+            "who": who, "id": row["id"], "first_ts": row["first_ts"], "last_ts": row["last_ts"], "cost": row["cost"] or 0,
             "customer": (quote.rfq.customer if quote else row["sender"]) or "", "subject": row["subject"] or "",
             "lane": lane_text, "quote": quote, "shipment": shipment, "status": label, "css": css,
             "mode": row["mode"] or "auto", "deadline": row["deadline_at"] if label == "open" else None,
         }  # fmt: skip
         haystack = " ".join(
             str(x) for x in (
-                item["id"], item["customer"], item["subject"], lane_text, lane_text.replace(" → ", "-"), label,
+                item["id"], item["customer"], who.name, who.contact, item["subject"], lane_text, lane_text.replace(" → ", "-"), label,
                 quote and quote.id, quote and quote.option.carrier, shipment and shipment.id,
                 shipment and shipment.booking_reference,
             ) if x
@@ -117,7 +122,7 @@ def sessions_table(items: list[dict], *, show_customer: bool = True) -> str:
                 extra += f' <span data-deadline="{esc(s["deadline"])}" class=due></span>'
             refs = " ".join(esc(r) for r in (shipment and shipment.id, shipment and shipment.booking_reference) if r)
             who = (
-                f"<a class=id href='{href}'>{esc(s['customer'])}</a><div class=line2>{esc(s['subject'])[:90]}</div>"
+                company(s["who"], href=href, line2=esc(s["subject"])[:90])
                 if show_customer
                 else f"<a class=id href='{href}'>{esc(s['subject'])[:90] or s['id']}</a>"
             )
@@ -131,8 +136,8 @@ def sessions_table(items: list[dict], *, show_customer: bool = True) -> str:
     return f'<table>{head}<tbody id="refresh" data-live>{body}</tbody></table>'
 
 
-@router.get("/", response_class=HTMLResponse)
-async def sessions(request: Request, q: str = "", state: str = ""):
+@router.get("/requests", response_class=HTMLResponse)
+async def sessions(request: Request, q: str = "", state: str = "", more: bool = False):
     """The list: newest first, searchable by customer, lane, reference; time left on open requests."""
     ctx = ctx_of(request)
     matching = list_sessions(ctx, q)
@@ -141,10 +146,12 @@ async def sessions(request: Request, q: str = "", state: str = ""):
         key = s["status"].split(" ")[0]
         counts[key] = counts.get(key, 0) + 1
     items = [s for s in matching if not state or s["status"].split(" ")[0] == state]
+    hidden = 0 if more else max(0, len(items) - FIRST)
+    shown = items if more else items[:FIRST]
 
     def href(value: str) -> str:
         params = {k: v for k, v in (("q", q), ("state", value)) if v}
-        return "/" + (f"?{urlencode(params)}" if params else "")
+        return "/requests" + (f"?{urlencode(params)}" if params else "")
 
     bar = tabs(
         [(href(""), "All", not state, len(matching))]
@@ -154,8 +161,14 @@ async def sessions(request: Request, q: str = "", state: str = ""):
     body = (
         page_head("Requests", "Every customer thread, newest first. Open requests show the time left.")
         + f"<div class=toolbar>{bar}{search_box(q, 'Search customer, lane, reference')}</div>"
-        + f"<div class=panel>{sessions_table(items)}</div>"
+        + f"<div class=panel>{sessions_table(shown)}</div>"
     )
+    if hidden:
+        params = {k: v for k, v in (("q", q), ("state", state)) if v} | {"more": "1"}
+        body += (
+            f"<div class=more><a class=btn href='/requests?{urlencode(params)}'>See more"
+            f"<span class=muted>&nbsp;{hidden}</span></a></div>"
+        )
     return layout("Requests", body, nav="sessions", script="live('/events',refresh());")
 
 
@@ -203,7 +216,7 @@ def _quote_panel(quote) -> str:
 
 def _details(ctx: Context, session_id: int, quote, first: dict, deadline, calls: int, cost) -> str:
     customer = quote.rfq.customer if quote else first.get("sender", "")
-    facts = [("Customer", customer_link(customer))]
+    facts = [("Customer", customer_link(customer, names.who(ctx, customer)))]
     if quote:
         r = quote.rfq
         facts += [
@@ -267,7 +280,8 @@ async def session(request: Request, session_id: int, error: str = ""):
     title = esc(first.get("subject") or f"Session {session_id}")
     customer = quote.rfq.customer if quote else first.get("sender", "")
     head = page_head(
-        title, f"#{session_id} · {customer_link(customer)}", crumb="<a href='/'>Requests</a>",
+        title, f"#{session_id} · {customer_link(customer, names.who(ctx, customer))}",
+        crumb="<a href='/requests'>Requests</a>",
         right=f"<div style='display:flex;gap:14px;align-items:center'>{right}</div>",
     )  # fmt: skip
     banner = f"<div class='notice bad'>Not sent: {esc(error)}</div>" if error else ""
