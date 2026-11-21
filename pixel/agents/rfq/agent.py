@@ -1,5 +1,6 @@
 import asyncio
-from datetime import UTC, datetime
+import json
+from datetime import UTC, datetime, timedelta
 
 from pixel import llm
 from pixel.agents.rfq import compose, extract
@@ -11,12 +12,14 @@ from pixel.crm import quotes
 from pixel.pricing import engine, selection, session
 
 REQUIRED = {"origin", "destination", "weight_kg"}
-OPENING_WAIT_S = 10
+PROSE_WAIT_S = 10
 
 
-def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], opening: str | None, fallback: bool) -> Quote:
+def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
     option = selection.select(rfq, options)
-    subject, body = compose.render(rfq, option, opening)
+    subject, body = compose.render(
+        rfq, option, prose, compose.customer_subject(ctx, rfq.message_id), ctx.settings.signer
+    )
     calls = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE kind = 'llm.call' AND session_id = ?", (rfq.session_id,)
     ).fetchone()[0]
@@ -50,18 +53,26 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         events.emit(ctx, "error", "rfq", session_id=rfq.session_id, payload={"error": "unreadable request",
                     "missing": list(rfq.missing)})  # fmt: skip
         return None
-    # The one gateway call per quote (R28): when rules read the request, it writes the opening line instead.
-    opening = asyncio.create_task(compose.opening(ctx, rfq, message)) if rfq.extracted_by == "rules" else None
+    # The one gateway call per quote (R28): when rules read the request, it writes the prose slots (R31);
+    # when the model read it, the same call already drafted them.
+    # The prose may hold the quote at most PROSE_WAIT_S after it started, and never past target_at: a slow or
+    # broken model call costs us the human slots, never the quote or its time points.
+    task = None
+    if rfq.extracted_by == "rules":
+        task = asyncio.create_task(compose.prose(ctx, rfq, message))
+        prose_by = min(datetime.now(UTC) + timedelta(seconds=PROSE_WAIT_S), deadline.target_at)
+    else:
+        compose.adopt(ctx, rfq, message, _raw_prose(ctx, rfq.session_id))
     options = await engine.options(ctx, rfq, deadline)
-    line = None
-    if opening:
+    if task and not task.done():
         try:
-            line = await asyncio.wait_for(opening, OPENING_WAIT_S)
-        except TimeoutError:
-            line = None
+            await asyncio.wait_for(asyncio.shield(task), max((prose_by - datetime.now(UTC)).total_seconds(), 0.0))
+        except Exception:  # noqa: BLE001, S110  late or failed: the quote goes out with the fixed phrases
+            pass  # a late task keeps running and stores its slots for the fallback
+    prose = compose.stored(ctx, rfq.session_id)
     if not options:
         return None
-    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, line, fallback=False))
+    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, prose, fallback=False))
     quotes.save(ctx, sent)
     return sent
 
@@ -72,4 +83,15 @@ async def fallback(ctx: Context, session_id: int) -> Quote | None:
     if rfq is None:
         return None
     options = engine.combine(rfq, session.options(ctx, session_id), feedback.pickup_rule(ctx))
-    return _quote(ctx, rfq, options, None, fallback=True) if options else None
+    return _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True) if options else None
+
+
+def _raw_prose(ctx: Context, session_id: int) -> dict:
+    row = ctx.db.execute(
+        "SELECT payload FROM events WHERE session_id = ? AND kind = 'prose.raw' ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    try:
+        return json.loads(row["payload"]) if row else {}
+    except ValueError:
+        return {}

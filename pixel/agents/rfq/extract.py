@@ -59,9 +59,15 @@ SYSTEM = (
     "pieces: integer or null. preference: fastest only when the customer asks for speed, else cheapest. "
     "door_pickup: true when the goods must be collected from the customer's address. pickup_postcode: that "
     "address's postcode or null. currency: only when the customer asks for one, else null. language: ISO 639-1 "
-    "code of the mail. Never calculate or guess."
+    "code of the mail. Never calculate or guess. "
+    "Also write three short pieces for our reply, in the mail's language and tone (German: formal Sie): first_name, "
+    "the customer's first name only if they signed with it, else null; intro, one or two warm sentences that show "
+    "you read their mail (the goods, urgency, timing or a question they asked, in words); closing, one short "
+    "friendly last line that is not a call to action, or null. These three never contain digits, prices, dates, "
+    "airlines, airports or places, and never greet or sign."
 )
 NULLABLE_STR = {"type": ["string", "null"]}
+PROSE = ("first_name", "intro", "closing")
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -76,9 +82,12 @@ SCHEMA = {
         "pickup_postcode": NULLABLE_STR,
         "currency": NULLABLE_STR,
         "language": {"type": "string"},
+        "first_name": NULLABLE_STR,
+        "intro": NULLABLE_STR,
+        "closing": NULLABLE_STR,
     },
     "required": ["origin", "destination", "weight_kg", "volume_cbm", "pieces", "preference", "door_pickup",
-                 "pickup_postcode", "currency", "language"],
+                 "pickup_postcode", "currency", "language", "first_name", "intro", "closing"],
 }  # fmt: skip
 
 
@@ -246,8 +255,9 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
 
 
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
-    """by_rules, else one `llm.ask_json` call. Emits `rfq.extracted` with `extracted_by`."""
-    rfq = by_rules(message, deadline)
+    """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
+    quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
+    rfq, prose = by_rules(message, deadline), None
     if rfq is None:
         result = await llm.ask_json(
             ctx,
@@ -256,9 +266,10 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             user=_text(message),
             schema=SCHEMA,
             session_id=message.session_id,
-            max_output_tokens=200,
+            max_output_tokens=350,
         )
         rfq = _from_model(result.data, message, deadline)
+        prose = {k: result.data.get(k) for k in PROSE}
     # A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16).
     if not rfq.origin and rfq.pickup_zone and (airport := store.airport_of(ctx, rfq.pickup_zone)):
         rfq = rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
@@ -270,4 +281,6 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
         message_id=message.id,
         payload=rfq.model_dump(mode="json"),
     )
+    if prose is not None:
+        events.emit(ctx, "prose.raw", "rfq", session_id=message.session_id, message_id=message.id, payload=prose)
     return rfq
