@@ -1,7 +1,8 @@
 """The feedback loop: what each request scored, why it lost points, and what that teaches the next quote.
 
-`run` polls GET /v1/board/me. The board shows one total, so a request's points are the change of that total at the
-moment its verdict appears. `explain` works back from the points to the scorer's best price and looks for it among
+`run` polls GET /v1/board/me. Until the scores are revealed, the board leaves accuracy and time out of each request
+row but counts them in the team total, so a request's accuracy + time is the change of that total at the moment its
+verdict appears, less the change of the points the rows report (cost arriving an hour later, tracking, booking). `explain` works back from the points to the scorer's best price and looks for it among
 the options the session had; the result is a `feedback` event in that session. For a door-to-port request it names
 the trucker the scorer took, and `pickup_rule` picks the balanced rule that agrees with those most often.
 
@@ -28,7 +29,7 @@ from pixel.pricing import selection, session
 from tools.board_me import normalize
 
 POLL_S = 10
-ACCURACY, TIME, BONUS = Decimal(45), Decimal(15), Decimal(10)
+ACCURACY, TIME = Decimal(45), Decimal(15)
 FULL_S, EXPIRES_S = 120, 360  # R29
 ZERO_AT = Decimal("0.10")  # accuracy reaches 0 at this distance from the best price; fitted on scored requests
 FINAL = {"accepted", "rejected", "no answer"}
@@ -120,16 +121,32 @@ def _quoted(ctx: Context, session_id: int) -> RateOption | None:
     return RateOption.model_validate(json.loads(row["payload"])["option"]) if row else None
 
 
-def _round(ctx: Context, row: dict[str, Any], delta: Decimal | None) -> None:
+def _reported(requests: list[dict[str, Any]]) -> Decimal:
+    """Every point the request rows list, over all rows."""
+    total = Decimal(0)
+    for row in requests:
+        for value in (normalize(row)["points"] or {}).values():
+            try:
+                total += Decimal(str(value))
+            except ArithmeticError:
+                continue
+    return total
+
+
+def _round(ctx: Context, row: dict[str, Any], hidden: Decimal | None) -> None:
+    """`hidden`: the accuracy + time the request earned, None when this poll cannot tell."""
     payload: dict[str, Any] = {"round": row["round_no"], "verdict": row["verdict"], "reason": row.get("reason")}
+    shown = normalize(row)["points"]
+    if any(k in shown for k in ("accuracy", "time")):  # revealed: the row says it
+        hidden = sum((Decimal(str(shown.get(k) or 0)) for k in ("accuracy", "time")), Decimal(0))
+    if hidden is not None:
+        payload["hidden"] = hidden
     session_id = _session(ctx, row["sent_at"])
     quoted = _quoted(ctx, session_id) if session_id else None
-    if row["verdict"] == "accepted" and quoted and delta is not None and row.get("answered_at"):
+    if row["verdict"] == "accepted" and quoted and hidden is not None and row.get("answered_at"):
         seconds = (datetime.fromisoformat(row["answered_at"]) - datetime.fromisoformat(row["sent_at"])).total_seconds()
         options = session.options(ctx, session_id)
-        # A tracking bonus can land in the same poll: prefer the reading of the change that the options explain.
-        readings = [explain(p, seconds, quoted, options) | {"points": p} for p in (delta, delta - BONUS)]
-        fit = next((r for r in readings if r["best"] is not None), readings[0])
+        fit = explain(hidden, seconds, quoted, options) | {"points": hidden}
         payload |= {"seconds": round(seconds), "quoted": quoted.total_eur, "quoted_trucker": quoted.trucker} | fit
     events.emit(ctx, "feedback", "board", session_id=session_id,
                 payload=json.loads(json.dumps(payload, default=str)))  # fmt: skip
@@ -140,8 +157,16 @@ async def once(ctx: Context) -> int:
     data = await ctx.board.me()
     reported_total = data.get("total")
     total = Decimal(str(reported_total)) if reported_total is not None else None
-    if total is not None and total != quotes.board_total(ctx):
-        events.emit(ctx, "score.total", "board", payload={"total": str(total)})
+    summary = {"total": str(total) if total is not None else None, "rank": data.get("rank"),
+               "revealed": bool(data.get("scores_revealed"))}  # fmt: skip
+    last = quotes.board_summary(ctx)
+    if total is not None and (total, summary["rank"], summary["revealed"]) != (
+        last["total"],
+        last["rank"],
+        last["revealed"],
+    ):
+        events.emit(ctx, "score.total", "board", payload=summary)
+    reported = _reported(data.get("requests", []))
     requests = [r for r in data.get("requests", []) if r.get("verdict") in FINAL]
     stored = {str(score["round"]): score for score in quotes.latest_scores(ctx)}
     for row in requests:
@@ -152,10 +177,14 @@ async def once(ctx: Context) -> int:
     state = json.loads(db.get(ctx.db, STATE) or '{"total": null, "verdicts": {}}')
     new = [r for r in requests if state["verdicts"].get(str(r["round_no"])) != r["verdict"]]
     first = state["total"] is None  # nothing to compare the total with: remember the verdicts, explain nothing
+    hidden = None
+    if total is not None and len(new) == 1 and state.get("reported") is not None:
+        hidden = (total - Decimal(state["total"])) - (reported - Decimal(state["reported"]))
     for row in [] if first else new:
-        _round(ctx, row, total - Decimal(state["total"]) if total is not None and len(new) == 1 else None)
+        _round(ctx, row, hidden)
     state["verdicts"].update({str(r["round_no"]): r["verdict"] for r in new})
-    db.put(ctx.db, STATE, json.dumps({"total": str(total) if total is not None else None, "verdicts": state["verdicts"]}))
+    db.put(ctx.db, STATE, json.dumps({"total": str(total) if total is not None else None, "reported": str(reported),
+                                      "verdicts": state["verdicts"]}))  # fmt: skip
     return 0 if first else len(new)
 
 
