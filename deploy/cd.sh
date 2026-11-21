@@ -49,6 +49,8 @@ move() {
   [ "${2:-}" = sync ] || return 0
   in_app "uv sync --locked --no-dev -q"
 }
+# The live commit is not in $new: deployed by hand (tools/deploy.sh) and not merged yet, or $new is older than it.
+behind() { ! as git -C "$REPO" merge-base --is-ancestor "$(as git -C "$APP" rev-parse HEAD)" "$new" 2> /dev/null; }
 # A change to these on main takes effect only once installed by hand; say so instead of installing it.
 pinned() {
   cmp -s "$APP/deploy/cd.sh" "$CD/cd.sh" || log "deploy/cd.sh on main differs from $CD/cd.sh, install it by hand"
@@ -61,6 +63,7 @@ as git -C "$REPO" fetch -q origin main || { log "fetch failed"; exit 0; }
 new=$(as git -C "$REPO" rev-parse origin/main)
 live=$(as git -C "$APP" rev-parse HEAD)
 [ "$new" = "$live" ] && { log "live is main $(short "$new")"; exit 0; }
+behind && { log "live $(short "$live") is not in main $(short "$new"), waiting for its merge"; exit 0; }
 grep -qx "$new" "$CD/red" 2> /dev/null && { log "$(short "$new") refused earlier, waiting for a newer commit"; exit 0; }
 
 # Paths that cannot change the running service: move the checkout, no test, no restart.
@@ -110,6 +113,7 @@ if [ "$DRY" = 1 ]; then
   exit 0
 fi
 
+behind && { log "$(short "$new") does not hold the commit deployed meanwhile, not deployed"; exit 0; }
 date +%s > "$CD/restarted"
 if move "$new" sync && systemctl restart pixel && answers; then
   log "deployed $(short "$live")..$(short "$new"), restarted once"
