@@ -54,9 +54,10 @@ OPENING_SCHEMA = {
 }
 
 
-def money(amount: Decimal, language: str) -> str:
-    text = f"{amount.quantize(CENT, rounding=ROUND_HALF_UP):,.2f}"
-    return text.translate(str.maketrans(",.", ".,")) if language == "de" else text
+def money(amount: Decimal) -> str:
+    """The total as the portal and the carriers write theirs: no thousands separator, a decimal point, in every
+    language. The scorer reads this number out of our mail; "1,234.57" or "1.234,57" can be read as another one."""
+    return f"{amount.quantize(CENT, rounding=ROUND_HALF_UP):.2f}"
 
 
 def weight(kg: Decimal, language: str) -> str:
@@ -77,9 +78,7 @@ def render(rfq: Rfq, option: RateOption, opening: str | None = None) -> tuple[st
     lines += [
         t["offer"].format(lane=lane, chargeable=weight(option.chargeable_kg, lang)),
         "",
-        t["total"].format(
-            total=money(option.total, lang), currency=option.currency, carrier=option.carrier, transit=transit
-        ),
+        t["total"].format(total=money(option.total), currency=option.currency, carrier=option.carrier, transit=transit),
         "",
         t["included_pickup"].format(trucker=option.trucker) if option.trucker else t["included"],
     ]

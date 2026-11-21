@@ -46,6 +46,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.
 - The opening sentence must not contain a price or a code: the scorer reads the one total we write.
+- The total is written like the portal's and the carriers' own: no thousands separator, a decimal point, also in a
+  German mail. A grouped total can be read as a different number.
 
 ## Open
 

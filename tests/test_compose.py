@@ -23,10 +23,11 @@ OPTION = RateOption(
 )  # fmt: skip
 
 
-def test_total_formatted_per_language_once():
+def test_total_is_written_once_without_a_thousands_separator_in_every_language():
     _, en = compose.render(rfq("en"), OPTION)
     _, de = compose.render(rfq("de"), OPTION)
-    assert en.count("1,234.57 EUR") == 1 and de.count("1.234,57 EUR") == 1
+    assert en.count("1234.57 EUR") == 1 and de.count("1234.57 EUR") == 1
+    assert "1,234" not in en and "1.234" not in de
     assert "Example Air" in en and "3 days" in en and "3 Tage" in de
 
 
