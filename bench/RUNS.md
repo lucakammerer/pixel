@@ -130,12 +130,14 @@ Three lines per scenario: what we tried, what changed, what is next.
 ### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
 
 One variant per booked round, smallest first. Measured as our total on `GET /v1/board` before the answer and 60 s
-after: +10 keeps it, no +10 sets `VARIANT` back at once.
+after: +10 keeps it, no +10 sets `VARIANT` back at once. `GET /v1/board/me` shows it per round as `points.tracking`
+(the round of the request the question is about, about 11 minutes earlier), which settles a total that moved for a
+round closing at the same time.
 
 | Variant | Live since | Question | Board before | Board 60 s after | Result |
 | --- | --- | --- | --- | --- | --- |
-| `scored`: prose, record block with "Customer: <address>", "from <postcode> via <airport>" | 21.11. | 17 answers | | | +10 on every right first answer |
-| `a`: no address line, "from your site in Bremen, flying HAM to EZE" | | | | | pending |
+| `scored`: prose, record block with "Customer: <address>", "from <postcode> via <airport>" | 21.11. | round 24, 17:31:42 UTC | 1647.66 (18 accepted) | 1657.66 (18 accepted) | +10, round 24 `tracking` 10 |
+| `a`: no address line, "from your site in Stuttgart, flying STR to EZE" (#116) | 17:35:32 UTC, f76a979 | round 25, 17:37:51 UTC, "70498 to EZE" | 1657.66 (19 accepted, round 26's 60 not yet in) | 1727.66 (19 accepted) | +10, round 25 `tracking` 10: kept |
 | `b`: the block's facts in the prose, no block | | | | | not yet tried |
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
