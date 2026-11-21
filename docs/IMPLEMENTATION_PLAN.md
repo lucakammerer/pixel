@@ -152,7 +152,8 @@ mail, not from when we polled it:
 | `expires_at` | +360 s | The request is lost (R1) |
 
 Before `target_at` the RFQ agent sends as soon as waiting cannot change the answer. Past `target_at` it keeps waiting
-only when the request has no price at all yet or when an outstanding bid can still beat the best option; a second
+only when the request has no price at all yet or when an outstanding bid can still beat the best option, and every
+bid by mail gets `PIXEL_BID_WAIT_S` from our ask even when a late start leaves less before `target_at`; a second
 past `target_at` costs about a sixteenth of a point, a quote outside 5% costs everything. These thresholds are
 settings, tuned from `/v1/board/me`, never constants in code.
 
