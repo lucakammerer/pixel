@@ -48,9 +48,16 @@ TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE
 PRICE_IS = re.compile(
     r"(?:\b(?:our|the|this)\s+(?!(?:[\w-]+\s+){0,3}?(?:fuel|security|waiting|storage|handling|surcharge)\b)"
     r"(?:[\w-]+\s+){0,3}?(?:price|rate)\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)"
-    r"|\bdeliver\b[^\d\n.]{0,40}?\bfor)\s*$",
+    r"|\bdeliver\b[^\d\n.]{0,40}?\bfor|\bwe\s+(?:can\s+)?(?:offer|quote)(?:\s+you)?|\bour\s+offer\s+is)\s*$",
     re.IGNORECASE,
 )
+# A price beside the offer that is not its own: "rates from", "ab", a minimum, an earlier offer, an option, "... extra".
+SIDE_BEFORE = re.compile(
+    r"\b(?:from|ab|starting\s+(?:at|from)|as\s+low\s+as|minimum(?:\s+charge)?|min\.|was|would\s+be|optional\s+[\w-]+)"
+    r"[\s:]*$",
+    re.IGNORECASE,
+)
+SIDE_AFTER = re.compile(r"^\s*(?:extra|more)\b", re.IGNORECASE)
 # An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none. The nearest
 # header above the total counts: "Chargeable weight (kg)" or "per kg (EUR)" over it is no price in that currency.
 HEADER_UNIT = re.compile(rf"\((?P<u>{CURRENCY}|[€$£]|kgs?|lbs?|cbm|m3|pcs)\)", re.IGNORECASE)
@@ -113,6 +120,57 @@ DECLINE = re.compile(
     r"\b(?:cannot offer|can't offer|unable to|no capacity|not able to|decline|regret|do not serve|don't serve)\b",
     re.IGNORECASE,
 )
+# "We do not serve this lane/zone: FRA-JFK. We fly CGN-EZE, DUS-JFK, ...": an airline declining a lane lists every
+# lane it flies. The setup changes hourly and nothing tells us when, so a learned list counts for an hour.
+LANES_FRESH = timedelta(hours=1)
+LANE = re.compile(r"(?<![A-Za-z])([A-Za-z]{3})\s?(?:[-–—/>→]|\bto\b)\s?([A-Za-z]{3})(?![A-Za-z])")
+NOT_SERVED = re.compile(
+    r"\bnot (?:serve|served|fly|flown|operate|operated|cover|covered)\b|\b(?:don't|doesn't|can't|cannot) "
+    r"(?:serve|fly|operate|cover)\b",
+    re.IGNORECASE,
+)
+# The list runs to the end of its sentence or paragraph: a lane in the next sentence is not one it flies.
+FLIES = re.compile(
+    r"\bwe (?:only )?(?:fly|serve|operate|cover)\b(.*?)(?:\.(?=\s|$)|\n\s*\n|$)", re.IGNORECASE | re.DOTALL
+)
+PARTIAL = re.compile(
+    r"\b(?:among(?:st)? others|e\.g\.|for example|such as|including|etc)\b|\band more\b|…|\.\.\.", re.IGNORECASE
+)
+
+
+def _lanes(text: str) -> set[str]:
+    return {f"{a}-{b}".upper() for a, b in LANE.findall(text)}
+
+
+def offered_lanes(body: str) -> list[str] | None:
+    """The lanes an airline that declines ours says it flies, by rules. None in doubt: no decline, no list, a list
+    that says it is incomplete or that holds a lane its decline names."""
+    text = _own_text(body)
+    if not (no := NOT_SERVED.search(text)) or not (flies := FLIES.search(text)) or PARTIAL.search(flies.group()):
+        return None
+    start = max(text.rfind("\n", 0, no.start()), text.rfind(". ", 0, no.start())) + 1
+    end = min((i for i in (text.find("\n", no.end()), text.find(". ", no.end())) if i >= 0), default=len(text))
+    lanes = _lanes(flies.group(1))
+    return sorted(lanes) if lanes and not lanes & _lanes(text[start:end]) else None
+
+
+def learned_lanes(ctx: Context) -> dict[str, set[str]]:
+    """Per airline (casefolded name) the lanes of its newest list learned within LANES_FRESH."""
+    rows = ctx.db.execute(
+        "SELECT payload FROM events WHERE kind='carrier.lanes' AND ts >= ? ORDER BY id",
+        ((timing.now() - LANES_FRESH).isoformat(),),
+    )
+    return {(p := json.loads(r[0]))["carrier"].casefold(): set(p["lanes"]) for r in rows}
+
+
+def worth_asking(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The airlines without a fresh list that leaves our lane out: unknown or stale ones are asked."""
+    known, lane = learned_lanes(ctx), f"{rfq.origin}-{rfq.destination}"
+    for name, _ in carriers:
+        if lane not in known.get(name.casefold(), {lane}):
+            events.emit(ctx, "bid.skipped", "pricing", session_id=rfq.session_id,
+                        payload={"carrier": name, "origin": rfq.origin, "destination": rfq.destination})  # fmt: skip
+    return [(name, email) for name, email in carriers if lane in known.get(name.casefold(), {lane})]
 
 
 def _amount(text: str, *, unit_rate: bool = False) -> Decimal:
@@ -175,6 +233,8 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
             per_kg = bool(PER_KG.match(after) or KG_LABEL.search(before))
             if not per_kg and OTHER_BASIS.match(after):
                 unsure = True
+                continue
+            if SIDE_BEFORE.search(before) or SIDE_AFTER.match(after):
                 continue
             raw = m.group("n1") or m.group("n2")
             amount = _amount(raw, unit_rate=per_kg)
@@ -523,6 +583,9 @@ async def record(ctx: Context, message: Message) -> None:
                     payload={"error": "bid for a session without an RFQ"})  # fmt: skip
         return
     name, kind = store.carrier_by_email(ctx, message.sender) or (message.sender, "ratedesk")
+    if kind == "airline" and (lanes := offered_lanes(message.body)):
+        events.emit(ctx, "carrier.lanes", "pricing", session_id=message.session_id, message_id=message.id,
+                    payload={"carrier": name, "lanes": lanes})  # fmt: skip
     pickup = kind == "trucker"
     enquiry, current = _enquiry(ctx, message, rfq)
     if not current:

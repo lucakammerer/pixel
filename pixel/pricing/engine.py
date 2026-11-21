@@ -113,7 +113,7 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     sheets = sheet_options(ctx, rfq)
     carriers = store.carriers(ctx, "airline", rfq.destination)
     priced = {o.carrier.casefold() for o in sheets}
-    candidates = [(name, email) for name, email in carriers if name.casefold() not in priced]
+    candidates = bids.worth_asking(ctx, rfq, [(n, e) for n, e in carriers if n.casefold() not in priced])
     offers = []
     async with asyncio.TaskGroup() as group:
         pickup_task = group.create_task(pickup.options(ctx, rfq, deadline))
