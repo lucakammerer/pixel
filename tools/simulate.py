@@ -65,6 +65,7 @@ SOURCES = json.loads((FIXTURES / "simulate-sources.json").read_text())
 KNOWN_GAPS = FIXTURES / "simulate-known-gaps.json"
 RECEIVED = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
 LB = D("0.45359237")
+CUBIC_FOOT = D("0.028316846592")  # (0.3048 m)³
 ORIGINS, DESTINATIONS = ("MUC", "FRA", "HAM", "STR", "DUS"), ("GRU", "SGN", "CAI", "ORD", "PVG", "YYZ")
 GOODS = ("automotive sensors", "furniture samples", "spare parts", "laboratory glassware", "textile rolls")
 TOLERANCE = D("0.01")
@@ -379,8 +380,33 @@ def other_kind_cases() -> list[Case]:
 
 
 MAIL_AXES = {
-    "weight": ("kg", "thousands", "de", "label", "lbs", "tonnes", "per_piece"),
-    "volume": ("cbm", "m3_de", "dims_cm", "dims_mm", "dims_in", "dims_line"),
+    "weight": (
+        "kg",
+        "thousands",
+        "de",
+        "label",
+        "lbs",
+        "tonnes",
+        "per_piece",
+        "lb",
+        "pounds",
+        "kgs",
+        "kilos",
+        "kilograms",
+    ),
+    "volume": (
+        "cbm",
+        "m3_de",
+        "dims_cm",
+        "dims_mm",
+        "dims_in",
+        "dims_line",
+        "cubic_feet",
+        "ft3",
+        "cu_ft",
+        "litres",
+        "dims_m",
+    ),
     "lang": ("en", "de"),
     "lots": ("1", "2"),
 }
@@ -388,9 +414,9 @@ MAIL_AXES = {
 
 def _weight_text(kg: D, pieces: int, form: str) -> tuple[str, D]:
     """The weight as written, and the kg it means."""
-    if form == "lbs":
+    if form in ("lbs", "lb", "pounds"):
         lbs = (kg / LB).quantize(D(1))
-        return f"{lbs} lbs", lbs * LB
+        return f"{lbs} {form}", lbs * LB
     if form == "tonnes":
         t = (kg / 1000).quantize(D("0.001"))
         return f"{t} t", t * 1000
@@ -398,7 +424,8 @@ def _weight_text(kg: D, pieces: int, form: str) -> tuple[str, D]:
         each = (kg / pieces).quantize(D(1))
         return f"each {each} kg", each * pieces
     return {"kg": f"{kg} kg", "thousands": f"{kg:,} kg", "de": f"{_num(kg, 'de')} kg",
-            "label": f"gross weight: {kg} kg"}[form], kg  # fmt: skip
+            "label": f"gross weight: {kg} kg", "kgs": f"{kg} kgs", "kilos": f"{kg} kilos",
+            "kilograms": f"{kg} kilograms"}[form], kg  # fmt: skip
 
 
 def _volume_text(row: Row, form: str) -> tuple[str, D]:
@@ -408,6 +435,15 @@ def _volume_text(row: Row, form: str) -> tuple[str, D]:
         return f"{cbm} cbm", cbm
     if form == "m3_de":
         return f"{_num(cbm, 'de', 2)} m³", cbm
+    if form in ("cubic_feet", "ft3", "cu_ft"):
+        feet = (row.cbm / CUBIC_FOOT).quantize(D("0.01"))
+        unit = {"cubic_feet": "cubic feet", "ft3": "ft³", "cu_ft": "cu ft"}[form]
+        return f"{feet} {unit}", feet * CUBIC_FOOT
+    if form == "litres":
+        litres = (row.cbm * 1000).quantize(D(1))
+        return f"{litres} litres", litres / 1000
+    if form == "dims_m":
+        return " x ".join(f"{D(s) / 100:.2f}" for s in row.sides_cm) + " m each", row.cbm
     if form == "dims_in":
         inch = [(D(s) / D("2.54")).quantize(D(1)) for s in row.sides_cm]
         return f"{inch[0]} x {inch[1]} x {inch[2]} in each", inch[0] * inch[1] * inch[2] * D("0.0254") ** 3 * row.pieces
