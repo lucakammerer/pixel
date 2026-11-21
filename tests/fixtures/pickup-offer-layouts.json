@@ -101,6 +101,15 @@
       "total": "358.64",
       "currency": "EUR",
       "pickup_hours": 4
+    },
+    {
+      "layout": "table_docx",
+      "file": "price-offer-TRK-6010.docx",
+      "body": "Good day,\n\nthank you for your request. You find our price offer in the attachment, as a Word document (price-offer-TRK-6010.docx).\n\nThe offer number is TRK-6010. No booking is necessary: give this number when you use the price.\n\nBodenseefracht\nbodenseefracht@hackloop.mail",
+      "attachment_text": "OFFER TRK-6010\nBodenseefracht  |  bodenseefracht@hackloop.mail\n\nOffer valid until: 21 Nov 2026 21:44 UTC\nOffer date: 21 Nov 2026 21:29 UTC\nLead time: 12 hours from order to collection\nRoute: 51943 (zone 51) to CGN Cologne\n\nPos  Description  Quantity  Unit price (EUR)  Amount (EUR)\n1  Base charge, zone 51  1  115.00  115.00\n2  Weight charge  2869.06 kg  0.16  459.05\n  Total      574.05\n\nNot part of this offer: waiting time at the pickup address after the first 30 minutes, 45.00 EUR for each hour.\nNo booking is necessary. Give the offer number when you use this price.",
+      "total": "574.05",
+      "currency": "EUR",
+      "pickup_hours": 12
     }
   ],
   "request_transcript": [
