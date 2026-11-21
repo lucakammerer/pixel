@@ -1,5 +1,6 @@
 import asyncio
 
+from pixel.api.mailbox import RATEDESK
 from pixel.contracts import RateOption, Rfq, Source
 from pixel.core import events, feedback, timing
 from pixel.core.context import Context
@@ -26,6 +27,22 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
         _found(ctx, rfq, option)
         found.append(option)
     return found
+
+
+def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
+    """R21: a rate read for this request answered 503, so the rate API is down; the desk mails the portal's rate per
+    airline with its rate id. A 404 or 429 leaves the API up: the desk would only repeat it. Once per request."""
+    down = ctx.db.execute(
+        "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.source')='portal'"
+        " AND json_extract(payload,'$.error')='RatesUnavailable'",
+        (rfq.session_id,),
+    ).fetchone()
+    asked = ctx.db.execute(
+        "SELECT 1 FROM events WHERE session_id=? AND kind='bid.requested' AND json_extract(payload,'$.email')=?"
+        " AND json_extract(payload,'$.origin')=? AND json_extract(payload,'$.destination')=?",
+        (rfq.session_id, RATEDESK, rfq.origin, rfq.destination),
+    ).fetchone()
+    return bool(down) and not asked
 
 
 def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE) -> list[RateOption]:
@@ -56,17 +73,18 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     async with asyncio.TaskGroup() as group:
         pickup_task = group.create_task(pickup.options(ctx, rfq, deadline))
         portal_task = group.create_task(portal_rates.options(ctx, rfq, deadline))
-        if candidates:
-            # Fast portal prices save unnecessary mails. An outage or a slow rate read must still
-            # leave mail-only airlines time to answer, including after a late restart.
-            head_start = min(PORTAL_HEAD_START_S, max(0.0, (deadline.target_at - timing.now()).total_seconds()))
-            await asyncio.wait({portal_task}, timeout=head_start)
-            priced.update(o.carrier.casefold() for o in session.for_request(ctx, rfq) if not o.trucker)
-            unpriced = [(name, email) for name, email in candidates if name.casefold() not in priced]
-            if unpriced:
-                mailed = await bids.request(ctx, rfq, unpriced)
-                if mailed:
-                    offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
+        # Fast portal prices save unnecessary mails. An outage or a slow rate read must still
+        # leave mail-only airlines time to answer, including after a late restart.
+        head_start = min(PORTAL_HEAD_START_S, max(0.0, (deadline.target_at - timing.now()).total_seconds()))
+        await asyncio.wait({portal_task}, timeout=head_start)
+        priced.update(o.carrier.casefold() for o in session.for_request(ctx, rfq) if not o.trucker)
+        unpriced = [(name, email) for name, email in candidates if name.casefold() not in priced]
+        if _ask_desk(ctx, rfq):
+            unpriced.append(("Rate desk", RATEDESK))
+        if unpriced:
+            mailed = await bids.request(ctx, rfq, unpriced)
+            if mailed:
+                offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
         pickups = await pickup_task
         offers = [o for o in offers if o.source in (Source.BID, Source.RATEDESK)]
         published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL]

@@ -17,7 +17,7 @@ KINDS = (
     "rfq.extracted", "rfq.evidence", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received",
     "quote.drafted", "quote.sent", "quote.fallback", "quote.waiting", "quote.missed", "quote.prose", "prose.raw",
     "quote.checked",  # agents/rfq/check.py: what the last check before sending found
-    "customer.accepted", "customer.declined",
+    "customer.accepted", "customer.declined", "customer.excludes",
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",
     "tracking.answered",
     "tariff.ingested", "tariff.failed",

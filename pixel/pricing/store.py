@@ -103,6 +103,12 @@ def carriers(ctx: Context, kind: str, serves: str) -> list[tuple[str, str]]:
     return [(r["name"], r["email"]) for r in rows if serves in r["serves"].split()]
 
 
+def airline_names(ctx: Context) -> set[str]:
+    """Every airline we know by name: the carrier list's and the sheets'."""
+    rows = ctx.db.execute("SELECT name FROM carriers WHERE kind = 'airline' UNION SELECT carrier FROM tariffs")
+    return {row[0] for row in rows}
+
+
 def carrier_by_email(ctx: Context, email: str) -> tuple[str, str] | None:
     """(name, kind) of the carrier writing from this address."""
     row = ctx.db.execute("SELECT name, kind FROM carriers WHERE lower(email) = lower(?)", (email,)).fetchone()

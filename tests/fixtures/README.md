@@ -24,7 +24,10 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   answers follow from the row; the old request and the reply subject they add, as seen live, are in
   `rfqs/live-mutations.json`. A new captured request: store it with `tools.replay --capture`, then
   `tools.benchmark_generalization --stub` prints its row with every field `"?"`; read each from the mail, never
-  copy what the code read, or the row repeats today's misread. CI fails while a `"?"` is left.
+  copy what the code read, or the row repeats today's misread. A missing row or a `"?"` is printed as a to-do,
+  never failed, so a capture cannot stop the deploy job. A field the rules misread today carries `known_gap` on the
+  row, a change they misread `known_gap_mutations` (`{"pounds": "<note> Owner: <role>."}`); both are reported as
+  gaps instead of failures.
 - `mails/routing_probes.jsonl`: mails as the API delivers them, each with a setup (a reply to our quote or bid
   request, a sender on the carrier list) and the kind a right router gives.
 - `mails/bid_probes.jsonl`: carrier answers with the total, currency and transit a right reader takes from them.

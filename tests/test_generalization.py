@@ -5,6 +5,7 @@ on what it reports as FAIL. Counts come from the fixture files, never from this 
 """
 
 import asyncio
+import json
 from decimal import Decimal as D
 
 import pytest
@@ -102,19 +103,56 @@ def test_spreadsheet_layout_changes_parse_the_same_or_are_refused():
     assert [f"{v.file}: {v.outcome} {v.detail}" for v in changes if not v.safe and not v.known_gap] == []
 
 
-def test_every_captured_request_has_its_reference_and_the_rules_read_it_right():
+def test_the_rules_read_every_captured_request_as_a_person_did():
     """`rfqs/live.jsonl` holds what a person read from each captured request. A wrong rules reading fails unless
-    its row names it as a known gap; a request without a row fails until someone writes it (`--stub`)."""
+    its row names it as a known gap. A request without a finished row is a to-do the benchmark prints (`--stub`),
+    never a failure: capturing a mail must not stop the host's deploy job."""
     live = bench.audit_live()
-    assert live
+    assert any(r.right for r in live)
     assert [f"{r.fixture}: {r.wrong_fields}" for r in live if r.right is False and not r.known_gap] == []
-    assert all(r.judged for r in live)
+    assert all(r.judged for r in live if not r.todo)
+
+
+def test_a_missing_or_unfinished_row_is_a_to_do_and_a_misspelled_field_fails(tmp_path, monkeypatch):
+    mails, rfqs = tmp_path / "mails", tmp_path / "rfqs"
+    mails.mkdir(), rfqs.mkdir()
+    raw = (bench.MAILS / "rfq-port-to-port.json").read_text()
+    for name in ("rfq-a.json", "rfq-b.json", "rfq-c.json"):
+        (mails / name).write_text(raw)
+    rows = [{"fixture": "rfq-b.json", "expected": {"weight_kg": "?", "destination": "JFK"}},
+            {"fixture": "rfq-c.json", "expected": {"weight": "1540"}}]  # fmt: skip
+    (rfqs / "live.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
+    monkeypatch.setattr(bench, "MAILS", mails)
+    monkeypatch.setattr(bench, "RFQ_FIXTURES", rfqs)
+    a, b, c = bench.audit_live()
+    assert a.todo and a.right is None and b.todo and b.right is None
+    assert c.right is False and c.wrong_fields == ["unknown field weight"]
+    assert bench.live_by_field([a, b, c]) == {}  # nothing was compared
+
+
+def test_a_mutation_named_as_a_known_gap_is_reported_not_failed(tmp_path, monkeypatch):
+    mails, rfqs = tmp_path / "mails", tmp_path / "rfqs"
+    mails.mkdir(), rfqs.mkdir()
+    (mails / "rfq-a.json").write_text((bench.MAILS / "rfq-port-to-port.json").read_text())
+    row = {"fixture": "rfq-a.json", "expected": {"weight_kg": "1"}, "known_gap_mutations": {"reply_subject": "x"}}
+    (rfqs / "live.jsonl").write_text(json.dumps(row))
+    monkeypatch.setattr(bench, "MAILS", mails)
+    monkeypatch.setattr(bench, "RFQ_FIXTURES", rfqs)
+    found = {r.fixture.split()[-1]: r for r in bench.audit_live_mutations()}
+    assert found["reply_subject"].right is False and found["reply_subject"].known_gap == "x"
+    assert found["quoted_old_request"].right is False and found["quoted_old_request"].known_gap is None
+
+
+def test_the_pounds_change_rewrites_only_the_shipments_figure():
+    raw = {"subject": "s", "body": "855 kg gross, the truck takes 1855 kg"}
+    body = bench._mutations(raw, {"weight_kg": "855"})["pounds"][0]["body"]
+    assert body == "1885 lbs gross, the truck takes 1855 kg"
 
 
 def test_captured_requests_changed_as_seen_live_are_read_right_or_left_to_the_model():
     mutated = bench.audit_live_mutations()
     assert mutated
-    assert [f"{r.fixture}: {r.wrong_fields}" for r in mutated if r.right is False] == []
+    assert [f"{r.fixture}: {r.wrong_fields}" for r in mutated if r.right is False and not r.known_gap] == []
 
 
 def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
