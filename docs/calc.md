@@ -45,6 +45,7 @@ Decimal only; a model never computes, compares or writes a price (P1).
   contained. Best / own summed, own / worst summed and min-max scaling each miss at least one. Airline bids are
   not balanced: they compete by the customer's wish with sheets, portal and the rate desk (round 28, session 7244:
   the scorer's best for cheapest was the cheaper 4-day bid, not the balanced 1-day bid; `tests/fixtures/scored-airline-bids.json`).
+- A bid far below every other price of its kind is not used (`selection.implausible`, below).
 - The rule is not fixed: `core/feedback.py` reads our points after every request, works back to the scorer's best
   price (accuracy falls linearly to 0 at 10% off the best price, in either direction: fitted on scored requests, not
   stated by 5U) and finds the option that total belongs to. `pickup_rule` then uses the entry of `selection.RULES`
@@ -79,6 +80,40 @@ below what we sent. The "rule's total" is the airline the scorer took plus that 
   pickup) and say nothing about the trucker.
 - `feedback.pickup_rule` on the host counts rounds 11, 13, 14 and 19: `times_the_best` 4, every other rule 3, so it
   keeps the default; rejected rounds name no trucker and cannot move it.
+
+## When a bid is not trusted (`selection.implausible`)
+
+A parser meets layouts it has never seen, and a wrong number it reads looks like any other. So the price itself is
+checked, whatever the layout: a bid below a quarter (`selection.TRUST`) of the cheapest other carrier of its kind
+in the same request (a trucker against the other truckers; an airline bid against the sheet, portal, desk and bid
+prices of the lane) is not used. `engine.combine` leaves it out, in the fallback too, and records it once as
+`option.failed` with `error: implausible` (`feedback.attention` shows it as `bid_distrusted`); `rfq/check.py`
+`_implausible` blocks a quote that still holds one. Only the cheapest bid of a kind can fail, so a trusted one of
+its kind always remains; a bid without peers is never distrusted. No model reads it again: `bids._read_with_model`
+runs when the rules read nothing, before the peers have answered, and a second read would spend in the window.
+
+`tests/fixtures/bid-plausibility.json` holds every bid with peers of the scored rounds of 21.11.2026 (44
+door-to-port requests, 7 with airline bids) and round 67. Ratio: the bid over the cheapest other of its kind.
+
+| Round | Bid | Cheapest other | Ratio |
+| --- | --- | --- | --- |
+| 67, misread | Rheinufer 45.00 EUR / 28 h ("waiting time ... 45.00 EUR for each hour"; the offer's total was 181.96) | Schwabenbote 215.24 / 21 h | 0.21 |
+| 14, closest real | Spessart 113.05 / 32 h | Westfalenroute 321.74 / 4 h | 0.35 |
+| 16 | Vogelsberg 86.06 / 29 h | Domblick 175.10 / 8 h | 0.49 |
+| 9 | Vogelsberg 180.50 / 29 h | Domblick 337.00 / 8 h | 0.54 |
+| 47, closest real airline bid | Nova Atlas 1833.66, 7 d | Aurelia (bid) 2408.21, 6 d | 0.76 |
+
+- A quarter lies between the two, closer to the misread: the slow budget trucker of round 14 sat at 0.35 of the
+  express ones, and a real bid can sit lower still when only express truckers answer; a charge per hour, per kg or
+  for one item read as the price lies far lower. Round 67 quoted 3345.48 EUR, rejected as too low; without the
+  misread bid the balanced trucker is Schwabenbote and the quote 3515.72 (3300.48 + 215.24), the scorer's best by
+  its verdict. With Rheinufer's real 181.96 / 28 h, balanced would also have taken Schwabenbote.
+- No structural signal separates better on this data. Price times pickup hours puts round 26's real Sternmeile
+  (447.44 EUR / 4 h) at 0.35 of its peers and round 67's misread at 0.28. The trucker's own history has nothing:
+  Rheinufer had never quoted zone 40. A price per kg is a value of one dataset version. The basis on the line ("for
+  each hour") is the parser's (`bids.OTHER_BASIS`) and covers only the wordings seen.
+- Not caught: a misread within four times its peers (a base charge read without its surcharges), the only bid of
+  its kind, two misreads below the same peers.
 
 ## Assumptions until 5U answers (plan §0)
 

@@ -85,11 +85,15 @@ PIECES = re.compile(
 NOT_URGENT = re.compile(
     r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
     r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger"
-    r"|(?:not|nicht)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+)?(?:fastest|quickest|schnellst\w*))\b",
+    r"|pas\s+(?:urgent|press[ée]\w*)"
+    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*"
+    r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*)\b", re.IGNORECASE)
-CHEAPEST = re.compile(r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*)\b", re.IGNORECASE)
+FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide)\b", re.IGNORECASE)
+CHEAPEST = re.compile(
+    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix)\b", re.IGNORECASE
+)
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
     r"as possible|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
@@ -98,7 +102,8 @@ HURRY = re.compile(
 )
 DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
-    r"|collection from|collect from|abhol\w*|ab werk|ab haus",
+    r"|collection from|collect from|abhol\w*|ab werk|ab haus"
+    r"|collect (?:the )?(?:goods|cargo|shipment|freight)|arrange (?:the|a) truck",  # a voice message's own words
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
@@ -123,6 +128,9 @@ GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wi
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
            "you", "your", "shipment", "thanks"}  # fmt: skip
+FRENCH = {"le", "la", "les", "des", "du", "et", "pour", "nous", "vous", "votre", "un", "une", "est", "avec", "merci",
+          "bonjour", "poids", "envoi", "colis", "que", "pouvez", "cordialement", "devis", "dans", "aux"}  # fmt: skip
+LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH}
 
 SYSTEM = (
     "You read an air freight customer's request for a quote and return its facts as JSON. "
@@ -221,10 +229,11 @@ def _lane(text: str) -> tuple[str, str] | None:
 
 
 def _destination_only(text: str) -> str | None:
-    """The one destination of a mail that names no origin airport (door-to-port)."""
-    if any(_airport(c) for c in ORIGIN_LABEL.findall(text)):
-        return None
+    """The one destination of a mail that names no origin airport (door-to-port). "Select the departure airport for
+    the fastest option to JFK" labels the destination, not an origin (round 69)."""
     found = {c for c in DEST_LABEL.findall(text) if _airport(c)}
+    if {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - found:
+        return None
     return found.pop() if len(found) == 1 else None
 
 
@@ -310,9 +319,18 @@ def _currency(text: str) -> str | None:
     return asked.pop() if len(asked) == 1 else None
 
 
+def words_of(text: str, extra: dict[str, set[str]] | None = None) -> dict[str, int]:
+    """How many of each language's common words the text holds."""
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    return {
+        lang: sum(w in known or w in (extra or {}).get(lang, ()) for w in words) for lang, known in LANGUAGES.items()
+    }
+
+
 def _language(text: str) -> str:
-    words = re.findall(r"[a-zäöüß]+", text.lower())
-    return "de" if sum(w in GERMAN for w in words) > sum(w in ENGLISH for w in words) else "en"
+    """The language with the most common words; English on a tie (round 70 was French, answered in English)."""
+    counts = words_of(text)
+    return max(counts, key=lambda lang: (counts[lang], lang == "en"))
 
 
 def _preference(text: str) -> Preference:
@@ -670,17 +688,14 @@ def _declared(lines: list[str]) -> str | None:
 
 
 async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[str]]]:
-    """The text lines of every attachment code can read (packing list, letter of instruction)."""
-    from pixel.agents.tariffs.agent import _lines
+    """The text lines of every attachment code can read (packing list, letter of instruction, a voice message). Facts
+    only in a file code cannot read (a video, a scan) count as missing: the one question asks for them."""
+    from pixel.agents.tariffs.agent import attachment_lines
 
     files = []
     for attachment in message.attachments:
-        try:
-            files.append((attachment.filename, _lines(attachment.filename,
-                                                      await ctx.mailbox.attachment(message.id, attachment.id))))  # fmt: skip
-        except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
-            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+        if (lines := await attachment_lines(ctx, message, attachment, "rfq")) is not None:
+            files.append((attachment.filename, lines))
     return files
 
 
@@ -691,7 +706,7 @@ def names_code(text: str, code: str) -> bool:
 # Column names as whole words: "Stück" in "Gewicht je Stück" and "pcs" in "kg/pcs" say per piece, not a count column.
 COLUMN = re.compile(
     r"(?<![\w/])(?<!je\s)(?<!pro\s)(?<!per\s)(?P<name>width|length|height|breite|l(?:ä|ae)nge|h(?:ö|oe)he|pieces|"
-    r"pcs|qty|quantity|st(?:ü|ue)ck|gross\s+weight|weight|\w*gewicht)\b",
+    r"pcs|qty|quantity|st(?:ü|ue)ck|(?:net(?:to)?|tare|tara)\s*(?:weight|gewicht)|gross\s+weight|weight|\w*gewicht)\b",
     re.IGNORECASE,
 )
 COLUMN_UNIT = re.compile(r"\(\s*(mm|cm|m|kgs?|lbs?)\b", re.IGNORECASE)
@@ -738,7 +753,9 @@ def _table_totals(columns: list[tuple[str, str | None, bool]], rows: list[list[s
     """What a packing table's rows add up to: pieces, volume, and the gross weight when its one weight column is in
     kg or lb (a weight per piece times the row's pieces). {} when a row does not read."""
     counts = [i for i, (name, _, _) in enumerate(columns) if name in COUNT]
-    weights = [i for i, (name, _, _) in enumerate(columns) if "weight" in name or "gewicht" in name]
+    weights = [
+        i for i, (name, _, _) in enumerate(columns) if ("weight" in name or "gewicht" in name) and not NET.match(name)
+    ]
     if len(counts) != 1 or not rows:
         return {}
     weight = weights[0] if len(weights) == 1 and columns[weights[0]][1] in KG_PER else None
@@ -772,6 +789,9 @@ def _agree(field: str, a: Decimal | int, b: Decimal | int) -> bool:
 
 
 CARGO = ("pieces", "weight_kg", "volume_cbm")
+# A net or tare weight is never the gross weight the freight is charged on: its column and its lines are left out.
+NET = re.compile(r"(?:net(?:to)?|tare|tara)\s*(?:weight|gewicht)", re.IGNORECASE)
+NET_LINE = re.compile(rf"(?im)^.*\b{NET.pattern}\b.*$")
 
 
 def _document_facts(text: str) -> dict | None:
@@ -783,7 +803,7 @@ def _document_facts(text: str) -> dict | None:
     pieces = {int(v) for v in PIECES_LABEL.findall(around)}
     stated = {
         "pieces": pieces.pop() if len(pieces) == 1 else None,
-        "weight_kg": None if EACH_WEIGHT.search(around) else _unique(WEIGHT, around, thousands=True),
+        "weight_kg": None if EACH_WEIGHT.search(around) else _unique(WEIGHT, NET_LINE.sub("", around), thousands=True),
         "volume_cbm": None if EACH_VOLUME.search(around) else _unique(VOLUME, around, thousands=False),
     }
     measured = _table_totals(columns, rows)

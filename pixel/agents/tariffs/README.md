@@ -19,11 +19,16 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 ## Implementation
 
 - `parse`: every text format becomes lines (`_lines`: xlsx rows, docx paragraphs and tables in order, PDF text,
-  txt), and one reader (`_read`) interprets them: title (`<carrier> | ...`), `Currency`, `Valid from/to` (also on one
+  txt; a voice message, mp3, wav, m4a or ogg, one line per spoken sentence by a local `faster-whisper` model
+  (`_transcribe`, no gateway spend, about a second per minute of speech; its ~150 MB download goes to the pixel
+  user's Hugging Face cache; the live process loads it at start, `app.py` `_preload_speech`), one line per
+  sentence, with spoken prices and small numbers written as figures: "340 euros and 60 cents" as 340.60 EUR, "four
+  hours" or "vier Stunden" as 4 hours (`_spoken`)), and one reader (`_read`) interprets them: title (`<carrier> | ...`), `Currency`, `Valid from/to` (also on one
   line, `Valid 01.11.2026 - 30.11.2026`; any of the date formats in `DATE_FORMATS`), the rate unit (`All rates are
   per 100 kg` divides every rate by 100), `Origin:` headings, a break header (`from 0 kg`, `-45`/`+45`, `0 kg+`; `-45`
   is the 0 kg break; `Fuel`/`Security` in the header mean surcharge columns), table rows (lane, transit and minimum
-  in the order the last header naming both gives them, `LEAD_COLUMN`, one rate per break), lane blocks (`Transit`, `Minimum`, `from N kg R`, `Fuel`, `Security` on their own lines,
+  in the order the header gives them, `_lead`: the line with the breaks or the one right above it, never a note,
+  one rate per break), lane blocks (`Transit`, `Minimum`, `from N kg R`, `Fuel`, `Security` on their own lines,
   across page breaks) and surcharge sentences (`<lane>: fuel X per kg, security Y per kg`). A lane is the first two
   IATA codes before the first number, or one code under an `Origin:` heading. A row with the wrong count of numbers
   refuses the whole file (ValueError) instead of guessing.
@@ -31,6 +36,10 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
   pages as JPEGs. `read_with_model` sends those pages or the original image attachments through `llm.ask_json`,
   once per page. The model transcribes cells. Code merges rates and surcharges across pages, parses numbers
   and applies the same validation as for text tariffs before making rates available to pricing.
+- `attachment_lines`: the text lines of a request's or a carrier's attachment for `agents/rfq/extract.py` and
+  `pricing/bids.py`, in a thread. A type `_lines` has no reader for (`READABLE`: xlsx, docx, pdf, txt, csv, audio) is
+  not downloaded; it and a pdf without text raise `Unreadable` and become an `attachment.unreadable` event, not an
+  `error`.
 - `check`: on every result: lane codes, currency, dates, minimum > 0 and not a transit in days (a whole number up to
   30 below two kg at the first rate), transit 1 to 30 days, first break at 0 kg,
   breaks ascending, rates positive and never rising with weight, surcharges below the first rate.
@@ -49,11 +58,14 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 - Surcharges come as columns, as a second table or as one sentence per lane below the rates.
 - Lanes are written as codes, as city names with codes, or grouped under an origin heading.
 - The scanned sheet is skewed and split over two pages: rates on one, surcharges on the other.
+- The gateway accepts text and `image_url` content only and lists no audio model (checked 21.11.2026): a voice
+  message is read by the local transcript (`_transcribe`) or not at all.
 - `check` cannot know whether a code is a real airport; it only checks the form.
 - A sheet read by column position turns into wrong values when an update reorders its columns: Minimum and Transit
   swapped read the minimum as transit days, and `check` only noticed when the numbers left its ranges. `_read`
   takes their order from the header, also when it stands one row above the breaks (`Destination  Transit  Minimum`
-  over `-45  +45 ...`); `check` refuses a minimum that looks like days.
+  over `-45  +45 ...`), never from a note or a legend line that names both words; `check` refuses a minimum that looks
+  like days.
   `tests/fixtures/tariffs/variants/` holds sheets with one change each; every change must be parsed right or
   refused, never parsed into wrong values.
 - A sheet in another currency than EUR parsed, but sheet pricing had no exchange rate for it and dropped the sheet.

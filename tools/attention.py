@@ -3,7 +3,8 @@
 uv run python -m tools.attention --minutes 30
 
 Missed, rejected and point-losing requests (with the service's own explanation where it found one), tracking
-questions matched to no shipment, customer replies left to a person, errors. Read-only.
+questions matched to no shipment, customer replies left to a person, errors, carrier bids not trusted as read.
+Read-only.
 """
 
 import argparse

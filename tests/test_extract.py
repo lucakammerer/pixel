@@ -247,6 +247,22 @@ async def test_dangerous_goods_declared_in_an_attachment_count_although_the_mail
     assert await extract.dangerous_goods(ctx, to_message(raw, "in")) == declared
 
 
+async def test_facts_only_in_a_file_no_code_reads_are_missing_without_an_error(emitted):
+    """An `.xls` packing list (the mailbox allows it, R6; no code reads it) is an `attachment.unreadable`, not an
+    `error`: the mail goes on without it, so its facts are missing and the one question asks for them."""
+    ctx = Context(settings(), None, None, None, None, None)
+    ctx.mailbox = FixtureMailbox({"attachments": []})  # a type without a reader is never downloaded
+    sheet = Attachment(id=1, filename="packing-list.xls", content_type="application/vnd.ms-excel", size=10)
+    message = mail("Please quote, all details in the packing list.").model_copy(update={"attachments": (sheet,)})
+    assert await extract._attachments(ctx, message) == []
+    assert [(kind, kw["payload"]) for kind, kw in emitted] == [
+        (
+            "attachment.unreadable",
+            {"file": "packing-list.xls", "type": "application/vnd.ms-excel", "reason": "no code parser for .xls"},
+        )
+    ]
+
+
 async def test_a_dangerous_goods_request_lists_the_documents_as_missing(conn, emitted):
     raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-dg-packing-list.json").read_text())
     ctx = Context(settings(), conn, None, None, None, None)
@@ -437,6 +453,31 @@ async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(co
     assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
         (kind, kw["payload"]) for kind, kw in emitted
     ]
+
+
+async def test_a_request_sent_as_a_voice_message_is_read_by_rules_from_its_transcript(conn, monkeypatch):
+    """Round 65: the whole request was a voice message. Unread, we had to ask the customer for the facts."""
+    from pixel.agents.tariffs import agent as tariffs
+
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    offers = json.loads((Path(__file__).parent / "fixtures" / "pickup-offer-layouts.json").read_text())
+    monkeypatch.setattr(llm, "ask_json", boom)
+    monkeypatch.setattr(tariffs, "_transcribe", lambda content: offers["request_transcript"])
+
+    class Recording:
+        async def attachment(self, message_id, attachment_id):
+            return b"ID3"
+
+    ctx = Context(settings(), conn, Recording(), None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("51943"), "area": "Town", "airport": "AAA"}])
+    message = Message(id=1, session_id=1, direction="in", sender="c@x", to="us@x", subject="Voice message",
+                      body="Please listen to the attached recording.", sent_at=datetime(2026, 11, 21, tzinfo=UTC),
+                      attachments=[Attachment(id=0, filename="voice-message.mp3", content_type="audio/mpeg", size=3)])  # fmt: skip
+    rfq = await extract.extract(ctx, message, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.pickup_postcode) == (
+        "AAA", "LIM", Decimal(1804), Decimal("17.18"), 11, "51943")  # fmt: skip
 
 
 async def test_a_packing_spec_whose_table_bears_out_its_volume_outweighs_the_mail(conn, monkeypatch, emitted):
@@ -730,6 +771,35 @@ async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(c
     request = poller.ingest(ctx, request)  # the dimensions without a volume send it to the model
     rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
     assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("CCC", "51115", "51", "model")
+
+
+async def test_an_answer_that_gives_every_fact_is_read_after_the_model_could_read_nothing(conn, monkeypatch):
+    """Round 69: the recording could not be read, we asked, the customer answered with everything. "Select the
+    departure airport for the fastest option to JFK" read JFK as the origin, so the answer was dropped: no quote."""
+
+    async def nothing_read(ctx, **kw):
+        data = {k: None for k in extract.SCHEMA["required"]} | {"lots": [], "preference": "cheapest",
+                                                                "door_pickup": False, "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    class Unreadable:
+        async def attachment(self, message_id, attachment_id):
+            raise ValueError
+
+    monkeypatch.setattr(llm, "ask_json", nothing_read)
+    ctx = Context(settings(), conn, Unreadable(), None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("42925"), "area": "Town", "airport": "AAA"}])
+    request, answer = captured("rfq-voice-unread.json"), captured("customer-answers-every-fact.json")
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        poller.ingest(ctx, answer)
+        return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    request = poller.ingest(ctx, request)
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode, rfq.preference) == (
+        "AAA", "JFK", Decimal(959), Decimal("8.04"), "42925", Preference.FASTEST)  # fmt: skip
 
 
 def test_in_before_a_word_is_no_inch():
