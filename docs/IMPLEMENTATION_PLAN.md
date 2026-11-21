@@ -90,6 +90,7 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                   bids     mail carriers with outstanding prices        bid.requested → bid.received
                   pickup   mail truckers for a door-to-port request     option.found
                 selection.select → compose.render → outbox.send_quote  quote.sent
+  recovery      unanswered after 150 s or handler exits                quote.recovery
   fallback      watch stored options for a complete price              quote.waiting
                 hard deadline: send available scope or record a miss   quote.fallback | quote.missed
 customer_reply      affirmative booking of a delivered quote → shipment → book by rate id or mail
@@ -146,12 +147,13 @@ queries (`sessions`, `quotes`, `bookings`, `shipments`, `tariffs`); the log is w
 
 ### 4.4 Deadlines
 
-`core/orchestrator.py` `deadline_for` gives every request four times, all measured from the stored time of the RFQ
+`core/orchestrator.py` `deadline_for` and `Deadline.recovery_at` define the request's deadlines, measured from the stored time of the RFQ
 mail, not from when we polled it:
 
 | Time | Default | Meaning |
 | --- | --- | --- |
 | `target_at` | +100 s | Send by here: full time points with 20 s to spare (R29) |
+| `recovery_at` | +150 s | Hand an unanswered request to recovery |
 | `hard_at` | +315 s | The fallback sends the best stored option, built by code alone (P3) |
 | `expires_at` | +360 s | The request is lost (R1) |
 
@@ -160,8 +162,12 @@ mail can start while portal reads are pending. Bid collection ends when all expe
 closes. That window runs until the later of `target_at` and `PIXEL_BID_WAIT_S` after the enquiries, capped at
 `hard_at`. A late start therefore still leaves time for a trucker to price the pickup.
 
-If the live agent finishes without a complete price, the fallback checks stored options for the current lane
-until a complete price arrives or `hard_at` is reached. A door request needs a priced trucker before then. At
+If the live agent finishes without sending or reaches `recovery_at`, the orchestrator takes over and checks stored
+options for the current lane until a complete price arrives or `hard_at` is reached. It gives an in-flight quote time
+to finish. In the meantime, `core/quote_recovery.py` `source` has up to 20 seconds before `hard_at` to recheck sheets
+and the portal for missing air prices and request pickup bids from eligible truckers without an enquiry for the
+pickup. It uses the normal extraction path if no RFQ was stored and no model read has already finished.
+A door request needs a priced trucker before `hard_at`. At
 `hard_at`, an available airport-to-airport price may be sent with pickup excluded and `complete_service=false`.
 A missing postcode prompts a request for the pickup address in that quote. If air freight itself is still
 unpriced, the orchestrator emits `quote.missed`.
@@ -247,7 +253,7 @@ outbox with first-quote-only, recipient check, mail limit, dry run and takeover;
    restart, and each mail shows up as `mail.in` and `route` events with the right session.
 2. The first real mails of each kind that arrive are captured as fixtures; `classify` places every fixture
    correctly without a model call; a carrier's answer lands in the session of the RFQ it was requested for.
-3. With a fake RFQ agent that never returns, the fallback sends at `hard_at`; with one that has no option,
+3. With a fake RFQ agent that never returns, recovery takes over at `recovery_at`; with one that has no option,
    `quote.missed` is emitted; with one that returns in time, exactly one quote leaves. Tested with a fake clock.
 4. A second `send_quote` for the same session raises `NotSent("duplicate_quote")`, also when two tasks race.
 5. `PIXEL_DRY_RUN=1` sends nothing and emits `mail.held`; 429 from the mail limit is waited out, never dropped.

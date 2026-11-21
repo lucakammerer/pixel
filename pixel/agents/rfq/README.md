@@ -31,7 +31,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and codes known locally. Only an unserved guess triggers a time-limited portal check and, if still unresolved,
   one optional `rfq.airports` call. Quoted older correspondence is excluded.
 - `agent.py` `fallback` reads the RFQ and the stored options on its current lane. A late complete option can be
-  sent while the session is automatic. A door request waits for a priced trucker until `hard_at`. If pickup is
+  sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30
+  from receipt. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
+  A door request waits for a priced trucker until `hard_at`. If pickup is
   still unpriced at that point, the reply states the airport-to-airport price and excludes pickup. A zone hint
   used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
   when the postcode is missing, including when the quoted pickup price is for the zone pending address confirmation.
