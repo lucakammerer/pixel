@@ -95,7 +95,7 @@ if ! grep -qx "$new" "$CD/green" 2> /dev/null; then
 fi
 
 last=$(cat "$CD/restarted" 2> /dev/null || echo 0)
-if [ $(($(date +%s) - last)) -lt "$ROUND_S" ] && ! as git -C "$REPO" log -1 --format=%B "$new" | grep -q URGENT; then
+if [ $(($(date +%s) - last)) -lt "$ROUND_S" ] && ! as git -C "$REPO" log --format=%B "$live..$new" | grep -q URGENT; then
   log "$(short "$new") green, waiting: one restart per round"
   exit 0
 fi
