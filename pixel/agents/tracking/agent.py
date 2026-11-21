@@ -17,8 +17,9 @@ from pixel.pricing.pickup import zone_of
 REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 LANE = re.compile(r"\b([A-Z]{3})\s*(?:-|–|→|->|to|nach)\s*([A-Z]{3})\b")
-DESCRIBED = re.compile(r"\b(?:([A-Z]{3})|(\d{5}))\s+(?:to|nach)\s+([A-Z]{3})\b")
-WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
+DESCRIBED = re.compile(r"\b(?:([A-Z]{3})|(\d{5}))(?:\s+(?:to|nach)\s+|\s*(?:-|–|→|->|/)\s*)([A-Z]{3})\b")
+# "1795 kg", "1 795 kg", "1,795 kilos"
+WEIGHT = re.compile(r"(\d{1,3}(?:[ \u00a0]\d{3})+|\d[\d.,']*)\s*(?:kgs?|kilos?|kilograms?)\b", re.IGNORECASE)
 
 # Which tracking answer goes out. Going back is this one line (bench/RUNS.md, "Tracking variants"):
 # "scored": prose, then the record block with the customer's address; scored +10 on every right first answer.

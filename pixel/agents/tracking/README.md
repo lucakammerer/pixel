@@ -47,6 +47,9 @@ is translated (`compose.localize`) and sent only when every reference, name and 
 - The reference can stand only in an attached enquiry: `question` gives `match` the subject, the body and every
   attachment code can read. A scan, a voice message, and an attachment that disagrees with the mail are open cells
   of the channel matrix (`tests/fixtures/channel-gaps.json`).
+- The desk's wording is one template today; the same facts can come as "51804-DFW", "51804 → DFW", "1 795 kg" or
+  "1795 kilos". `tools/benchmark_generalization.py` `TRACKING_CHANGES` changes every live question one way
+  (section 14); each must find its shipment or ask for the reference, never name another.
 - The status words come from the shipment (`booking`, `booked`, `confirmed`, `failed`); never promise a flight or a
   delivery date we do not hold.
 
