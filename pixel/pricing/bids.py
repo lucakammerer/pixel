@@ -89,6 +89,24 @@ VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
+# The desk's list as a table: columns found by their header, in this order, so "Rate id" is no price column.
+DESK_COLUMNS = {
+    "rate_id": r"\brate[ _-]?id\b",
+    "valid": r"\bvalid|\bg(?:ü|ue)ltig",
+    "transit": r"\btransit|\blaufzeit",
+    "code": r"\b(?:code|iata)\b",
+    "name": r"\b(?:airline|carrier|fluggesellschaft)\b",
+    "price": r"\b(?:price|rate|total|all[- ]in|amount|preis)\b",
+}
+# A cell of each column in a row whose cells are one space apart (a pdf table): the header gives their order.
+DESK_CELLS = {
+    "rate_id": r"\S+",
+    "valid": r"\d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2}(?: UTC)?",
+    "transit": r"\d{1,2}(?:\s*days?)?",
+    "code": r"[A-Z0-9]{2,3}",
+    "name": r".+?",
+    "price": rf"(?:{CURRENCY}|[€$£])?\s?{AMOUNT}(?:\s?(?:{CURRENCY}|[€$£]))?",
+}
 VALID_UNTIL = re.compile(r"valid until\s+(\d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2}) UTC")
 DECLINE = re.compile(
     r"\b(?:cannot offer|can't offer|unable to|no capacity|not able to|decline|regret|do not serve|don't serve)\b",
@@ -223,11 +241,52 @@ def parse(message: Message, rfq: Rfq, *, needs_transit: bool = True) -> RateOpti
     return _option(rfq, message, total, currency, fx, days or 0)
 
 
+def _desk_rows(text: str) -> str:
+    """A table of the desk's rates (cells two spaces apart, as `tariffs.agent._lines` joins them) written as the
+    desk's own lines, "- Name (CODE): 952.00 EUR, 4 days, rate_id ..., valid until ... UTC". A row whose cells do
+    not line up with the header is left out."""
+    rows, header, needed = [], None, {"name", "code", "price", "transit", "rate_id"}
+    for line in text.splitlines():
+        cells = [c for c in re.split(r"\s{2,}|\t", line.strip()) if c]
+        found = {}
+        for i, cell in enumerate(cells):
+            key = next((k for k, pattern in DESK_COLUMNS.items() if re.search(pattern, cell, re.IGNORECASE)), None)
+            if key and key not in found:
+                found[key] = i
+        spaced = {}  # one space between the cells: each column's first header word, by its place in the line
+        for key, pattern in DESK_COLUMNS.items():
+            taken = [(s, e) for s, e in spaced.values()]
+            if m := next((m for m in re.finditer(pattern, line, re.IGNORECASE)
+                          if not any(s <= m.start() < e for s, e in taken)), None):  # fmt: skip
+                spaced[key] = (m.start(), m.end())
+        if needed <= found.keys() or (len(cells) == 1 and needed <= spaced.keys()):
+            price_header = cells[found["price"]] if needed <= found.keys() else line[spaced["price"][0] :]
+            currency = re.match(rf"[^()\n]*?\((?:({CURRENCY})|([€$£]))\)", price_header)
+            order = sorted(spaced, key=lambda k: spaced[k][0])
+            row = re.compile(r"^\s*" + r"\s+".join(f"(?P<{k}>{DESK_CELLS[k]})" for k in order) + r"\s*$")
+            header = (len(cells), found, currency and (currency[1] or SYMBOLS[currency[2]]), row)
+            continue
+        if header is None:
+            continue
+        if needed <= header[1].keys() and len(cells) == header[0]:
+            cell = {k: cells[i] for k, i in header[1].items()}
+        elif len(cells) == 1 and (m := header[3].match(line)):
+            cell = m.groupdict()
+        else:
+            continue
+        price = cell["price"] if PRICED.search(cell["price"]) or not header[2] else f"{cell['price']} {header[2]}"
+        transit = cell["transit"] if re.search(r"[a-z]", cell["transit"], re.IGNORECASE) else f"{cell['transit']} days"
+        valid = f", valid until {cell['valid'].removesuffix(' UTC')} UTC" if "valid" in cell else ""
+        rows.append(f"- {cell['name']} ({cell['code']}): {price}, {transit}, rate_id {cell['rate_id']}{valid}")
+    return "\n".join(rows)
+
+
 def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
-    """The rate desk lists the portal's rates for a lane, one airline per line, each with its rate id. Lines
-    without a price (an airline that is not on the portal) are skipped."""
+    """The rate desk lists the portal's rates for a lane, one airline per line, each with its rate id, or as a table
+    in an attachment (`_desk_rows`). Lines without a price (an airline that is not on the portal) are skipped."""
     found = []
-    for line in DESK_LINE.finditer(_own_text(message.body)):
+    text = _own_text(message.body)
+    for line in DESK_LINE.finditer(text if DESK_LINE.search(text) else _desk_rows(text)):
         rest = line["rest"]
         price, transit, rate_id = _price(rest, rfq), _days(rest), RATE_ID.search(rest)
         if not (price and transit and rate_id):

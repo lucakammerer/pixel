@@ -35,6 +35,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    each (`TRACKING_CHANGES`) against the live CRM's shipments: the same shipment, or a question back, never another.
 15. Follow-up answers: every captured request with the customer's answer appended as `read_request` appends it,
    each naming another airport beside the request's (`rfqs/followup-answers.json`): every field stays the request's.
+16. Rate desk answer in an attachment: the captured answer as its own lines or a table (`ratedesk-layouts.json`), in
+   pdf, xlsx, docx, txt and csv, behind a mail that only points to the file: the same airlines, rates and rate ids.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -422,6 +424,50 @@ class Container:
     change: str
     outcome: str  # "right", "unread" (the file held nothing for the code), "model" or "wrong"
     detail: str = ""
+
+
+@dataclass
+class DeskRead:
+    layout: str
+    fmt: str
+    outcome: str  # "right", "none" (no rate read: the desk never goes to the model) or "wrong"
+    detail: str = ""
+
+
+def desk_files() -> list[tuple[str, str, str, bytes]]:
+    """The rate desk's captured answer as an attachment: its own lines, or a table (`ratedesk-layouts.json`), in
+    every format `tools/simulate.py` writes."""
+    data = json.loads((FIXTURES / "ratedesk-layouts.json").read_text())
+    body = json.loads((MAILS / data["fixture"]).read_text())["body"]
+    layouts = {"its own lines": [[line] for line in body.splitlines()], **data["tables"]}
+    # A pdf table as pdfplumber gives it: one text line per row, its cells one space apart. simulate's own pdf puts
+    # each cell at a fixed x, too narrow for six columns: its text overlaps, which no real pdf does, so only the
+    # desk's own lines (one cell per line) are written that way.
+    writers = simulate.WRITERS | {"pdf, rows as lines": lambda rows: simulate._pdf([[" ".join(r)] for r in rows])}
+    return [(layout, fmt, f"portal-rates.{fmt.split(',')[0]}", write(rows))
+            for layout, rows in layouts.items() for fmt, write in writers.items()
+            if fmt != "pdf" or layout == "its own lines"]  # fmt: skip
+
+
+def audit_desk_attachments() -> list[DeskRead]:
+    """`bids.record`'s path for a desk answer whose mail only points to the file: the mail's own text, then every
+    attachment's lines, read by `parse_desk`; against the airlines a person reads from the captured mail."""
+    data = json.loads((FIXTURES / "ratedesk-layouts.json").read_text())
+    raw, req = json.loads((MAILS / data["fixture"]).read_text()), data["request"]
+    rfq = Rfq(session_id=1, message_id=1, customer="bench", origin=req["origin"], destination=req["destination"],
+              weight_kg=D(req["weight_kg"]), volume_cbm=D(req["volume_cbm"]), received_at=NOW, deadline_at=NOW)  # fmt: skip
+    want = [(p["code"], p["total"], p["transit_days"], p["rate_id"]) for p in data["priced"]]
+    results = []
+    for layout, fmt, name, content in desk_files():
+        body = (
+            f"Hello,\n\nthe portal rates for your request are in the attached file ({name}).\n\nBest regards\nRate Desk"
+        )
+        text = "\n".join([bids._own_text(body), *(_readable(name, content) or [])])
+        found = bids.parse_desk(to_message(raw | {"body": text}, "in"), rfq)
+        got = [(o.carrier_code, str(o.total), o.transit_days, o.rate_id) for o in found]
+        outcome = "right" if got == want else "none" if not got else "wrong"
+        results.append(DeskRead(layout, fmt, outcome, "" if outcome == "right" else str(got)))
+    return results
 
 
 def audit_containers() -> list[Container]:
@@ -974,6 +1020,8 @@ def channel_coverage() -> dict[tuple[str, str], int]:
         add("pickup_bid", SUFFIXES.get(Path(offer["file"]).suffix.lower()))
     if offers.get("request_transcript"):
         add("customer_rfq", "audio")
+    for _, _, name, _ in desk_files():
+        add("ratedesk_reply", SUFFIXES.get(Path(name).suffix.lower()))
     for case in [*simulate.document_cases(step=7), *simulate.mail_cases(), *simulate.bid_cases(step=7)]:
         for name, _ in case.files:
             add(case.kind, SUFFIXES.get(Path(name).suffix.lower()))
@@ -1325,6 +1373,15 @@ def main() -> int:
     for r in tracked_wrong:
         print(f"    FAIL {r.change}: {r.case_id} ({r.outcome})")
 
+    desk = audit_desk_attachments()
+    # The desk's own layout must read in every format; a table may go unread, never into other rates.
+    desk_wrong = [d for d in desk if d.outcome == "wrong" or (d.layout == "its own lines" and d.outcome != "right")]
+    print(f"\n[16] Rate desk answer in an attachment: {sum(d.outcome == 'right' for d in desk)}/{len(desk)} read, "
+          f"{sum(d.outcome == 'none' for d in desk)} without a rate")  # fmt: skip
+    for d in desk:
+        print(f"    {'ok' if d.outcome == 'right' else 'FAIL' if d in desk_wrong else 'none':<4} {d.layout}, {d.fmt}"
+              + (f"  ({d.detail})" if d.detail else ""))  # fmt: skip
+
     followups = audit_followups()
     followups_wrong = [f for f in followups if f.outcome == "wrong" and not f.known_gap]
     print(f"\n[15] Follow-up answers: {sum(f.outcome == 'right' for f in followups)}/{len(followups)} keep the "
@@ -1355,6 +1412,7 @@ def main() -> int:
         or containers_wrong
         or tracked_wrong
         or followups_wrong
+        or desk_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")
