@@ -1,7 +1,8 @@
 """The last look at a quote before it leaves: invariants a correct quote always meets, checked by code alone.
 
 Every rule here stands for a way a quote was lost (round 9: weight of the lots, 10: dangerous goods, 15: pickup
-missing, R4/R16: a price the mail does not state). The check is independent of how the quote was built: it reads the
+missing, R4/R16: a price the mail does not state; a weight the mail's own figures do not give: 480 lbs as kg, a
+per-piece weight as the total, a lot left out, the net weight). The check is independent of how the quote was built: it reads the
 customer's mail, the RFQ, the chosen option, the options the session had and the finished text, and re-derives
 what it can on its own instead of trusting the steps before it.
 
@@ -14,7 +15,7 @@ the orchestrator's job, and nothing else gets better by waiting. A BLOCK finding
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from decimal import Decimal, InvalidOperation
 
 from pixel.agents.rfq import compose
@@ -200,17 +201,19 @@ def _weight(q: Quote, request: str, options: list[RateOption], files: tuple[str,
 # --- weight accounting: the priced weight must be one the mail's own figures explain --------------------------------
 #
 # Independent of how `extract` read the mail: every mass figure the customer wrote (kg, lb, t, or a labelled
-# "weight: 480") is collected with what stands next to it (net, per piece, a piece count on the same line). The priced
-# weight passes only when one plain reading of those figures gives it: one figure, one figure times its pieces, the
-# sum of all of them, or the lots added up. Every live misread so far fails this test: "480 lbs" priced as 480 kg,
-# "4 cartons, each 48 kg" as 48 kg, a lot left out of the sum. It makes no model call and changes no price.
+# "weight: 480") is collected with what stands next to it (net, a limit, per piece, the piece count before it, a
+# total). The priced weight passes only when one plain reading of those figures gives it: one figure, one figure
+# times its pieces, the sum of the groups, or the lots added up. Every live misread so far fails this test: "480 lbs"
+# priced as 480 kg, "4 cartons, each 48 kg" as 48 kg, a lot left out of the sum. It makes no model call and changes
+# no price.
 
 MASS_UNIT = r"(?P<unit>kgs?|kilo(?:gram(?:m|s)?|s)?|lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
 MASS = re.compile(
-    rf"(?P<num>\d{{1,3}}(?:[ \u00a0\u202f]\d{{3}})+(?![\d.,])|\d[\d.,']*\d|\d)\s*{MASS_UNIT}(?![\w])", re.IGNORECASE
+    rf"(?P<num>\d{{1,3}}(?:[   ]\d{{3}})+(?![\d.,])|\d[\d.,']*\d|\d)\s*{MASS_UNIT}(?![\w])", re.IGNORECASE
 )
 MASS_LABEL = re.compile(  # "Gross weight: 480" without a unit is read as kg by the rules; read it the same way here
-    r"\b(?:gross\s+weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?\s*:\s*(?P<num>\d[\d.,']*\d|\d)(?![\d.,']*\s*[a-z])",
+    r"\b(?:gross\s+weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?\s*:\s*(?P<num>\d[\d.,']*\d|\d)"
+    r"(?![\d.,']*\s*[a-z])",
     re.IGNORECASE,
 )
 MASS_NET = re.compile(r"\s*(?:kg|kgs)?\s*\)?\s*(?:net|netto|nett)\b|\s*\(\s*net", re.IGNORECASE)
@@ -221,41 +224,63 @@ MASS_EACH_AFTER = re.compile(
     r"|pro\s+(?:stück|palette|karton))\b",
     re.IGNORECASE,
 )
+FILLER = r"(?:\s+(?:approx\.?|approximately|ca\.?|circa|about|around|roughly|is|of|rund|etwa|von))*"
 # Figures that are not the shipment's gross weight: a limit, a capacity, a chargeable or volume weight.
 MASS_OTHER = re.compile(
     r"(?:max(?:imum|\.)?|up\s+to|bis\s+zu|limit|capacity|chargeable|volumetric|volume\s+weight|frachtpflichtig\w*"
-    r"|volumengewicht)\s*(?:weight\s*)?(?:of\s+)?:?\s*$",
+    rf"|volumengewicht)(?:\s+weight)?{FILLER}\s*:?\s*$",
     re.IGNORECASE,
 )
-MASS_COUNT = re.compile(
-    r"(\d+)\s*(?:x\s+)?(?:pcs|pieces?|pallets?|colli|packages?|cartons?|boxes|box|cases?|drums?|crates?|units?|stück"
-    r"|stk|paletten|kartons?|kisten?|fässer)\b",
-    re.IGNORECASE,
+MASS_TOTAL = re.compile(
+    rf"\b(?:total|together|combined|altogether|in\s+total|gesamt|insgesamt|zusammen){FILLER}\s*:?\s*$", re.IGNORECASE
 )
+WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+         "a": 1, "an": 1, "ein": 1, "eine": 1, "einen": 1, "zwei": 2, "drei": 3, "vier": 4, "fünf": 5}  # fmt: skip
+PACKAGES = (
+    r"(?:pcs|pieces?|pallets?|colli|packages?|cartons?|boxes|box|cases?|drums?|crates?|units?|stück|stk|paletten"
+    r"|palette|kartons?|kisten?|fässer|fass)"
+)
+MASS_COUNT = re.compile(rf"\b(\d+|{'|'.join(WORDS)})\s*(?:x\s+)?{PACKAGES}\b", re.IGNORECASE)
+GROUP_GAP = 30  # a count this close before a figure, with no other figure between, makes it a piece group's figure
 MASS_FACTOR = re.compile(r"(\d+)\s*[x×]\s*$", re.IGNORECASE)  # "2 x 300 kg"
 TO_KG = {"lb": Decimal("0.45359237"), "t": Decimal(1000)}
 
 
 @dataclass(frozen=True)
 class Mass:
-    """One mass figure of the mail: its readings in kg (1.234 may be 1234 or 1.234), and the pieces it is for when
-    the mail says it is per piece (None for a figure of the whole lot or shipment; 0 for "each" without a count)."""
+    """One mass figure of the mail: its readings in kg (1.234 may be 1234 or 1.234) and what stands next to it."""
 
     kg: frozenset[Decimal]
-    per_piece: int | None
+    per_piece: tuple[int, ...] | None  # the piece counts it may be for; None for a figure of a whole lot or shipment
     other: bool  # a limit, capacity or chargeable weight: never required to add up, may still match
+    total: bool = False  # "total", "together": the sum of what came before it on its line or in the mail
+    group: bool = False  # a piece count stands right before it: one group of the shipment ("2 pallets, 900 kg")
+    line: int = 0
+
+    def values(self) -> frozenset[Decimal]:
+        if self.per_piece is None:
+            return self.kg
+        return frozenset(kg * n for kg in self.kg for n in self.per_piece)
+
+
+def _count(raw: str) -> int:
+    return int(raw) if raw.isdigit() else WORDS[raw.lower()]
 
 
 def masses(text: str) -> list[Mass]:
     found = []
-    for line in text.splitlines():
+    for number_of_line, line in enumerate(text.splitlines()):
         if len(line) > LINE_MAX * 2:
             continue
         hits = [(m, m.group("unit")) for m in MASS.finditer(line)]
         hits += [(m, "kg") for m in MASS_LABEL.finditer(line) if not any(h.start() <= m.start("num") < h.end()
                                                                          for h, _ in hits)]  # fmt: skip
+        hits.sort(key=lambda h: h[0].start("num"))
+        previous_end = 0
         for m, unit in hits:
             before, after = line[: m.start("num")], line[m.end() :]
+            since = line[previous_end : m.start("num")]  # the words between the last figure and this one
+            previous_end = m.end()
             if MASS_NET.match(after) or MASS_NET_BEFORE.search(before[-20:]):
                 continue
             u = unit.lower()
@@ -265,40 +290,56 @@ def masses(text: str) -> list[Mass]:
             readings = {v * factor for r in parts for t in (True, False) if (v := number(r, t)) is not None and v > 0}
             if not readings:
                 continue
+            counts = [_count(c) for c in MASS_COUNT.findall(before)]
             per_piece = None
             if (f := MASS_FACTOR.search(before)) is not None:
-                per_piece = int(f.group(1))
+                per_piece = (int(f.group(1)),)
             elif MASS_EACH_BEFORE.search(before[-25:]) or MASS_EACH_AFTER.match(after):
-                counts = MASS_COUNT.findall(before)
-                per_piece = int(counts[-1]) if counts else 0
-            found.append(Mass(frozenset(readings), per_piece, bool(MASS_OTHER.search(before[-30:]))))
-    return found
+                per_piece = tuple(sorted(set(counts)))  # nested groups ("2 pallets (8 cartons)"): every count
+            near = since[-GROUP_GAP:]
+            found.append(Mass(frozenset(readings), per_piece, bool(MASS_OTHER.search(before[-40:])),
+                              total=bool(MASS_TOTAL.search(before[-30:])),
+                              group=per_piece is not None or bool(MASS_COUNT.search(near)), line=number_of_line))  # fmt: skip
+    return _one_per_group(found)
+
+
+def _one_per_group(figures: list[Mass]) -> list[Mass]:
+    """A line that gives a group both per piece and as a total ("4 drums, 48 kg each, together 192 kg") names one
+    weight twice: keep the total."""
+    dropped, grouped = set(), set()
+    for i, f in enumerate(figures):
+        same = [j for j, t in enumerate(figures) if t.line == f.line and t.total and j != i and t.values() & f.values()]
+        if f.per_piece is not None and same:
+            dropped.add(i)
+            grouped.update(same)  # the total stands for the group the per-piece figure was
+    return [replace(f, group=True) if i in grouped else f for i, f in enumerate(figures) if i not in dropped]
 
 
 def explanations(figures: list[Mass], listed: bool) -> set[Decimal]:
-    """Every weight in kg a plain reading of the figures gives. A mail that lists its shipment line by line
-    (`listed`) is explained only by the sum of its lines, or by a total line that equals that sum: a single line
-    alone is a lot left out (922 kg priced for 1822 kg). Any other mail by its largest figure (a total stands beside
-    the per-piece and part figures) or the sum of all of them."""
-
-    def values(f: Mass) -> set[Decimal]:
-        if f.per_piece is None:
-            return set(f.kg)
-        return {kg * f.per_piece for kg in f.kg} if f.per_piece else set()
-
-    shipment = [f for f in figures if not f.other and values(f)]
+    """Every weight in kg a plain reading of the figures gives. A mail that gives its shipment group by group (a
+    list, or two or more figures each right after a piece count) is explained only by the sum of the groups or by a
+    total that equals it: one group alone is a lot left out (922 kg priced for 1822 kg). Any other mail by any one of
+    its figures, or the sum of all of them: a figure that is not the shipment ("a 24 t truck", "last month 1200 kg")
+    must not hide the one that is."""
+    shipment = [f for f in figures if not f.other and f.values()]
     if not shipment:
-        return {v for f in figures for v in values(f)}
-    low = [min(values(f)) for f in shipment]  # the usual reading: 1.234 kg is 1234 kg, 1,5 t is 1500 kg
-    high = [max(values(f)) for f in shipment]
-    for i, f in enumerate(shipment):  # a total line: one figure that is the sum of all the others
+        return {v for f in figures for v in f.values()}
+    low = [min(f.values()) for f in shipment]  # the usual reading: 1.234 kg is 1234 kg, 1,5 t is 1500 kg
+    high = [max(f.values()) for f in shipment]
+    for i, f in enumerate(shipment):  # a total: one figure that is the sum of all the others
         rest = sum(low[:i] + low[i + 1 :], Decimal(0))
-        if len(shipment) > 2 and any(_close(v, rest) for v in values(f)):
-            return {v for v in values(f)}
+        if len(shipment) > 2 and any(_close(v, rest) for v in f.values()):
+            return set(f.values())
     out = {sum(low, Decimal(0)), sum(high, Decimal(0))}
-    if not listed or len(shipment) == 1:
-        out |= {max(low), max(high)}
-    return out
+    groups = [f for f in shipment if f.group]  # "4 drums, together 730 kg" is one group's total
+    totals = [v for f in shipment if f.total and not f.group for v in f.values()]  # the whole shipment's
+    if (listed or len(groups) >= 2) and len(shipment) > 1:
+        group_sums = {
+            sum((min(f.values()) for f in groups), Decimal(0)),
+            sum((max(f.values()) for f in groups), Decimal(0)),
+        }
+        return out | (group_sums if groups else set()) | set(totals)
+    return out | {v for f in shipment for v in f.values()}
 
 
 LISTED = re.compile(r"^\s*(?:[-*•]|(?:lot|pos(?:ition)?|item|part|teil|los)\s*\.?\s*\d+\s*[:.)-])", re.IGNORECASE)
@@ -327,7 +368,7 @@ def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[
     if any(_close(weight, w) for w in ways):
         return []
     shown = ", ".join(f"{w:g} kg" for w in sorted(ways)[:6]) if ways else "none"
-    each = [f for f in figures if f.per_piece == 0]
+    each = [f for f in figures if f.per_piece == ()]
     hint = "; a weight per piece without a piece count" if each else ""
     return [Finding("weight_unexplained", BLOCK, f"priced on {weight} kg; the mail's figures give {shown}{hint}")]
 

@@ -318,6 +318,9 @@ def accounting(text: str, weight: str, files: tuple[str, ...] = ()) -> list[str]
         ("FRA to ORD, 1,5 t, 6 cbm", "1.5", "1500"),
         ("FRA to ORD\nLot 1: 2 pallets, 900 kg, 2 cbm\nLot 2: one crate, 922 kg, 1 cbm", "922", "1822"),  # #18
         ("FRA to ORD, 715 kg gross (680 kg net), 3 cbm", "680", "715"),  # the net weight priced
+        ("FRA to ORD, 2 pallets with 900 kg and one crate with 922 kg, 3 cbm", "922", "1822"),  # inline lots
+        ("FRA to ORD, two pallets of 400 kg, three cases at 120 kg, 3 cbm", "400", "520"),
+        ("FRA to ORD\n- 4 drums, 48 kg each, together 192 kg\n- 1 crate, 300 kg", "300", "492"),  # a group twice
     ],
 )
 def test_a_weight_the_mails_figures_do_not_give_blocks(text, misread, right):
@@ -342,6 +345,12 @@ def test_round_9_a_lot_left_out_or_one_lot_alone_blocks():
         ("FRA to ORD, Gewicht: 480, 2 cbm", "480"),
         ("FRA to ORD, 218 kg (480 lbs), 1 cbm", "218"),
         ("FRA to ORD\n- 2 pallets, 380 kg\n- 1 crate, 618 kg\nTotal: 998 kg", "998"),
+        ("FRA to ORD, 700 kg, 3 cbm. We can load a 24 t truck at our dock.", "700"),  # not the shipment
+        ("FRA to ORD, 700 kg, 3 cbm. Last month we sent 1200 kg with you.", "700"),
+        ("FRA to ORD, chargeable weight approx. 900 kg, actual 700 kg", "700"),
+        ("FRA to ORD, 2 pallets (8 cartons), 50 kg each, 1 cbm", "400"),  # nested counts: either reading
+        ("FRA to ORD, 2 pallets (8 cartons), 50 kg each, 1 cbm", "100"),
+        ("FRA to ORD, 2 pallets, 300 kg each, in total 600 kg, 2 cbm", "600"),
     ],
 )
 def test_a_weight_the_figures_give_passes(text, weight):
