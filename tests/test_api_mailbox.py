@@ -21,7 +21,7 @@ def config():
 
 @respx.mock
 async def test_poll_maps_mail_and_sends_the_key_header(config):
-    raw = json.loads((MAILS / "synthetic-bid.json").read_text())
+    raw = json.loads((MAILS / "bid-airline-priced.json").read_text())
     route = respx.get("https://api.test/v1/mailbox/messages").mock(
         return_value=httpx.Response(200, json={"messages": [raw], "next_since_id": raw["id"]})
     )
