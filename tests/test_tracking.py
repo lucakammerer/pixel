@@ -57,6 +57,24 @@ def shipped(ctx, session_id, customer, origin, destination, kg, postcode=None):
     return s
 
 
+def test_described_shipment_matches_rounded_weight(pipe):
+    ours = shipped(pipe.ctx, 1, "buyer@acme.example", "CGN", "ORD", "676.4")
+    shipped(pipe.ctx, 2, "buyer@acme.example", "CGN", "ORD", 900)
+    assert agent.described(pipe.ctx, "CGN to ORD, 676 kg") == [ours]
+
+
+def test_described_shipment_rejects_wrong_weight(pipe):
+    shipped(pipe.ctx, 1, "buyer@acme.example", "CGN", "ORD", 676)
+    found, _ = agent.match(pipe.ctx, "CGN to ORD, 999 kg", "tracking@hackloop.mail")
+    assert found == []
+
+
+def test_described_shipment_rejects_wrong_postcode(pipe):
+    shipped(pipe.ctx, 1, "buyer@acme.example", "CGN", "ORD", 676, postcode="51447")
+    found, _ = agent.match(pipe.ctx, "61018 to ORD, 676 kg for buyer@acme.example", "tracking@hackloop.mail")
+    assert found == []
+
+
 async def test_the_desk_describes_a_door_shipment_by_pickup_postcode_weight_and_company(pipe):
     ours = shipped(pipe.ctx, 1, "lindqvist-medtech@hackloop.mail", "CGN", "ORD", 676, postcode="51447")
     same_destination = shipped(pipe.ctx, 2, "someone-else@hackloop.mail", "FRA", "ORD", 676)
