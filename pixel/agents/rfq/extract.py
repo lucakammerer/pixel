@@ -45,10 +45,17 @@ WEIGHT = (
 )
 POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
+# Round 79: "a total volume of 95.00 cubic feet" (2.69 cbm) was read by the model as 95 cbm.
+FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t\b|cu\.?\s*ft\b|ft3\b|ft³)"
+FT3 = Decimal("0.028316846592")
 VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
-    re.compile(rf"(?i:\b(?:cbm|volume|volumen){TOTAL_WORD}(?:\s*\((?:cbm|m3|m³)\))?)[^\S\n]*:?[^\S\n]*{NUM}"),
+    re.compile(
+        rf"(?i:\b(?:cbm|volume|volumen){TOTAL_WORD}(?:\s*\((?:cbm|m3|m³)\))?)[^\S\n]*:?[^\S\n]*{NUM}"
+        rf"(?![\d.,']|{FEET3})"
+    ),
 )
+CUBIC_FEET = (re.compile(rf"{NUM}{FEET3}"),)
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s])|\s+(?:each|apiece|per|je|pro)\b))?\b",  # "in total": a word, not inches
     re.IGNORECASE,
@@ -315,6 +322,8 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
         return stated * pieces if pieces else None
     if stated is not None:
         return stated
+    if not any(p.search(text) for p in VOLUME) and (feet := _unique(CUBIC_FEET, text, thousands=False)):
+        return feet * FT3
     dims = DIMS.findall(text)
     if len(dims) != 1:
         return None
@@ -583,6 +592,12 @@ def _dims_volume(text: str) -> Decimal | None:
     return volume
 
 
+def _only_with(text: str, value: Decimal, unit: str) -> bool:
+    """The figure stands in the text only before another unit: "1413.17 lb" is no kg, "95.00 cubic feet" no cbm."""
+    found = [m for m in re.finditer(NUM, text) if value in {number(m.group(1), t) for t in (True, False)}]
+    return bool(found) and all(re.match(unit, text[m.end() :]) for m in found)
+
+
 def _written(text: str) -> set[Decimal]:
     """Every number the mail writes, read with and without thousands separators."""
     found = re.findall(NUM, text)
@@ -635,11 +650,13 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
         # A figure the mail does not write is the model's arithmetic ("480 lbs" to kg, dimensions to cbm): code's
         # own reading of the parts replaces it.
         written = _written(text)
-        if (not weight or weight not in written) and (
+        if (not weight or weight not in written or _only_with(text, weight, OTHER_UNIT)) and (
             own := _weight(text, pieces) or (_model_lots(groups) or (None,))[0]
         ):
             weight = own
-        if volume not in written and (own := _volume(text, pieces) or (_model_lots(groups) or (0, None))[1]):
+        if (volume not in written or _only_with(text, volume, FEET3)) and (
+            own := _volume(text, pieces) or (_model_lots(groups) or (0, None))[1]
+        ):
             volume = own
     if not weight:
         missing.append("weight_kg")
