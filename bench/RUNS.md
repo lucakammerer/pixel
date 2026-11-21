@@ -111,6 +111,11 @@ Three lines per scenario: what we tried, what changed, what is next.
   2 x 10. Both tracking answers in between scored, the second (round 22's, "53088 to SGN") already signed "Best
   regards to Regensburg" (#93): the sign-off in kind keeps the +10. Human: PIXEL 0, no award to any team since
   round 16. Next: the human column; no more tracking changes while it scores.
+- 21.11. 18:40 CET: reviewed #99's voice part against today's live slots. Taken: stiff openers that passed `clean`
+  ("Thank you for your inquiry regarding …", "Thank you for the details on your … shipment", rounds 19 and 21) are
+  dropped, the goods line by rule takes their place. Not taken: two-sentence openings (every one today recited the
+  mail), the closing slot (today: "Wishing you a wonderful day ahead.", "I appreciate your trust in our service …"),
+  example lines in the prompt (copied into every quote). Next: the human column.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 

@@ -255,7 +255,10 @@ def test_the_customers_own_closing_is_answered_in_kind():
 def test_an_opening_that_repeats_the_mail_back_is_dropped():
     echo = "I've noted that the delivery to the airport is arranged by you."
     two = "Thanks for the machine parts request. We will take good care of it."
-    for intro in (echo, two):
+    # rounds 19 and 21: stiff openers that passed; the goods line by rule reads better
+    details = "Thank you for the details on your machine parts shipment."
+    regarding = "Thank you for your inquiry regarding the machine parts shipment."
+    for intro in (echo, two, details, regarding):
         assert compose.clean({"intro": intro}, rfq("en"), message(), SIGNER).intro is None
 
 
