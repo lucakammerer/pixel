@@ -7,7 +7,7 @@ What the system *is* and how we build it. How it came to be lives in git.
 | [challenge.md](challenge.md) | The challenge as given: task, what 5U runs, the start kit, scoring, the final |
 | [RULES.md](RULES.md) | Every rule we are scored or judged by, numbered, with source, place in code and status |
 | [calc.md](calc.md) | The arithmetic of a price and how one option is chosen; where the open assumptions live |
-| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Open questions for 5U, how we win, the system, the backlog, the three work packages, the split by KPI |
+| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Open questions for 5U, how we win, the system, the backlog, the three work packages, the five roles |
 
 Each agent documents itself next to its code:
 
