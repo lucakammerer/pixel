@@ -154,7 +154,11 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
 
 
 async def _portal_book(ctx: Context, rate_id: str, team_reference: str) -> PortalBooking:
-    """One retry on a lost connection: the portal answers a repeated booking with 200 and the same booking."""
+    """One retry on a lost connection: the portal answers a repeated booking with 200 and the same booking. A dry
+    run never books: only the live service may, and a dry process meets real acceptances too (a replay, a local
+    run on the real mailbox). It falls through to the booking mail, which the outbox holds."""
+    if ctx.settings.dry_run:
+        raise BookingUnavailable("dry run: no portal booking")
     try:
         return await ctx.portal.book(rate_id, team_reference)
     except httpx.TransportError:

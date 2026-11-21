@@ -26,6 +26,7 @@ import httpx
 
 from pixel.api.client import make_client
 from pixel.api.mailbox import Mailbox, to_message
+from pixel.api.portal import BookingUnavailable
 from pixel.app import build_context
 from pixel.config import settings
 from pixel.contracts import Event, Message
@@ -92,11 +93,15 @@ def _copy(source: str, target: str, raws: list[dict]) -> int:
     return last
 
 
+async def _no_booking(rate_id: str, team_reference: str) -> None:
+    raise BookingUnavailable("replay: no portal booking")
+
+
 async def run(raws: list[dict], online: bool, db: str | None = None, as_live: bool = False) -> list[Event]:
     """The events the mails left behind. `as_live` measures a request the way the live process meets it: our
     mails reach a mailbox that sends nothing, so we wait for answers as we do live; every later mail arrives as
-    long after the first as it did; the replay ends when the first mail is handled. Never with a customer's
-    acceptance among the mails: online it books at the portal."""
+    long after the first as it did; the replay ends when the first mail is handled. A customer's acceptance books
+    nothing: the portal booking is refused and the booking mail goes to the offline mailbox."""
     config = dataclasses.replace(
         settings(), dry_run=not as_live, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3")
     )
@@ -104,6 +109,7 @@ async def run(raws: list[dict], online: bool, db: str | None = None, as_live: bo
     ctx = build_context(config)
     client = make_client(config) if online else httpx.AsyncClient(transport=httpx.MockTransport(_offline))
     ctx.mailbox = OfflineMailbox(client, _files(raws))
+    ctx.portal.book = _no_booking  # `as_live` is not dry, but a replay must never book a replayed acceptance
     if not online:
         ctx.portal.client = ctx.gateway.client = ctx.board.client = client
     first = to_message(raws[0], "in").sent_at

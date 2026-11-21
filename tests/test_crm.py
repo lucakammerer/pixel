@@ -1,3 +1,5 @@
+import dataclasses
+
 """CRM tables and queries. The `pipe` fixture (a fake outbox on the real event log) is shared by the other package C
 tests."""
 
@@ -43,7 +45,8 @@ class Pipeline:
 
 @pytest.fixture
 def pipe(conn, monkeypatch):
-    ctx = Context(settings=settings(), db=conn, mailbox=None, portal=None, gateway=None, board=None)
+    ctx = Context(settings=dataclasses.replace(settings(), dry_run=False), db=conn, mailbox=None, portal=None,
+                  gateway=None, board=None)  # fmt: skip
     p = Pipeline(ctx)
     monkeypatch.setattr(outbox, "send", p.send)
     monkeypatch.setattr(outbox, "send_quote", p.send_quote)
