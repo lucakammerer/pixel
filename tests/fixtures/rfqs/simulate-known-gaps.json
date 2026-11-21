@@ -1,7 +1,1 @@
-[
-  {
-    "family": "mail",
-    "axes": {"volume": "dims_in"},
-    "note": "'24 x 16 x 51 in each' is read in centimetres: `DIMS` takes 'in' as inches only before the end or a sign, and 'each' is a word. Owner: Cost."
-  }
-]
+[]
