@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -195,3 +196,38 @@ def test_a_lot_line_code_cannot_read_leaves_the_whole_list_to_the_model():
     text = "Lot 1: 4 drums, together 730 kg, together 1.68 cbm\nLot 2: 4 cartons, each 48 kg, each 110 x 110 x 52 cm\n"
     assert extract._lots(text + "Lot 3: one crate, 900 kg gross, 2 cbm") is None  # summing two lots: 922 kg, not 1822
     assert extract._lots(text.replace("Lot 1:", "-").replace("Lot 2:", "-") + "- 1x crate, 900 kg, 2 cbm") is None
+
+
+class FixtureMailbox:
+    def __init__(self, raw: dict):
+        self.files = {a["id"]: base64.b64decode(a["content_base64"]) for a in raw["attachments"]}
+
+    async def attachment(self, message_id: int, attachment_id: int) -> bytes:
+        return self.files[attachment_id]
+
+
+@pytest.mark.parametrize(
+    "name, declared",
+    [
+        ("rfq-dg-packing-list.json", ("UN1133, Class 3, Adhesives", "PL_53839.xlsx")),
+        ("rfq-dg-instruction-bullets.json", ("UN1950, Class 2.1, Aerosols, flammable", "packing-spec_33955.pdf")),
+        ("rfq-door-trucking.json", None),
+    ],
+)
+async def test_dangerous_goods_declared_in_an_attachment_count_although_the_mail_says_non_dangerous(name, declared):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / name).read_text())
+    ctx = Context(settings(), None, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    assert await extract.dangerous_goods(ctx, to_message(raw, "in")) == declared
+
+
+async def test_a_dangerous_goods_request_lists_the_documents_as_missing(conn, emitted):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-dg-packing-list.json").read_text())
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    store.save_zones(ctx, [{"zone": zone_of("61391"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.origin, rfq.weight_kg, rfq.missing) == ("AAA", Decimal(715), (extract.DG_DOCUMENTS,))
+    assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
+        (kind, kw["payload"]) for kind, kw in emitted
+    ]

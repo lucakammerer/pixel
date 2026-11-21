@@ -58,3 +58,13 @@ checks each one:
 
 `customer-declines-too-low.json`: the customer's decline of our too-low quote for `rfq-door-three-lots.json`, worded
 "we will not go ahead with it". We booked it anyway: `booking.py` `intent` read "go ahead" as an acceptance.
+
+Requests with dangerous goods, captured with their attachment (`content_base64`, fetched from the API: `--capture`
+stores the mail without the file). The mail says "general cargo, non-dangerous"; the attachment declares them:
+
+- `rfq-dg-packing-list.json`: an xlsx packing specification with "Dangerous goods: UN1133, Class 3, Adhesives".
+  Our quote did not mention it and was rejected (`dg_docs_missing`); `customer-declines-dg.json` is the decline.
+- `rfq-dg-instruction-bullets.json`: a pdf shipper's letter of instruction with "UN1950, Class 2.1, Aerosols,
+  flammable", the request written as labelled bullets. A quote at the normal price that named the goods and asked
+  for the DGD and the MSDS was accepted.
+
