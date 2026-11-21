@@ -1,11 +1,120 @@
 {
-  "note": "Trucker bids of two scored door-to-port requests of 21.11.2026 as (trucker, EUR, pickup hours), and the bid the scorer's best price contained, derived from our accuracy points for that request.",
+  "note": "Trucker bids of four scored door-to-port requests of 21.11.2026 as (trucker, EUR, pickup hours), and the bid the scorer's best price contained, derived from our accuracy points for that request.",
   "requests": [
-    {"bids": [["Spessart Spedition", "299.03", 25], ["Westfalenroute", "266.03", 23], ["Hansekogge Trucking", "245.02", 23],
-              ["Nordlicht Haulage", "152.01", 30], ["Bodenseefracht", "119.01", 30]],
-     "scorer": "Bodenseefracht"},
-    {"bids": [["Elbkante Logistik", "115.98", 29], ["Westfalenroute", "187.97", 11], ["Maintal Transport Logistik", "192.97", 13],
-              ["Bodenseefracht", "226.96", 12]],
-     "scorer": "Westfalenroute"}
+    {
+      "bids": [
+        [
+          "Spessart Spedition",
+          "299.03",
+          25
+        ],
+        [
+          "Westfalenroute",
+          "266.03",
+          23
+        ],
+        [
+          "Hansekogge Trucking",
+          "245.02",
+          23
+        ],
+        [
+          "Nordlicht Haulage",
+          "152.01",
+          30
+        ],
+        [
+          "Bodenseefracht",
+          "119.01",
+          30
+        ]
+      ],
+      "scorer": "Bodenseefracht"
+    },
+    {
+      "bids": [
+        [
+          "Elbkante Logistik",
+          "115.98",
+          29
+        ],
+        [
+          "Westfalenroute",
+          "187.97",
+          11
+        ],
+        [
+          "Maintal Transport Logistik",
+          "192.97",
+          13
+        ],
+        [
+          "Bodenseefracht",
+          "226.96",
+          12
+        ]
+      ],
+      "scorer": "Westfalenroute"
+    },
+    {
+      "bids": [
+        [
+          "Odenwald Cargo",
+          "119.30",
+          26
+        ],
+        [
+          "Spessart Spedition",
+          "120.30",
+          28
+        ],
+        [
+          "Domblick Kurierdienst",
+          "166.50",
+          26
+        ],
+        [
+          "Waldrand Transporte",
+          "193.60",
+          18
+        ],
+        [
+          "Maintal Transport Logistik",
+          "220.60",
+          14
+        ]
+      ],
+      "scorer": "Maintal Transport Logistik"
+    },
+    {
+      "bids": [
+        [
+          "Alpenblick Logistik",
+          "122.76",
+          30
+        ],
+        [
+          "Maintal Transport Logistik",
+          "190.33",
+          26
+        ],
+        [
+          "Hansekogge Trucking",
+          "201.52",
+          19
+        ],
+        [
+          "Flinkwagen Logistik",
+          "273.28",
+          19
+        ],
+        [
+          "Neckarstrom Kurier",
+          "348.85",
+          11
+        ]
+      ],
+      "scorer": "Hansekogge Trucking"
+    }
   ]
 }

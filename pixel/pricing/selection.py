@@ -31,17 +31,19 @@ def _scaled(value: Decimal, low: Decimal, high: Decimal) -> Decimal:
 # What "balanced" can mean, as a cost per value (lower is better). The first is used until scored requests say
 # otherwise: `core/feedback.py` `pickup_rule` counts which rule picks the trucker the scorer picked.
 RULES: dict[str, Callable[[Decimal, list[Decimal]], Decimal]] = {
+    "times_the_best": lambda value, values: value / min(values) if min(values) else value,
     "share_of_best": lambda value, values: -_share(min(values), value),
     "share_of_worst": lambda value, values: value / max(values) if max(values) else Decimal(0),
     "min_max": lambda value, values: _scaled(value, min(values), max(values)),
 }
+DEFAULT_RULE = next(iter(RULES))
 
 
 def balanced(
-    bids: list[RateOption], speed: Callable[[RateOption], int] = lambda b: b.transit_days, rule: str = "share_of_best"
+    bids: list[RateOption], speed: Callable[[RateOption], int] = lambda b: b.transit_days, rule: str = DEFAULT_RULE
 ) -> RateOption:
     """Among carrier bids: price and speed weigh 50/50 (R15), compared by one of `RULES`. `speed` is transit days
-    for an airline, pickup hours for a trucker. Why share-of-best is the default: docs/calc.md."""
+    for an airline, pickup hours for a trucker. Why times-the-best is the default: docs/calc.md."""
     cost = RULES[rule]
     prices = [b.total_eur for b in bids]
     speeds = [Decimal(speed(b)) for b in bids]

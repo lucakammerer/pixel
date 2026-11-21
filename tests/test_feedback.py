@@ -8,7 +8,7 @@ from pixel.config import settings
 from pixel.contracts import RateOption, Source
 from pixel.core import db, events, feedback
 from pixel.core.context import Context
-from pixel.pricing import calc
+from pixel.pricing import calc, selection
 
 ROUND = json.loads((Path(__file__).parent / "fixtures" / "feedback-rounds.json").read_text())
 T0 = "2026-11-21T15:19:13+00:00"
@@ -78,7 +78,7 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
         emit(ctx, "option.found", "pricing", session_id=7, payload={"option": o.model_dump(mode="json")})
     emit(ctx, "quote.drafted", "rfq", session_id=7, payload={"option": quoted.model_dump(mode="json")})
 
-    assert await feedback.once(ctx) == 0 and feedback.pickup_rule(ctx) == "share_of_best"
+    assert await feedback.once(ctx) == 0 and feedback.pickup_rule(ctx) == selection.DEFAULT_RULE
     assert await feedback.once(ctx) == 0  # nothing new
     assert await feedback.once(ctx) == 1
     kind, session_id, payload = stored[-1]
@@ -89,7 +89,7 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
         "40.62",
     )
     assert json.loads(db.get(conn, feedback.STATE))["verdicts"] == {"4": "accepted"}
-    assert feedback.pickup_rule(ctx) in ("share_of_best", "share_of_worst")  # min-max takes the same trucker here
+    assert feedback.pickup_rule(ctx) == selection.DEFAULT_RULE  # every rule takes this trucker: no lead, no change
 
 
 async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch):
@@ -146,4 +146,4 @@ def test_one_misread_round_does_not_change_the_pickup_rule(conn):
     for session_id in (1, 2):  # the scorer took A, which only min-max picks
         conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES ('t', ?, 'feedback', 'b', ?)",
                      (session_id, json.dumps({"trucker": "A"})))  # fmt: skip
-        assert feedback.pickup_rule(ctx) == ("share_of_best" if session_id == 1 else "min_max")
+        assert feedback.pickup_rule(ctx) == (selection.DEFAULT_RULE if session_id == 1 else "min_max")
