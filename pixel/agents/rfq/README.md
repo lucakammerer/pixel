@@ -62,7 +62,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
   own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
   transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
-  when they ask for the earliest departure, one air
+  when they ask for the earliest departure, the pickup date said outright when they ask for the earliest pickup
+  (`PICKUP_ASK`), one air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
   `closing`, on `PIXEL_MODEL_PROSE` when set, plus `hook`: the phrase of the customer's mail the opening answers (a
