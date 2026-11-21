@@ -121,6 +121,13 @@ def test_an_answer_naming_another_airport_changes_no_field_of_the_request():
     assert [f"{f.answer}: {f.fixture}" for f in reads if f.known_gap and f.outcome != "wrong"] == []
 
 
+def test_the_rate_desk_answer_in_an_attachment_gives_the_same_rates():
+    """The desk never goes to the model: its rates in a file it writes as lines or as a table must be read."""
+    reads = bench.audit_desk_attachments()
+    assert reads
+    assert [f"{d.layout}, {d.fmt}: {d.detail}" for d in reads if d.outcome != "right"] == []
+
+
 def test_spreadsheet_layout_changes_parse_the_same_or_are_refused():
     changes = bench.audit_xlsx_changes()
     assert any(v.outcome == "parsed right" for v in changes)
