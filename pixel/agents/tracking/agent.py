@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import NamedTuple
 
 from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, ready_date
@@ -10,6 +11,7 @@ from pixel.contracts import Message, Shipment
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.crm import quotes, shipments
+from pixel.pricing import store
 
 REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -64,31 +66,35 @@ def greeting(text: str) -> tuple[str, str]:
 def described(ctx: Context, text: str) -> list[Shipment]:
     """The tracking desk names no reference. It describes the shipment the way the customer asked for it: the origin
     airport, or the pickup postcode of a door-to-port request, "to" the destination, the gross weight and the
-    customer's company name. Each of these narrows the shipments to that destination; one of them must fit."""
+    customer's company name. The origin and weight must agree, and recognized company names narrow the results."""
     lane = DESCRIBED.search(text)
     if not lane:
         return []
     origin, postcode, destination = lane.groups()
     weight = WEIGHT.search(text)
     kg = number(weight.group(1)) if weight else None
-    words = text.lower()
+    words = set(re.findall(r"[a-z0-9]+", text.lower()))
+    pickup_airport = store.airport_of(ctx, postcode[:2]) if postcode else None
 
     def from_there(s: Shipment) -> bool:
         if origin:
             return s.origin == origin
         quote = quotes.for_session(ctx, s.session_id)
-        return bool(quote and quote.rfq.pickup_postcode == postcode)
+        if quote and quote.rfq.pickup_postcode:
+            return quote.rfq.pickup_postcode == postcode
+        return s.origin == pickup_airport
 
     def company(s: Shipment) -> bool:
         tokens = [t for t in re.split(r"[^a-z0-9]+", s.customer.split("@")[0].lower()) if len(t) > 2]
-        return bool(tokens) and all(t in words for t in tokens)
+        return bool(tokens) and words.issuperset(tokens)
 
-    found, fits = shipments.find(ctx, destination=destination), False
-    for check in (from_there, lambda s: kg is not None and s.weight_kg == kg, company):
-        narrowed = [s for s in found if check(s)]
-        if narrowed:
-            found, fits = narrowed, True
-    return found if fits else []
+    found = shipments.find(ctx, destination=destination)
+    named = [s for s in found if company(s)]
+    found = [s for s in named or found if from_there(s)]
+    if kg is not None:
+        tolerance = max(Decimal(1), kg * Decimal("0.01"))
+        found = [s for s in found if abs(s.weight_kg - kg) <= tolerance]
+    return found
 
 
 def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | None]:
@@ -98,9 +104,9 @@ def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | N
         found = shipments.find(ctx, reference=reference)
         if found:
             return found, reference
-    found = described(ctx, text)
-    if found:
-        return found, None
+    if DESCRIBED.search(text):
+        found = described(ctx, text)
+        return found, references[0] if references and not found else None
     customers = [e for e in EMAIL.findall(text) if e.lower() != sender.lower()]
     lane = LANE.search(text)
     origin, destination = lane.groups() if lane else (None, None)
