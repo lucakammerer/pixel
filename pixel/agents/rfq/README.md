@@ -172,7 +172,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "Bruttogewicht gesamt (kg)", "Volume: 7.25 cbm"), the totals of its packing table (`_table_totals`: sum of
   weights, sum of L × W × H × pieces), or both. A weight column marked per piece ("per pc", "each", "/pc", "unit",
   "je Stück") is multiplied by the row's pieces; a weight column in lb is converted; with no unit or a second
-  weight column the table gives no weight. A document whose totals and table disagree settles nothing: the mail
+  weight column the table gives no weight. A net or tare weight ("Net weight", "Nettogewicht", "Tare weight"), as a
+  line or a column, is never the gross weight and is left out. A document whose totals and table disagree settles nothing: the mail
   stands. Several documents count only when they agree. A table header ending in "Gross weight (kg)" ran into the
   first row ('5' kg, volume 0): a labelled figure never comes from the next line, and the totals are read off the
   text around the table. A document that names only another destination but carries the mail's own weight (and
