@@ -70,6 +70,11 @@ Three lines per scenario: what we tried, what changed, what is next.
   asked (rounds 3 and 7 asked, we gave the arrival only); changed: wording only, the model's opening still wins
   when it passes `clean`; next: the `human` column, then the booking mails in the same kind (#71 covers the quote
   only) and a German request to read the German wording against.
+- 21.11. 18:20 CET: rounds 15 to 17 rejected (`too_low`, `too_high`, `too_low`: the pickup from "our warehouse"),
+  so no mail of ours stood before the jury; board unchanged for us. Tried the booking mails greeted and signed as
+  the quote (`booking._tell_customer`: register, the name by rule when the model gave none, the sign-off to their
+  town or as "Cheers"); changed: wording only, no wish returned a second time in one thread; next: the first
+  accepted round with #71 and #72 live.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 

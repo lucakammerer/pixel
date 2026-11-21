@@ -233,24 +233,20 @@ def _save(ctx: Context, booking: Booking, status: str) -> None:
 
 CUSTOMER = {
     "en": {
-        "hello_name": "Hello {name},", "hello": "Hello,",
         "booked": "Thanks for the go-ahead. Your shipment from {origin} to {destination} ({weight} kg) is now booked "
                   "with {airline} at {price} {currency} all-in.\n\nOur reference for you is {reference}, the "
                   "airline's is {airline_reference}. I'll let you know as soon as {airline} confirms.",
         "confirmed": "Good news: {airline} has confirmed your booking {airline_reference} from {origin} to "
                      "{destination} ({weight} kg).\n\nYour reference with us stays {reference}. If you'd like "
                      "to know where your shipment is, just ask.",
-        "bye": "Best regards,\n{signer}\n" + compose.COMPANY,
     },
     "de": {
-        "hello_name": "Hallo {name},", "hello": "Guten Tag,",
         "booked": "Danke für Ihre Zusage. Ihre Sendung von {origin} nach {destination} ({weight} kg) ist jetzt bei "
                   "{airline} gebucht, zu {price} {currency} all-in.\n\nUnsere Referenz für Sie ist {reference}, "
                   "die der Airline {airline_reference}. Ich melde mich, sobald {airline} bestätigt.",
         "confirmed": "Gute Nachricht: {airline} hat Ihre Buchung {airline_reference} von {origin} nach "
                      "{destination} ({weight} kg) bestätigt.\n\nIhre Referenz bei uns bleibt {reference}. Wenn "
                      "Sie wissen möchten, wo Ihre Sendung gerade ist, fragen Sie einfach.",
-        "bye": "Viele Grüße\n{signer}\n" + compose.COMPANY,
     },
 }  # fmt: skip
 
@@ -260,16 +256,19 @@ def _lang(quote: Quote) -> str:
 
 
 async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what: str, **facts: str) -> None:
-    """A short mail in the customer's language, in the quote's thread, signed by the same person (R24, R31).
-    Numbers are formatted by code; no model call, so the quote's spend stays one call."""
+    """A short mail in the customer's language, in the quote's thread, greeted and signed as the quote was (R24,
+    R31). Numbers are formatted by code; no model call, so the quote's spend stays one call."""
     lang = _lang(quote)
-    t = CUSTOMER[lang]
+    t, frame = CUSTOMER[lang], compose.TEXT[lang]
     prose = compose.stored(ctx, quote.session_id)
-    name = prose.first_name if prose else None
+    request = compose.own_words(compose.customer_body(ctx, quote.rfq.message_id))
+    tone = compose.register(request)
+    name = (prose.first_name if prose else None) or compose.signed_name(request, ctx.settings.signer)
+    bye = compose.in_kind(request, lang, tone, name)[1]
     text = t[what].format(origin=quote.option.origin, destination=quote.option.destination,
                           weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
-    body = "\n\n".join([t["hello_name"].format(name=name) if name else t["hello"], text,
-                          t["bye"].format(signer=ctx.settings.signer)])  # fmt: skip
+    body = "\n\n".join([frame["hello_name"][tone].format(name=name) if name else frame["hello"], text,
+                          f"{bye}\n{ctx.settings.signer}\n{compose.COMPANY}"])  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:
         await outbox.send(
