@@ -236,3 +236,10 @@ What follows:
   open, Owner accuracy: a minimum written `1,250.00` or a remarks column with a number drop the sheet (text sheets
   have no model reader), a minimum on freight plus surcharges has no field, a USD sheet is not priced. Next: the
   routing and customer-reply axes as one-factor grids.
+- 21.11. 22:20, unseen-shape cycle 2 (live to round 61, mail 16738): rounds 58-61 accepted and read the same today;
+  their shapes are known (an old request quoted below, a document that agrees and declares dangerous goods the mail
+  calls non-dangerous). Generated: routing, every captured request with one change (reply or forward prefixes, an
+  upper-case sender, city names for codes, 'kilograms', a tariff-like attachment name): 298 cases, 0 routed away
+  from a request. Customer replies, the 136 live ones with our quote quoted below: an Outlook or German header
+  without an address let our 'we will book it for you' read as an acceptance (27 replies), and sent requests with
+  an old request below to the model; fixed in `extract.HISTORY`. Next: tracking questions and bids by the same grid.
