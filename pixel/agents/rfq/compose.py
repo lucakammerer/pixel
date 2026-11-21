@@ -26,20 +26,8 @@ TEXT = {
         "subject": "Quote {origin} to {destination}, {weight} kg",
         "hello_name": {"formal": "Dear {name},", "neutral": "Hello {name},", "casual": "Hi {name},"},
         "hello": "Hello,",
-        "intro": (
-            "Thanks for your request, happy to help with this one.",
-            "Thanks for the enquiry.",
-            "Thank you for getting in touch.",
-            "Many thanks for your request.",
-        ),
         # the opening line after it begins with a thank-you, so this one does not
         "well_back": ("All good here, and I hope yours is too!", "Going well here!", "All well on our side!"),
-        "intro_goods": (
-            "Thanks for your request, happy to help with the {goods}.",
-            "Thanks for the enquiry about the {goods}.",
-            "Thank you for getting in touch about the {goods}.",
-            "Many thanks for your request for the {goods}.",
-        ),
         "core": {
             "cheapest": (
                 (
@@ -156,11 +144,6 @@ TEXT = {
         "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
         "well_back": ("Hier läuft alles gut, und ich hoffe, bei Ihnen auch.", "Bei uns ist alles bestens."),
-        "intro": (
-            "Vielen Dank für Ihre Anfrage, darum kümmere ich mich gerne.",
-            "Danke für Ihre Anfrage.",
-            "Vielen Dank für Ihre Nachricht.",
-        ),
         "core": {
             "cheapest": (
                 (
@@ -269,25 +252,34 @@ TEXT = {
 }
 
 PROSE_SYSTEM = (
-    "You are an air export coordinator at a freight forwarder, replying by mail to a customer who asked for an air "
-    "freight quote. Code writes the greeting, the price, the routing and the sign-off; you write only three short "
-    "pieces, in the language with ISO code {language}, matching the customer's tone (German: always formal Sie). "
+    "You are an air export clerk at a freight forwarder, answering a customer's mail that asks for an air freight "
+    "quote. Code writes the greeting, the answer to 'hope you are well', the price, routing, dates, what the price "
+    "covers, the booking line and the sign-off. You write four fields in the language with ISO code {language}, "
+    "in the customer's tone (German: always formal Sie). "
     "first_name: the customer's first name only if they signed the mail with it, else null. "
-    "intro: ONE short sentence, at most fifteen words, the way a colleague opens a reply: a thank-you with one "
-    "specific word about the goods or the urgency. Never repeat or summarise their mail back to them, and never "
-    "say that you noted, read or received their details. "
+    "hook: copied word for word from the customer's mail, the one phrase a person would react to before giving "
+    "the price: a friendly remark of theirs (thanks for checking, thanks for your help, something they attached, a "
+    "word about their buyer or their own business) or the reason they give for the request (it is urgent, it is "
+    "an import for their buyer). Never 'hope your week is going well', a formal thank-you line, their sign-off or "
+    "their wish for the day, and never a plain fact such as goods, weight, pieces, route or a date. null when the "
+    "mail has none, which is common. "
+    "intro: null when hook is null; else one short sentence, at most ten plain words, reacting to the hook the way "
+    "a colleague would, for example: thanks for checking -> no trouble at all; an attachment -> it helped; their "
+    "buyer is importing -> glad to help them get it there. Write your own words, never the hook's. Never announce "
+    "the offer, never thank them for the request, inquiry, mail or details, never say you noted, read, received or "
+    "understood anything, and never begin the way one of the openings under Our notes begins. "
     "closing: always null. "
-    "Never write digits, numbers, prices, currencies, dates, weekdays, months, airlines, airports, cities or "
-    "countries. Do not greet and do not sign. Sound like a person, not a template: no 'we are pleased to', no "
-    'exclamation marks. Answer as JSON {{"first_name": ..., "intro": ..., "closing": ...}}.'
+    "Never write digits, numbers, prices, currencies, dates, weekdays, months, airlines, airports, cities, "
+    "countries, or names of people or companies. No 'we are pleased to', no 'here is', no exclamation marks. "
+    'Answer as JSON {{"first_name": ..., "hook": ..., "intro": ..., "closing": ...}}.'
 )
 NULLABLE = {"type": ["string", "null"]}
 PROSE_FIELDS = {"first_name": NULLABLE, "intro": NULLABLE, "closing": NULLABLE}
 PROSE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "properties": PROSE_FIELDS,
-    "required": list(PROSE_FIELDS),
+    "properties": {**PROSE_FIELDS, "hook": NULLABLE},
+    "required": [*PROSE_FIELDS, "hook"],
 }
 
 DIGIT = re.compile(r"\d")
@@ -303,11 +295,21 @@ FRAME = re.compile(r"^\s*(hello|hi|dear|hallo|guten tag|sehr geehrte)\b|\b(best 
                    r"freundliche grüße|mit freundlichen)\b", re.IGNORECASE)  # fmt: skip
 INFORMAL_DE = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer|eure\w*)\b", re.IGNORECASE)
 NAME = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]{1,19}")
-LIMITS = {"intro": 140, "closing": 140}
-# An opening that hands the customer's mail back to them, or runs past one sentence, reads like a machine.
-ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|(?:inquiry|enquiry|"
-                  r"request) regarding|the details (?:on|of) your|bezüglich|sorgfältig|zur Kenntnis)\b|[.!?]\s+\S",
-                  re.IGNORECASE)  # fmt: skip
+LIMITS = {"intro": 100, "closing": 140}
+WORDS_MAX = 14
+# An opening that hands the customer's mail back to them, thanks for the request itself, announces the offer or
+# runs past one sentence reads like a template: no opening reads better (rounds 1 to 25, tests/fixtures/openings.json).
+ECHO = re.compile(
+    r"\b(?:noted|providing|provided|received|detailed|details|carefully|regarding|inquiry|enquiry|reaching out|"
+    r"(?:get|getting) in touch|pleased to|happy to assist|rest assured|we understand|i understand|"
+    r"(?:thanks?|thank you)(?: so much| very much| a lot)? for (?:your|the|this) (?:request|quote|quotation|mail|"
+    r"e-?mail|message|note|interest)|many thanks|cheapest|fastest|all-in|weight|volume|pick-?up|truck\w*|"
+    r"deliver\w*|following|as requested|here is|here's|please find|as follows|previous|offer\w*|provide|options?|"
+    r"rates?|prices?|quote|quotation|anfrage|bezüglich|sorgfältig|zur kenntnis|behilflich|günstigst\w*|"
+    r"schnellst\w*|abholung|gewicht|volumen|anbei|wie gewünscht|angebot)\b|[.!?]\s+\S",
+    re.IGNORECASE,
+)
+CAPITAL = re.compile(r"\b[A-ZÄÖÜ][\wäöüß-]+")
 FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
 CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
@@ -526,17 +528,12 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         origin=option.origin, destination=option.destination, carrier=option.carrier,
         total=money(option.total), currency=option.currency, transit=_transit(option, t),
     )  # fmt: skip
-    goods = goods_of(request) if "intro_goods" in t else None
-    if prose.intro and not air_only:
-        intro = _sentence(prose.intro)
-    elif goods:
-        intro = pick(t["intro_goods"]).format(goods=goods)
-    else:
-        intro = pick(t["intro"])
+    # the model's opening or none: a stock opening is the template the jury reads past (R31)
+    intro = [_sentence(prose.intro)] if prose.intro and not air_only else []
     if WELL.search(request):
-        intro = f"{pick(t['well_back'])} {intro}"
+        intro.insert(0, pick(t["well_back"]))
     site = "warehouse" if WAREHOUSE.search(request) else "site"
-    offer = [intro, price_line, basis.format(trucker=option.trucker, site=site)]
+    offer = [*intro, price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
     book = [pick(t["valid"]).format(until=_until(rfq, option, t))] if option.valid_until else []
@@ -637,10 +634,32 @@ def _banned(ctx: Context | None) -> set[str]:
     return {r["name"].casefold() for r in ctx.db.execute("SELECT name FROM carriers").fetchall() if r["name"]}
 
 
-def clean(raw: dict, rfq: Rfq, message: Message, signer: str, banned: set[str] = frozenset()) -> Prose:
+def _opening_ok(text: str, hook: str | None, request: str, lang: str, earlier: tuple[str, ...]) -> bool:
+    """The opening answers a phrase that stands in the mail (`hook`), has at most WORDS_MAX words, no name or place
+    taken from the mail (English: a capitalised word the request has too), and does not begin as one we already
+    sent this customer."""
+    flat = " ".join(request.split()).casefold()
+    if not hook or len(hook) < 8 or " ".join(hook.split()).casefold() not in flat or WELL.search(hook):
+        return False
+    words = text.split()
+    if len(words) > WORDS_MAX:
+        return False
+    if lang == "en" and (set(CAPITAL.findall(" ".join(words[1:]))) - {"I"}) & set(CAPITAL.findall(request)):
+        return False
+    return _start(text) not in {_start(e) for e in earlier}
+
+
+def _start(text: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"[^\W\d_]+", text.casefold())[:2])
+
+
+def clean(
+    raw: dict, rfq: Rfq, message: Message, signer: str, banned: set[str] = frozenset(), earlier: tuple[str, ...] = ()
+) -> Prose:
     """Each slot that fails a check becomes None: digits, three-letter codes, currency symbols, URLs, dates, a
-    carrier's name, a greeting or sign-off, more than its length, another language, German `du`. The first name
-    must stand in the customer's mail."""
+    carrier's name, a greeting or sign-off, more than its length, another language, German `du`; for the opening
+    also a filler or an echo of the mail (`ECHO`), a hook that is not in the mail, a name or place, the first words
+    of an opening in `earlier`. The first name must stand in the customer's mail."""
     lang = language_of(rfq)
     raw = raw if isinstance(raw, dict) else {}
     banned = set(banned) | {w.casefold() for w in signer.split() if len(w) > 2}
@@ -650,25 +669,54 @@ def clean(raw: dict, rfq: Rfq, message: Message, signer: str, banned: set[str] =
         return " ".join(value.split()) if isinstance(value, str) and value.strip() else None
 
     intro, closing = text("intro"), text("closing")
+    request = own_words(message.body or "")
+    opening = (
+        intro
+        and _sentence_ok(intro, "intro", lang, banned)
+        and _opening_ok(intro, text("hook"), request, lang, earlier)
+    )
     return Prose(
         first_name=_first_name(text("first_name"), message, signer),
-        intro=intro if intro and _sentence_ok(intro, "intro", lang, banned) else None,
+        intro=intro if opening else None,
         closing=closing if closing and _sentence_ok(closing, "closing", lang, banned) else None,
     )
 
 
-def adopt(ctx: Context, rfq: Rfq, message: Message, raw: dict) -> Prose:
-    """Cleans the model's slots and stores them as `quote.prose`, so the fallback quote reads human too. Never
-    raises: on any error the quote goes out with the fixed phrases."""
+def _history(ctx: Context, rfq: Rfq) -> tuple[str, ...]:
+    """The openings we wrote this customer before."""
     try:
-        prose = clean(raw, rfq, message, ctx.settings.signer, _banned(ctx))
+        rows = ctx.db.execute(
+            "SELECT e.payload FROM events e JOIN sessions s ON s.id = e.session_id"
+            " WHERE e.kind = 'quote.prose' AND s.customer = ? AND e.session_id != ? ORDER BY e.id",
+            (rfq.customer, rfq.session_id),
+        ).fetchall()
+        openings = (json.loads(r["payload"]).get("intro") for r in rows)
+        return tuple(o for o in openings if isinstance(o, str) and o)
+    except Exception:  # noqa: BLE001  without the history the opening is only checked against the mail
+        return ()
+
+
+def adopt(ctx: Context, rfq: Rfq, message: Message, raw: dict) -> Prose:
+    """Cleans the model's slots and stores them as `quote.prose`, so the fallback quote reads human too; a dropped
+    opening is kept in the event as `rejected`, to tune the prompt. Never raises: on any error the quote goes out
+    without the slots."""
+    try:
+        prose = clean(raw, rfq, message, ctx.settings.signer, _banned(ctx), _history(ctx, rfq))
         dropped = [k for k, v in asdict(prose).items() if isinstance(raw, dict) and raw.get(k) and not v]
-        events.emit(ctx, "quote.prose", "rfq", session_id=rfq.session_id, payload={**asdict(prose), "dropped": dropped})
+        rejected = raw.get("intro") if "intro" in dropped else None
+        events.emit(ctx, "quote.prose", "rfq", session_id=rfq.session_id,
+                    payload={**asdict(prose), "dropped": dropped, "rejected": rejected})  # fmt: skip
     except Exception as exc:  # noqa: BLE001
         events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
                     payload={"where": "prose.adopt", "error": type(exc).__name__})  # fmt: skip
         return Prose()
     return prose
+
+
+def notes(earlier: tuple[str, ...]) -> str:
+    """The openings we already sent this customer, so the next one begins differently."""
+    sent = "".join(f"\n- {o}" for o in earlier[-5:])
+    return f"Our notes: openings we sent this customer before:{sent}" if sent else ""
 
 
 async def prose(ctx: Context, rfq: Rfq, message: Message) -> Prose | None:
@@ -679,7 +727,7 @@ async def prose(ctx: Context, rfq: Rfq, message: Message) -> Prose | None:
             ctx,
             purpose="quote.prose",
             system=PROSE_SYSTEM.format(language=language_of(rfq)),
-            user=f"Subject: {message.subject}\n\n{message.body}"[:1500],
+            user=f"Subject: {message.subject}\n\n{own_words(message.body)[:1500]}\n\n{notes(_history(ctx, rfq))}",
             schema=PROSE_SCHEMA,
             session_id=rfq.session_id,
             max_output_tokens=150,
