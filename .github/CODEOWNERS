@@ -1,0 +1,21 @@
+# Owners review every change to their files. Work split: docs/IMPLEMENTATION_PLAN.md §7.
+# Until the KPI owners are named, every section points to the default owner: replace the handle per section.
+
+# Shared (default for everything not listed below): crm, ui, booking, tracking, contracts, docs, tools
+*                                    @lucakammerer
+
+# Accuracy
+/pixel/pricing/                      @lucakammerer
+/pixel/agents/tariffs/               @lucakammerer
+/tests/                              @lucakammerer
+
+# Speed
+/pixel/core/                         @lucakammerer
+/pixel/agents/router/                @lucakammerer
+/pixel/api/                          @lucakammerer
+/pixel/app.py                        @lucakammerer
+
+# Cost
+/pixel/llm.py                        @lucakammerer
+/pixel/agents/rfq/extract.py         @lucakammerer
+/pixel/agents/rfq/compose.py         @lucakammerer
