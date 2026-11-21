@@ -194,7 +194,7 @@ def answer(
 
 def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Detail]:
     """Ready date and pickup postcode of each shipment from the request it was quoted for; the question's own
-    ready date when it names exactly one shipment."""
+    ready date and postcode when it names exactly one shipment."""
     out = {}
     for s in found[:5]:
         quote = quotes.for_session(ctx, s.session_id)
@@ -202,7 +202,11 @@ def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Det
         ready = ready_date(row["body"]) if row else None
         if ready is None and len(found) == 1:
             ready = ready_date(question)
-        out[s.id] = Detail(ready, quote.rfq.pickup_postcode if quote and quote.rfq.door_pickup else None)
+        postcode = quote.rfq.pickup_postcode if quote and quote.rfq.door_pickup else None
+        named = DESCRIBED.search(question)
+        if postcode and len(found) == 1 and named and named.group(2):
+            postcode = named.group(2)  # the asker's own postcode, where ours was filled in from an earlier site
+        out[s.id] = Detail(ready, postcode)
     return out
 
 

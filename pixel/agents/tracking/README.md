@@ -23,7 +23,8 @@ precedence over a matching zone from a quote whose postcode was missing. Exact w
 rounded matches within 1 kg or 1%, whichever is greater.
 
 With one match, `answer` gives the route, weight, booking status, airline and available reference and transit
-details. `details` uses the ready date to calculate the arrival when that date is available. The record beneath
+details. The route names the pickup postcode the question asks about, where ours was filled in from an earlier site.
+`details` uses the ready date to calculate the arrival when that date is available. The record beneath
 the prose preserves the fields used by the tracking scorer. If there are several plausible shipments or none,
 the reply asks for a booking reference and includes no shipment records. The reply goes through the outbox
 in the inbound thread and uses no gateway call.

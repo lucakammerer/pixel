@@ -125,3 +125,13 @@ def test_a_remembered_site_or_a_replaced_origin_still_finds_the_shipment(pipe):
     assert agent.described(pipe.ctx, "Lindqvist Medtech GmbH | 51447 to ORD | 676 kg") == [site]
     zone = shipped(pipe.ctx, 2, "auer-maschinenbau@hackloop.mail", "DUS", "PEK", 1081)
     assert agent.described(pipe.ctx, "Auer Maschinenbau GmbH, CGN to PEK, 1081 kg") == [zone]
+
+
+async def test_the_answer_names_the_pickup_postcode_the_desk_asked_about(pipe):
+    """Round 19: "our warehouse" was filled in as the customer's earlier site 51896; the desk asked for 51804. An
+    answer "from 51896" would contradict the question."""
+    ours = shipped(pipe.ctx, 1, "rheintal-elektronik@hackloop.mail", "CGN", "DFW", 1795, postcode="51896")
+    await agent.handle(pipe.ctx, mail(45, 45, sender="tracking@hackloop.mail",
+                                      body="Rheintal Elektronik GmbH, 51804 to DFW, 1795 kg, ready on 2026-11-29?"))  # fmt: skip
+    body = pipe.sent[0]["body"]
+    assert ours.booking_reference in body and "from 51804 via CGN" in body and "from 51896" not in body
