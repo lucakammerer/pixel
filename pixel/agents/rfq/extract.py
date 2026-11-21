@@ -766,6 +766,13 @@ DOCUMENT_AIRPORT = re.compile(
 CARGO_CLAUSE = re.compile(r"[\n;]|(?<=[.!?])\s+")
 USE_CARGO = re.compile(r"^(?:please\s+)?(?:use|quote\s+(?:with|using))\s+(.+)", re.IGNORECASE)
 MAIL_CARGO = re.compile(r"^(.+?)\s+(?:in|from)\s+(?:this|my|our|the)\s+(?:e-?mail|message|body)\b", re.IGNORECASE)
+# Also require a correction marker before treating a plain "weight is now ..." as an instruction.
+PREFIXED_MEASUREMENT = re.compile(
+    r"^(?:correction|korrektur)\s*:\s*(?:the\s+|das\s+|die\s+)?"
+    r"(?P<field>(?:gross\s+)?weight|volume|dimensions|bruttogewicht|gewicht|volumen|maße)"
+    r"\s*(?:is\b|are\b|beträgt\b|betragen\b|ist\b|sind\b|:)\s*(?:(?:now|jetzt|nun)\s+)?(?P<value>.+)",
+    re.IGNORECASE,
+)
 NEW_MEASUREMENT = re.compile(
     r"^(?:the\s+)?(?:corrected|revised|updated)\s+(?P<field>(?:gross\s+)?weight|volume|dimensions)"
     r"\s*(?:is\b|are\b|:)\s*(?P<value>.+)",
@@ -773,8 +780,8 @@ NEW_MEASUREMENT = re.compile(
 )
 ORIGIN_FIELDS = {"origin", "departure", "abgangsflughafen"}
 CARGO_FIELDS = {
-    "weight_kg": re.compile(r"\b(?:weight|measurements|figures)\b", re.IGNORECASE),
-    "volume_cbm": re.compile(r"\b(?:volume|dimensions|measurements|figures)\b", re.IGNORECASE),
+    "weight_kg": re.compile(r"\b(?:weight|measurements|figures|bruttogewicht|gewicht)\b", re.IGNORECASE),
+    "volume_cbm": re.compile(r"\b(?:volume|dimensions|measurements|figures|volumen|maße)\b", re.IGNORECASE),
 }
 
 
@@ -805,7 +812,9 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
         if (match := USE_CARGO.match(clause))
     ]
     mail_fields = [match[1] for directive in directives if (match := MAIL_CARGO.match(directive))]
-    corrections = [match for clause in clauses if (match := NEW_MEASUREMENT.match(clause))]
+    corrections = [
+        match for clause in clauses if (match := NEW_MEASUREMENT.match(clause) or PREFIXED_MEASUREMENT.match(clause))
+    ]
     named = [
         (name, text)
         for name, text in sources[1:]
