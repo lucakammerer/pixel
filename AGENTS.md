@@ -93,7 +93,8 @@ Everything else runs dry or on replayed mail.
 
 Foundation: `a/<topic>`, `b/<topic>`, `c/<topic>` from `main`. Afterwards: `accuracy/<topic>`, `speed/<topic>`,
 `cost/<topic>`. Rebase on `main` before merging; `uv run pytest -q` and `uv run ruff check .` pass on every commit
-that reaches `main`. Small commits, the subject says what changed, no trailers.
+that reaches `main`; `.github/workflows/ci.yml` runs both on every push to `main` and every pull request. Small
+commits, the subject says what changed, no trailers.
 
 ## Glossary
 
