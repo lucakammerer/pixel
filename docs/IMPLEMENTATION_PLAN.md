@@ -25,7 +25,7 @@ question is deleted here.
 | Q11 | Tracking: what does `tracking@hackloop.mail` ask, what makes an answer correct (booking reference, status, airline, transit?), and by when must we answer? | It names a shipment; we answer status, airline, lane, booking reference, at once |
 | Q12 | What kinds of change come hourly: new tariff versions by mail, portal lanes or limits, mail formats, languages, exchange rates? Is `dataset_version` on a portal rate the signal? | Any of them; we watch `dataset_version`, reason codes and tariff mails |
 | Q13 | Pickup: are trucker prices only available by mail? Is the zone the first two digits of the German postcode, and is the airport always the zone's airport? | Yes to all |
-| Q14 | Where is the browser rate page, and does it hold rates we cannot get by API, mail or desk? What does the rate desk answer, how fast, and does it cost anything? | Not needed for the first hours; desk is one more bidder |
+| Q14 | Where is the browser rate page, and does it hold rates we cannot get by API, mail or desk? Does asking the rate desk cost anything? | Not needed for the first hours; the desk repeats the portal (R21) |
 | Q15 | What is the rate-read limit per minute today, and does it change? | Read it from `X-RateLimit-Limit` on every call |
 | Q16 | The +10 human bonus: per accepted mail, or once per team? Who is the reader? | Per mail; every quote is written to be read by a person |
 | Q17 | When does scoring end on Sunday, and when is the board frozen (`frozen_at`)? | We run until told |
@@ -122,8 +122,9 @@ board feedback      tools/board_me.py every few minutes                score
 A **session** is one customer thread; its id is the id of the thread's first mail. Mail we send to carriers for a
 session and their answers belong to the same session: `core/poller.py` `session_of` looks up `in_reply_to`, then
 `references` from the parent upwards, and takes the session of the first one we hold (a carrier's answer replies to
-our bid request, which `core/outbox.py` stored with the RFQ's session). Mail without a customer thread (a tariff
-mail) is a session of its own. Every outgoing mail is stored with its `purpose` (`bid_request`, `quote`,
+our bid request, which `core/outbox.py` stored with the RFQ's session). The rate desk answers in a thread of its
+own and names our mail by its subject; `session_of` takes the session of our latest mail to the desk with that
+subject. Mail without a customer thread (a tariff mail) is a session of its own. Every outgoing mail is stored with its `purpose` (`bid_request`, `quote`,
 `fallback_quote`, `human`, ...); the router reads it to place the answers.
 
 `messages` holds every mail in and out once, by its API id, with the full `Message` as JSON; `sessions` holds one

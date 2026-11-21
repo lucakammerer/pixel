@@ -1,0 +1,11 @@
+{
+  "id": 176,
+  "from": "ratedesk@hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "Portal rates FRA-JFK 340.0 kg",
+  "body": "Hello,\n\nportal rates for FRA-JFK, 340.0 kg, 1.2 cbm (your mail \"Rate request FRA-JFK, 340 kg\"):\n\n- Polaris Air Logistics (PL): 952.00 EUR, 4 days, rate_id R-C5nfsmcn3aSHlsgp, valid until 21 Nov 2026 14:38 UTC\n- Solace Air Cargo (SL): 1149.20 EUR, 2 days, rate_id R-7Yjko7wz10J0l-aK, valid until 21 Nov 2026 14:38 UTC\n- Wayzata Air Cargo (WZ): not on the portal, email wayzata-air-cargo@hackloop.mail\n\nBook with the rate_id on the portal or by mail to the airline.\n\nBest regards\nRate Desk\nratedesk@hackloop.mail",
+  "in_reply_to": null,
+  "references": [],
+  "received_at": "2026-11-21T14:24:23.053593+00:00",
+  "attachments": []
+}

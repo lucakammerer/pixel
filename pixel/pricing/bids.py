@@ -29,6 +29,9 @@ PRICED = re.compile(
 TOTAL_WORDS = re.compile(r"total|all[- ]in|gesamt|in total|overall", re.IGNORECASE)
 TRANSIT = re.compile(r"(\d+)\s*(?:calendar\s+)?(?:days?|tage?n?)\b|transit\D{0,20}(\d+)", re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
+DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
+RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
+VALID_UNTIL = re.compile(r"valid until\s+(\d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2}) UTC")
 DECLINE = re.compile(
     r"\b(?:cannot offer|can't offer|unable to|no capacity|not able to|decline|regret|do not serve|don't serve)\b",
     re.IGNORECASE,
@@ -118,6 +121,35 @@ def parse(message: Message, rfq: Rfq, *, needs_transit: bool = True) -> RateOpti
         return None
     days = int(transit.group(1) or transit.group(2)) if transit else 0
     return _option(rfq, message, total, currency, fx, days)
+
+
+def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
+    """The rate desk lists the portal's rates for a lane, one airline per line, each with its rate id. Lines
+    without a price (an airline that is not on the portal) are skipped."""
+    found = []
+    for line in DESK_LINE.finditer(_own_text(message.body)):
+        rest = line["rest"]
+        price, transit, rate_id = _price(rest), TRANSIT.search(rest), RATE_ID.search(rest)
+        if not (price and transit and rate_id):
+            continue
+        total, currency = price
+        fx = None if currency == "EUR" else _fx(rest, currency)
+        if currency != "EUR" and fx is None:
+            continue
+        until = VALID_UNTIL.search(rest)
+        option = _option(rfq, message, total, currency, fx, int(transit.group(1) or transit.group(2)))
+        found.append(
+            option.model_copy(
+                update={
+                    "source": Source.RATEDESK,
+                    "carrier": line["name"],
+                    "carrier_code": line["code"],
+                    "rate_id": rate_id.group(1),
+                    "valid_until": until and datetime.strptime(until.group(1), "%d %b %Y %H:%M").replace(tzinfo=UTC),
+                }
+            )
+        )
+    return found
 
 
 ANSWER_SCHEMA = {
@@ -226,31 +258,32 @@ async def record(ctx: Context, message: Message) -> None:
         return
     name, kind = store.carrier_by_email(ctx, message.sender) or (message.sender, "ratedesk")
     pickup = kind == "trucker"
-    option, read_by = parse(message, rfq, needs_transit=not pickup), "rules"
-    if option is None and not DECLINE.search(_own_text(message.body)):
+    listed = parse_desk(message, rfq) if kind == "ratedesk" else []
+    option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
+    if not listed and option is None and not DECLINE.search(_own_text(message.body)):
         read_by = "model"
         try:
             option = await _read_with_model(ctx, message, rfq, needs_transit=not pickup)
         except Exception as exc:  # noqa: BLE001  one unreadable answer must not stop the others
             events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
                         payload={"where": "bid.read", "error": type(exc).__name__})  # fmt: skip
+    if option is not None:
+        if pickup:
+            option = option.model_copy(update={"freight": Decimal(0), "pickup": option.total, "trucker": name})
+        elif kind == "ratedesk":
+            option = option.model_copy(update={"source": Source.RATEDESK})
+        listed = [option.model_copy(update={"carrier": name})]
     events.emit(
         ctx,
         "bid.received",
         "pricing",
         session_id=message.session_id,
         message_id=message.id,
-        payload={"carrier": name, "pickup": pickup, "priced": option is not None, "read_by": read_by},
+        payload={"carrier": name, "pickup": pickup, "priced": bool(listed), "read_by": read_by},
     )
-    if option is None:
-        return
-    if pickup:
-        option = option.model_copy(update={"freight": Decimal(0), "pickup": option.total, "trucker": name})
-    elif kind == "ratedesk":
-        option = option.model_copy(update={"source": Source.RATEDESK})
-    option = option.model_copy(update={"carrier": name})
-    events.emit(ctx, "option.found", "pricing", session_id=message.session_id, message_id=message.id,
-                payload={"option": option.model_dump(mode="json")})  # fmt: skip
+    for option in listed:
+        events.emit(ctx, "option.found", "pricing", session_id=message.session_id, message_id=message.id,
+                    payload={"option": option.model_dump(mode="json")})  # fmt: skip
 
 
 def _answers(ctx: Context, session_id: int, pickup: bool) -> int:
