@@ -25,6 +25,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `outbox.send_quote`. A request missing origin, destination or weight emits `error` and returns None; the
   orchestrator's fallback and the UI take over. Every drafted quote is saved to the CRM (`crm/quotes.py` `save`),
   the sent one again after `send_quote`, so booking finds it also when the fallback sent it.
+- `agent.py` `served_airports`: before pricing, an origin or destination on none of the lanes we know (sheets,
+  pickup zones, the carrier list, the portal's ports) and not written in the mail goes back to the model once
+  (`rfq.airports`) with the airports we serve; only a served code from the answer is taken, and the corrected `Rfq`
+  is emitted as `rfq.extracted` again. No call when both codes are served or named in the mail.
 - `agent.py` `fallback`: the RFQ and every `option.found` of the session, read back from the event log
   (`pricing/session.py`), combined and selected by code alone, no model call. Returns the quote unsent.
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
@@ -114,6 +118,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   request names the zone's first postcode (`pricing/bids.py` `_postcode`) when the mail has none.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
+- The same guess can hit a request without a pickup zone, or a destination (a city code, a nearby airfield): no
+  lane starts or ends there and every rate and bid request for it is wasted. `agent.py` `served_airports` asks once
+  more with the airports we serve (at most `AIRPORTS_WAIT_S`); a request still without a price waits for a late one
+  until `hard_at`, except in a dry run or a replay, which no late price reaches
+  (`core/orchestrator.py` `_first_price`) instead of being missed at once.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
