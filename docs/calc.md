@@ -39,7 +39,7 @@ Decimal only; a model never computes, compares or writes a price (P1).
   airline and pickup hours for a trucker. A door-to-port quote adds the balanced trucker's price, not the
   cheapest (`engine.combine`). Evidence: `tests/fixtures/pickup-bids.json` holds the trucker bids of two scored
   requests and the bid the scorer's best price contained; this formula picks both, min-max scaling and ranks
-  pick the wrong one in the first.
+  pick the wrong one in the first. Only that winner competes with sheets, portal and the rate desk.
 
 ## Assumptions until 5U answers (plan §0)
 
