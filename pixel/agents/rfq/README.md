@@ -52,7 +52,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the first name they signed with (the model's slot, else `signed_name` by rule), one paragraph that opens with a
   short line (the model's, else a thank-you naming the goods in the customer's own words, `goods_of`) and gives the quoted total and its currency, carrier, transit, what is included and the chargeable
   weight only when it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with
-  the booking sentence, and a person's signature (`PIXEL_SIGNER`). `in_kind` answers the customer's own closing:
+  the booking sentence, and a person's signature (`PIXEL_SIGNER`). "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `in_kind` answers the customer's own closing:
   a wish for the day is returned, and the sign-off goes to the town they greet from, or reads "Cheers" or "Viele
   Grüße" when theirs does; without one, the sign-off of their register and no closing line. Code formats every
   number and name; three to four phrasings per sentence, picked by session, so two quotes
