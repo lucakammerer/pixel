@@ -8,6 +8,7 @@ from pixel.config import settings
 from pixel.contracts import RateOption, Source
 from pixel.core import db, events, feedback
 from pixel.core.context import Context
+from pixel.crm import quotes
 from pixel.pricing import calc, selection
 
 ROUND = json.loads((Path(__file__).parent / "fixtures" / "feedback-rounds.json").read_text())
@@ -147,3 +148,20 @@ def test_one_misread_round_does_not_change_the_pickup_rule(conn):
         conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES ('t', ?, 'feedback', 'b', ?)",
                      (session_id, json.dumps({"trucker": "A"})))  # fmt: skip
         assert feedback.pickup_rule(ctx) == (selection.DEFAULT_RULE if session_id == 1 else "min_max")
+
+
+async def test_first_poll_and_later_updates_feed_scorer_stats(conn):
+    first = board(100, (1, "accepted"), (2, "rejected"))
+    updated = board(110, (1, "accepted"), (2, "rejected"))
+    updated["requests"][0]["booked"] = True
+    ctx = Context(settings(), conn, None, None, None, Board(first, updated, updated))
+
+    assert await feedback.once(ctx) == 0
+    assert {row["round"]: row["verdict"] for row in quotes.latest_scores(ctx)} == {1: "accepted", 2: "rejected"}
+    stats = quotes.stats(ctx)
+    assert (stats["accepted"], stats["rejected"]) == (1, 1)
+
+    assert await feedback.once(ctx) == 0
+    assert quotes.latest_scores(ctx)[0]["booked"] is True
+    assert await feedback.once(ctx) == 0
+    assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score'").fetchone()[0] == 3

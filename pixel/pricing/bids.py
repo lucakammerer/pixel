@@ -4,7 +4,7 @@ transcribes an answer the rules cannot read, and code does every sum."""
 import asyncio
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
@@ -29,6 +29,11 @@ PRICED = re.compile(
 TOTAL_WORDS = re.compile(r"total|all[- ]in|gesamt|in total|overall", re.IGNORECASE)
 TRANSIT = re.compile(r"(\d+)\s*(?:calendar\s+)?(?:days?|tage?n?)\b|transit\D{0,20}(\d+)", re.IGNORECASE)
 HOURS = re.compile(r"(\d+)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
+PICKUP_HOURS = re.compile(
+    r"\b(?:pick\s*up(?:\s+time)?|collect(?:ion)?|abholung)\s*:?\s*(?:within\s+|in\s+)?" + HOURS.pattern,
+    re.IGNORECASE,
+)
+VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
@@ -61,6 +66,12 @@ def _own_text(body: str) -> str:
             break
         lines.append(line)
     return "\n".join(lines)
+
+
+def _pickup_hours(body: str) -> int | None:
+    text = _own_text(body)
+    match = PICKUP_HOURS.search(text) or HOURS.search(VALIDITY_HOURS.sub("", text))
+    return int(match.group(1)) if match else None
 
 
 def _price(text: str) -> tuple[Decimal, str] | None:
@@ -196,9 +207,15 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
     return _option(rfq, message, total, currency, fx, int(transit.group()) if transit else 0)
 
 
+def _postcode(rfq: Rfq) -> str:
+    """Truckers price by zone but quote only with a five-digit postcode ("To quote we need: the pickup postcode"):
+    a pickup known by its town alone is asked with the zone's first one."""
+    return rfq.pickup_postcode or (rfq.pickup_zone or "").ljust(5, "0")
+
+
 def _subject(rfq: Rfq, pickup: bool) -> str:
     if pickup:
-        return f"Pickup request {rfq.pickup_postcode or rfq.pickup_zone} to {rfq.origin}"
+        return f"Pickup request {_postcode(rfq)} to {rfq.origin}"
     return f"Rate request {rfq.origin}-{rfq.destination}, {rfq.weight_kg} kg"
 
 
@@ -208,7 +225,7 @@ def _body(rfq: Rfq, pickup: bool) -> str:
     if pickup:
         return (
             "Hello,\n\nplease quote a pickup for an air export shipment:\n"
-            f"From: postcode {rfq.pickup_postcode or '-'} (zone {rfq.pickup_zone})\nTo: {rfq.origin} airport\n"
+            f"From: postcode {_postcode(rfq)} (zone {rfq.pickup_zone})\nTo: {rfq.origin} airport\n"
             f"Shipment: {shipment}\n\nPlease reply with your price and currency.\n\nThank you,\nPIXEL Air Freight"
         )
     return (
@@ -270,9 +287,8 @@ async def record(ctx: Context, message: Message) -> None:
                         payload={"where": "bid.read", "error": type(exc).__name__})  # fmt: skip
     if option is not None:
         if pickup:
-            hours = HOURS.search(_own_text(message.body))
             option = option.model_copy(update={"freight": Decimal(0), "pickup": option.total, "trucker": name,
-                                               "pickup_hours": int(hours.group(1)) if hours else None})  # fmt: skip
+                                               "pickup_hours": _pickup_hours(message.body)})  # fmt: skip
         elif kind == "ratedesk":
             option = option.model_copy(update={"source": Source.RATEDESK})
         listed = [option.model_copy(update={"carrier": name})]
@@ -299,8 +315,12 @@ def _answers(ctx: Context, session_id: int, pickup: bool) -> int:
 async def collect(
     ctx: Context, session_id: int, deadline: Deadline, expected: int, *, pickup: bool = False
 ) -> list[RateOption]:
-    """Waits until all expected bids are in or the deadline's target, whichever comes first."""
-    while _answers(ctx, session_id, pickup) < expected and datetime.now(UTC) < deadline.target_at:
+    """Waits until all expected bids are in, or until the later of `target_at` and `bid_wait_s` after the ask
+    (called right after it), never past `hard_at`. A late start (restart, re-dispatch, slow extraction) still
+    gives the answers their time: a quote without the pickup is too low, a few seconds late cost little."""
+    until = min(max(deadline.target_at, datetime.now(UTC) + timedelta(seconds=ctx.settings.bid_wait_s)),
+                deadline.hard_at)  # fmt: skip
+    while _answers(ctx, session_id, pickup) < expected and datetime.now(UTC) < until:
         await asyncio.sleep(POLL_S)
     return [
         o

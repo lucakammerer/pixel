@@ -28,7 +28,9 @@ Decimal only; a model never computes, compares or writes a price (P1).
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
   and validity it states.
 - **Pickup** (`calc.with_pickup`): a trucker's price in EUR, added to every airline option, converted into the
-  option's currency with its exchange rate when that is not EUR.
+  option's currency with its exchange rate when that is not EUR. Truckers price by zone and quote only with a
+  five-digit postcode: a pickup known by its town alone is asked with the zone's first one (`bids._postcode`; two
+  postcodes of one zone got the same price and pickup time).
 - **EUR** (`calc.to_eur`): amount × the rate's own exchange rate (EUR per unit), rounded to cents.
 
 ## Choosing (`selection.select`)

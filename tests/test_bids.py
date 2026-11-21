@@ -1,5 +1,7 @@
 import asyncio
 import json
+import re
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from itertools import count
@@ -8,10 +10,10 @@ from pathlib import Path
 import pytest
 
 from pixel import llm
-from pixel.agents.rfq import agent
+from pixel.agents.rfq import agent, extract
 from pixel.api.mailbox import to_message
 from pixel.config import settings
-from pixel.contracts import LaneTariff, LlmResult, Message, Rfq, Source
+from pixel.contracts import LaneTariff, LlmResult, Message, RateOption, Rfq, Source
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
@@ -20,6 +22,38 @@ from pixel.pricing import bids, engine, portal_rates, store
 
 NOW = datetime.now(UTC)
 IDS = count(100)
+
+
+@pytest.mark.parametrize(
+    "phrase,hours",
+    [
+        ("Pickup time: 11 hours", 11),
+        ("pick up within 25 hours", 25),
+        ("collect within 12 hours", 12),
+        ("Abholung in 12 Stunden", 12),
+        ("Ready in 9 hrs", 9),
+        ("We can collect.", None),
+    ],
+)
+def test_pickup_hours_ignore_offer_validity(phrase, hours):
+    assert bids._pickup_hours(f"Offer valid for 24 hours. {phrase}") == hours
+
+
+def test_combine_balances_timed_pickup_bids():
+    request = rfq(door_pickup=True)
+    airline = RateOption(
+        source=Source.PORTAL, carrier="Air", origin=request.origin, destination=request.destination,
+        chargeable_kg=D(100), billed_kg=D(100), freight=D(100), total=D(100), currency="EUR", total_eur=D(100),
+        transit_days=1,
+    )  # fmt: skip
+    pickups = [
+        airline.model_copy(update={"carrier": name, "trucker": name, "pickup_hours": hours, "total_eur": D(price)})
+        for name, price, hours in [("Slow", 20, 24), ("Fast", 25, 8), ("Other", 30, 16), ("Untimed", 10, None)]
+    ]
+    [combined] = engine.combine(request, [airline, *pickups])
+    assert (combined.trucker, combined.pickup_hours, combined.total_eur) == ("Fast", 8, D(125))
+    [fallback] = engine.combine(request, [airline, pickups[1], pickups[-1]])
+    assert fallback.trucker == "Untimed"
 
 
 def deadline(seconds: float = 3) -> Deadline:
@@ -121,6 +155,23 @@ async def test_unpriced_destination_is_mailed_and_door_to_port_adds_the_cheapest
     assert (by_carrier["Air One"].total, by_carrier["Air One"].trucker) == (D("775.00"), "Truck B")
     assert by_carrier["Air Two"].total == D("655.00")
     assert [r["read_by"] for r in kinds(ctx, "bid.received")].count("model") == 1
+
+
+async def test_a_pickup_known_by_its_town_alone_is_asked_with_a_postcode_of_its_zone(ctx, monkeypatch):
+    # Round 15: every trucker answered "postcode - (zone 93)" with "To quote we need: the pickup postcode".
+    asked = []
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        asked.append(f"{subject}\n{body}")
+        return mail("us@x", body, session_id)
+
+    monkeypatch.setattr(outbox, "send", send)
+    store.save_zones(ctx, [{"zone": "93", "area": "Regensburg", "airport": "AAA"}])
+    path = Path(__file__).parent / "fixtures" / "mails" / "rfq-door-warehouse-no-postcode.json"
+    request = await extract.extract(ctx, to_message(json.loads(path.read_text()), "in"), deadline())
+    await bids.request(ctx, request, [("Truck A", "a@truck")], pickup=True)
+    assert (request.pickup_zone, request.pickup_postcode) == ("93", None)
+    assert asked and all(len(re.findall(r"\b93\d{3}\b", text)) == 2 for text in asked)
 
 
 async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without_one(ctx, monkeypatch):
@@ -249,3 +300,32 @@ async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
     quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg."), deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 2
     assert quote.body.startswith("Hello,\n\n") and "260.00 EUR" in quote.body
+
+
+async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monkeypatch):
+    # Round 17: handling started 75 s after receipt, the truckers answered 30 s after the ask, and the quote had
+    # already gone out at target_at with no pickup. Scaled: target 0.1 s away, answers 0.5 s after the ask.
+    store.upsert(ctx, [LaneTariff(
+        carrier="Air One", origin="AAA", destination="BBB", currency="EUR", valid_from=date(2000, 1, 1),
+        valid_to=date(2100, 1, 1), version="v", transit_days=3, minimum=D(50), breaks=((D(0), D("2.00")),),
+        fuel_per_kg=D("0.50"), security_per_kg=D("0.10"), source="test",
+    )])  # fmt: skip
+    ctx.settings = replace(ctx.settings, bid_wait_s=2)
+    request = rfq(door_pickup=True, pickup_postcode="12345", pickup_zone="12")
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    now = datetime.now(UTC)
+    late = Deadline(received_at=now - timedelta(seconds=75), target_at=now + timedelta(seconds=0.1),
+                    hard_at=now + timedelta(seconds=5), expires_at=now + timedelta(seconds=6))  # fmt: skip
+
+    async def answer():
+        while len(kinds(ctx, "bid.requested")) < 3:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.5)
+        await bids.record(ctx, mail("two@air", "All-in EUR 400.00, transit 4 days"))
+        await bids.record(ctx, mail("a@truck", "Pickup EUR 90.00"))
+        await bids.record(ctx, mail("b@truck", "We can do it for 75,00 EUR"))
+
+    found, _ = await asyncio.gather(engine.options(ctx, request, late), answer())
+    by_carrier = {o.carrier: o for o in found}
+    assert set(by_carrier) == {"Air One", "Air Two"}
+    assert all(o.pickup == D("75.00") for o in found)

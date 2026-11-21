@@ -77,4 +77,20 @@ zone's town. Read by the postcode; without one, a pickup town is taken only when
 an old one, which is quoted below it with its own lane and weight (ZRH to MEL, 3,459 kg). The model read it and
 guessed origin CGN; zone 42 is DUS, no airline flew CGN-PEK, the request was missed.
 Our reply takes the name, the tone and the ready date from the customer's own words only
-(`pixel/agents/rfq/compose.py` `own_text`): the old mail below says "Dear team".
+(`pixel/agents/rfq/extract.py` `own_words`): the old mail below says "Dear team".
+
+`synthetic-rfq-facts-in-attachment.json`: round 10's request with its weight sentence replaced by "All details are
+in the attached packing specification". Weight and volume stand only in the attachment.
+
+`rfq-door-warehouse-no-postcode.json`: round 15, rejected too low. "RE: FW:" with an old request quoted below;
+pickup "from our warehouse" with no postcode or town, only the signature "Best greetings from Regensburg". The zone 93
+truckers answered "To quote we need: the pickup postcode", so the quote went out without a pickup. Asked again by
+hand, one of them priced the zone's first postcode and a postcode of the town alike.
+
+`rfq-door-warehouse-known-customer.json`: round 16, missed. "Truck pickup from our warehouse" with no place at all
+and no signature town. The customer (Nordlicht Audio) had named "our site in 36627 (Fulda)" in round 9.
+
+`rfq-door-warehouse-earlier-sites.json`: round 17, missed (it arrived 11 s before the restart onto the fix). "Truck
+pickup from our warehouse", no place; this customer (Lindqvist Medtech) had named 51447 in round 1 and 21663 in
+round 11: the latest one counts.
+

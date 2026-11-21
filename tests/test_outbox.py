@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from pixel.api.client import ApiError
-from pixel.api.mailbox import to_message
+from pixel.api.mailbox import RATEDESK, to_message
 from pixel.config import settings
 from pixel.contracts import Quote, RateOption, Rfq, Source
 from pixel.core import outbox, poller
@@ -136,6 +136,21 @@ async def test_takeover_holds_automatic_mail_but_not_the_fallback(conn):
         await outbox.send_quote(ctx, make_quote(rfq))
     await outbox.send_quote(ctx, make_quote(rfq, fallback=True))
     assert len(ctx.mailbox.sent) == 1
+
+
+@pytest.mark.parametrize("purpose", ["bid_request", "bid_pickup", "ratedesk"])
+async def test_takeover_allows_sourcing_mail(conn, purpose):
+    ctx = make_ctx(conn)
+    rfq = ingest_rfq(ctx)
+    conn.execute("UPDATE sessions SET mode = 'human'")
+    carrier = "carrier@example.test"
+    conn.execute("INSERT INTO carriers (name, kind, email, serves) VALUES ('c', 'airline', ?, '')", (carrier,))
+    recipient = RATEDESK if purpose == "ratedesk" else carrier
+
+    await outbox.send(ctx, to=recipient, subject="s", body="b", session_id=rfq.session_id, purpose=purpose)
+    with pytest.raises(NotSent, match="human"):
+        await outbox.send(ctx, to=rfq.sender, subject="s", body="b", session_id=rfq.session_id, purpose="tracking")
+    assert ctx.mailbox.sent == [recipient]
 
 
 async def test_no_key_in_any_event(conn):

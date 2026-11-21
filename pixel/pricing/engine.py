@@ -33,9 +33,9 @@ def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_R
     pickups = [o for o in options if o.trucker is not None]
     if not (rfq.door_pickup and pickups):
         return airline
-    # Truckers are carrier bids too (R15): the balanced one, by price and pickup time. Without times, the cheapest.
-    if all(o.pickup_hours is not None for o in pickups):
-        best = selection.balanced(pickups, lambda o: o.pickup_hours, rule)
+    timed = [o for o in pickups if o.pickup_hours is not None]
+    if len(timed) >= 2:
+        best = selection.balanced(timed, lambda o: o.pickup_hours, rule)
     else:
         best = min(pickups, key=lambda o: (o.total_eur, o.carrier))
     return [calc.with_pickup(o, best.total_eur, best.trucker).model_copy(update={"pickup_hours": best.pickup_hours})
