@@ -1,0 +1,33 @@
+zone,area,airport
+60,Frankfurt am Main,FRA
+61,Bad Homburg,FRA
+63,Offenbach,FRA
+64,Darmstadt,FRA
+65,Wiesbaden,FRA
+55,Mainz,FRA
+35,Giessen,FRA
+36,Fulda,FRA
+80,Munich,MUC
+81,Munich South,MUC
+84,Landshut,MUC
+85,Ingolstadt,MUC
+86,Augsburg,MUC
+93,Regensburg,MUC
+40,Duesseldorf,DUS
+41,Moenchengladbach,DUS
+42,Wuppertal,DUS
+44,Dortmund,DUS
+45,Essen,DUS
+47,Duisburg,DUS
+20,Hamburg,HAM
+21,Lueneburg,HAM
+22,Hamburg North,HAM
+24,Kiel,HAM
+28,Bremen,HAM
+70,Stuttgart,STR
+71,Boeblingen,STR
+72,Tuebingen,STR
+73,Esslingen,STR
+50,Cologne,CGN
+51,Bergisch Gladbach,CGN
+53,Bonn,CGN

@@ -1,0 +1,42 @@
+Yellowtail Air Freight | Air export tariff
+Currency    EUR
+Valid from  01.11.2026
+Valid to    30.11.2026
+All rates are per kg of chargeable weight, in EUR.
+Chargeable weight is the higher of actual weight and volume weight (1 cbm = 167 kg).
+Fuel and security surcharges are charged per kg of the weight the freight is billed on.
+The minimum charge applies to the freight before surcharges.
+
+Lane        Transit     Minimum     -45       +45       +100      +250      +500      +1000     +2000
+CGN-SYD              5  EUR 75.00   EUR 5.92  EUR 5.03  EUR 3.87  EUR 3.02  EUR 2.33  EUR 1.86  EUR 1.54
+DUS-JFK              5  EUR 100.00  EUR 3.96  EUR 3.21  EUR 2.82  EUR 2.34  EUR 1.83  EUR 1.50  EUR 1.25
+FRA-BKK              2  EUR 91.00   EUR 4.19  EUR 3.40  EUR 2.86  EUR 2.26  EUR 1.90  EUR 1.58  EUR 1.26
+FRA-DFW              2  EUR 109.00  EUR 3.76  EUR 2.78  EUR 2.42  EUR 2.20  EUR 1.69  EUR 1.52  EUR 1.22
+FRA-LIM              5  EUR 72.00   EUR 5.09  EUR 4.12  EUR 3.63  EUR 2.72  EUR 2.20  EUR 1.58  EUR 1.37
+FRA-NBO              7  EUR 91.00   EUR 4.30  EUR 3.78  EUR 2.87  EUR 2.18  EUR 1.98  EUR 1.54  EUR 1.19
+FRA-ORD              4  EUR 110.00  EUR 3.73  EUR 3.32  EUR 2.42  EUR 1.82  EUR 1.64  EUR 1.46  EUR 1.14
+HAM-BOG              2  EUR 127.20  EUR 4.62  EUR 4.06  EUR 3.53  EUR 3.53  EUR 2.44  EUR 1.76  EUR 1.29
+HAM-MEX              3  EUR 81.00   EUR 3.28  EUR 2.49  EUR 2.17  EUR 1.67  EUR 1.50  EUR 1.38  EUR 1.10
+HAM-SGN              6  EUR 68.00   EUR 4.45  EUR 3.69  EUR 2.77  EUR 2.47  EUR 1.80  EUR 1.46  EUR 1.28
+MUC-JNB              4  EUR 117.00  EUR 4.02  EUR 3.10  EUR 2.54  EUR 2.33  EUR 1.48  EUR 1.30  EUR 1.30
+MUC-LAX              5  EUR 82.00   EUR 3.12  EUR 2.28  EUR 1.73  EUR 1.40  EUR 1.08  EUR 0.98  EUR 0.83
+STR-LAX              2  EUR 137.80  EUR 3.81  EUR 2.78  EUR 2.37  EUR 2.37  EUR 1.55  EUR 1.25  EUR 1.25
+STR-MEL              5  EUR 102.00  EUR 6.48  EUR 5.83  EUR 5.01  EUR 4.36  EUR 3.49  EUR 2.97  EUR 2.38
+STR-MNL              5  EUR 61.00   EUR 3.37  EUR 2.76  EUR 2.35  EUR 1.76  EUR 1.60  EUR 1.44  EUR 1.17
+
+Surcharges per kg of billed weight
+CGN-SYD: fuel EUR 0.76 per kg, security EUR 0.21 per kg
+DUS-JFK: fuel EUR 1.09 per kg, security EUR 0.13 per kg
+FRA-BKK: fuel EUR 1.05 per kg, security EUR 0.27 per kg
+FRA-DFW: fuel EUR 0.85 per kg, security EUR 0.25 per kg
+FRA-LIM: fuel EUR 1.10 per kg, security EUR 0.19 per kg
+FRA-NBO: fuel EUR 0.94 per kg, security EUR 0.16 per kg
+FRA-ORD: fuel EUR 0.66 per kg, security EUR 0.11 per kg
+HAM-BOG: fuel EUR 1.43 per kg, security EUR 0.23 per kg
+HAM-MEX: fuel EUR 0.68 per kg, security EUR 0.21 per kg
+HAM-SGN: fuel EUR 0.91 per kg, security EUR 0.11 per kg
+MUC-JNB: fuel EUR 0.91 per kg, security EUR 0.26 per kg
+MUC-LAX: fuel EUR 1.17 per kg, security EUR 0.14 per kg
+STR-LAX: fuel EUR 1.06 per kg, security EUR 0.27 per kg
+STR-MEL: fuel EUR 1.16 per kg, security EUR 0.24 per kg
+STR-MNL: fuel EUR 1.32 per kg, security EUR 0.23 per kg

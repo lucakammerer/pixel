@@ -1,0 +1,52 @@
+name,kind,email,serves
+Aurelia Air Cargo,airline,aurelia-air-cargo@hackloop.mail,CAI EZE LAX LIM MEL MIA NBO ORD RUH SCL SIN TLV YYZ
+Borealis Freight Airways,airline,borealis-freight-airways@hackloop.mail,CAI DEL LIM NRT ORD PEK SCL SGN SYD YYZ
+Cobalt Skylift,airline,cobalt-skylift@hackloop.mail,BOG BOM DEL EZE ICN JFK JNB LIM MEL MEX MIA RUH SGN SIN SYD TPE YYZ
+Danube Wings Cargo,airline,danube-wings-cargo@hackloop.mail,DXB EZE JNB MEX SGN SYD TPE YYZ
+Elbflug Air Freight,airline,elbflug-air-freight@hackloop.mail,BOG DFW DXB HKG LOS MEL MEX MIA ORD PVG SGN SIN SYD TLV
+Fjordline Air Cargo,airline,fjordline-air-cargo@hackloop.mail,ATL BOM DEL EZE GRU JFK JNB KUL LAX NBO SIN TLV
+Gannet Airways,airline,gannet-airways@hackloop.mail,ICN LAX PEK TLV
+Helix Air Freight,airline,helix-air-freight@hackloop.mail,HKG LAX LOS ORD PVG RUH SCL SGN SYD
+Ibisair Cargo,airline,ibisair-cargo@hackloop.mail,ATL BKK BOG BOM DEL GRU HKG ICN JFK MEX MIA NBO ORD PEK SIN SYD YYZ
+Juniper Cargo Lines,airline,juniper-cargo-lines@hackloop.mail,DEL EZE GRU MEL NBO RUH SCL SGN SYD TPE YYZ
+Kestrel Airways,airline,kestrel-airways@hackloop.mail,BOM CAI DEL DFW GRU HKG KUL LAX MEL MEX MIA NRT PEK SIN
+Lumen Air Cargo,airline,lumen-air-cargo@hackloop.mail,BOG BOM DFW DXB LOS MIA NRT PEK PVG RUH SGN YYZ
+Meridian Freightways,airline,meridian-freightways@hackloop.mail,ATL CAI DEL DFW EZE HKG LAX MIA MNL NBO ORD PVG SYD TLV TPE
+Nova Atlas Cargo,airline,nova-atlas-cargo@hackloop.mail,BKK EZE LIM MEL NRT ORD PVG SGN SIN SYD TPE
+Orion Cargo Air,airline,orion-cargo-air@hackloop.mail,DXB GRU HKG KUL MIA MNL NBO ORD PEK SGN TLV
+Polaris Air Logistics,airline,polaris-air-logistics@hackloop.mail,ATL BKK HKG ICN JFK JNB KUL LAX PEK SCL SGN SYD YYZ
+Quetzal Air Freight,airline,quetzal-air-freight@hackloop.mail,BOM DFW DXB EZE HKG JFK LIM LOS RUH SCL
+Riverbend Airlines Cargo,airline,riverbend-airlines-cargo@hackloop.mail,ATL BOG DFW DOH GRU MEX MIA RUH TLV YYZ
+Solace Air Cargo,airline,solace-air-cargo@hackloop.mail,ATL BOG DEL GRU JFK MEL MEX MIA NRT SYD TLV TPE
+Tamarind Airways,airline,tamarind-airways@hackloop.mail,BKK DXB EZE HKG JNB LOS MEX MIA MNL NBO PVG RUH SGN TLV YYZ
+Ultraviolet Air Freight,airline,ultraviolet-air-freight@hackloop.mail,BOM DEL DFW DOH EZE GRU JFK LAX MEX MNL NBO RUH SCL SIN SYD TLV YYZ
+Vega Skyfreight,airline,vega-skyfreight@hackloop.mail,DEL DFW KUL LIM LOS MIA MNL NBO ORD PEK SYD YYZ
+Wayzata Air Cargo,airline,wayzata-air-cargo@hackloop.mail,ATL BOG CAI DEL DOH DXB EZE HKG ICN JFK LAX LIM MEX MIA NBO NRT PEK SCL SGN TLV
+Xenon Cargo Airlines,airline,xenon-cargo-airlines@hackloop.mail,BOG BOM LIM MEX MIA NRT ORD PVG SCL
+Yellowtail Air Freight,airline,yellowtail-air-freight@hackloop.mail,BKK BOG DFW JFK JNB LAX LIM MEL MEX MNL NBO ORD SGN SYD
+Zephyr Steppe Cargo,airline,zephyr-steppe-cargo@hackloop.mail,ASU KTM PPT TNR ULN
+Himalaya Bridge Air,airline,himalaya-bridge-air@hackloop.mail,ASU KTM TNR ULN
+Lagoon Isles Airways,airline,lagoon-isles-airways@hackloop.mail,ASU PPT TNR ULN
+Pampero Air Cargo,airline,pampero-air-cargo@hackloop.mail,ASU KTM PPT TNR ULN
+Rheinufer Spedition,trucker,rheinufer-spedition@hackloop.mail,20 40 42 47 64 70 73
+Maintal Transport Logistik,trucker,maintal-transport-logistik@hackloop.mail,21 24 45 51 65 84 86
+Alpenblick Logistik,trucker,alpenblick-logistik@hackloop.mail,24 64 72 81
+Hansekogge Trucking,trucker,hansekogge-trucking@hackloop.mail,20 24 40 50 61 72 73
+Neckarstrom Kurier,trucker,neckarstrom-kurier@hackloop.mail,24 55 65 73 80 81 85 86 93
+Ruhrpott Express,trucker,ruhrpott-express@hackloop.mail,22 41 50 53 80 85
+Taunusfracht,trucker,taunusfracht@hackloop.mail,22 45 60
+Isarwelle Spedition,trucker,isarwelle-spedition@hackloop.mail,60 70 80 84 93
+Elbkante Logistik,trucker,elbkante-logistik@hackloop.mail,20 35 47 51 55 84 85 93
+Schwabenbote Transporte,trucker,schwabenbote-transporte@hackloop.mail,28 40 42 44 55
+Domblick Kurierdienst,trucker,domblick-kurierdienst@hackloop.mail,21 36 40 45 47 60 63 73 85
+Westfalenroute,trucker,westfalenroute@hackloop.mail,42 51 60 61 63
+Odenwald Cargo,trucker,odenwald-cargo@hackloop.mail,21 41 85
+Spessart Spedition,trucker,spessart-spedition@hackloop.mail,21 28 42 53 61 70 73
+Bodenseefracht,trucker,bodenseefracht@hackloop.mail,36 45 51 60 61 80
+Nordlicht Haulage,trucker,nordlicht-haulage@hackloop.mail,20 22 61 70 80
+Waldrand Transporte,trucker,waldrand-transporte@hackloop.mail,21 28 55
+Kranich Kurier,trucker,kranich-kurier@hackloop.mail,22 50 64 65 71 81
+Flinkwagen Logistik,trucker,flinkwagen-logistik@hackloop.mail,24 44 65 71 84 93
+Grautal Trucking,trucker,grautal-trucking@hackloop.mail,45
+Sternmeile Logistik,trucker,sternmeile-logistik@hackloop.mail,20 35 50 53 81 86
+Vogelsberg Haulage,trucker,vogelsberg-haulage@hackloop.mail,36 41 44 47 55
