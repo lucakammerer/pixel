@@ -547,3 +547,28 @@ async def test_a_customer_with_one_known_site_is_still_asked_and_a_town_answer_g
 def test_dimensions_in_inches_and_more_piece_words(body, cbm, pieces):
     rfq = extract.by_rules(mail(body), DEADLINE)
     assert (round(rfq.volume_cbm, 6), rfq.pieces) == (round(cbm, 6), pieces)
+
+
+async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(conn, monkeypatch):
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": None, "destination": "SGN", "weight_kg": "874", "volume_cbm": "1.92", "pieces": 2,
+                "lots": [], "preference": "cheapest", "door_pickup": True, "pickup_postcode": None,
+                "currency": "EUR", "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "51", "area": "Bergisch Gladbach", "airport": "CCC"}])
+    answer = captured("customer-names-pickup.json")
+    answer = answer.model_copy(update={"body": "Hi Lena,\n\nSorry, it is 51115.\n\nSara"})
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        poller.ingest(ctx, answer)
+        return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    body = "Please quote SGN with truck pickup from our warehouse. 874 kg gross, two crates of 120x100x80 cm."
+    request = mail(body).model_copy(update={"id": 4370, "session_id": 4370, "sender": answer.sender})
+    request = poller.ingest(ctx, request)  # the dimensions without a volume send it to the model
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("CCC", "51115", "51", "model")
