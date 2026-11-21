@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "family": "bid",
+    "axes": {"layout": "components"},
+    "note": "Charges listed without a stated total (air freight, fuel and security; base and weight charge): the rules never add up lines, so the model transcribes them and code sums, one gateway call per such bid. Owner: Accuracy."
+  },
+  {
+    "family": "bid",
+    "axes": {"carrier": "airline", "distractor": "second_lane"},
+    "note": "An airline answer that also names another lane's rate and transit time: two labelled transit times disagree, `bids._days` refuses and the model reads the bid. Owner: Accuracy."
+  },
+  {
+    "family": "bid",
+    "axes": {"layout": "table", "money": "sign"},
+    "note": "An offer table with its currency only as '(€)' in the header: `bids.HEADER_UNIT` knows ISO codes only, so the total line has no currency and the model reads it (branch generalization/round-65-voice-offers reads the sign). Owner: Accuracy."
+  }
+]
