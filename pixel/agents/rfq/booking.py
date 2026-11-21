@@ -49,6 +49,12 @@ ASKS_TO_BOOK = re.compile(
     r"\b(?:can|could|would|will|können|könnten)\s+(?:you|sie)\s+(?:please\s+|bitte\s+)?(?:book|proceed|buchen)",
     re.IGNORECASE,
 )
+# Withdraws the booking itself, not a side request ("cancel our pickup slot request" is no cancellation).
+CANCELS = re.compile(
+    r"\bcancel\w*\s+(?:\w+\s+){0,2}(?:booking|shipment|order|it|BK-\w+)\b|(?:don['’]t|do not)\s+book\b"
+    r"|\b(?:storn\w*|annul\w*)\b|nicht\s+buchen",
+    re.IGNORECASE,
+)
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
 AIRLINE_REFERENCE = re.compile(r"\bbooking reference:?\s*(\S+)", re.IGNORECASE)
 OURS = re.compile(r"\byour reference:?\s*(\S+?)[.,;]?\s*$", re.IGNORECASE | re.MULTILINE)
@@ -126,7 +132,13 @@ async def handle_reply(ctx: Context, message: Message) -> None:
         )  # fmt: skip
         return
     if said == "decline" and quote.status == QuoteStatus.ACCEPTED:
-        await cancel(ctx, quote, message)
+        if CANCELS.search(_own(message)):
+            await cancel(ctx, quote, message)
+        else:
+            events.emit(
+                ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
+                payload={"note": "Customer reply after the booking reads as a decline", "intent": said},
+            )  # fmt: skip
         return
     if said == "decline":
         quotes.set_status(ctx, quote.id, QuoteStatus.DECLINED)
