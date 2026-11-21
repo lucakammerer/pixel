@@ -196,7 +196,7 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     monkeypatch.setattr(llm, "ask_json", model)
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
-    request = mail("c@x", "Please quote AAA-BBB, 100 kg.", session_id=1)
+    request = mail("c@x", "Please quote AAA-BBB, 100 kg, 0.3 cbm.", session_id=1)
     started = datetime.now(UTC)
 
     quote = await agent.handle(ctx, request, deadline(30))
@@ -257,7 +257,7 @@ async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeyp
     async def model(ctx, **kw):
         calls.append(kw["purpose"])
         events.emit(ctx, "llm.call", "llm", session_id=kw["session_id"], payload={}, cost_usd=D("0.0001"))
-        data = {"origin": "AAA", "destination": "BBB", "weight_kg": "100", "volume_cbm": None, "pieces": None,
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": "100", "volume_cbm": "0.3", "pieces": None,
                 "preference": "cheapest", "door_pickup": False, "pickup_postcode": None, "currency": None,
                 "language": "en", "first_name": "Tom", "intro": intro, "closing": "Call me for 2 minutes."}  # fmt: skip
         return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D("0.0001"))
@@ -268,7 +268,7 @@ async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeyp
     monkeypatch.setattr(llm, "ask_json", model)
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
-    request = mail("c@x", "Some spare parts from our usual airport to the other one, about a hundred kilos.\n\nTom")
+    request = mail("c@x", "Some spare parts from our usual airport to the other one, a hundred kilos, 0.3 cbm.\n\nTom")
 
     quote = await agent.handle(ctx, request, deadline(30))
     assert calls == ["rfq.extract"] and quote.llm_calls == 1
@@ -298,7 +298,7 @@ async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
     started = datetime.now(UTC)
-    quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg."), deadline(30))
+    quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg, 0.3 cbm."), deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 2
     assert quote.body.startswith("Hello,\n\n") and "260.00 EUR" in quote.body
 

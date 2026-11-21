@@ -117,7 +117,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - "Pickup from our warehouse" can name no place (rounds 15 to 18 lost). The customer holds the fact back and gives
   it when asked: asked after round 18, Lindqvist answered "51115 Bergisch Gladbach" within 10 s. `extract.py`
   `_town_zone` takes a town on the line that describes the pickup. Otherwise `_ask` sends one short question in the
-  thread for exactly the facts `_unknown` lists (pickup place, origin, destination, weight), never a price, and the
+  thread for exactly the facts `_unknown` lists (pickup place, origin, destination, weight, volume: without one
+  the chargeable weight is the gross weight, too low for bulky goods), never a price, and the
   request is read again with the answer (a town alone maps to its zone). No answer 60 s after the request: the
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
   (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
