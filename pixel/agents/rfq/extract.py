@@ -58,11 +58,16 @@ PIECES = re.compile(
     r"(\d+)\s*(?:pcs|pieces|pallets?|colli|packages|cartons|boxes|stück|stk|paletten|kartons)\b", re.IGNORECASE
 )
 NOT_URGENT = re.compile(
-    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile)\b",
+    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
+    r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger)\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(
-    r"\b(?:fastest|quickest|urgent\w*|asap|express|as soon as possible|schnellst\w*|eilig\w*|dringend\w*)\b",
+FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*)\b", re.IGNORECASE)
+CHEAPEST = re.compile(r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*)\b", re.IGNORECASE)
+HURRY = re.compile(
+    r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|as soon as possible|as (?:quickly|fast) "
+    r"as possible|quickly|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
+    r"|dringend\w*)\b",
     re.IGNORECASE,
 )
 DOOR = re.compile(
@@ -278,6 +283,16 @@ def _language(text: str) -> str:
     return "de" if sum(w in GERMAN for w in words) > sum(w in ENGLISH for w in words) else "en"
 
 
+def _preference(text: str) -> Preference:
+    """A superlative the customer wrote decides; without one, a hurry they describe means fastest."""
+    text = NOT_URGENT.sub("", text)
+    if FASTEST.search(text):
+        return Preference.FASTEST
+    if CHEAPEST.search(text) or not HURRY.search(text):
+        return Preference.CHEAPEST
+    return Preference.FASTEST
+
+
 def _text(message: Message) -> str:
     return f"{message.subject}\n\n{message.body}"
 
@@ -306,7 +321,7 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
         weight_kg=weight,
         volume_cbm=volume or Decimal(0),
         pieces=pieces,
-        preference=Preference.FASTEST if FASTEST.search(NOT_URGENT.sub("", text)) else Preference.CHEAPEST,
+        preference=_preference(text),
         door_pickup=door,
         pickup_postcode=postcode,
         pickup_zone=zone_of(postcode) if postcode else None,
