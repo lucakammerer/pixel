@@ -27,7 +27,7 @@ def _time(value: Any) -> datetime:
 
 SENDER = ("from", "sender", "from_address")
 RECIPIENT = ("to", "recipient", "to_address")
-STORED_AT = ("created_at", "sent_at", "stored_at", "timestamp", "date")
+STORED_AT = ("received_at", "created_at", "sent_at", "stored_at", "timestamp", "date")
 
 
 def _first(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:

@@ -1,0 +1,13 @@
+{
+  "id": 170,
+  "from": "fjordline-air-cargo@hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "Re: Rate request FRA-JFK, 340 kg",
+  "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-JFK.\nWe fly CGN-NBO, CGN-SIN, DUS-BOM, DUS-DEL, DUS-JFK, DUS-KUL, FRA-ATL, FRA-JNB, FRA-TLV, HAM-GRU, MUC-LAX, STR-EZE.\n\nBest regards\nFjordline Air Cargo\nfjordline-air-cargo@hackloop.mail",
+  "in_reply_to": 169,
+  "references": [
+    169
+  ],
+  "received_at": "2026-11-21T14:13:40.950706+00:00",
+  "attachments": []
+}

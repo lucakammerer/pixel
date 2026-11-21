@@ -3,6 +3,7 @@ import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from itertools import count
+from pathlib import Path
 
 import pytest
 
@@ -154,3 +155,8 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
 
     backup = await agent.fallback(ctx, 1)
     assert (backup.total, backup.fallback, len(calls)) == (D("260.00"), True, 1)
+
+
+def test_a_captured_lane_decline_is_recognised_without_a_model():
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "bid-decline-lane.json").read_text())
+    assert bids.DECLINE.search(raw["body"])
