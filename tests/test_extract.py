@@ -753,3 +753,40 @@ async def test_a_request_without_a_volume_asks_for_it_and_reads_the_answer(conn,
     monkeypatch.setattr(outbox, "send", send)
     rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
     assert "volume" in asked[0] and (rfq.weight_kg, rfq.volume_cbm) == (Decimal(600), Decimal("5.76"))
+
+
+async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
+
+    fixtures = Path(__file__).parent / "fixtures"
+    scored = json.loads((fixtures / "scored-excluded-airline.json").read_text())
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_carriers(ctx, [{"name": n, "kind": "airline", "email": f"{i}@x", "serves": "AAA"}
+                              for i, n in enumerate(scored["airlines"])])  # fmt: skip
+    message = to_message(json.loads((fixtures / scored["request"]).read_text()), "in")
+    message = message.model_copy(update={"session_id": message.id})
+    store.save_zones(
+        ctx, [{"zone": zone_of(z), "area": "Town", "airport": "AAA"} for z in extract.POSTCODE.findall(message.body)]
+    )
+    rfq, _ = await extract.read_request(ctx, message, deadline_for(message.sent_at, settings()))
+    assert set(rfq.excluded_carriers) == {scored["excluded"], scored["code"]}
+    later = message.model_copy(update={"id": message.id + 1, "session_id": message.id + 1,
+                                       "body": message.body.split("\n\nPlease do not")[0]})  # fmt: skip
+    rfq, _ = await extract.read_request(ctx, later, deadline_for(later.sent_at, settings()))
+    assert scored["excluded"] in rfq.excluded_carriers
+    other = later.model_copy(update={"id": later.id + 1, "session_id": later.id + 1, "sender": "someone@else"})
+    rfq, _ = await extract.read_request(ctx, other, deadline_for(other.sent_at, settings()))
+    assert rfq.excluded_carriers == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "excluded"),
+    [
+        ("Please avoid Alpha Air on this one.", {"Alpha Air"}),
+        ("Bitte nicht mit Alpha Air fliegen.", {"Alpha Air"}),
+        ("Any airline except Alpha is fine.", {"Alpha Air"}),
+        ("We flew Alpha Air last time and were happy.", set()),
+        ("We are not in a hurry.", set()),
+    ],
+)
+def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
+    assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"})[0]) == excluded

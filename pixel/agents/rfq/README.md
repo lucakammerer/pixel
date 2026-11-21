@@ -47,6 +47,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
+- `extract.py` `excluded_airlines`, `_ruled_out`: an airline the customer rules out (a sentence with a negation that
+  names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
+  two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
+  When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
   customer, formal or not (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
   the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
@@ -105,6 +109,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A customer can rule out an airline ("Please do not offer … for this shipment or for any of our future
+  inquiries"), and it can be the cheapest bid. Round 42 quoted it and was rejected as `excluded_airline`; the
+  exclusion is read by rule and holds for that customer's later requests too (`extract.py` `_ruled_out`).
 - A customer's yes comes in many shapes ("Bitte buchen Sie.", "Please book it and send us the AWB once
   available.", "Could you book it, please?"). `booking.py` `intent` takes an acceptance anywhere in a sentence that
   is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes
