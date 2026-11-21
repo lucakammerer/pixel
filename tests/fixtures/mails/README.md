@@ -38,6 +38,8 @@ Captured mails of a request, from the request to the confirmed booking:
 
 - `rfq-door-no-origin.json`: the first scored request. Door-to-port, fastest, a currency asked for; it names the
   destination and the pickup postcode but no origin airport.
+- `rfq-door-offer-as-pdf.json`: round 76. Door-to-port, fastest; the customer asks for the offer as a PDF
+  attachment and declined our quote without one (`no_pdf_offer`).
 - `rfq-door-request-in-txt.json`: round 66. The mail only points to `quotation-request.txt` (embedded), which
   holds the whole request: destination, weight, volume, pieces, pickup postcode, the wish. Read by rules live.
 - `rfq-sli-volume-differs-from-mail.json`: round 33, MUC-CAI, cheapest. The mail says 2.78 cbm; the attached packing

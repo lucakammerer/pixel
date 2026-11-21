@@ -1,10 +1,12 @@
 import asyncio
 import dataclasses
+import io
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pdfplumber
 import pytest
 
 from pixel.api.client import ApiError
@@ -22,6 +24,7 @@ KEY = "marker-key-0123456789"
 class FakeMailbox:
     def __init__(self, fail_with=()):
         self.sent = []
+        self.attachments = []
         self.fail_with = list(fail_with)
 
     async def send(self, to, subject, body, in_reply_to=None, attachments=()):
@@ -29,6 +32,7 @@ class FakeMailbox:
         if self.fail_with:
             raise self.fail_with.pop(0)
         self.sent.append(to)
+        self.attachments.append(attachments)
         return to_message(
             {"id": 5000 + len(self.sent), "from": "us@x", "to": to, "subject": subject, "body": body,
              "in_reply_to": in_reply_to, "created_at": datetime.now(UTC).isoformat()}, "out",
@@ -40,8 +44,8 @@ def make_ctx(conn, mailbox=None, **changes):
     return Context(config, conn, mailbox or FakeMailbox(), None, None, None)
 
 
-def ingest_rfq(ctx):
-    rfq = poller.ingest(ctx, to_message(json.loads((MAILS / "rfq-door-no-origin.json").read_text()), "in"))
+def ingest_rfq(ctx, fixture="rfq-door-no-origin.json"):
+    rfq = poller.ingest(ctx, to_message(json.loads((MAILS / fixture).read_text()), "in"))
     ctx.db.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (?, ?, 'open', ?)",
                    (rfq.id, rfq.sender, rfq.sent_at.isoformat()))  # fmt: skip
     return rfq
@@ -95,6 +99,25 @@ async def test_two_racing_quotes_send_one(conn):
     assert conn.execute("SELECT state FROM sessions").fetchone()[0] == "quoted"
 
 
+async def test_the_quote_goes_out_with_itself_as_a_pdf(conn):
+    """Round 76: the customer asked for the offer as a PDF and rejected a quote without one (`no_pdf_offer`)."""
+    ctx = make_ctx(conn)
+    rfq = ingest_rfq(ctx, "rfq-door-offer-as-pdf.json")
+    quote = make_quote(rfq).model_copy(update={"body": "Hallo Deniz,\n\n100.00 EUR all-in (Grüße).\n\nLena Berger"})
+    await outbox.send_quote(ctx, quote)
+    [(name, kind, content)] = ctx.mailbox.attachments[0]
+    assert (name, kind) == ("offer-Q-1.pdf", "application/pdf")
+    with pdfplumber.open(io.BytesIO(content)) as document:
+        assert "100.00 EUR all-in (Grüße)." in document.pages[0].extract_text()
+
+
+async def test_a_refused_pdf_never_costs_the_quote(conn):
+    ctx = make_ctx(conn, FakeMailbox([ApiError(422, "attachment")]))
+    rfq = ingest_rfq(ctx)
+    await outbox.send_quote(ctx, make_quote(rfq))
+    assert ctx.mailbox.attachments == [()] and "error" in kinds(ctx)
+
+
 async def test_dry_run_holds_and_keeps_the_quote_slot(conn):
     ctx = make_ctx(conn, dry_run=True)
     rfq = ingest_rfq(ctx)
@@ -113,7 +136,7 @@ async def test_429_is_waited_out_not_dropped(conn):
 
 
 async def test_a_failed_send_frees_the_slot_for_the_fallback(conn):
-    ctx = make_ctx(conn, FakeMailbox([ApiError(422, "bad")]))
+    ctx = make_ctx(conn, FakeMailbox([ApiError(422, "bad")] * 2))
     rfq = ingest_rfq(ctx)
     with pytest.raises(ApiError):
         await outbox.send_quote(ctx, make_quote(rfq))
@@ -154,7 +177,7 @@ async def test_takeover_allows_sourcing_mail(conn, purpose):
 
 
 async def test_no_key_in_any_event(conn):
-    ctx = make_ctx(conn, FakeMailbox([ApiError(422, f"echo {KEY}")]))
+    ctx = make_ctx(conn, FakeMailbox([ApiError(422, f"echo {KEY}")] * 2))
     rfq = ingest_rfq(ctx)
     with pytest.raises(ApiError):
         await outbox.send_quote(ctx, make_quote(rfq))

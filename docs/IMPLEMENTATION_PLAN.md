@@ -109,7 +109,7 @@ feedback            core/feedback.py every 10 s: points per request, the option 
 | `pixel/config.py` | Settings from `.env` |
 | `pixel/app.py` | Process entry: builds the `Context`, starts the poller, mounts the push endpoint and the UI |
 | `pixel/api/` | The 5U API: `client.py` (key header, retries), `mailbox.py`, `portal.py`, `gateway.py`, `board.py` |
-| `pixel/core/` | `db.py` (SQLite, schema), `events.py` (the log and its live stream), `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, recovery), `outbox.py` (the only way mail leaves), `context.py` |
+| `pixel/core/` | `db.py` (SQLite, schema), `events.py` (the log and its live stream), `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, recovery), `outbox.py` (the only way mail leaves; every quote with itself as a PDF, `pdf.py`), `context.py` |
 | `pixel/agents/router/` | `classify`: which kind of mail this is |
 | `pixel/agents/rfq/` | `agent.py` (the quote), `extract.py`, `compose.py` (the mail text), `booking.py` (acceptance, booking, confirmation) |
 | `pixel/agents/tracking/` | Answers tracking questions from the CRM |
