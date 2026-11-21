@@ -5,6 +5,27 @@ mails written for the tool (German with dimensions and pickup, pounds, a terse o
 city names, one without the facts), the production extraction prompt and its limit of 200 output tokens, seven
 fields per mail. Prices are OpenAI's list prices; "points" is what one call costs of the 40 cost points (R28).
 
+## 21.11.2026, round 83: what measuring on the live key cost
+
+The scorer's cost points per 18-minute window against the spend the live service logged (`llm.call` events). Where
+no one else spent, they match: rounds 58 to 60 scored 39.86, 0.00035 USD per quote, the service logged 0.00104 USD
+for the three. From 21:00 UTC the measuring below ran on the live host with the live key, in scored windows:
+
+| Rounds (accepted) | Cost points | Spend the scorer counted | The service logged |
+| --- | --- | --- | --- |
+| 61, 62 | 34.19 | 0.029 USD | 0.002 USD |
+| 71 | 29.48 | 0.026 USD | 0.001 USD |
+| 73, 74 | 7.30 | 0.164 USD | 0.002 USD |
+| 75 | 0.00 | at least 0.100 USD | 0.001 USD |
+| 80 | 20.65 | 0.048 USD | 0.001 USD |
+
+About 145 cost points lost on six accepted quotes. After it, the second readers went live: gpt-4.1 on every request
+and gpt-4.1-mini on every priced carrier answer, 0.0079 USD for rounds 81 to 83 against about 0.0011 before, about
+1.6 cost points per quote in place of 0.14. Rounds 33 to 35, the case for gpt-4.1, all had a packing list
+attached, and the rules refuse round 67's waiting rate themselves, so gpt-4.1 now reads only a request with
+attachments (27 % of requests since 17:00 UTC) and a carrier answer costs a call only when the rules cannot read
+it: about 0.4 cost points per quote. Measure offline, or right after a quote went out and on few mails.
+
 ## 21.11.2026, round 74: a second reader for every request
 
 Do the top teams buy accuracy with their spend (START Milan about 0.0085 USD per accepted quote, we 0.0035)? Measured
@@ -34,9 +55,7 @@ round 82, "95.00 cubic feet" taken as 95 cbm, and the review: a net weight, an a
 cannot, in place of gpt-4.1-mini. On 12 accepted and 7 lost requests end to end it changed nothing the scorer had
 accepted, and set rounds 33 to 35 right. About 0.0027 USD and 1.5 seconds per request, in place of the prose call:
 about 1.1 cost points per quote, against about 100 points for each rejection it prevents. gpt-4.1-mini stays for
-the rest, and reads every answer the rules price too (`bids._crosscheck`): its total wins where they differ, round
-67's case, when the text states it in the same currency for the whole shipment, at about 0.0002 USD per answer, 0.6
-cost points per quote.
+the rest.
 
 The whole quote written by the model, checked by code, on 14 accepted quotes: gpt-4.1-mini passed 13, gpt-4.1 10
 (it left out the transit time three times). One passing letter was in German for an English mail signed "Viele

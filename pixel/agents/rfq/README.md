@@ -18,8 +18,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Implementation
 
-- `agent.py` `handle`: `extract.extract`; when rules read the request, gpt-4.1 reads the same text too
-  (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s), as an `rfq.crosscheck` event. Pieces and the wish win as
+- `agent.py` `handle`: `extract.extract`; when rules read a request with attachments, gpt-4.1 reads the same text
+  too (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s), as an `rfq.crosscheck` event. Pieces and the wish win as
   the model reads them; its weight or volume only when code reads that figure as a gross total with its unit in the
   customer's own words or documents (`_gross`: never net, tare, per piece, superseded, forwarded or in pounds); a
   destination never, it is only reported. On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
@@ -288,10 +288,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   feet"). Code converts both (`_volume`, `FT3`; `_weight`, `LB`); a model figure that stands in the text only
   before another unit (`_only_with`) is replaced by code's reading, so the cross-check never takes 95 cbm.
 - The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
-  181.96 EUR offer). Every answer the rules price is read by the model too (`pricing/bids.py` `_crosscheck`, the
-  same text, at most 3 s, so no answer misses `collect`'s cutoff); a `bid.crosscheck` event reports a difference. The
-  model's total wins only in the rules' currency and when the text states it as the shipment's amount (`_stated`:
-  not per kg, per hour or another unit). `PIXEL_MODEL_CHECK` empty turns it off with the request's second reader.
+  181.96 EUR offer). The rules now refuse a fuel, security or waiting rate as the price (`_price`); a model read of
+  every answer the rules price cost a call per carrier answer and read no other total on 359 answers of rounds 9 to
+  72, so the model reads only an answer the rules cannot.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the

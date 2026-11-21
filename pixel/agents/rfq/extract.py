@@ -1166,9 +1166,10 @@ def _gross(sources: list[tuple[str, str]], patterns: tuple[re.Pattern, ...], tho
 async def _crosscheck(
     ctx: Context, rfq: Rfq, message: Message, text: str, sources: list[tuple[str, str]], deadline: Deadline
 ) -> tuple[Rfq, dict | None]:
-    """The rules' reading checked by a larger model reading the same text (`PIXEL_MODEL_CHECK`): at first sight the
-    rules took the mail's figures over the packing list's (rounds 33 to 35), and the model did not; on all 44 accepted
-    requests both read the same. The model's weight or volume wins only when code reads that figure as a gross total
+    """The rules' reading of a request with attachments checked by a larger model reading the same text
+    (`PIXEL_MODEL_CHECK`): at first sight the rules took the mail's figures over the attached packing list's (rounds
+    33 to 35), and the model did not. On the 44 accepted requests without attachments both read the same, so those
+    keep the cheap prose call: gpt-4.1 on every request cost about 0.0025 USD each (rounds 81 to 83). The model's weight or volume wins only when code reads that figure as a gross total
     with its unit (`_gross`): never a net, per-piece, superseded, forwarded or pounds figure. Pieces and the wish win
     as read; a destination never does, it is only reported. Its prose slots replace the separate prose call. On any
     failure the rules' reading stands."""
@@ -1270,7 +1271,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     rfq, prose = rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
-    if rfq is not None and ctx.settings.model_check:
+    if rfq is not None and files and ctx.settings.model_check:
         rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline)
     if rfq is None:
         try:
