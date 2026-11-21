@@ -53,8 +53,9 @@ first quote for it was rejected as too low.
 `rfq-door-with-packing-list.json` is a customer's request with a packing specification attached (the file itself
 is not stored); the router once took it for a tariff mail.
 
-Every captured request (`rfq-*.json`) is read by `extract.py` `by_rules` without a model; `tests/test_extract.py`
-checks each one:
+Every captured request (`rfq-*.json`) has its reference row in `../rfqs/live.jsonl`, written from the mail by a
+person (`tools.benchmark_generalization --stub`). It is read by `extract.py` `by_rules` without a model;
+`tests/test_extract.py` checks each one:
 
 - `rfq-door-trucking.json`, `rfq-door-ready-for-pickup.json`: door-to-port, the destination only, the pickup site by
   postcode and "arrange trucking from our site".
