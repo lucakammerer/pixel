@@ -95,6 +95,7 @@ class Rfq(Model):
     deadline_at: datetime
     extracted_by: str = "rules"  # "rules" | "model"
     missing: tuple[str, ...] = ()
+    dangerous_goods: str | None = None  # the declaration as the customer wrote it ("UN1133, Class 3, Adhesives")
 
 
 class LaneTariff(Model):
