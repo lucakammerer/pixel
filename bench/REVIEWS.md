@@ -5,6 +5,9 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #82 | lucakammerer | 587985d | own, URGENT | a quote's claim survived a 503 or lost receipt: the request was never answered (#76) |
+| #67 | TripleCF | 91c52e7 | ok, merged | UI only; endpoints unchanged, output escaped; CRM tabs re-read all quotes per event burst |
+| #63 | maxihuang123-svg | 48403b3 | merged, superseded by #76 | all 11 live tracking questions still match; zone via `pickup.zone_of` |
 | #59 | maxihuang123-svg | 41c6496 | fixed, merged | new decline words cancelled acceptances ("pass on the AWB", "leider nicht vor Montag", "not too high") |
 | #52 | maxihuang123-svg | 0526334 | fixed, merged | the late-price wait held the offline KPI ~45 min; airport check unbounded before pricing; gateway text in events |
 | #61 | lucakammerer | 2204bf9 | own | quoted older mail cut in two places with different rules (#55, #56) |
