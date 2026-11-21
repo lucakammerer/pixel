@@ -3,7 +3,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from pixel import llm
-from pixel.agents.rfq import compose, extract
+from pixel.agents.rfq import compose, dangerous, extract
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import events, feedback, outbox
 from pixel.core.context import Context
@@ -77,7 +77,11 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     prose = compose.stored(ctx, rfq.session_id)
     if not options:
         return None
-    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, prose, fallback=False))
+    quote = _quote(ctx, rfq, options, prose, fallback=False)
+    if goods := await dangerous.declared(ctx, message):
+        quote = quote.model_copy(update={"body": dangerous.with_note(quote.body, goods, compose.language_of(rfq))})
+        events.emit(ctx, "rfq.dangerous_goods", "rfq", session_id=rfq.session_id, payload={"declared": goods})
+    sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent
 

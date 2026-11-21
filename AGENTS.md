@@ -109,13 +109,23 @@ Everything else runs dry or on replayed mail.
 
 ## Branches
 
-Foundation: `a/<topic>`, `b/<topic>`, `c/<topic>` from `main`. Afterwards: `accuracy/<topic>`, `speed/<topic>`,
-`cost/<topic>`. Rebase on `main` before merging; `uv run pytest -q` and `uv run ruff check .` pass on every commit
-that reaches `main`; `.github/workflows/ci.yml` runs both on every push to `main` and every pull request. On a pull
-request it also replays the mail fixtures on the base and on the branch (`tools/kpi.py`) and posts the comparison
-as a comment: accuracy, cost and speed, and every request whose price or carrier changed. Offline it has sheet
-prices only and no model; `tools/kpi_pr.sh` measures the same on the live host with the real portal and gateway.
-Small commits, the subject says what changed, no trailers.
+Branch from `main`: `accuracy/<topic>`, `speed/<topic>`, `cost/<topic>`. Small pull requests, one at a time per
+thread, the subject says what changed, no trailers. How a change reaches `main` and the live host:
+
+1. **The gate is local.** Update the branch once with `origin/main`, then run `uv run pytest -q`,
+   `uv run ruff check .` and `uv run python -m tools.kpi` (the mail fixtures replayed offline: sheet prices only, no
+   model). Green means: push, open the pull request, merge it at once (`gh pr merge --merge`). Do not wait for CI on
+   the pull request or for a review, and never leave a green pull request open.
+2. **CI runs on `main`** (`.github/workflows/ci.yml`). Whoever merged watches that run and fixes forward or reverts
+   within the same round if it fails.
+3. Update with `main` once, right before the local run. No second rebase unless GitHub reports a conflict.
+4. **Reviews happen after the merge** and never hold a pull request. A finding becomes a follow-up pull request
+   under the same rule.
+5. **One thread deploys:** the main thread deploys `main` with `tools/deploy.sh` once per round, after that round's
+   quote has gone out, whenever `main` has new commits. A fix for a round we just lost may go live from its branch
+   first; it is merged right after.
+
+`tools/kpi_pr.sh` measures a branch against `main` on the live host with the real portal and gateway.
 
 ## Glossary
 
