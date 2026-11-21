@@ -13,8 +13,18 @@ from pixel.contracts import LlmResult
 from pixel.core import events
 from pixel.core.context import Context
 
-# USD per 1M tokens (input, output) per model id; filled from the gateway's usage data, never guessed.
-PRICES: dict[str, tuple[str, str]] = {}
+# USD per 1M tokens (input, output) per model id, from OpenAI's price list (standard tier, read on 2026-11-21).
+# The gateway reports tokens but no cost. A model missing here is logged with `cost_unknown`.
+PRICES: dict[str, tuple[str, str]] = {
+    "gpt-4o-mini": ("0.15", "0.60"),
+    "gpt-4.1-mini": ("0.40", "1.60"),
+    "gpt-5-nano": ("0.05", "0.40"),
+    "gpt-5-mini": ("0.25", "2.00"),
+    "gpt-5.4-nano": ("0.20", "1.25"),
+    "gpt-5.4-mini": ("0.75", "4.50"),
+    "gpt-5.6-luna": ("0.20", "1.20"),
+    "gpt-6-luna": ("0.10", "0.50"),
+}
 
 SESSION_BUDGET_USD = Decimal(os.environ.get("PIXEL_SESSION_BUDGET_USD", "0.02"))
 

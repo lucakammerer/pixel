@@ -88,6 +88,7 @@ uv run ruff check . && uv run ruff format .
 uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored mail through the pipeline
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
+uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 tools/deploy.sh                                 # the checked-out commit to the live host, restarts the service
 ```
@@ -141,6 +142,8 @@ commits, the subject says what changed, no trailers.
 - Booking with a `rate_id` older than 15 minutes: 410. Fetch a fresh rate and book that.
 - Calling the model "just to be sure" in a loop or per carrier answer: the hourly spend is divided by *accepted*
   quotes only.
+- Switching `PIXEL_MODEL` to a reasoning model without measuring it: reasoning tokens count against
+  `max_completion_tokens`, and a small cap then returns no answer at all (`bench/MODELS.md`).
 - Sending no gateway call at all for a quote: that quote earns no cost points.
 - Treating the start kit as the truth for the weekend. It is one version; the tariff mails and the hourly changes
   replace it.

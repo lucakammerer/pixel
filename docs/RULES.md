@@ -60,7 +60,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | R29 | Response time, 15 points: full within 2 minutes of the request, zero at 6 minutes | Brief | `core/orchestrator.py` `deadline_for` | open |
 | R30 | +10 for a correct tracking answer on a booked shipment | Brief, Board | `agents/tracking/agent.py` `answer`, `tests/test_tracking.py` | done |
 | R31 | +10 from the jury for the accepted mail that reads most human | Brief, Board | `agents/rfq/compose.py` | open |
-| R32 | All model calls go through the gateway (`POST /v1/gateway/chat/completions`, `/responses`, `/embeddings`), OpenAI models only, with our own OpenAI key stored once at the gateway | Brief, API | `llm.py`, `api/gateway.py`, `tools/set_openai_key.py` | done |
+| R32 | All model calls go through the gateway (`POST /v1/gateway/chat/completions`, `/responses`, `/embeddings`), OpenAI models only, with our own OpenAI key stored once at the gateway. At most 20 gateway calls in flight per team, then 429 `too_many_in_flight` | Brief, API | `llm.py`, `api/gateway.py`, `tools/set_openai_key.py` | done |
 | R33 | After a few hours the setup changes about once an hour, unannounced. We learn of a change from failed quotes: `GET /v1/board/me` gives per request the verdict (`accepted`, `rejected`, `pending`, `open`, `no answer`, `voided`), a reason code and the points per kind | Brief, API | `tools/board_me.py` `run`, `crm/quotes.py` `stats`, `ui/dashboard.py` | done |
 
 ## The final
