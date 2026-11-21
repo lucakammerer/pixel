@@ -34,15 +34,28 @@ VOLUME = (
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\b", re.IGNORECASE
 )
-LOT = re.compile(r"(?im)^\s*(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-]\s*(\d+)\s+[^\W\d](.+)$")
+LOT = re.compile(
+    r"(?im)^\s*(?:[-*•]|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])\s*(\d+)\s+"
+    r"(?!(?:kgs?|kilos?|lbs?|cbm|cm|mm|m3|m)\b)[^\W\d](.+)$"
+)
 EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
 ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
 MODE = rf"(?:\b(?P<each>{EACH})|\b(?P<all>{ALL}))?\s*"
+PER_PIECE = rf"(?:\b(?:{EACH})\b|(?<!\w)à)"
+EACH_WEIGHT = re.compile(
+    rf"{PER_PIECE}\s*(?:of\s+)?{NUM}\s*(?:kgs?|kilos?)\b|{NUM}\s*(?:kgs?|kilos?)\s+(?:gross\s+)?{PER_PIECE}",
+    re.IGNORECASE,
+)
+EACH_VOLUME = re.compile(rf"{PER_PIECE}\s*{NUM}\s*(?:cbm|m3|m³)|{NUM}\s*(?:cbm|m3|m³)\s+{PER_PIECE}", re.IGNORECASE)
 LOT_WEIGHT = re.compile(rf"{MODE}{NUM}\s*(?:kgs?|kilos?)\b(?:\s*(?P<kind>gross|brutto|net|netto))?", re.IGNORECASE)
 LOT_VOLUME = re.compile(rf"{MODE}{NUM}\s*(?:cbm\b|m3\b|m³)", re.IGNORECASE)
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)\s*(?:pcs|pieces|pallets?|colli|packages|cartons|boxes|stück|stk|paletten|kartons)\b", re.IGNORECASE
+)
+NOT_URGENT = re.compile(
+    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile)\b",
+    re.IGNORECASE,
 )
 FASTEST = re.compile(
     r"\b(?:fastest|quickest|urgent\w*|asap|express|as soon as possible|schnellst\w*|eilig\w*|dringend\w*)\b",
@@ -156,8 +169,18 @@ def _pieces(text: str) -> int | None:
     return found.pop() if len(found) == 1 else None
 
 
+def _weight(text: str, pieces: int | None) -> Decimal | None:
+    """The one gross weight; a weight per piece ("4 cartons, each 48 kg") times the pieces, or None without them."""
+    weight = _unique(WEIGHT, text, thousands=True)
+    if weight is None or not EACH_WEIGHT.search(text):
+        return weight
+    return weight * pieces if pieces else None
+
+
 def _volume(text: str, pieces: int | None) -> Decimal | None:
     stated = _unique(VOLUME, text, thousands=False)
+    if stated is not None and EACH_VOLUME.search(text):
+        return stated * pieces if pieces else None
     if stated is not None:
         return stated
     dims = DIMS.findall(text)
@@ -229,10 +252,13 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
     if lane is None and door and postcode and (destination := _destination_only(text)):
         lane = ("", destination)  # the origin is the pickup zone's airport, set in `extract`
     lots = _lots(text)
-    weight = lots[0] if lots else _unique(WEIGHT, text, thousands=True)
+    pieces = lots[2] if lots else _pieces(text)
+    weight = lots[0] if lots else _weight(text, pieces)
+    volume = lots[1] if lots else _volume(text, pieces)
+    if volume is None and (DIMS.search(text) or any(p.search(text) for p in VOLUME)):
+        return None  # a volume is given but not certain: under-reading it under-prices the chargeable weight
     if lane is None or weight is None:
         return None
-    pieces = lots[2] if lots else _pieces(text)
     return Rfq(
         session_id=message.session_id,
         message_id=message.id,
@@ -240,9 +266,9 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
         origin=lane[0],
         destination=lane[1],
         weight_kg=weight,
-        volume_cbm=lots[1] if lots else _volume(text, pieces) or Decimal(0),
+        volume_cbm=volume or Decimal(0),
         pieces=pieces,
-        preference=Preference.FASTEST if FASTEST.search(text) else Preference.CHEAPEST,
+        preference=Preference.FASTEST if FASTEST.search(NOT_URGENT.sub("", text)) else Preference.CHEAPEST,
         door_pickup=door,
         pickup_postcode=postcode,
         pickup_zone=zone_of(postcode) if postcode else None,
