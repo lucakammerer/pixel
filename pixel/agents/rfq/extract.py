@@ -522,6 +522,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     files = await _attachments(ctx, message) if message.attachments else []
+    mail = message
     if files and not any(p.search(_body(message)) for p in WEIGHT):
         # "Please see the attached packing list": the weight stands only in the attachment, so it is read too.
         attached = "\n".join(line for _, lines in files for line in lines)
@@ -563,7 +564,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
         else:
             rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text), text)
             prose = {k: result.data.get(k) for k in PROSE}
-    if dg := await dangerous_goods(ctx, message, files):
+    if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
         events.emit(ctx, "rfq.dangerous_goods", "rfq", session_id=message.session_id, message_id=message.id,
