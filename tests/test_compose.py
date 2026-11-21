@@ -1,10 +1,12 @@
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from test_extract import DEADLINE, captured
 
 from pixel import llm
-from pixel.agents.rfq import compose
+from pixel.agents.rfq import compose, dangerous, extract
 from pixel.config import settings
 from pixel.contracts import LlmResult, Message, RateOption, Rfq, Source
 from pixel.core.context import Context
@@ -67,7 +69,8 @@ def test_reply_subject_name_and_signer():
     subject, body = compose.render(rfq("en"), OPTION, prose, "Machine parts to BBB", SIGNER)
     assert subject == "Re: Machine parts to BBB"
     assert body.startswith("Hello Anna,\n\nHappy to help get the machine parts moving quickly.")
-    assert "Have a good day." in body and body.endswith(f"{SIGNER}\n{compose.COMPANY}")
+    # The mail ends on the booking sentence and the signature: no stock closing line (R31).
+    assert "Have a good day" not in body and body.endswith(f"Best regards,\n{SIGNER}\n{compose.COMPANY}")
     assert compose.reply_subject("AW: Anfrage") == "AW: Anfrage" and compose.reply_subject("") is None
 
 
@@ -169,8 +172,6 @@ def test_a_third_language_slot_is_dropped():
 def test_short_closings_in_both_languages_pass():
     assert compose.clean({"closing": "Have a good day"}, rfq("en"), message(), SIGNER).closing == "Have a good day"
     assert compose.clean({"closing": "Schönen Tag noch"}, rfq("de"), message(), SIGNER).closing
-    _, body = compose.render(rfq("en"), OPTION, compose.Prose(closing="Have a good day"))
-    assert "Have a good day." in body
 
 
 def test_a_rendering_error_with_slots_falls_back_to_plain(monkeypatch):
@@ -217,3 +218,40 @@ def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
 
 def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
     assert compose.ready_date("Please quote 300 kg, it must arrive by 2026-12-01.") is None
+
+
+def test_reads_like_a_clerk_in_the_customers_register():
+    request = "Dear Sir or Madam,\n\nplease quote AAA to BBB.\n\nKind regards\nPetra Hofmann\nHead of Logistics"
+    option = OPTION.model_copy(update={"valid_until": datetime(2026, 11, 21, 16, 22, tzinfo=UTC)})
+    _, body = compose.render(rfq("en"), option, request=request)
+    # Named from the signature without a model slot, formal like her mail, validity on our clock, no date stamp.
+    assert body.startswith("Dear Petra,") and "Kind regards,\nLena Berger" in body
+    assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
+    _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
+    assert casual.startswith("Hi Tom,") and "Best wishes," in casual
+
+
+def test_an_opening_that_repeats_the_mail_back_is_dropped():
+    echo = "I've noted that the delivery to the airport is arranged by you."
+    two = "Thanks for the machine parts request. We will take good care of it."
+    for intro in (echo, two):
+        assert compose.clean({"intro": intro}, rfq("en"), message(), SIGNER).intro is None
+
+
+def test_two_sessions_do_not_read_alike():
+    bodies = {compose.render(rfq("en", session), OPTION)[1] for session in range(1, 9)}
+    assert len(bodies) >= 5
+
+
+def test_an_english_request_from_a_german_town_is_answered_in_english_throughout():
+    """Round 11: "Lueneburg, Germany" made the model answer `de`; the quote opened in German, the dangerous-goods
+    note was English, and the name was lost. Code decides the language, and every part of the mail follows it."""
+    mail = captured("rfq-dg-instruction-bullets.json")
+    request = extract.by_rules(mail, DEADLINE)
+    assert request.language == "en"
+    _, body = compose.render(request, OPTION, request=mail.body)
+    body = dangerous.with_note(body, "UN1950, Class 2.1", compose.language_of(request), "packing-spec.pdf")
+    assert body.startswith("Hello Sara,") and "shipper's declaration" in body
+    assert not re.search(r"Guten Tag|Laufzeit|Grüße|Angebot|Gefahrgut", body)
+    german = dangerous.with_note(compose.render(rfq("de"), OPTION)[1], "UN1950", "de", "x.pdf")
+    assert "Gefahrgut" in german and "One point before we book" not in german and "bei 3 Tage" not in german

@@ -45,3 +45,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   labelled-bullet request (round 11) and "no pickup needed" are read by rules. Next: wishes ("speed matters more
   than price"), a currency other than EUR, a postcode outside the zones.
 
+- 21.11. 17:15 CET: board after round 12: human awards START Milan 3, MAKEANOTHERMD 1, Austrian Power 1, PIXEL 0.
+  Round 11 went out in German to an English mail (language by the model, fixed on main since), round 12 to Petra
+  was the first in the new voice. No tracking question since 16:55 CET, so the tracking total is still unmeasured.
+- 21.11. 17:20 CET: tried the quote as a clerk writes it: greeting and sign-off in the customer's register, the name
+  by rule when the model gives none, one short opening (an echo of the mail is dropped), validity as "17:22 today",
+  chargeable weight only when above gross, no closing line, 3 to 4 phrasings per sentence; changed: wording only,
+  same total, carrier, timing and one model call; next: the `human` column for the first round it is live.
