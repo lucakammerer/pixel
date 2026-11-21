@@ -1,11 +1,11 @@
 import asyncio
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from pixel import llm
 from pixel.contracts import Message, Preference, Rfq
-from pixel.core import events, outbox
+from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import store
@@ -575,10 +575,12 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
         )  # fmt: skip
     except Exception:  # noqa: BLE001 - held (dry run, takeover) or failed: the guess takes over
         return None
-    answer = ("SELECT body FROM messages WHERE session_id = ? AND direction = 'in' AND id > ? AND lower(sender) = ?"
-              " ORDER BY id LIMIT 1")  # fmt: skip
-    while not (row := ctx.db.execute(answer, (message.session_id, question.id, message.sender.lower())).fetchone()):
-        if datetime.now(UTC) >= deadline.received_at + timedelta(seconds=ASK_WAIT_S):
+    # Not the request itself: a replay's own mail ids are negative.
+    answer = ("SELECT body FROM messages WHERE session_id = ? AND direction = 'in' AND id > ? AND id != ?"
+              " AND lower(sender) = ? ORDER BY id LIMIT 1")  # fmt: skip
+    asked = (message.session_id, question.id, message.id, message.sender.lower())
+    while not (row := ctx.db.execute(answer, asked).fetchone()):
+        if timing.now() >= deadline.received_at + timedelta(seconds=ASK_WAIT_S):
             return None
         await asyncio.sleep(1)
     return row["body"]
@@ -720,7 +722,17 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         text = "\n\n".join(content for _, content in sources)
         message = mail.model_copy(update={"subject": "", "body": text}) if files else mail
         again = rules()
-        return apply_pickup(again, guess=False) if again is not None else read
+        if (
+            again is None
+            and read.door_pickup
+            and not read.pickup_zone
+            and len(codes := set(POSTCODE.findall(own_words(said)))) == 1
+        ):
+            # The model read the request, so the rules cannot read it again: the place comes from the answer alone.
+            code = codes.pop()
+            again = read.model_copy(update={"pickup_postcode": code, "pickup_zone": zone_of(code),
+                                            "missing": tuple(m for m in read.missing if m != "pickup_postcode")})  # fmt: skip
+        return apply_pickup(again or read, guess=False)
 
     rfq, prose = rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
