@@ -5,6 +5,10 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #112 | lucakammerer | d9056e6 | ok | closes #107's finding: root runs only hand-installed files (checked on the host) |
+| #111 | lucakammerer | 2e771c1 | ok | formal greeting with the whole signed name |
+| #110 | TripleCF | e9de807 | ok | dashboard shows the scorer's total; a missing total no longer reads as 0 |
+| #109 | lucakammerer | 1f71ea6 | ok (second reviewer's area) | negated acceptances never book; all 17 acceptances of #87 still book |
 | #107 | lucakammerer | 3ecb7f9 | needs follow-up (deploy thread) | a merged cd.sh runs as root untested; every merge is live within a round |
 | #106 | lucakammerer | 1feb72c | ok | two more stiff openers rejected; one-sentence rule kept |
 | #105 | lucakammerer | ba16727 | ok (second reviewer's area) | company token inside a longer word; three-letter tokens can match unrelated words |
