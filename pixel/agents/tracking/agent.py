@@ -4,7 +4,7 @@ import re
 from datetime import UTC, date, datetime, timedelta
 from typing import NamedTuple
 
-from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER
+from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, ready_date
 from pixel.agents.rfq.extract import number
 from pixel.contracts import Message, Shipment
 from pixel.core import events, outbox
@@ -33,8 +33,6 @@ RECORD = {
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December"]  # fmt: skip
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
-READY = re.compile(r"\bready\b[^\n]{0,100}?\b(\d{4})-(\d{2})-(\d{2})\b", re.IGNORECASE)
 NAME = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
 NOT_A_NAME = re.compile(r"\b(?:Thanks|Thank|Regards|Cheers|Best|Kind|Many|Greetings|Team|Logistics|Shipping)\b")
 FORMAL = re.compile(r"\b(?:dear|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
@@ -46,15 +44,6 @@ BYE = {"formal": "Kind regards", "neutral": "Best regards", "casual": "Best wish
 class Detail(NamedTuple):
     ready: date | None = None
     postcode: str | None = None
-
-
-def ready_date(text: str) -> date | None:
-    """The date the cargo is ready: the first date after "ready", else the only date in the text."""
-    found = READY.search(text) or (DATE.search(text) if len(DATE.findall(text)) == 1 else None)
-    try:
-        return date(*map(int, found.groups())) if found else None
-    except ValueError:
-        return None
 
 
 def day(d: date) -> str:
