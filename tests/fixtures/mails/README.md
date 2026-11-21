@@ -38,6 +38,8 @@ Captured mails of a request, from the request to the confirmed booking:
 
 - `rfq-door-no-origin.json`: the first scored request. Door-to-port, fastest, a currency asked for; it names the
   destination and the pickup postcode but no origin airport.
+- `rfq-door-offer-as-pdf.json`: round 76. Door-to-port, fastest; the customer asks for the offer as a PDF
+  attachment and declined our quote without one (`no_pdf_offer`).
 - `rfq-dg-packing-list-as-xls.json`: `rfq-dg-packing-list.json` with its packing list saved as Excel 97 (`.xls`, the
   mailbox allows it, R6), cell for cell; written once with xlwt, which the project does not depend on.
 - `rfq-door-request-in-txt.json`: round 66. The mail only points to `quotation-request.txt` (embedded), which
