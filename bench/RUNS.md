@@ -75,9 +75,11 @@ events in the live database shows it:
 What follows:
 
 - The record answer ("Shipment PX-…: AAA → BBB, n kg / Status: confirmed by <airline>, booked and ready to ship /
-  Airline booking reference / Transit time / Customer") earned +10 six times out of six. The prose answer with that
-  record block below it (#20, #27, live since 16:07) is untested: if the +10 does not arrive within three minutes
-  of our answer, put the old answer back (branch `voice/tracking-old-answer`) and have the main thread deploy it.
+  Airline booking reference / Transit time / Customer") earned +10 six times out of six.
+- The prose answer with that record block below it (#20, #27) scores too: question "Status of our shipment FRA to
+  DOH, 102 kg" stored 16:18:25, our answer 16:18:25, total 970.31 at 16:14:46 and 980.31 at 16:18:47, with no round
+  closing in between and our `human` still 0. Seven of seven right first answers scored. The old answer alone is
+  kept on the local branch `voice/tracking-old-answer`, in case a later answer stops scoring.
 - No variants on tracking. Keep the facts and the first-answer-is-right rule; wording only while the +10 keeps
   arriving.
 - A question comes about 11 minutes after the request of a booked round. None comes for a round that was rejected
