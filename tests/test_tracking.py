@@ -2,6 +2,7 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from test_crm import mail, quote
 
 from pixel.agents.tracking import agent
@@ -135,3 +136,16 @@ async def test_the_answer_names_the_pickup_postcode_the_desk_asked_about(pipe):
                                       body="Rheintal Elektronik GmbH, 51804 to DFW, 1795 kg, ready on 2026-11-29?"))  # fmt: skip
     body = pipe.sent[0]["body"]
     assert ours.booking_reference in body and "from 51804 via CGN" in body and "from 51896" not in body
+
+
+@pytest.mark.parametrize(
+    ("closing", "bye"),
+    [
+        ("Viele Gruesse / Many greetings\nDeniz Yilmaz", "Viele Grüße\nLena Berger"),
+        ("Best greetings from Regensburg\nTobias Auer", "Best regards to Regensburg\nLena Berger"),
+        ("Sara\nLindqvist Medtech", "Best regards\nLena Berger"),
+    ],
+)
+def test_the_tracking_answer_signs_off_as_the_quote_did(closing, bye):
+    body = agent.answer([], None, f"Hello,\n\nwhere is it now?\n\n{closing}")
+    assert body.endswith(f"\n\n{bye}\nAir Export, PIXEL Air Freight")
