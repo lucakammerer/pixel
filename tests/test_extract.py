@@ -365,3 +365,16 @@ async def test_a_pickup_town_beside_another_zone_town_is_not_guessed(conn, emitt
     rfq = extract.by_rules(message.model_copy(update={"body": message.body.replace("24983 ", "")}), DEADLINE)
     assert extract._town_zone(ctx, rfq, extract._text(message)).pickup_zone is None
     assert (await extract.extract(ctx, message, DEADLINE)).origin == "AAA"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Please quote the cheapest option, it does not need to be the fastest.",
+        "We are looking for the cheapest, not the fastest routing.",
+        "Bitte das günstigste Angebot, muss nicht das schnellste sein.",
+        "Could you quickly send me a price for 300 kg?",
+    ],
+)
+def test_a_negated_superlative_or_a_quick_reply_is_no_wish_for_speed(text):
+    assert extract._preference(text) == Preference.CHEAPEST
