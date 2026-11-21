@@ -13,6 +13,7 @@ happened since this process started, so the same fault is reported again only af
 
 import asyncio
 import json
+import os
 import sqlite3
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -49,7 +50,9 @@ REPAIRABLE = {
     "tracking_unmatched",
     "error",
     "quote_doubtful",
+    "ask_rejected_r4",
 }
+UNPRICED_REASONS = {"no_price", "missing_price", "invalid_quote", "unparseable", "no_quote"}
 
 
 def time_points(seconds: float) -> Decimal:
@@ -133,14 +136,62 @@ def _settled(row: dict[str, Any]) -> bool:
     return row.get("verdict") in FINAL and (row["verdict"] != "accepted" or _scored(row) is not None)
 
 
-def _round(ctx: Context, row: dict[str, Any]) -> None:
+def _timestamp(value: str | None) -> datetime | None:
+    try:
+        when = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+
+
+def question_counted_as_quote(ctx: Context, session_id: int, score: dict) -> bool:
+    """Whether a rejected round has evidence that the scorer read our question as the first quote (R4)."""
+    if score.get("verdict") != "rejected":
+        return False
+    sent = ctx.db.execute(
+        "SELECT COALESCE(m.sent_at, e.ts) FROM events e LEFT JOIN messages m ON m.id=e.message_id"
+        " WHERE e.session_id=? AND e.kind='quote.sent' ORDER BY e.id LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    if sent is None or (quoted_at := _timestamp(sent[0])) is None:
+        return False
+    answered_at = _timestamp(score.get("answered_at"))
+    unpriced = str(score.get("reason") or "").strip().lower() in UNPRICED_REASONS
+    for question in ctx.db.execute(
+        "SELECT sent_at FROM messages WHERE session_id=? AND direction='out' AND purpose='question'", (session_id,)
+    ):
+        asked_at = _timestamp(question["sent_at"])
+        if asked_at is None or asked_at >= quoted_at:
+            continue
+        if unpriced or (
+            answered_at is not None
+            and (quoted_at - answered_at).total_seconds() >= 5
+            and abs((answered_at - asked_at).total_seconds()) <= 15
+        ):
+            return True
+    return False
+
+
+def ask_allowed(ctx: Context) -> bool:
+    """The first proven R4 rejection disables questions across sessions and process restarts."""
+    return (
+        os.environ.get("PIXEL_ASK_MISSING", "1") != "0"
+        and ctx.db.execute(
+            "SELECT 1 FROM events WHERE kind='feedback' AND json_type(payload, '$.question_counted_as_quote')='true' LIMIT 1"
+        ).fetchone()
+        is None
+    )
+
+
+def _round(ctx: Context, row: dict[str, Any], session_id: int | None, *, ask_rejected: bool = False) -> None:
     payload: dict[str, Any] = {"round": row["round_no"], "verdict": row["verdict"], "reason": row.get("reason")}
+    if ask_rejected:
+        payload["question_counted_as_quote"] = True
     points = _scored(row)
     if points is not None:
         payload["hidden"] = points  # accuracy + time
-    session_id = _session(ctx, row["sent_at"])
-    quoted = _quoted(ctx, session_id) if session_id else None
-    if row["verdict"] == "accepted" and quoted and points is not None and row.get("answered_at"):
+    quoted = _quoted(ctx, session_id) if row["verdict"] == "accepted" and session_id is not None else None
+    if quoted and points is not None and row.get("answered_at"):
         seconds = (datetime.fromisoformat(row["answered_at"]) - datetime.fromisoformat(row["sent_at"])).total_seconds()
         options = session.options(ctx, session_id)
         fit = explain(points, seconds, quoted, options) | {"points": points}
@@ -184,14 +235,29 @@ async def once(ctx: Context) -> int:
             stored[str(score["round"])] = score
     state = json.loads(db.get(ctx.db, STATE) or '{"total": null, "verdicts": {}}')
     # an accepted round counts as new once it is scored: its verdict alone comes before its points
-    new = [r for r in requests if _settled(r) and state["verdicts"].get(str(r["round_no"])) != r["verdict"]]
-    first = state["total"] is None  # the first poll: remember the verdicts, explain nothing
-    for row in [] if first else new:
-        _round(ctx, row)
-    state["verdicts"].update({str(r["round_no"]): r["verdict"] for r in new})
+    first = state["total"] is None  # the first poll records existing verdicts and checks for the R4 circuit breaker
+    recorded = 0
+    for row in requests:
+        if not _settled(row):
+            continue
+        number = str(row["round_no"])
+        new = state["verdicts"].get(number) != row["verdict"]
+        if row["verdict"] == "rejected" or (new and not first):
+            session_id = _session(ctx, row["sent_at"])
+            # A rejection can arrive before the quote receipt or on the first poll after a restart.
+            ask_rejected = session_id is not None and question_counted_as_quote(ctx, session_id, normalize(row))
+            if ask_rejected and ctx.db.execute(
+                "SELECT 1 FROM events WHERE session_id=? AND kind='feedback'"
+                " AND json_type(payload, '$.question_counted_as_quote')='true' LIMIT 1", (session_id,)
+            ).fetchone():  # fmt: skip
+                ask_rejected = False
+            if ask_rejected or (new and not first):
+                _round(ctx, row, session_id, ask_rejected=ask_rejected)
+                recorded += 1
+        state["verdicts"][number] = row["verdict"]
     db.put(ctx.db, STATE, json.dumps({"total": str(total) if total is not None else None,
                                       "verdicts": state["verdicts"]}))  # fmt: skip
-    return 0 if first else len(new)
+    return recorded
 
 
 def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
@@ -200,14 +266,18 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
     since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
     rows = conn.execute(
         "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
-        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked') ORDER BY id DESC",
+        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'quote.healed')"
+        " ORDER BY id DESC",
         (since,)
     ).fetchall()  # fmt: skip
     issues = []
+    healed_quotes = set()
     for row in rows:
         p, issue = json.loads(row["payload"]), None
         if row["kind"] == "quote.missed":
             issue = "missed"
+        elif row["kind"] == "feedback" and p.get("question_counted_as_quote") is True:
+            issue = "ask_rejected_r4"
         elif row["kind"] == "feedback" and p.get("verdict") != "accepted":
             issue = str(p.get("verdict")).replace(" ", "_")
         elif row["kind"] == "feedback" and Decimal(str(p.get("lost") or 0)) >= 1:
@@ -218,7 +288,9 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "error"
         elif row["kind"] == "human.note" and p.get("note"):
             issue = "reply_unhandled"
-        elif row["kind"] == "quote.checked" and p.get("blocking"):
+        elif row["kind"] == "quote.healed":
+            healed_quotes.add(p["before"]["quote"])
+        elif row["kind"] == "quote.checked" and p.get("blocking") and p.get("quote") not in healed_quotes:
             issue = "quote_doubtful"
         if issue:
             issues.append({"issue": issue, "event": row["id"], "at": row["ts"][:19], "session": row["session_id"],

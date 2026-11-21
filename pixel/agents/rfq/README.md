@@ -99,9 +99,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
   (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers.
   WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
-  implausible price per kg, the language, an expired rate. The check never holds or changes a quote; every result
-  is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
-  that raises becomes a WARN finding.
+  implausible price per kg, the language, an expired rate. Each draft's check emits `quote.checked`. A BLOCK is
+  an issue for `feedback.alert`. For an extraction-related BLOCK on a rules-read request with at least 15 seconds
+  left, `agent._heal` tries one bounded re-extraction per session. It preserves document and pickup evidence,
+  reprices changed shipment facts, and adopts the result only when every BLOCK clears. The original draft stays
+  available to send and the retry reserves time before the target. `quote.heal_attempted` and `quote.healed`
+  record the attempt and any replacement. `PIXEL_SELF_HEAL=off` disables the retry. `PIXEL_PRECHECK=off` skips
+  the check and the retry. A check rule that raises becomes a WARN finding.
 
 ## Pitfalls
 
@@ -135,7 +139,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the chargeable weight is the gross weight, too low for bulky goods), never a price, and the
   request is read again with the answer (a town alone maps to its zone). No answer 60 s after the request: the
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
-  (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
+  (rounds 18 and 20). If the scorer rejects a round and its answer time matches the earlier question, or its
+  reason indicates a missing or unreadable price, `feedback.question_counted_as_quote` records the R4 rejection
+  and `feedback.alert` reports `ask_rejected_r4`. `feedback.ask_allowed` holds questions on subsequent requests
+  once that evidence is stored. `PIXEL_ASK_MISSING=0` disables them manually.
 - Dimensions in inches ("5 skids 48x40x50 in") were read as centimetres: 0.1 cbm instead of 7.9. A unit of in, inch
   or inches is converted by code ("in" only before punctuation or the line end: "120x80x150 in total" is cm); no
   unit is centimetres. Skids, crates, drums, cases, Packstücke and Kisten count

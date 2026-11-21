@@ -1,8 +1,10 @@
 import dataclasses
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
 from pathlib import Path
+
+import pytest
 
 from pixel.config import settings
 from pixel.contracts import RateOption, Source
@@ -222,3 +224,85 @@ async def test_an_accepted_verdict_waits_for_its_points(conn):
     assert [await feedback.once(ctx) for _ in range(4)] == [0, 0, 0, 1]
     feedbacks = conn.execute("SELECT payload FROM events WHERE kind = 'feedback'").fetchall()
     assert [json.loads(row["payload"])["hidden"] for row in feedbacks] == ["54.32"]
+
+
+def _reply_times(ctx, *, include_quote=True):
+    requested = datetime.fromisoformat(T0)
+    conn = ctx.db
+    conn.execute(
+        "INSERT OR IGNORE INTO sessions (id, customer, state, received_at) VALUES (7, 'c@x', 'open', ?)", (T0,)
+    )
+    asked, quoted = requested + timedelta(seconds=10), requested + timedelta(seconds=34)
+    for message_id, purpose, sent in ((8, "question", asked), (9, "quote", quoted)):
+        if purpose == "quote" and not include_quote:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO messages (id, session_id, direction, purpose, sender, recipient, subject, body,"
+            " sent_at, data) VALUES (?, 7, 'out', ?, 'us@x', 'c@x', 'Re: RFQ', '', ?, '{}')",
+            (message_id, purpose, sent.isoformat()),
+        )
+    if include_quote:
+        # Event time is when the receipt was stored, not when the provider sent the quote.
+        events.emit(ctx, "quote.sent", "outbox", session_id=7, message_id=9)
+    return asked, quoted
+
+
+async def test_question_rejection_trips_and_alerts_even_if_the_receipt_arrives_after_the_verdict(conn, monkeypatch):
+    monkeypatch.delenv("PIXEL_ASK_MISSING", raising=False)
+    result = board(100, (4, "rejected"))
+    ctx = Context(settings(), conn, None, None, None, Board(result, result, result))
+    asked, _ = _reply_times(ctx, include_quote=False)
+    score = result["requests"][0]
+    score["answered_at"] = asked.isoformat()
+    assert await feedback.once(ctx) == 0
+    assert feedback.ask_allowed(ctx)
+    _reply_times(ctx)
+    assert await feedback.once(ctx) == 1
+    assert not feedback.ask_allowed(ctx)
+    assert await feedback.once(ctx) == 0
+    (issue,) = feedback.attention(conn, 5)
+    assert issue["issue"] == "ask_rejected_r4" and issue["issue"] in feedback.REPAIRABLE
+    assert issue["detail"]["question_counted_as_quote"] is True
+
+
+async def test_rejection_at_quote_send_time_does_not_trip_the_circuit_breaker(conn, monkeypatch):
+    monkeypatch.delenv("PIXEL_ASK_MISSING", raising=False)
+    result = board(100, (4, "rejected"))
+    ctx = Context(settings(), conn, None, None, None, Board(board(100), result))
+    _, quoted = _reply_times(ctx)
+    score = result["requests"][0]
+    score.update(answered_at=quoted.isoformat(), reason="price")
+    assert await feedback.once(ctx) == 0
+    assert await feedback.once(ctx) == 1
+    assert not feedback.question_counted_as_quote(ctx, 7, score)
+    assert feedback.ask_allowed(ctx)
+    assert {i["issue"] for i in feedback.attention(conn, 5)} == {"rejected"}
+
+
+@pytest.mark.parametrize("reason", sorted(feedback.UNPRICED_REASONS))
+def test_unpriced_rejection_requires_an_earlier_outbound_question(conn, reason):
+    ctx = Context(settings(), conn, None, None, None, None)
+    _, quoted = _reply_times(ctx)
+    score = {"verdict": "rejected", "answered_at": None, "reason": reason}
+    assert feedback.question_counted_as_quote(ctx, 7, score)
+    assert not feedback.question_counted_as_quote(ctx, 7, score | {"verdict": "accepted"})
+    conn.execute("UPDATE messages SET sent_at=? WHERE purpose='question'", (quoted.isoformat(),))
+    assert not feedback.question_counted_as_quote(ctx, 7, score)
+
+
+@pytest.mark.parametrize(("seconds_from_question", "found"), [(15, True), (16, False), (-16, False), (20, False)])
+def test_question_timing_boundaries(conn, seconds_from_question, found):
+    ctx = Context(settings(), conn, None, None, None, None)
+    asked, quoted = _reply_times(ctx)
+    answered = asked + timedelta(seconds=seconds_from_question)
+    score = {"verdict": "rejected", "answered_at": answered.isoformat(), "reason": "price"}
+    assert feedback.question_counted_as_quote(ctx, 7, score) is found
+    conn.execute(
+        "UPDATE messages SET sent_at=? WHERE purpose='question'", ((quoted - timedelta(seconds=5)).isoformat(),)
+    )
+    assert feedback.question_counted_as_quote(
+        ctx, 7, score | {"answered_at": (quoted - timedelta(seconds=5)).isoformat()}
+    )
+    assert not feedback.question_counted_as_quote(
+        ctx, 7, score | {"answered_at": (quoted - timedelta(seconds=4)).isoformat()}
+    )
