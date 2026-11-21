@@ -50,5 +50,5 @@ def offer(quote: Quote) -> bytes:
     xref = len(out)
     out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
     out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
-    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%EOF\n" % (len(objects) + 1, xref)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
     return bytes(out)
