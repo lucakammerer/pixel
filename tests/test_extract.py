@@ -320,7 +320,7 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
         return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
     monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
-    rfq = await extract.extract(None, mail("goods as listed"), DEADLINE)
+    rfq = await extract.extract(None, mail("goods as listed, 676 kg in total"), DEADLINE)
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.missing) == (
         Decimal(expected[0]), Decimal(expected[1]), expected[2], ()
     )  # fmt: skip
@@ -435,3 +435,23 @@ async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(co
     assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
         (kind, kw["payload"]) for kind, kw in emitted
     ]
+
+
+@pytest.mark.parametrize(
+    "body, model_kg, model_cbm, pieces, expected",
+    [
+        ("Hi, 1 pallet 480 lbs, 120x80x100 cm, AAA area to BBB.", "217.7", "0.96", 1, (480 * extract.LB, "0.96")),
+        ("Two cartons of 60 x 40 x 50 cm, 95 kg together, to BBB.", "95", "0.25", 2, ("95", "0.240")),
+    ],
+)
+async def test_a_number_the_mail_does_not_write_is_computed_by_code(monkeypatch, emitted, body, model_kg, model_cbm,
+                                                                    pieces, expected):  # fmt: skip
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": model_kg, "volume_cbm": model_cbm,
+                "pieces": pieces, "lots": [], "preference": "cheapest", "door_pickup": False,
+                "pickup_postcode": None, "currency": None, "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    rfq = await extract.extract(None, mail(body), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm) == (Decimal(expected[0]), Decimal(expected[1]))

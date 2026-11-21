@@ -388,6 +388,12 @@ def _dims_volume(text: str) -> Decimal | None:
     return volume
 
 
+def _written(text: str) -> set[Decimal]:
+    """Every number the mail writes, read with and without thousands separators."""
+    found = re.findall(NUM, text)
+    return {v for m in found for t in (True, False) if (v := number(m, t)) is not None}
+
+
 def _model_lots(raw: list[dict]) -> tuple[Decimal, Decimal, int | None] | None:
     """The piece groups as the model copied them, added up here; None unless every one has a weight and a volume."""
     weight, volume, pieces = Decimal(0), Decimal(0), 0
@@ -432,6 +438,14 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     if lots := _lots(text) or ((len(groups) > 1 or "weight_kg" in missing) and _model_lots(groups)):
         weight, volume, pieces = lots[0], lots[1], lots[2] or pieces
         missing = [m for m in missing if m != "weight_kg"]
+    else:
+        # A figure the mail does not write is the model's arithmetic ("480 lbs" to kg, dimensions to cbm): code's
+        # own reading of the parts replaces it.
+        written = _written(text)
+        if weight not in written and (own := _weight(text, pieces) or (_model_lots(groups) or (None,))[0]):
+            weight = own
+        if volume not in written and (own := _volume(text, pieces) or (_model_lots(groups) or (0, None))[1]):
+            volume = own
     door = bool(data.get("door_pickup"))
     postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
     postcode = postcode if len(postcode) == 5 else None
