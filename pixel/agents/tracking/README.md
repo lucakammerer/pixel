@@ -16,16 +16,17 @@ shipment it matched, or that it matched none.
 
 ## Implementation
 
-`agent.py` `handle`: `match` looks for references in the mail (`BK-…` from the airline, `PX-…` ours) and finds the
-shipment with `crm/shipments.py` `find`. Without a reference, `described` reads the desk's description of the
-shipment (origin airport or pickup postcode, destination, weight, company name) and narrows the shipments to that
-destination by each of them; last it tries a customer address and a lane (`FRA to JFK`, `FRA-JFK`). `answer` writes, in sentences and in the asker's register (`greeting`: the name they signed with, formal, neutral
-or casual), for up to five matches: weight, route (the pickup postcode for a door shipment), airline, status,
-booking reference, the arrival from the ready date and the transit time (`details`: the ready date of the request
-the shipment was quoted for, else the question's, read by `compose.ready_date`: only a date called ready), and our `PX-…` reference; signed by `PIXEL_SIGNER`. Below the prose, `record` repeats verbatim every line the answer
-carried before (shipment, `Status: confirmed by <airline>, booked and ready to ship`, booking reference, transit,
-customer address) until a variant is shown to score. No gateway call at all. Unknown shipment: we say we hold none under that
-reference and ask for the booking reference. The reply goes to the sender, in the thread, through `core.outbox`.
+`agent.py` `match` identifies one shipment before including any record in the reply. Explicit airline and team
+references must all identify the same shipment. Without a reference, `described` checks the destination, customer
+evidence and origin airport or pickup postcode. A postcode requires a door-pickup quote. Exact postcodes take
+precedence over a matching zone from a quote whose postcode was missing. Exact weights take precedence over
+rounded matches within 1 kg or 1%, whichever is greater.
+
+With one match, `answer` gives the route, weight, booking status, airline and available reference and transit
+details. `details` uses the ready date to calculate the arrival when that date is available. The record beneath
+the prose preserves the fields used by the tracking scorer. If there are several plausible shipments or none,
+the reply asks for a booking reference and includes no shipment records. The reply goes through the outbox
+in the inbound thread and uses no gateway call.
 
 ## Pitfalls
 
@@ -35,9 +36,7 @@ reference and ask for the booking reference. The reply goes to the sender, in th
 - The status words come from the shipment (`booking`, `booked`, `confirmed`, `failed`); never promise a flight or a
   delivery date we do not hold.
 
-## Open
+## Scoring evidence
 
-- Q11: what makes an answer correct is unknown, and whether ours scores at all is not established (the board hides
-  points per kind). We measure the total before and after each tracking answer (`bench/RUNS.md`) and change one
-  thing per round, adding, never removing, until one variant moves it.
-- No tracking question for a port-to-port shipment has been captured yet; that test uses a written mail.
+`bench/RUNS.md` records tracking answers followed by a ten-point increase in the team total. Only the first
+answer to a question counted in the observed rounds.

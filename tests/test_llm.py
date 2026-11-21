@@ -68,3 +68,14 @@ def test_spend_per_session_and_window(conn):
     ctx = ctx_with(conn, {})
     assert llm.spend_usd(ctx, session_id=1) == Decimal("0.003")
     assert llm.spend_usd(ctx, last_minutes=60) == Decimal("0.005")
+
+
+def test_gateway_exception_contains_only_safe_status():
+    import httpx
+
+    from pixel.api.client import ApiError
+    from pixel.api.gateway import _checked
+
+    with pytest.raises(ApiError) as error:
+        _checked(httpx.Response(403, text="untrusted provider response body"))
+    assert error.value.status == 403 and "untrusted" not in str(error.value)

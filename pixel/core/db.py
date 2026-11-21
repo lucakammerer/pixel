@@ -1,6 +1,7 @@
 """SQLite. Each package owns its tables in a `SCHEMA` string; `init` runs them all."""
 
 import sqlite3
+from contextlib import contextmanager
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -19,6 +20,14 @@ CREATE TABLE IF NOT EXISTS events (
     tokens_out INTEGER NOT NULL DEFAULT 0, cost_usd TEXT NOT NULL DEFAULT '0', duration_ms INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS events_session ON events (session_id, id);
+CREATE TABLE IF NOT EXISTS mail_work (
+    message_id INTEGER PRIMARY KEY, completed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS mail_delivery (
+    operation TEXT PRIMARY KEY, session_id INTEGER, purpose TEXT NOT NULL, recipient TEXT NOT NULL,
+    subject TEXT NOT NULL, body TEXT NOT NULL, parent_id INTEGER, quote_id TEXT, sent_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS delivery_recipient ON mail_delivery (recipient) WHERE sent_id IS NULL;
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
@@ -47,3 +56,16 @@ def put(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.execute(
         "INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", (key, value)
     )
+
+
+@contextmanager
+def atomic(conn: sqlite3.Connection):
+    """Commit a synchronous set of related writes together, including inside a caller's transaction."""
+    conn.execute("SAVEPOINT pixel_write")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK TO pixel_write")
+        raise
+    finally:
+        conn.execute("RELEASE pixel_write")

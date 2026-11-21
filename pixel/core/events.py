@@ -3,17 +3,18 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 from pixel.contracts import Event
+from pixel.core import timing
 from pixel.core.context import Context
 
 KINDS = (
     "mail.in", "mail.out", "mail.held",  # held: dry run, or a session a person took over
     "route",
-    "rfq.extracted", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received",
+    "rfq.extracted", "rfq.evidence", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received",
     "quote.drafted", "quote.sent", "quote.fallback", "quote.waiting", "quote.missed", "quote.prose", "prose.raw",
     "customer.accepted", "customer.declined",
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",
@@ -49,7 +50,7 @@ def emit(
     if kind not in KINDS:
         raise ValueError(f"unknown event kind {kind}")
     payload_json = scrub(ctx, json.dumps(payload or {}, default=str))
-    ts = datetime.now(UTC)
+    ts = timing.now()
     event = Event(
         ts=ts,
         session_id=session_id,

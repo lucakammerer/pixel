@@ -65,35 +65,82 @@ def _stored(db: str) -> dict[str, list[dict]]:
     return requests
 
 
-def _row(request: str, evs: list[Event]) -> dict | None:
-    if not any(e.kind == "route" and e.payload.get("kind") == MailKind.CUSTOMER_RFQ.value for e in evs):
-        return None
-    drafted = [e for e in evs if e.kind == "quote.drafted"]
-    answered = bool(drafted) and not any(e.kind == "quote.missed" for e in evs)
-    option = drafted[-1].payload["option"] if answered else {}
+def _row(request: str, evs: list[Event], message_id: int, expected: dict) -> dict:
+    """Count the requested fixture even if routing or delivery failed. Price the quote actually delivered."""
+    incoming = next((e for e in evs if e.kind == "mail.in" and e.message_id == message_id), None)
+    session = incoming.session_id if incoming else message_id
+    here = [e for e in evs if e.session_id == session]
+    route = next((e for e in here if e.kind == "route" and e.message_id == message_id), None)
+    kind = route.payload.get("kind") if route else None
+    sent = next((e for e in here if e.kind == "quote.sent"), None)
+    draft = next(
+        (e for e in here if sent and e.kind == "quote.drafted" and e.payload.get("quote_id") == sent.payload["quote"]),
+        None,
+    )
+    option = draft.payload["option"] if draft else {}
+    amount = sent.payload.get("total") if sent else None
+    currency = sent.payload.get("currency") if sent else None
+    complete = bool(sent and sent.payload.get("complete_service"))
+    problems = []
+    if kind != MailKind.CUSTOMER_RFQ.value:
+        problems.append("RFQ was not routed as a request")
+    if expected:
+        if not sent:
+            problems.append("expected quote was not delivered")
+        else:
+            if complete != expected["complete_service"]:
+                problems.append("quoted service differs from fixture")
+            if currency != expected["currency"] or Decimal(str(amount)) != Decimal(expected["total"]):
+                problems.append("quoted price differs from fixture")
     return {
-        "request": request, "answered": answered, "total": option.get("total"), "currency": option.get("currency"),
-        "eur": option.get("total_eur"), "carrier": option.get("carrier"),
-        "model_calls": sum(e.kind == "llm.call" for e in evs),
-        "usd": str(sum((e.cost_usd for e in evs), Decimal(0))),
-        "seconds": round((drafted[-1].ts - evs[0].ts).total_seconds(), 1) if answered else None,
-    }  # fmt: skip
+        "request": request,
+        "route": kind,
+        "answered": sent is not None,
+        "complete_service": complete,
+        "total": amount,
+        "currency": currency,
+        "eur": option.get("total_eur"),
+        "carrier": option.get("carrier"),
+        "model_calls": sum(e.kind == "llm.call" for e in here),
+        "usd": str(sum((e.cost_usd for e in here), Decimal(0))),
+        "seconds": round((sent.ts - incoming.ts).total_seconds(), 1) if sent and incoming else None,
+        "expected": expected or None,
+        "problems": problems,
+    }
 
 
 async def measure(fixtures: Path, db: str | None, online: bool) -> dict:
-    requests = _stored(db) if db else {p.stem: [json.loads(p.read_text())] for p in sorted(fixtures.glob("*.json"))}
+    prices = fixtures.parent / "kpi-expectations.json"
+    expected = json.loads(prices.read_text(encoding="utf-8")) if prices.exists() and not (db or online) else {}
+    requests = (
+        _stored(db)
+        if db
+        else {p.stem: [json.loads(p.read_text(encoding="utf-8"))] for p in sorted(fixtures.glob("*.json"))}
+    )
     source = db or await _kit()
     rows = []
     for request, raws in requests.items():
-        row = _row(request, await replay.run(raws, online, source, as_live=True))
-        if row:
+        evs = await replay.run(raws, online, source, as_live=True)
+        row = _row(request, evs, int(raws[0]["id"]), expected.get(request, {}))
+        # Captured and explicitly labelled RFQs stay in the denominator even if routing breaks.
+        if (
+            db
+            or request.startswith(("rfq-", "synthetic-rfq-"))
+            or request in expected
+            or row["route"] == MailKind.CUSTOMER_RFQ.value
+        ):
             rows.append(row)
+    for missing in sorted(expected.keys() - requests.keys()):
+        rows.append(_row(missing, [], -1, expected[missing]))
     return {"online": online, "requests": rows}
 
 
 def _accuracy(rows: list[dict]) -> tuple[str, str]:
     answered = [r for r in rows if r["answered"]]
-    return f"{len(answered)} of {len(rows)}", f"{sum(Decimal(r['eur']) for r in answered)} EUR"
+    return (
+        f"{len(answered)} of {len(rows)}",
+        f"{sum(Decimal(r['eur']) for r in answered if r.get('eur') is not None)} EUR",
+    )
 
 
 def _cost(rows: list[dict]) -> str:
@@ -121,7 +168,8 @@ def _cell(row: dict | None, online: bool) -> str:
     if not row["answered"]:
         return f"missed · {spent}"
     took = f" · {row['seconds']} s" if online else ""
-    return f"{row['total']} {row['currency']} · {row['carrier']} · {spent}{took}"
+    scope = " · pickup excluded" if row.get("complete_service") is False else ""
+    return f"{row['total']} {row['currency']} · {row['carrier']} · {spent}{took}{scope}"
 
 
 def _price(was: dict | None, new: dict | None) -> str:
@@ -136,6 +184,10 @@ def report(branch: dict, base: dict | None) -> str:
     sides = ([("Base", base["requests"])] if base else []) + [("This branch", branch["requests"])]
     lines = {
         "Accuracy: answered": [_accuracy(rows)[0] for _, rows in sides],
+        "Complete service delivered": [
+            str(sum(r.get("complete_service", r["answered"]) for r in rows)) for _, rows in sides
+        ],
+        "Fixture check failures": [str(sum(bool(r.get("problems")) for r in rows)) for _, rows in sides],
         "Accuracy: sum of the quoted prices": [_accuracy(rows)[1] for _, rows in sides],
         "Cost: spend per quote": [
             _cost(rows) if online else f"{sum(r['model_calls'] for r in rows)} model calls, not charged offline"
@@ -150,7 +202,10 @@ def report(branch: dict, base: dict | None) -> str:
         return (
             name not in old
             or name not in new
-            or any(old[name][k] != new[name][k] for k in ("answered", "eur", "carrier", "model_calls"))
+            or any(
+                old[name].get(k) != new[name].get(k)
+                for k in ("answered", "eur", "carrier", "model_calls", "complete_service", "problems")
+            )
         )
 
     changed = [name for name in sorted(old.keys() | new.keys()) if differs(name)]
@@ -190,7 +245,10 @@ def main() -> None:
         has_base = args.base and args.base.exists() and args.base.stat().st_size
         print(report(json.loads(args.report.read_text()), json.loads(args.base.read_text()) if has_base else None))
     else:
-        print(json.dumps(asyncio.run(measure(args.fixtures, args.db, args.online)), indent=2))
+        result = asyncio.run(measure(args.fixtures, args.db, args.online))
+        print(json.dumps(result, indent=2))
+        if any(row["problems"] for row in result["requests"]):
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

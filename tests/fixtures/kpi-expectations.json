@@ -1,0 +1,42 @@
+{
+  "rfq-door-import-two-towns": {
+    "total": "3804.65",
+    "currency": "EUR",
+    "complete_service": false
+  },
+  "rfq-door-quoted-old-request": {
+    "total": "3754.83",
+    "currency": "EUR",
+    "complete_service": false
+  },
+  "rfq-door-trucking": {
+    "total": "4302.62",
+    "currency": "EUR",
+    "complete_service": false
+  },
+  "rfq-door-warehouse-no-postcode": {
+    "total": "2316.60",
+    "currency": "EUR",
+    "complete_service": false
+  },
+  "rfq-import-no-pickup": {
+    "total": "367.20",
+    "currency": "EUR",
+    "complete_service": true
+  },
+  "rfq-lots-gross-after": {
+    "total": "1585.00",
+    "currency": "EUR",
+    "complete_service": true
+  },
+  "rfq-lots-two": {
+    "total": "2290.00",
+    "currency": "EUR",
+    "complete_service": true
+  },
+  "rfq-port-to-port": {
+    "total": "3465.00",
+    "currency": "EUR",
+    "complete_service": true
+  }
+}

@@ -11,7 +11,6 @@ from pixel.contracts import Message, Shipment
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.crm import quotes, shipments
-from pixel.pricing import store
 from pixel.pricing.pickup import zone_of
 
 REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
@@ -75,48 +74,54 @@ def described(ctx: Context, text: str) -> list[Shipment]:
     weight = WEIGHT.search(text)
     kg = number(weight.group(1)) if weight else None
     words = set(re.findall(r"[a-z0-9]+", text.lower()))
-    pickup_airport = store.airport_of(ctx, zone_of(postcode)) if postcode else None
-
-    def from_there(s: Shipment) -> bool:
-        if origin:
-            return s.origin == origin
-        quote = quotes.for_session(ctx, s.session_id)
-        if quote and quote.rfq.pickup_postcode:
-            return quote.rfq.pickup_postcode == postcode
-        return s.origin == pickup_airport
 
     def company(s: Shipment) -> bool:
         tokens = [t for t in re.split(r"[^a-z0-9]+", s.customer.split("@")[0].lower()) if len(t) > 2]
         return bool(tokens) and words.issuperset(tokens)
 
+    addresses = {e.lower() for e in EMAIL.findall(text)}
     found = shipments.find(ctx, destination=destination)
-    named = [s for s in found if company(s)]
-    found = [s for s in named or found if from_there(s)]
+    if addresses:
+        found = [s for s in found if s.customer.lower() in addresses]
+    names = [s for s in found if company(s)]
+    found = names or found
+    if origin:
+        found = [s for s in found if s.origin == origin]
+    else:
+        exact, zone = [], []
+        for shipment in found:
+            quote = quotes.for_session(ctx, shipment.session_id)
+            if quote is None or not quote.rfq.door_pickup:
+                continue
+            if quote.rfq.pickup_postcode == postcode:
+                exact.append(shipment)
+            elif not quote.rfq.pickup_postcode and quote.rfq.pickup_zone == zone_of(postcode):
+                zone.append(shipment)
+        found = exact or zone
     if kg is not None:
+        exact_weight = [s for s in found if s.weight_kg == kg]
         tolerance = max(Decimal(1), kg * Decimal("0.01"))
-        found = [s for s in found if abs(s.weight_kg - kg) <= tolerance]
-    return found
+        found = exact_weight or [s for s in found if abs(s.weight_kg - kg) <= tolerance]
+    return found if len(found) == 1 else []
 
 
 def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | None]:
-    """Shipments the question means, and the reference it named (if any)."""
-    references = [m.group(0).upper() for m in REFERENCE.finditer(text)]
-    for reference in references:
-        found = shipments.find(ctx, reference=reference)
-        if found:
-            return found, reference
+    """Identify one shipment before returning any customer or booking details."""
+    references = list(dict.fromkeys(m.group(0).upper() for m in REFERENCE.finditer(text)))
+    if references:
+        sets = [shipments.find(ctx, reference=r) for r in references]
+        if all(len(matches) == 1 for matches in sets) and len({matches[0].id for matches in sets}) == 1:
+            return sets[0], references[0]
+        return [], references[0]
     if DESCRIBED.search(text):
-        found = described(ctx, text)
-        return found, references[0] if references and not found else None
-    customers = [e for e in EMAIL.findall(text) if e.lower() != sender.lower()]
+        return described(ctx, text.replace(sender, "")), None
+    customers = {e.lower() for e in EMAIL.findall(text) if e.lower() != sender.lower()}
     lane = LANE.search(text)
     origin, destination = lane.groups() if lane else (None, None)
-    for customer in customers or [None]:
-        if customer or lane:
-            found = shipments.find(ctx, customer=customer, origin=origin, destination=destination)
-            if found:
-                return found, references[0] if references else None
-    return [], references[0] if references else None
+    if len(customers) > 1 or not (customers or lane):
+        return [], None
+    found = shipments.find(ctx, customer=next(iter(customers), None), origin=origin, destination=destination)
+    return (found if len(found) == 1 else []), None
 
 
 def _paragraph(s: Shipment, detail: Detail, today: date) -> str:
@@ -166,7 +171,7 @@ def answer(
     before, verbatim, until a variant is shown to score (R30)."""
     hello, bye = greeting(question)
     if not found:
-        named = f" under {reference}" if reference else " matching your question"
+        named = f" under {reference}" if reference else " I can identify uniquely from those details"
         body = (f"I have checked, but we hold no shipment{named} in our records. Could you send me the airline's "
                 "booking reference (it starts with BK-) or ours (PX-…)? I will answer right away.")  # fmt: skip
     else:
