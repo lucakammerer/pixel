@@ -36,7 +36,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/api/`: the 5U API (`client.py`, `mailbox.py`, `portal.py`, `gateway.py`, `board.py`)
 - `pixel/core/`: `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, fallback),
   `outbox.py` (all outgoing mail), `events.py` (the log and its live stream), `db.py`, `context.py`;
-  `feedback.py` (what each request scored, why it lost points, which balanced rule fits the scorer)
+  `feedback.py` (what each request scored, why it lost points, which balanced rule fits the scorer, and the
+  call to `PIXEL_ALERT_URL` when something needs repair)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,
@@ -89,6 +90,7 @@ uv run ruff check . && uv run ruff format .
 uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored mail through the pipeline
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
+uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes

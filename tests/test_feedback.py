@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from datetime import UTC, datetime
 from decimal import Decimal as D
@@ -89,3 +90,40 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
     )
     assert json.loads(db.get(conn, feedback.STATE))["verdicts"] == {"4": "accepted"}
     assert feedback.pickup_rule(ctx) in ("share_of_best", "share_of_worst")  # min-max takes the same trucker here
+
+
+async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch):
+    def emit(ctx, kind, actor, *, session_id=None, message_id=None, payload=None, **metrics):
+        ctx.db.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES (?, ?, ?, ?, ?)",
+                       (datetime.now(UTC).isoformat(), session_id, kind, actor, json.dumps(payload or {})))  # fmt: skip
+
+    calls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, json):
+            calls.append((url, json))
+            return type("Response", (), {"raise_for_status": lambda self: None})()
+
+    monkeypatch.setattr(events, "emit", emit)
+    monkeypatch.setattr(feedback.httpx, "AsyncClient", Client)
+    ctx = Context(dataclasses.replace(settings(), alert_url="https://hook.test/x"), conn, None, None, None, None)
+    emit(ctx, "feedback", "board", session_id=1, payload={"round": 1, "verdict": "accepted", "lost": "0.00"})
+    assert await feedback.alert(ctx) == 0
+    emit(ctx, "quote.missed", "orchestrator", session_id=2, payload={"reason": "no_price"})
+    emit(ctx, "feedback", "board", session_id=3, payload={"round": 3, "verdict": "accepted", "lost": "19.38"})
+    emit(ctx, "feedback", "board", session_id=4, payload={"round": 4, "verdict": "rejected", "reason": "price"})
+    assert await feedback.alert(ctx) == 3
+    assert {i["issue"] for i in calls[0][1]["issues"]} == {"missed", "lost_points", "rejected"}
+    emit(ctx, "quote.missed", "orchestrator", session_id=5, payload={"reason": "no_price"})
+    assert await feedback.alert(ctx) == 0 and len(calls) == 1  # the same kind, the same commit
+    monkeypatch.setattr(feedback, "VERSION", "next")
+    assert await feedback.alert(ctx) == 3  # new code had its chance and the issues are still there
