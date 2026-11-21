@@ -4,10 +4,11 @@ import sqlite3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, direction TEXT NOT NULL, kind TEXT,
+    id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, direction TEXT NOT NULL, kind TEXT, purpose TEXT,
     sender TEXT NOT NULL, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL,
-    in_reply_to INTEGER, sent_at TEXT NOT NULL, raw TEXT NOT NULL
+    in_reply_to INTEGER, sent_at TEXT NOT NULL, data TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS messages_session ON messages (session_id, id);
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY, customer TEXT NOT NULL, state TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'auto',
     received_at TEXT NOT NULL, deadline_at TEXT, quote_message_id INTEGER UNIQUE
@@ -35,3 +36,14 @@ def init(conn: sqlite3.Connection) -> None:
 
     for schema in (SCHEMA, crm, pricing):
         conn.executescript(schema)
+
+
+def get(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def put(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", (key, value)
+    )

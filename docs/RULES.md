@@ -10,7 +10,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | # | Rule | Source | Lives in | Status |
 | --- | --- | --- | --- | --- |
 | R1 | A new RFQ arrives every 6 minutes and expires 6 minutes later. A missed or rejected request is lost; there is no second chance | Brief | `core/orchestrator.py` `deadline_for`, `quote_with_deadline` | open |
-| R2 | Everything arrives in one mailbox: customer requests, carrier bids, rate desk answers, booking confirmations, tariff mails, tracking questions. No push: poll `GET /v1/mailbox/messages` with `since_id`, keep `next_since_id`; at most 200 mails per call; poll every 1 to 2 seconds | API | `core/poller.py` `run` | open |
+| R2 | Everything arrives in one mailbox: customer requests, carrier bids, rate desk answers, booking confirmations, tariff mails, tracking questions. No push: poll `GET /v1/mailbox/messages` with `since_id`, keep `next_since_id`; at most 200 mails per call; poll every 1 to 2 seconds | API | `core/poller.py` `run` | done |
 | R3 | `references` lists a thread's mail ids from the first mail to the parent. Attachments are listed on the mail and downloaded one by one | API | `api/mailbox.py` `to_message`, `attachment`; `core/poller.py` `session_of` | done |
 | R4 | A quote counts only as a reply (`in_reply_to`) in a thread a customer started, and only our first quote in a thread counts. `in_reply_to` must be a mail we sent or received, else 404 | API, Brief | `core/outbox.py` `send_quote` | open |
 | R5 | We may write to customers, the airlines and truckers of the carrier list, `ratedesk@hackloop.mail` and `tracking@hackloop.mail`. Any other address gets 422 | API | `core/outbox.py` `send` | open |

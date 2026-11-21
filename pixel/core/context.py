@@ -1,5 +1,8 @@
+import asyncio
 import sqlite3
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import datetime
 
 from pixel.api.board import Board
 from pixel.api.gateway import Gateway
@@ -18,3 +21,5 @@ class Context:
     portal: Portal
     gateway: Gateway
     board: Board
+    tasks: set[asyncio.Task] = field(default_factory=set)  # running handlers, kept so they are not collected
+    mail_times: deque[datetime] = field(default_factory=deque)  # our sends in the last minute (R7)

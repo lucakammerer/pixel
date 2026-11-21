@@ -79,7 +79,7 @@ Deviations from this list need a reason written here.
 ### 4.1 Flow of one request
 
 ```
-poller        GET /v1/mailbox/messages?since_id=…  every second       mail.in
+poller        GET /v1/mailbox/messages?since_id=…  every second, store once  mail.in
 router        rules on sender, thread, attachments; model only if unsure   route
 orchestrator  customer_rfq → a task with a deadline (target 100 s, hard 315 s, expiry 360 s)
   rfq agent     extract (rules, else one model call)                   rfq.extracted
