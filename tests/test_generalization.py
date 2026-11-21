@@ -171,3 +171,10 @@ def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
     outcomes = asyncio.run(simulate.run([*simulate.document_cases(step=7), *simulate.mail_cases()]))
     assert [f"{o.case.family} {o.case.axes}: {o.wrong}" for o in outcomes if o.verdict == "wrong" and not o.gap] == []
     assert simulate.stale_gaps(outcomes) == []
+
+
+def test_adversarial_mutations_and_domain_invariants():
+    """All programmatic adversarial mutations must pass without domain invariant violations."""
+    passed, total, failures = bench.audit_fuzzer()
+    assert passed == total
+    assert failures == []

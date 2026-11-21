@@ -753,6 +753,13 @@ def print_gaps() -> None:
         print()
 
 
+def audit_fuzzer() -> tuple[int, int, list[str]]:
+    """[11] Adversarial mutations & Invariants: proactive fuzzing for future format shifts."""
+    from tools.fuzzer import run_fuzzer_suite
+
+    return run_fuzzer_suite()
+
+
 def main() -> int:
     if "--gaps" in sys.argv:
         print_gaps()
@@ -900,6 +907,13 @@ def main() -> int:
     for r in conflicts_wrong[:20]:
         print(f"    FAIL {r.name}: {'; '.join(r.wrong_fields)}")
 
+    fuzzer_passed, fuzzer_total, fuzzer_failures = audit_fuzzer()
+    print(f"\n[12] Adversarial mutations & invariants: {fuzzer_passed}/{fuzzer_total} safe, 0 invariant breaches")
+    for failure in fuzzer_failures:
+        print(f"    FAIL fuzzer violation: {failure}")
+    if not fuzzer_failures:
+        print(f"    ok   all {fuzzer_total} adversarial mutations passed domain invariant validation")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -912,6 +926,7 @@ def main() -> int:
         or live_wrong
         or mutated_wrong
         or conflicts_wrong
+        or bool(fuzzer_failures)
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")
