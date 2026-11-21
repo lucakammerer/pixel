@@ -28,13 +28,15 @@ gpt-4.1-mini names German for half of the English mails with German towns; gpt-4
 the same total as today's rules in every one. In round 67 the rules then read a waiting-time line (45.00 EUR) as the
 offer; the model reads 181.96.
 
-**Decision:** gpt-4.1 reads every request the rules read too (`extract._crosscheck`, `PIXEL_MODEL_CHECK`); a value it
-reads for weight, volume, pieces, preference or a destination the text names wins. It also reads a request the rules
+**Decision:** gpt-4.1 reads every request the rules read too (`extract._crosscheck`, `PIXEL_MODEL_CHECK`). Pieces and
+the wish win as it reads them; weight and volume only when code reads the figure as a gross total with its unit (after
+round 82, "95.00 cubic feet" taken as 95 cbm, and the review: a net weight, an airport named in passing). It also reads a request the rules
 cannot, in place of gpt-4.1-mini. On 12 accepted and 7 lost requests end to end it changed nothing the scorer had
 accepted, and set rounds 33 to 35 right. About 0.0027 USD and 1.5 seconds per request, in place of the prose call:
 about 1.1 cost points per quote, against about 100 points for each rejection it prevents. gpt-4.1-mini stays for
 the rest, and reads every answer the rules price too (`bids._crosscheck`): its total wins where they differ, round
-67's case, at about 0.0002 USD per answer, 0.6 cost points per quote.
+67's case, when the text states it in the same currency for the whole shipment, at about 0.0002 USD per answer, 0.6
+cost points per quote.
 
 The whole quote written by the model, checked by code, on 14 accepted quotes: gpt-4.1-mini passed 13, gpt-4.1 10
 (it left out the transit time three times). One passing letter was in German for an English mail signed "Viele
