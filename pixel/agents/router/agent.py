@@ -52,6 +52,9 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
     if sender == RATEDESK:
         return MailKind.RATEDESK_REPLY, "sender:ratedesk"
     if in_thread and customer and sender == customer:
+        # The answer to our question for a missing fact is read by the request's own handler, which waits for it.
+        if _answers(ctx, message)[:1] == ["question"]:
+            return MailKind.OTHER, "thread:question"
         return MailKind.CUSTOMER_REPLY, "thread:customer"
     if sender != customer and BOOKING_CONFIRMED.search(message.subject):
         return MailKind.BOOKING_CONFIRMATION, "subject:booking_confirmed"

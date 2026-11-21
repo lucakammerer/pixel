@@ -10,7 +10,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - **Always answer.** A missed request is lost for good (R1). Every request has its own deadline; before it runs out
   the fallback sends the best price we have. Nothing you add may block that path.
 - **One quote per thread.** Only our first quote in a customer's thread counts (R4). Mail leaves through
-  `pixel/core/outbox.py` and nowhere else; never reply to a customer before the quote.
+  `pixel/core/outbox.py` and nowhere else; never reply to a customer before the quote, except one question for a
+  fact the price needs and the request left out (`extract.py` `_ask`).
 - **Code does the arithmetic and the selection.** Every calculation lives in `pixel/pricing/calc.py`, every choice
   between options in `pixel/pricing/selection.py`: Decimal, tested. A model never computes, compares or writes a
   price.

@@ -165,10 +165,11 @@ async def test_a_pickup_known_by_its_town_alone_is_asked_with_a_postcode_of_its_
         asked.append(f"{subject}\n{body}")
         return mail("us@x", body, session_id)
 
-    monkeypatch.setattr(outbox, "send", send)
+    monkeypatch.setattr(extract, "ASK_WAIT_S", 0)  # the customer's answer is not part of this test
     store.save_zones(ctx, [{"zone": "93", "area": "Regensburg", "airport": "AAA"}])
     path = Path(__file__).parent / "fixtures" / "mails" / "rfq-door-warehouse-no-postcode.json"
     request = await extract.extract(ctx, to_message(json.loads(path.read_text()), "in"), deadline())
+    monkeypatch.setattr(outbox, "send", send)
     await bids.request(ctx, request, [("Truck A", "a@truck")], pickup=True)
     assert (request.pickup_zone, request.pickup_postcode) == ("93", None)
     assert asked and all(len(re.findall(r"\b93\d{3}\b", text)) == 2 for text in asked)
