@@ -333,8 +333,11 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
 
 
 def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
-    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16)."""
-    if rfq.origin or not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
+    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16), also
+    when the origin read from the mail is an airport no pickup zone trucks to (a model's guess from the town)."""
+    if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
+        return rfq
+    if rfq.origin and not (rfq.door_pickup and rfq.origin not in store.zone_airports(ctx)):
         return rfq
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 

@@ -117,6 +117,26 @@ async def test_a_door_request_whose_zone_has_no_airport_is_left_to_the_model(con
     assert (rfq.origin, rfq.extracted_by) == ("FRA", "model")
 
 
+async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no_zone_trucks_to(
+    conn, monkeypatch, emitted
+):
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": "XFW", "destination": "YYZ", "weight_kg": "855", "volume_cbm": "3.74", "pieces": 4,
+                "preference": "cheapest", "door_pickup": True, "pickup_postcode": "21663", "currency": "EUR",
+                "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("21663"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.extracted_by, rfq.missing) == ("AAA", "YYZ", "model", ())
+
+    store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])  # an airport a zone trucks to
+    rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
+    assert rfq.origin == "XFW"
+
+
 @pytest.mark.parametrize(
     "name, expected",
     [

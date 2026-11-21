@@ -1,0 +1,18 @@
+{
+  "id": 2537,
+  "from": "lindqvist-medtech@hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "Air freight quote request: Lueneburg to Toronto",
+  "body": "Hello,\n\nplease quote air freight for this shipment:\n\n- Pickup: from our site at 21663 Lueneburg, Germany (please arrange the truck)\n- Destination airport: Toronto (YYZ), CA\n- Commodity: maintenance spray cans, 4 pieces\n- Gross weight: 855 kg\n- Volume: 3.74 cbm\n- Ready date: 2026-11-26\n- Service: the cheapest option\n- Our shipper's letter of instruction is attached to this email\n- The goods are general cargo, non-dangerous\n\nPlease reply with your all-in price in EUR.\n\nSara\nLindqvist Medtech",
+  "in_reply_to": null,
+  "references": [],
+  "received_at": "2026-11-21T16:01:46.977362+00:00",
+  "attachments": [
+    {
+      "id": 24,
+      "filename": "packing-spec_33955.pdf",
+      "content_type": "application/pdf",
+      "size": 2089
+    }
+  ]
+}
