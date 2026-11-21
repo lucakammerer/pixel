@@ -85,6 +85,32 @@ def test_without_subject_or_prose_still_a_full_mail():
     assert body.startswith("Guten Tag,\n\n") and "Viele Grüße" in body
 
 
+def test_goods_of_and_natural_humanizer():
+    # Luca's regression checks: non-goods phrases must return None
+    assert compose.goods_of("Could you quote me a rate from FRA to ORD for 340 kg?") is None
+    assert compose.goods_of("Please quote FRA to ORD, 340 kg.") is None
+    assert compose.goods_of("Please quote for Acme Industries from MUC to JFK.") is None
+
+    # Positive commodity detections (English packaging and German keywords)
+    assert compose.goods_of("Please quote for 4 pallets of automotive parts to DFW.") == "automotive parts"
+    assert compose.goods_of("Ware: Maschinenteile für Fertigung.") == "Maschinenteile"
+    assert compose.goods_of("Wir versenden elektronische Bauteile nach ORD.") == "elektronische Bauteile"
+
+    # German quote renders with goods in customer's words
+    _, de_body = compose.render(rfq("de"), OPTION, request="Ware: Maschinenteile nach BBB")
+    assert "Für Ihre Maschinenteile" in de_body
+
+    # Adaptive facility naming
+    opt = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
+    _, fac_body = compose.render(rfq("en"), opt, request="Please collect from our factory.")
+    assert "your factory by Example Trucks" in fac_body
+
+    # Luca's pickup check: invoice delivery must not cancel door pickup
+    assert extract._pickup(
+        "Please collect 3 pallets from our warehouse in 60311 Frankfurt. We will deliver the commercial invoice by email."
+    ) == (True, "60311")
+
+
 @pytest.mark.parametrize(
     ("slot", "text", "language"),
     [
