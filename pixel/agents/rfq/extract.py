@@ -34,14 +34,14 @@ OTHER_UNIT = r"\s*(?i:lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
 WEIGHT = (
     re.compile(rf"{NUM}\s*(?i:kgs?|kilos?|kilograms?|kilogramm)\b"),
     re.compile(
-        rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?)\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"
+        rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht)(?:\s+(?:gesamt|total))?(?:\s*\(kgs?\))?)\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"
     ),
 )
 POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
-    re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
+    re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s+(?:gesamt|total))?(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
 )
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s])))?\b",  # "in total": a word, not inches
@@ -684,7 +684,7 @@ def names_code(text: str, code: str) -> bool:
 
 COLUMN = re.compile(
     r"(?P<name>width|length|height|breite|l(?:ä|ae)nge|h(?:ö|oe)he|pieces|pcs|qty|quantity|st(?:ü|ue)ck|"
-    r"gross\s+weight|weight|gewicht)(?:\s*\((?P<unit>mm|cm|m|kgs?)\))?",
+    r"gross\s+weight|bruttogewicht|nettogewicht|weight|gewicht)(?:\s+(?:gesamt|total))?(?:\s*\((?P<unit>mm|cm|m|kgs?)\))?",
     re.IGNORECASE,
 )
 SIDE = {"width": 0, "breite": 0, "length": 1, "länge": 1, "laenge": 1, "height": 2, "höhe": 2, "hoehe": 2}
@@ -696,14 +696,19 @@ def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]], st
     below it with one number per column, and the text around it."""
     lines = text.splitlines()
     for i, header in enumerate(lines):
-        columns = [(m["name"].casefold(), m["unit"]) for m in COLUMN.finditer(header)]
+        columns = [
+            (" ".join(m["name"].casefold().split()), (m["unit"] or "").lower() or None) for m in COLUMN.finditer(header)
+        ]
         names = [name for name, _ in columns]
         if not ({0, 1, 2} <= {SIDE.get(n) for n in names} and COUNT & set(names)):
             continue
         rows = []
         for row in lines[i + 1 :]:
             cells = re.findall(r"\d[\d.,]*", row)
-            if len(cells) != len(columns):
+            if cells and re.fullmatch(r"[\d. ,\t]+", row) and len(cells) != len(columns):
+                rows.clear()  # a numeric row with missing columns makes the whole sum incomplete
+                break
+            if len(cells) != len(columns) or not re.fullmatch(r"[\d. ,\t]+", row):
                 break
             rows.append(cells)
         return columns, rows, "\n".join(lines[:i] + lines[i + 1 + len(rows) :])
@@ -728,6 +733,37 @@ def _table_volume(text: str) -> Decimal | None:
     return total
 
 
+def _packing_readings(table: tuple, text: str) -> tuple[int | None, Decimal | None, Decimal | None]:
+    """Fill missing totals only from a complete, explicitly labelled packing table."""
+    columns, rows, _ = table
+    sizes = [SIDE[name] for name, _ in columns if name in SIDE]
+    counts = [i for i, (name, _) in enumerate(columns) if name in COUNT]
+    if sorted(sizes) != [0, 1, 2] or len(counts) != 1 or not rows:
+        return None, None, None
+    counts = [number(row[counts[0]], thousands=False) for row in rows]
+    if any(n is None or n <= 0 or n != n.to_integral_value() for n in counts):
+        return None, None, None
+    kg = None
+    weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name.endswith("gewicht")]
+    if len(weights) == 1 and columns[weights[0]] in (
+        ("gross weight", "kg"),
+        ("gross weight", "kgs"),
+        ("bruttogewicht", "kg"),
+        ("bruttogewicht", "kgs"),
+    ):
+        # An explicit gross-weight column gives the total of each row, not a per-piece weight.
+        cells = [number(row[weights[0]]) for row in rows]
+        if not EACH_WEIGHT.search(text) and all(x is not None and x > 0 for x in cells):
+            kg = sum(cells, Decimal(0))
+    cbm = None
+    dims = [(i, unit) for i, (name, unit) in enumerate(columns) if name in SIDE]
+    if all(unit in ("cm", "mm", "m") for _, unit in dims) and all(
+        (side := number(row[i], thousands=False)) is not None and side > 0 for row in rows for i, _ in dims
+    ):
+        cbm = _table_volume(text)
+    return int(sum(counts)), kg, cbm
+
+
 def _document_weight(text: str) -> Decimal | None:
     """A document's stated total gross weight when its table's one weight column, headed in kg, adds up to it
     (round 35: the mail said 2644 kg, the spec's total and its row 1751 kg). A row's weight is never multiplied by
@@ -738,7 +774,7 @@ def _document_weight(text: str) -> Decimal | None:
     columns, rows, around = table
     if (stated := _unique(WEIGHT, around, thousands=True)) is None:
         return None
-    weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name == "gewicht"]
+    weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name.endswith("gewicht")]
     if len(weights) != 1 or columns[weights[0]][1] not in ("kg", "kgs") or not rows:
         return None
     cells = [number(row[weights[0]]) for row in rows]
@@ -813,7 +849,13 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
     ]
     if len(named) == 1:
         sources = [sources[0], *named]
-    lots = [_lots(text) for _, text in sources]
+    tables = [None, *(_table(text) for _, text in sources[1:])]
+    text_fields = [table[2] if table else text for (_, text), table in zip(sources, tables, strict=True)]
+    row_fields = [
+        _packing_readings(table, text) if table else (None, None, None)
+        for (_, text), table in zip(sources, tables, strict=True)
+    ]
+    lots = [_lots(text) for text in text_fields]
     facts, evidence = {}, {}
 
     def take(field: str, readings: list) -> None:
@@ -823,7 +865,10 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
             facts[field] = values.pop()
             evidence[field] = [name for (name, _), v in zip(sources, readings, strict=True) if v is not None]
 
-    counts = [group[2] if group else _pieces(text) for (_, text), group in zip(sources, lots, strict=True)]
+    counts = [
+        group[2] if group else _pieces(text) or rows[0]
+        for text, group, rows in zip(text_fields, lots, row_fields, strict=True)
+    ]
     take("pieces", counts)
     for field, index, reader in (("weight_kg", 0, _weight), ("volume_cbm", 1, _volume)):
         field_pattern = CARGO_FIELDS[field]
@@ -837,8 +882,8 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
             facts[field], evidence[field] = corrected.pop(), [sources[0][0]]
             continue
         readings = [
-            group[index] if group else reader(text, count or facts.get("pieces"))
-            for (_, text), group, count in zip(sources, lots, counts, strict=True)
+            group[index] if group else reader(text, count or facts.get("pieces")) or rows[index + 1]
+            for text, group, count, rows in zip(text_fields, lots, counts, row_fields, strict=True)
         ]
         take(field, readings)
         if readings[0] is not None and any(field_pattern.search(fields) for fields in mail_fields):
