@@ -14,7 +14,7 @@ import httpx
 
 from pixel import llm
 from pixel.api.client import ApiError
-from pixel.contracts import LaneTariff, Message
+from pixel.contracts import Attachment, LaneTariff, Message
 from pixel.core import events
 from pixel.core.context import Context
 from pixel.pricing import bids, store
@@ -30,6 +30,7 @@ LEAD_COLUMN = re.compile(
 )
 IMAGES = {".jpg", ".jpeg", ".png"}
 AUDIO = {".mp3", ".wav", ".m4a", ".ogg"}
+READABLE = {".xlsx", ".docx", ".pdf", ".txt", ".csv", *AUDIO}
 SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
 # Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
 SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
@@ -55,6 +56,10 @@ _speech_lock = threading.Lock()
 VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
 RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
+
+
+class Unreadable(ValueError):
+    """A file code holds no text reader for: video, an image, an unknown type, a scan without text."""
 
 
 @dataclass
@@ -141,7 +146,7 @@ def _lines(filename: str, content: bytes) -> list[str]:
         with pdfplumber.open(io.BytesIO(content)) as pdf:
             text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         if not text.strip():
-            raise ValueError("pdf without text: scanned")
+            raise Unreadable("pdf without text: scanned")
         return text.splitlines()
     if suffix in (".txt", ".csv"):
         try:
@@ -150,7 +155,25 @@ def _lines(filename: str, content: bytes) -> list[str]:
             return content.decode("latin-1").splitlines()
     if suffix in AUDIO:
         return _spoken(_transcribe(content))
-    raise ValueError(f"no code parser for {suffix or filename}")
+    raise Unreadable(f"no code parser for {suffix or filename}")
+
+
+async def attachment_lines(ctx: Context, message: Message, attachment: Attachment, actor: str) -> list[str] | None:
+    """The text lines of a customer's or carrier's attachment. A file code cannot read (a video, a scan) is a
+    deliberate `attachment.unreadable`, never an `error`: the mail goes on as if that file held nothing."""
+    suffix = Path(attachment.filename).suffix.lower()
+    try:
+        if suffix not in READABLE:
+            raise Unreadable(f"no code parser for {suffix or attachment.filename}")
+        content = await ctx.mailbox.attachment(message.id, attachment.id)
+        return await asyncio.to_thread(_lines, attachment.filename, content)  # a voice message takes seconds
+    except Unreadable as e:
+        events.emit(ctx, "attachment.unreadable", actor, session_id=message.session_id, message_id=message.id,
+                    payload={"file": attachment.filename, "type": attachment.content_type, "reason": str(e)})  # fmt: skip
+    except Exception as e:  # noqa: BLE001  a broken file must not lose the mail
+        events.emit(ctx, "error", actor, session_id=message.session_id, message_id=message.id,
+                    payload={"where": f"{actor}_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+    return None
 
 
 def speech_model():

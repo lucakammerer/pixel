@@ -36,6 +36,10 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
   pages as JPEGs. `read_with_model` sends those pages or the original image attachments through `llm.ask_json`,
   once per page. The model transcribes cells. Code merges rates and surcharges across pages, parses numbers
   and applies the same validation as for text tariffs before making rates available to pricing.
+- `attachment_lines`: the text lines of a request's or a carrier's attachment for `agents/rfq/extract.py` and
+  `pricing/bids.py`, in a thread. A type `_lines` has no reader for (`READABLE`: xlsx, docx, pdf, txt, csv, audio) is
+  not downloaded; it and a pdf without text raise `Unreadable` and become an `attachment.unreadable` event, not an
+  `error`.
 - `check`: on every result: lane codes, currency, dates, minimum > 0 and not a transit in days (a whole number up to
   30 below two kg at the first rate), transit 1 to 30 days, first break at 0 kg,
   breaks ascending, rates positive and never rising with weight, surcharges below the first rate.
@@ -54,6 +58,8 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 - Surcharges come as columns, as a second table or as one sentence per lane below the rates.
 - Lanes are written as codes, as city names with codes, or grouped under an origin heading.
 - The scanned sheet is skewed and split over two pages: rates on one, surcharges on the other.
+- The gateway accepts text and `image_url` content only and lists no audio model (checked 21.11.2026): a voice
+  message is read by the local transcript (`_transcribe`) or not at all.
 - `check` cannot know whether a code is a real airport; it only checks the form.
 - A sheet read by column position turns into wrong values when an update reorders its columns: Minimum and Transit
   swapped read the minimum as transit days, and `check` only noticed when the numbers left its ranges. `_read`

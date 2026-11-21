@@ -245,12 +245,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
   attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message). When the body
   alone holds no price, `pricing/bids.py` `record` reads it together with every attachment code can read
-  (`_with_attachments`, in a thread: a transcript takes seconds); an unreadable file is an `error` event, the
-  others still count. A priced mail is never read with its attachments: an airline's terms ("unable to accept …")
-  or a forwarded invoice total would hide its price.
+  (`_with_attachments`, in a thread: a transcript takes seconds); the others still count. A priced mail is never
+  read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
+  price.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
   we had to ask the customer for every fact.
+- A file no code reads (a video, an image outside a tariff mail, an unknown type, a pdf without text) is a deliberate
+  `attachment.unreadable` with its name and type (`tariffs/agent.py` `attachment_lines`, not downloaded when its type
+  has no reader), never an `error`, and the mail goes on as if it held nothing: a carrier who answered only in one
+  is answered and unpriced (`bid.received` with `unread`, no model call when no price stands in the text), a request
+  whose facts sit in one has them missing and asks the one question. A file of a readable type that breaks its
+  reader (a corrupt pdf, an mp3 the decoder refuses) is still an `error`. The gateway takes no audio (text and
+  `image_url` only, no audio model listed), so a voice message is read by the local transcript or not at all.
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

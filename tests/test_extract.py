@@ -247,6 +247,22 @@ async def test_dangerous_goods_declared_in_an_attachment_count_although_the_mail
     assert await extract.dangerous_goods(ctx, to_message(raw, "in")) == declared
 
 
+async def test_facts_only_in_a_file_no_code_reads_are_missing_without_an_error(emitted):
+    """An `.xls` packing list (the mailbox allows it, R6; no code reads it) is an `attachment.unreadable`, not an
+    `error`: the mail goes on without it, so its facts are missing and the one question asks for them."""
+    ctx = Context(settings(), None, None, None, None, None)
+    ctx.mailbox = FixtureMailbox({"attachments": []})  # a type without a reader is never downloaded
+    sheet = Attachment(id=1, filename="packing-list.xls", content_type="application/vnd.ms-excel", size=10)
+    message = mail("Please quote, all details in the packing list.").model_copy(update={"attachments": (sheet,)})
+    assert await extract._attachments(ctx, message) == []
+    assert [(kind, kw["payload"]) for kind, kw in emitted] == [
+        (
+            "attachment.unreadable",
+            {"file": "packing-list.xls", "type": "application/vnd.ms-excel", "reason": "no code parser for .xls"},
+        )
+    ]
+
+
 async def test_a_dangerous_goods_request_lists_the_documents_as_missing(conn, emitted):
     raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-dg-packing-list.json").read_text())
     ctx = Context(settings(), conn, None, None, None, None)
