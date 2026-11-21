@@ -323,3 +323,21 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.missing) == (
         Decimal(expected[0]), Decimal(expected[1]), expected[2], ()
     )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "wish, fastest",
+    [
+        ("Speed matters more than price.", True),
+        ("Please ship it as quickly as possible.", True),
+        ("This is time-critical.", True),
+        ("Price matters more than speed, no rush.", False),
+        ("The cheapest option please, ideally urgent.", False),
+        ("Best regards, Nordwind Express GmbH", False),
+        ("Bitte so schnell wie möglich.", True),
+        ("", False),
+    ],
+)
+def test_the_wish_is_read_from_its_wording(wish, fastest):
+    rfq = extract.by_rules(mail(f"AAA to BBB, 300 kg, 1 cbm. {wish}"), DEADLINE)
+    assert (rfq.preference == Preference.FASTEST) is fastest

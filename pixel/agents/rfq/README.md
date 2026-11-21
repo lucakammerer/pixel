@@ -88,7 +88,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
 - A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0
   under-prices a light, bulky shipment.
-- "Not urgent" and "no rush" contain the urgency words: they mean cheapest.
+- "Not urgent", "no rush" and "price matters more than speed" contain the urgency words: they mean cheapest. A
+  superlative the customer wrote (fastest, cheapest) decides; without one, a hurry they describe ("as quickly as
+  possible", "time-critical", "speed matters more") means fastest. "Express" counts only as a service, not in a
+  company's name.
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
