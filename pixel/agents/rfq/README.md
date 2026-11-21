@@ -97,7 +97,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - "Not urgent", "no rush" and "price matters more than speed" contain the urgency words: they mean cheapest. A
   superlative the customer wrote (fastest, cheapest) decides; without one, a hurry they describe ("as quickly as
   possible", "time-critical", "speed matters more") means fastest. "Express" counts only as a service, not in a
-  company's name.
+  company's name. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
+  "quickly" alone is about our reply, not the flight.
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
