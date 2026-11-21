@@ -231,11 +231,22 @@ def _lane(text: str) -> tuple[str, str] | None:
     return None
 
 
+def _label_reach(pattern: re.Pattern, text: str) -> dict[str, int]:
+    """Each airport code a label reaches, with the shortest reach of any label to it."""
+    reach: dict[str, int] = {}
+    for m in pattern.finditer(text):
+        if _airport(code := m.groups()[-1]):
+            reach[code] = min(reach.get(code, m.end() - m.start()), m.end() - m.start())
+    return reach
+
+
 def _destination_only(text: str) -> str | None:
-    """The one destination of a mail that names no origin airport (door-to-port). "Select the departure airport for
-    the fastest option to JFK" labels the destination, not an origin (round 69)."""
-    found = {c for c in DEST_LABEL.findall(text) if _airport(c)}
-    if {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - found:
+    """The one destination of a mail that names no origin airport (door-to-port). A code both labels reach belongs to
+    the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
+    "our truck goes to departure airport FRA" the origin."""
+    to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
+    found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
+    if set(origin) - found:
         return None
     return found.pop() if len(found) == 1 else None
 
