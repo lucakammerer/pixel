@@ -1,10 +1,12 @@
 import asyncio
 
 from pixel.contracts import RateOption, Rfq, Source
-from pixel.core import events, feedback
+from pixel.core import events, feedback, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import bids, calc, pickup, portal_rates, selection, store
+from pixel.pricing import bids, calc, pickup, portal_rates, selection, session, store
+
+PORTAL_HEAD_START_S = 1.0
 
 
 def _found(ctx: Context, rfq: Rfq, option: RateOption) -> None:
@@ -29,8 +31,9 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
 def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE) -> list[RateOption]:
     """Airline options, each with the balanced pickup added for door-to-port (Q4: the best price includes it).
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all."""
-    airline = [o for o in options if o.trucker is None]
-    pickups = [o for o in options if o.trucker is not None]
+    matching = [o for o in options if session.on_lane(o, rfq)]
+    airline = [o for o in matching if o.trucker is None]
+    pickups = [o for o in matching if o.trucker is not None]
     if not (rfq.door_pickup and pickups):
         return airline
     timed = [o for o in pickups if o.pickup_hours is not None]
@@ -45,14 +48,34 @@ def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_R
 async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption]:
     """Every priced option for the request: sheets (instant), portal and bids in parallel, pickup added for
     door-to-port. Emits `option.found` per option as it arrives, so the fallback always has the best so far."""
-    pickup_task = asyncio.create_task(pickup.options(ctx, rfq, deadline))
     sheets = sheet_options(ctx, rfq)
-    portal = await portal_rates.options(ctx, rfq, deadline)
-    priced = {o.carrier.casefold() for o in sheets + portal}
-    unpriced = [(name, email) for name, email in store.carriers(ctx, "airline", rfq.destination)
-                if name.casefold() not in priced]  # fmt: skip
-    mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
-    offers = await bids.collect(ctx, rfq.session_id, deadline, len(mailed)) if mailed else []
-    pickups = await pickup_task
-    found = sheets + portal + [o for o in offers if o.source in (Source.BID, Source.RATEDESK)] + pickups
-    return combine(rfq, found, feedback.pickup_rule(ctx))
+    carriers = store.carriers(ctx, "airline", rfq.destination)
+    priced = {o.carrier.casefold() for o in sheets}
+    candidates = [(name, email) for name, email in carriers if name.casefold() not in priced]
+    offers = []
+    async with asyncio.TaskGroup() as group:
+        pickup_task = group.create_task(pickup.options(ctx, rfq, deadline))
+        portal_task = group.create_task(portal_rates.options(ctx, rfq, deadline))
+        if candidates:
+            # Fast portal prices save unnecessary mails. An outage or a slow rate read must still
+            # leave mail-only airlines time to answer, including after a late restart.
+            head_start = min(PORTAL_HEAD_START_S, max(0.0, (deadline.target_at - timing.now()).total_seconds()))
+            await asyncio.wait({portal_task}, timeout=head_start)
+            priced.update(o.carrier.casefold() for o in session.for_request(ctx, rfq) if not o.trucker)
+            unpriced = [(name, email) for name, email in candidates if name.casefold() not in priced]
+            if unpriced:
+                mailed = await bids.request(ctx, rfq, unpriced)
+                if mailed:
+                    offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
+        pickups = await pickup_task
+        offers = [o for o in offers if o.source in (Source.BID, Source.RATEDESK)]
+        published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL]
+        if (sheets or offers or published) and (not rfq.door_pickup or pickups) and not portal_task.done():
+            await asyncio.wait({portal_task}, timeout=max(0.0, (deadline.target_at - timing.now()).total_seconds()))
+            if not portal_task.done():
+                portal_task.cancel()
+    portal = [] if portal_task.cancelled() else portal_task.result()
+    # Also reuse same-lane bids published before recovery or while another price source was still running.
+    carried = [o for o in session.for_request(ctx, rfq) if o.source in (Source.PORTAL, Source.BID, Source.RATEDESK)]
+    all_options = dict.fromkeys(sheets + portal + offers + pickups + carried)
+    return combine(rfq, list(all_options), feedback.pickup_rule(ctx))

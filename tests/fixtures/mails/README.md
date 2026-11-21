@@ -11,8 +11,11 @@ stores our own mails the captured ones answer (the bid request, the quote, a req
 
 A fixture may carry `content_base64` on an attachment; `tools/replay.py` serves it instead of downloading.
 
-Every fixture the router places as a customer's request is replayed by `tools/kpi.py` in each pull request; its
-price on the base and on the branch is compared there, offline.
+`tools/kpi.py` replays each `rfq-*` and `synthetic-rfq-*` fixture, plus any names listed in
+`tests/fixtures/kpi-expectations.json`. A misrouted request stays in the denominator. An answer requires a
+`quote.sent` receipt from the replay mailbox. Each row reports routing, delivered price and currency, and whether
+the price covers all requested services. The expectation file pins the amount, currency and service scope for
+selected cases. Offline replay advances a virtual clock through bid waits and deadlines.
 
 Captured carrier answers, each to a request in the wording of `pixel/pricing/bids.py` `_subject` and `_body`:
 
@@ -57,7 +60,7 @@ checks each one:
   "together"; the scorer accepted their sum.
 
 `customer-declines-too-low.json`: the customer's decline of our too-low quote for `rfq-door-three-lots.json`, worded
-"we will not go ahead with it". We booked it anyway: `booking.py` `intent` read "go ahead" as an acceptance.
+"we will not go ahead with it". `booking.py` `intent` treats this as a decline.
 
 Requests with dangerous goods, captured with their attachment (`content_base64`, fetched from the API: `--capture`
 stores the mail without the file). The mail says "general cargo, non-dangerous"; the attachment declares them:

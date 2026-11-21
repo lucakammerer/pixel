@@ -6,6 +6,7 @@ uv run python -m tools.board_me
 import asyncio
 import json
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,13 +38,29 @@ def rows_of(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def normalize(row: dict[str, Any]) -> dict[str, Any]:
     nested = row.get("points") if isinstance(row.get("points"), dict) else {}
-    points = {k: _pick(nested, k, f"{k}_points") or _pick(row, f"{k}_points", k) for k in POINTS}
-    points["bonus"] = points["bonus"] or _pick(nested, "tracking", "humanity") or _pick(row, "tracking_points")
+    points = {}
+    for k in POINTS:
+        value = _pick(nested, k, f"{k}_points")
+        if value is None:
+            value = _pick(row, f"{k}_points", k)
+        if value is not None:
+            points[k] = value
+    if "bonus" not in points:
+        bonus = _pick(nested, "tracking", "humanity")
+        points["bonus"] = bonus if bonus is not None else _pick(row, "tracking_points")
+    seconds = _pick(row, "seconds", "response_seconds", "response_s")
+    if seconds is None and row.get("sent_at") and row.get("answered_at"):
+        try:
+            seconds = round(
+                (datetime.fromisoformat(row["answered_at"]) - datetime.fromisoformat(row["sent_at"])).total_seconds(), 2
+            )
+        except (TypeError, ValueError):
+            pass
     return {
-        "round": _pick(row, "round", "round_id", "request_id", "id"),
+        "round": _pick(row, "round_no", "round", "round_id", "request_id", "id"),
         "sent_at": _pick(row, "sent_at", "sent", "requested_at"),
         "answered_at": _pick(row, "answered_at", "answered", "replied_at"),
-        "seconds": _pick(row, "seconds", "response_seconds", "response_s"),
+        "seconds": seconds,
         "verdict": _pick(row, "verdict", "status"),
         "reason": _pick(row, "reason", "reason_code"),
         "points": {k: v for k, v in points.items() if v is not None},
@@ -77,7 +94,7 @@ def _cells(score: dict[str, Any], commit: str, note: str) -> dict[str, str]:
 
 def write_runs(scores: list[dict[str, Any]], path: Path = RUNS) -> int:
     """Upserts one table row per round, newest first, keeping each row's commit and note. Returns new rows."""
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     head, sep, rest = text.partition("\n## ")
     lines = head.rstrip("\n").split("\n")
     start = next(i for i, line in enumerate(lines) if line.startswith("| ---")) + 1
@@ -99,7 +116,7 @@ def write_runs(scores: list[dict[str, Any]], path: Path = RUNS) -> int:
     rows = [
         "| " + " | ".join(existing[k][c] for c in COLUMNS) + " |" for k in sorted(existing, key=order, reverse=True)
     ]
-    path.write_text("\n".join(lines[:start] + rows) + "\n" + (f"\n## {rest}" if sep else ""))
+    path.write_text("\n".join(lines[:start] + rows) + "\n" + (f"\n## {rest}" if sep else ""), encoding="utf-8")
     return added
 
 

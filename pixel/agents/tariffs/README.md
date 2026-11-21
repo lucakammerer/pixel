@@ -26,9 +26,10 @@ the findings of `check`.
   across page breaks) and surcharge sentences (`<lane>: fuel X per kg, security Y per kg`). A lane is the first two
   IATA codes before the first number, or one code under an `Origin:` heading. A row with the wrong count of numbers
   refuses the whole file (ValueError) instead of guessing.
-- `read_with_model`: images (and pages a code parser refuses) through `llm.ask_json`, one call per page. The model
-  only transcribes cells as strings; code merges the pages (rates on one, surcharges on the other), parses the
-  numbers and builds the rows like `parse`.
+- `_ingest` first tries the text parser for PDFs. When it cannot read a scan or layout, `_pdf_pages` renders the
+  pages as JPEGs. `read_with_model` sends those pages or the original image attachments through `llm.ask_json`,
+  once per page. The model transcribes cells. Code merges rates and surcharges across pages, parses numbers
+  and applies the same validation as for text tariffs before making rates available to pricing.
 - `check`: on every result: lane codes, currency, dates, minimum > 0, transit 1 to 30 days, first break at 0 kg,
   breaks ascending, rates positive and never rising with weight, surcharges below the first rate.
 - Version: `<valid from>#<sha256 of the file, 8 chars>`, so a re-sent identical file changes nothing and a new
@@ -50,5 +51,4 @@ the findings of `check`.
 
 ## Open
 
-- A text layout `parse` refuses is reported as failed; it is not yet sent to the model as text.
-- Scanned PDFs (no text layer) are refused; only image files go to the model.
+- Unrecognised non-PDF text layouts are reported as failed. There is currently no model transcription path for them.

@@ -2,7 +2,7 @@
 
 ## Mission
 
-Turn a customer's request into one quote: the option they asked for, cheapest or fastest, with one all-in total and
+Turn a customer's request into one quote: the option they asked for, cheapest or fastest, with one total and
 its currency, sent as the first reply in their thread before the deadline. When the customer accepts, book it and
 keep them informed.
 
@@ -25,12 +25,18 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `outbox.send_quote`. A request missing origin, destination or weight emits `error` and returns None; the
   orchestrator's fallback and the UI take over. Every drafted quote is saved to the CRM (`crm/quotes.py` `save`),
   the sent one again after `send_quote`, so booking finds it also when the fallback sent it.
-- `agent.py` `served_airports`: before pricing, an origin or destination on none of the lanes we know (sheets,
-  pickup zones, the carrier list, the portal's ports) and not written in the mail goes back to the model once
-  (`rfq.airports`) with the airports we serve; only a served code from the answer is taken, and the corrected `Rfq`
-  is emitted as `rfq.extracted` again. No call when both codes are served or named in the mail.
-- `agent.py` `fallback`: the RFQ and every `option.found` of the session, read back from the event log
-  (`pricing/session.py`), combined and selected by code alone, no model call. Returns the quote unsent.
+- `agent.py` `served_airports` accepts codes named in the current mail or its attachments, case-insensitively,
+  and codes known locally. Only an unserved guess triggers a time-limited portal check and, if still unresolved,
+  one optional `rfq.airports` call. Quoted older correspondence is excluded.
+- `agent.py` `fallback` reads the RFQ and the stored options on its current lane. A late complete option can be
+  sent while the session is automatic. A door request waits for a priced trucker until `hard_at`. If pickup is
+  still unpriced at that point, the reply states the airport-to-airport price and excludes pickup. A zone hint
+  used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
+  when the postcode is missing, including when the quoted pickup price is for the zone pending address confirmation.
+- `pricing/bids.py` `parse` binds the amount to its label and unit. `pricing/calc.py` multiplies rates per kg by
+  chargeable weight, preserves exchange-rate precision during conversion and rounds transit in hours up to whole
+  days. `pricing/engine.py` starts carrier sourcing when the portal is slow or unavailable.
+
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
   weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly
   requested currency, `de` or `en`. None unless exactly one lane (for a door pickup with a postcode: one destination)
@@ -42,7 +48,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose the way a
   clerk would: greeting in the customer's register (`register`: formal "Dear", neutral "Hello", casual "Hi") with
   the first name they signed with (the model's slot, else `signed_name` by rule), one short opening line, one offer
-  paragraph with the all-in total and its currency, carrier, transit, what is included, the chargeable weight only
+  paragraph with the quoted total and its currency, carrier, transit, what is included, the chargeable weight only
   when it is above the gross weight, and the validity on our desk's clock ("until 17:22 today"), then the booking
   sentence and a person's signature (`PIXEL_SIGNER`) with the matching sign-off. The mail ends there: no closing
   line. Code formats every number and name; three to four phrasings per sentence, picked by session, so two quotes
@@ -57,16 +63,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German
   `du`, or is too long; the first name must stand in the customer's mail. The checked slots are stored as
   `quote.prose`, so the fallback quote and the booking mails use them too.
-- `booking.py` `handle_reply`: `intent` reads accept, decline or other by rules (English and German, a decline
-  wins); anything else becomes a `human.note` for a person, no model call. `book`: one shipment (`PX-…`, our
-  `team_reference`), one portal booking by `rate_id`; a lost connection is retried once (the portal answers 200 with
-  the same booking), 410 fetches a fresh rate and books that, 503 or a quote without `rate_id` books by mail with the
-  airline (address from the 503 message, else the carrier list), 404 and 409 are `booking.failed`. A second
-  acceptance books nothing twice. A dry run (`PIXEL_DRY_RUN=1`) and every replay never book at the portal: the
-  booking falls through to the booking mail, which the outbox holds. The customer mails (booked, confirmed) are in the customer's language, with
-  money and weight formatted by `compose`, the stored first name and the same signer, without a model call.
-  `handle_confirmation`: "Booking <reference> confirmed" marks booking and shipment
-  confirmed and tells the customer once.
+- `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
+  Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
+  A delivered offer can be booked even when it went out through the deadline fallback.
+- `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
+  the selected billed weight. A 503 or an option without a rate id goes to the airline by mail. The carrier
+  receives the air purchase price. The customer's booking notice states the accepted quote total, including
+  any priced pickup. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
 
 ## Pitfalls
 
@@ -101,9 +104,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   to the model.
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself.
-- A request can leave its weight to the attached packing list ("Total gross weight (kg): 715"): when the mail names
-  no weight, `extract` reads the attachments' text with it, for the rules and the model. A document number ("No.
-  53839") is no postcode.
+- A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
+  combines fields separately, giving precedence to an explicit figure in the mail. A unique attachment value
+  can supply a missing field. `rfq.evidence` records its source. A positive weight recovered by code clears
+  the missing-weight flag. A document number alone is no pickup postcode.
 - A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
   to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.
 - A pickup "from our warehouse" can name no postcode and no town but the signature's (round 15): truckers then answer

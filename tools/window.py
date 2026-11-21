@@ -17,8 +17,11 @@ MARGIN_S = 60  # keep clear of the next request
 
 def open_now(conn: sqlite3.Connection, now: datetime) -> bool:
     asked = conn.execute(
-        "SELECT session_id, ts FROM events WHERE kind = 'route' AND json_extract(payload, '$.kind') = 'customer_rfq'"
-        " ORDER BY id DESC LIMIT 1"
+        "SELECT e.session_id, COALESCE(m.sent_at, s.received_at, e.ts) AS received "
+        "FROM events e LEFT JOIN messages m ON m.id = COALESCE(e.message_id, e.session_id) "
+        "LEFT JOIN sessions s ON s.id = e.session_id "
+        "WHERE e.kind = 'route' AND json_extract(e.payload, '$.kind') = 'customer_rfq' "
+        "ORDER BY received DESC LIMIT 1"
     ).fetchone()
     if asked is None:
         return True

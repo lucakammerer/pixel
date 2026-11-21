@@ -17,20 +17,21 @@ import asyncio
 import base64
 import dataclasses
 import json
+import selectors
 import sqlite3
 import tempfile
-from datetime import UTC, datetime
+from contextvars import copy_context
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
 
-from pixel.api.client import make_client
 from pixel.api.mailbox import Mailbox, to_message
 from pixel.api.portal import BookingUnavailable
 from pixel.app import build_context
 from pixel.config import settings
 from pixel.contracts import Event, Message
-from pixel.core import events, orchestrator, poller
+from pixel.core import events, orchestrator, poller, timing
 
 
 class OfflineMailbox(Mailbox):
@@ -47,7 +48,14 @@ class OfflineMailbox(Mailbox):
     async def send(self, to, subject, body, in_reply_to=None, attachments=()) -> Message:
         """Reached only in an `as_live` replay: the mail gets an id no stored mail has and goes nowhere."""
         self.sent -= 1
-        raw = {"id": self.sent, "to": to, "subject": subject, "body": body, "in_reply_to": in_reply_to}
+        raw = {
+            "id": self.sent,
+            "received_at": timing.now().isoformat(),
+            "to": to,
+            "subject": subject,
+            "body": body,
+            "in_reply_to": in_reply_to,
+        }
         return to_message(raw, "out")
 
     async def attachment(self, message_id: int, attachment_id: int) -> bytes:
@@ -85,6 +93,11 @@ def _copy(source: str, target: str, raws: list[dict]) -> int:
     conn.executemany("DELETE FROM messages WHERE id = ? AND direction = 'in'", ids)
     for table in ("events", "quotes", "bookings", "shipments"):
         conn.executemany(f"DELETE FROM {table} WHERE session_id = ?", sessions)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "mail_work" in tables:
+        conn.executemany("DELETE FROM mail_work WHERE message_id = ?", ids)
+    if "mail_delivery" in tables:
+        conn.executemany("DELETE FROM mail_delivery WHERE session_id = ?", sessions)
     conn.executemany("DELETE FROM sessions WHERE id = ?", sessions)
     conn.executemany("DELETE FROM kv WHERE key = 'quote:' || ?", sessions)
     last = conn.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
@@ -97,17 +110,55 @@ async def _no_booking(rate_id: str, team_reference: str) -> None:
     raise BookingUnavailable("replay: no portal booking")
 
 
+class _ReplaySelector(selectors.DefaultSelector):
+    """On an offline event loop, the next timer is the next input. Skip the idle interval."""
+
+    elapsed = 0.0
+
+    def select(self, timeout=None):
+        if timeout:
+            self.elapsed += timeout
+        return super().select(0 if timeout is not None else None)
+
+
+class _ReplayLoop(asyncio.SelectorEventLoop):
+    def __init__(self):
+        self.replay_selector = _ReplaySelector()
+        super().__init__(self.replay_selector)
+
+    def time(self):
+        return super().time() + self.replay_selector.elapsed
+
+
+def _offline_run(raws: list[dict], db: str | None, as_live: bool) -> list[Event]:
+    with asyncio.Runner(loop_factory=_ReplayLoop) as runner:
+        loop = runner.get_loop()
+        start, baseline = to_message(raws[0], "in").sent_at, loop.time()
+        token = timing.clock.set(lambda: start + timedelta(seconds=loop.time() - baseline))
+        try:
+            # Runner snapshots its context when get_loop initializes it.
+            return runner.run(_run(raws, False, db, as_live), context=copy_context())
+        finally:
+            timing.clock.reset(token)
+
+
 async def run(raws: list[dict], online: bool, db: str | None = None, as_live: bool = False) -> list[Event]:
-    """The events the mails left behind. `as_live` measures a request the way the live process meets it: our
-    mails reach a mailbox that sends nothing, so we wait for answers as we do live; every later mail arrives as
-    long after the first as it did; the replay ends when the first mail is handled. A customer's acceptance books
-    nothing: the portal booking is refused and the booking mail goes to the offline mailbox."""
+    """Offline replay advances an isolated timer clock, preserving the order of bids and deadlines."""
+    if not online:
+        return await asyncio.to_thread(_offline_run, raws, db, as_live)
+    return await _run(raws, True, db, as_live)
+
+
+async def _run(raws: list[dict], online: bool, db: str | None, as_live: bool) -> list[Event]:
     config = dataclasses.replace(
         settings(), dry_run=not as_live, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3")
     )
     last_event = _copy(db, config.db_path, raws) if db else 0
     ctx = build_context(config)
-    client = make_client(config) if online else httpx.AsyncClient(transport=httpx.MockTransport(_offline))
+    original = ctx.mailbox.client
+    client = (
+        original if online else httpx.AsyncClient(base_url=config.api_base, transport=httpx.MockTransport(_offline))
+    )
     ctx.mailbox = OfflineMailbox(client, _files(raws))
     ctx.portal.book = _no_booking  # `as_live` is not dry, but a replay must never book a replayed acceptance
     if not online:
@@ -118,19 +169,27 @@ async def run(raws: list[dict], online: bool, db: str | None = None, as_live: bo
         message = to_message(raw, "in")
         if wait:
             await asyncio.sleep((message.sent_at - first).total_seconds())
-        stored = poller.ingest(ctx, message.model_copy(update={"sent_at": datetime.now(UTC)}))
+        stored = poller.ingest(ctx, message.model_copy(update={"sent_at": timing.now()}))
         if stored:
             await orchestrator.dispatch(ctx, stored)
 
-    if as_live:
-        later = [asyncio.create_task(feed(raw, wait=True)) for raw in raws[1:]]
-        await feed(raws[0], wait=False)
+    later = []
+    try:
+        if as_live:
+            later = [asyncio.create_task(feed(raw, wait=True)) for raw in raws[1:]]
+            await feed(raws[0], wait=False)
+        else:
+            for raw in raws:
+                await feed(raw, wait=False)
+        return events.since(ctx, last_event, limit=10_000)
+    finally:
         for task in later:
             task.cancel()
-    else:
-        for raw in raws:
-            await feed(raw, wait=False)
-    return events.since(ctx, last_event, limit=10_000)
+        await asyncio.gather(*later, return_exceptions=True)
+        await original.aclose()
+        if client is not original:
+            await client.aclose()
+        ctx.db.close()
 
 
 async def replay(raws: list[dict], online: bool, db: str | None = None) -> int:

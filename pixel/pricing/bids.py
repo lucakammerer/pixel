@@ -7,16 +7,19 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import httpx
+
 from pixel import llm
+from pixel.api.client import ApiError
 from pixel.contracts import Message, RateOption, Rfq, Source
-from pixel.core import events, outbox
+from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import calc, session, store
 
 POLL_S = 0.5
 # Grouped thousands only when a separator is there: an ungrouped "1195.90" is one amount, not "119".
-AMOUNT = r"\d{1,3}(?:[.,\s]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"
+AMOUNT = r"(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d+)*"
 # ISO 4217. Any other three capitals after a number is no price: a time zone, an airport, a unit.
 CURRENCY = (
     "EUR|USD|GBP|CHF|JPY|CNY|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|PLN|CZK|HUF|TRY|AED|SAR|QAR|ILS|INR|KRW|TWD|THB|MYR|"
@@ -26,8 +29,17 @@ SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
 PRICED = re.compile(
     rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£])(?![A-Za-z])"
 )
-TOTAL_WORDS = re.compile(r"total|all[- ]in|gesamt|in total|overall", re.IGNORECASE)
-TRANSIT = re.compile(r"(\d+)\s*(?:calendar\s+)?(?:days?|tage?n?)\b|transit\D{0,20}(\d+)", re.IGNORECASE)
+TOTAL_LABEL = r"\b(?:total(?: price)?|all[- ]in|gesamt(?:preis)?|overall)\b"
+TOTAL_BEFORE = re.compile(
+    TOTAL_LABEL + r"(?:\s+(?:freight|air|rate|price|cost|charge|is|of|amount))*[\s:=,-]*$", re.IGNORECASE
+)
+TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE)
+KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
+PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
+KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
+OTHER_BASIS = re.compile(r"^\s*(?:/\s*(?:\d|[a-z])|(?:per|pro)\s+(?:\d|[a-z]))", re.IGNORECASE)
+TRANSIT = re.compile(r"(\d+)\s*(?:calendar\s+)?(days?|tage?n?)\b", re.IGNORECASE)
+TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
 HOURS = re.compile(r"(\d+)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
 PICKUP_HOURS = re.compile(
     r"\b(?:pick\s*up(?:\s+time)?|collect(?:ion)?|abholung)\s*:?\s*(?:within\s+|in\s+)?" + HOURS.pattern,
@@ -44,17 +56,17 @@ DECLINE = re.compile(
 )
 
 
-def _amount(text: str) -> Decimal:
+def _amount(text: str, *, unit_rate: bool = False) -> Decimal:
     if not (m := re.search(AMOUNT, text)):
         raise ValueError(f"no amount in {text!r}")
-    text = m.group().replace(" ", "")
+    text = "".join(m.group().split())
     if "." in text and "," in text:
         decimal = "." if text.rfind(".") > text.rfind(",") else ","
         text = text.replace("," if decimal == "." else ".", "").replace(decimal, ".")
     elif "," in text or "." in text:
         sep = "," if "," in text else "."
         head, _, tail = text.rpartition(sep)
-        text = head.replace(sep, "") + ("." + tail if len(tail) != 3 else tail)
+        text = head.replace(sep, "") + ("." + tail if unit_rate or len(tail) != 3 else tail)
     return Decimal(text)
 
 
@@ -74,30 +86,49 @@ def _pickup_hours(body: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _price(text: str) -> tuple[Decimal, str] | None:
-    found = []
+def _rate(text: str) -> Decimal:
+    """Unit rates and FX quotes retain every fractional digit, including trailing zeroes."""
+    return Decimal(text.strip().replace(",", "."))
+
+
+def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
+    found, labelled = set(), set()
+    unresolved_unit = False
     for line in FX.sub("", text).splitlines():
-        for m in PRICED.finditer(line):
+        prices = list(PRICED.finditer(line))
+        for i, m in enumerate(prices):
+            before = line[prices[i - 1].end() if i else 0 : m.start()]
+            after = line[m.end() : prices[i + 1].start() if i + 1 < len(prices) else len(line)]
+            per_kg = bool(PER_KG.match(after) or KG_LABEL.search(before))
+            if not per_kg and OTHER_BASIS.match(after):
+                unresolved_unit = True
+                continue
+            raw = m.group("n1") or m.group("n2")
+            amount = _amount(raw, unit_rate=per_kg)
             currency = m.group("c1") or m.group("c2")
-            found.append(
-                (
-                    bool(TOTAL_WORDS.search(line)),
-                    _amount(m.group("n1") or m.group("n2")),
-                    SYMBOLS.get(currency, currency),
-                )
-            )
-    totals = [(amount, cur) for is_total, amount, cur in found if is_total]
-    if totals:
-        return totals[-1]
-    distinct = {(amount, cur) for _, amount, cur in found}
-    return distinct.pop() if len(distinct) == 1 else None
+            price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency, currency))
+            found.add(price)
+            if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after):
+                labelled.add(price)
+    if unresolved_unit and not labelled:
+        return None
+    candidates = labelled or found
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+def _days(text: str) -> int | None:
+    if match := TRANSIT_HOURS.search(text):
+        return calc.transit_days(int(match[1]), hours=True)
+    if match := TRANSIT.search(text):
+        return calc.transit_days(int(match[1]), hours=False)
+    return None
 
 
 def _fx(text: str, currency: str) -> Decimal | None:
     for m in FX.finditer(text):
         code, rate = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
         if code == currency:
-            return _amount(rate)
+            return _amount(rate, unit_rate=True)
     return None
 
 
@@ -124,15 +155,14 @@ def _option(rfq: Rfq, message: Message, total: Decimal, currency: str, fx: Decim
 def parse(message: Message, rfq: Rfq, *, needs_transit: bool = True) -> RateOption | None:
     """Price, currency and transit time from a carrier's answer, by rules. None when the rules cannot read it."""
     text = _own_text(message.body)
-    if DECLINE.search(text) or not (price := _price(text)):
+    if DECLINE.search(text) or not (price := _price(text, rfq)):
         return None
     total, currency = price
     fx = None if currency == "EUR" else _fx(text, currency)
-    transit = TRANSIT.search(text)
-    if (currency != "EUR" and fx is None) or (needs_transit and not transit):
+    days = _days(text)
+    if total <= 0 or (currency != "EUR" and (fx is None or fx <= 0)) or (needs_transit and days is None):
         return None
-    days = int(transit.group(1) or transit.group(2)) if transit else 0
-    return _option(rfq, message, total, currency, fx, days)
+    return _option(rfq, message, total, currency, fx, days or 0)
 
 
 def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
@@ -141,7 +171,7 @@ def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
     found = []
     for line in DESK_LINE.finditer(_own_text(message.body)):
         rest = line["rest"]
-        price, transit, rate_id = _price(rest), TRANSIT.search(rest), RATE_ID.search(rest)
+        price, transit, rate_id = _price(rest, rfq), _days(rest), RATE_ID.search(rest)
         if not (price and transit and rate_id):
             continue
         total, currency = price
@@ -149,7 +179,7 @@ def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
         if currency != "EUR" and fx is None:
             continue
         until = VALID_UNTIL.search(rest)
-        option = _option(rfq, message, total, currency, fx, int(transit.group(1) or transit.group(2)))
+        option = _option(rfq, message, total, currency, fx, transit)
         found.append(
             option.model_copy(
                 update={
@@ -180,7 +210,8 @@ ANSWER_SCHEMA = {
 
 ANSWER_PROMPT = (
     "A carrier answered our request for a freight price. Copy what the mail states, numbers exactly as written; "
-    "never compute, convert or guess. If only separate charges are given, list them in components and leave total "
+    "never compute, convert or guess. Copy the units of amounts (/kg, flat) and time (hours, days). "
+    "If only separate charges are given, list them in components and leave total "
     "null."
 )
 
@@ -198,13 +229,27 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
     data = result.data
     if not data["offer"] or not data["currency"]:
         return None
-    total = _amount(data["total"]) if data["total"] else sum((_amount(c) for c in data["components"]), Decimal(0))
+    charges = [data["total"]] if data["total"] else data["components"]
+    parts = []
+    for charge in charges:
+        token = re.search(AMOUNT, charge)
+        if not token:
+            return None
+        # The schema returns a verbatim charge, with its currency optionally between amount and unit.
+        tail = re.sub(rf"^\s*(?:{CURRENCY}|[€$£])", "", charge[token.end() :])
+        per_kg = bool(PER_KG.match(tail) or KG_LABEL.search(charge[: token.start()]))
+        if not per_kg and OTHER_BASIS.match(tail):
+            return None
+        amount = _amount(token[0], unit_rate=per_kg)
+        parts.append((amount, per_kg))
+    total = calc.bid_total(parts, rfq)
     currency = SYMBOLS.get(data["currency"].strip(), data["currency"].strip().upper())
-    fx = _amount(data["eur_per_unit"]) if data["eur_per_unit"] else None
-    transit = re.search(r"\d+", data["transit_days"] or "")
+    fx = _amount(data["eur_per_unit"], unit_rate=True) if data["eur_per_unit"] else None
+    duration = data["transit_days"] or ""
+    transit = _days(f"Transit {duration}") or (int(duration) if duration.isdigit() else None)
     if total <= 0 or (currency != "EUR" and fx is None) or (needs_transit and not transit):
         return None
-    return _option(rfq, message, total, currency, fx, int(transit.group()) if transit else 0)
+    return _option(rfq, message, total, currency, fx, transit or 0)
 
 
 def _postcode(rfq: Rfq) -> str:
@@ -252,18 +297,67 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
             )
         except outbox.NotSent:
             return None
+        except (ApiError, httpx.HTTPError) as exc:
+            events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
+                        payload={"source": "mail", "carrier": name, "error": type(exc).__name__})  # fmt: skip
+            return None
         events.emit(
             ctx,
             "bid.requested",
             "pricing",
             session_id=rfq.session_id,
             message_id=sent.id,
-            payload={"carrier": name, "email": email, "pickup": pickup},
+            payload={
+                "carrier": name,
+                "email": email,
+                "pickup": pickup,
+                "origin": rfq.origin,
+                "destination": rfq.destination,
+            },
         )
         return sent.id
 
     sent = await asyncio.gather(*(one(name, email) for name, email in carriers))
     return [message_id for message_id in sent if message_id is not None]
+
+
+def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool]:
+    """Identify the enquiry being answered before pricing the reply with the current RFQ.
+    Older request events can recover their lane from the extraction preceding that enquiry."""
+    rows = ctx.db.execute(
+        "SELECT e.message_id, e.payload, m.subject, "
+        "(SELECT r.payload FROM events r WHERE r.session_id=e.session_id AND r.kind='rfq.extracted' "
+        "AND r.id<=e.id ORDER BY r.id DESC LIMIT 1) AS previous FROM events e "
+        "LEFT JOIN messages m ON m.id=e.message_id WHERE e.session_id=? AND e.kind='bid.requested' ORDER BY e.id DESC",
+        (rfq.session_id,),
+    ).fetchall()
+    current = (rfq.origin, rfq.destination)
+    refs = [message.in_reply_to, *reversed(message.references)]
+    by_ref, by_sender, by_subject = {}, [], []
+    for row in rows:
+        data = json.loads(row["payload"])
+        facts = data if "origin" in data else json.loads(row["previous"] or "{}")
+        item = (row["message_id"], (facts.get("origin"), facts.get("destination")))
+        by_ref[item[0]] = item
+        if data.get("email", "").casefold() == message.sender.casefold():
+            by_sender.append(item)
+            subject = (row["subject"] or "").casefold()
+            if subject and subject in f"{message.subject}\n{message.body}".casefold():
+                by_subject.append(item)
+    for ref in refs:
+        if ref in by_ref:
+            enquiry_id, lane = by_ref[ref]
+            return enquiry_id, lane == current
+    # Standalone replies can identify the request by subject or a sender with a single requested lane.
+    candidates = by_subject or by_sender
+    if candidates:
+        return candidates[0][0], all(lane == current for _, lane in candidates)
+    lanes = ctx.db.execute(
+        "SELECT DISTINCT json_extract(payload,'$.origin'), json_extract(payload,'$.destination') "
+        "FROM events WHERE kind='rfq.extracted' AND session_id=?",
+        (rfq.session_id,),
+    ).fetchall()
+    return None, all(tuple(lane) == current for lane in lanes)
 
 
 async def record(ctx: Context, message: Message) -> None:
@@ -276,6 +370,12 @@ async def record(ctx: Context, message: Message) -> None:
         return
     name, kind = store.carrier_by_email(ctx, message.sender) or (message.sender, "ratedesk")
     pickup = kind == "trucker"
+    enquiry, current = _enquiry(ctx, message, rfq)
+    if not current:
+        events.emit(ctx, "bid.received", "pricing", session_id=message.session_id, message_id=message.id,
+                    payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
+                             "ignored": "different or ambiguous lane"})  # fmt: skip
+        return
     listed = parse_desk(message, rfq) if kind == "ratedesk" else []
     option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
     if not listed and option is None and not DECLINE.search(_own_text(message.body)):
@@ -298,28 +398,43 @@ async def record(ctx: Context, message: Message) -> None:
         "pricing",
         session_id=message.session_id,
         message_id=message.id,
-        payload={"carrier": name, "pickup": pickup, "priced": bool(listed), "read_by": read_by},
+        payload={
+            "carrier": name,
+            "pickup": pickup,
+            "priced": bool(listed),
+            "read_by": read_by,
+            "request_id": enquiry,
+            "origin": rfq.origin,
+            "destination": rfq.destination,
+        },
     )
     for option in listed:
         events.emit(ctx, "option.found", "pricing", session_id=message.session_id, message_id=message.id,
                     payload={"option": option.model_dump(mode="json")})  # fmt: skip
 
 
-def _answers(ctx: Context, session_id: int, pickup: bool) -> int:
-    rows = ctx.db.execute(
-        "SELECT payload FROM events WHERE session_id = ? AND kind = 'bid.received'", (session_id,)
-    ).fetchall()
-    return sum(1 for row in rows if json.loads(row["payload"]).get("pickup") == pickup)
-
-
 async def collect(
-    ctx: Context, session_id: int, deadline: Deadline, expected: int, *, pickup: bool = False
+    ctx: Context, session_id: int, deadline: Deadline, expected: list[int] | int, *, pickup: bool = False
 ) -> list[RateOption]:
-    """Waits until all expected bids are in or the deadline's target, whichever comes first."""
-    while _answers(ctx, session_id, pickup) < expected and datetime.now(UTC) < deadline.target_at:
+    """Only replies to the enquiries actually sent for this search can complete its wait."""
+    rfq = session.rfq(ctx, session_id)
+    if rfq is None:
+        return []
+    while expected and timing.now() < deadline.target_at:
+        rows = ctx.db.execute(
+            "SELECT json_extract(payload,'$.request_id'), json_extract(payload,'$.carrier') FROM events "
+            "WHERE session_id=? AND kind='bid.received' AND json_extract(payload,'$.origin')=? "
+            "AND json_extract(payload,'$.destination')=? AND json_extract(payload,'$.pickup')=?",
+            (session_id, rfq.origin, rfq.destination, pickup),
+        ).fetchall()
+        if isinstance(expected, int):
+            if len({row[1] for row in rows}) >= expected:
+                break
+        elif set(expected).issubset(row[0] for row in rows):
+            break
         await asyncio.sleep(POLL_S)
     return [
         o
-        for o in session.options(ctx, session_id)
+        for o in session.for_request(ctx, rfq)
         if o.source in (Source.BID, Source.RATEDESK) and (o.trucker is not None) == pickup
     ]

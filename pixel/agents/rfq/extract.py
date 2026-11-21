@@ -337,7 +337,7 @@ def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> De
     return max(values, default=None)
 
 
-def by_rules(message: Message, deadline: Deadline, guess: bool = False) -> Rfq | None:
+def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo: dict | None = None) -> Rfq | None:
     """Regex and lookup tables. None unless origin, destination and weight are certain. With `guess`, for a model
     that cannot be reached: the largest gross weight and volume the mail names, rather than no quote at all."""
     text = _text(message)
@@ -345,10 +345,13 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False) -> Rfq |
     door, postcode = _pickup(text)
     if lane is None and door and (destination := _destination_only(text)):
         lane = ("", destination)  # the origin is the pickup zone's airport, set in `extract`
-    lots = _lots(text)
-    pieces = lots[2] if lots else _pieces(text)
-    weight = lots[0] if lots else _weight(text, pieces)
-    volume = lots[1] if lots else _volume(text, pieces)
+    if cargo is None:
+        lots = _lots(text)
+        pieces = lots[2] if lots else _pieces(text)
+        weight = lots[0] if lots else _weight(text, pieces)
+        volume = lots[1] if lots else _volume(text, pieces)
+    else:
+        pieces, weight, volume = (cargo.get(k) for k in ("pieces", "weight_kg", "volume_cbm"))
     if guess:
         weight = weight or _largest(WEIGHT, text, thousands=True)
         volume = volume or _largest(VOLUME, text, thousands=False)
@@ -426,7 +429,6 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     origin, destination = code("origin"), code("destination")
     weight = number(data.get("weight_kg") or "")
     if weight is None or weight <= 0:
-        missing.append("weight_kg")
         weight = Decimal(0)
     pieces = data.get("pieces")
     volume = number(data.get("volume_cbm") or "", thousands=False)
@@ -435,17 +437,20 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     # The sums of a lot list are arithmetic: code's, not the model's (its own total was 1094 kg for 1952 kg of lots).
     # One copied group counts only without a total in kg: a weight in pounds.
     groups = data.get("lots") or []
-    if lots := _lots(text) or ((len(groups) > 1 or "weight_kg" in missing) and _model_lots(groups)):
+    if lots := _lots(text) or ((len(groups) > 1 or not weight) and _model_lots(groups)):
         weight, volume, pieces = lots[0], lots[1], lots[2] or pieces
-        missing = [m for m in missing if m != "weight_kg"]
     else:
         # A figure the mail does not write is the model's arithmetic ("480 lbs" to kg, dimensions to cbm): code's
         # own reading of the parts replaces it.
         written = _written(text)
-        if weight not in written and (own := _weight(text, pieces) or (_model_lots(groups) or (None,))[0]):
+        if (not weight or weight not in written) and (
+            own := _weight(text, pieces) or (_model_lots(groups) or (None,))[0]
+        ):
             weight = own
         if volume not in written and (own := _volume(text, pieces) or (_model_lots(groups) or (0, None))[1]):
             volume = own
+    if not weight:
+        missing.append("weight_kg")
     door = bool(data.get("door_pickup"))
     postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
     postcode = postcode if len(postcode) == 5 else None
@@ -498,7 +503,7 @@ def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
     DUS); no airline flew those lanes and both requests were missed."""
     if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
         return rfq
-    if rfq.origin and not (rfq.door_pickup and rfq.origin not in re.findall(CODE, text)):
+    if rfq.origin and (not rfq.door_pickup or names_code(text, rfq.origin)):
         return rfq
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 
@@ -523,6 +528,57 @@ async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[s
     return files
 
 
+def names_code(text: str, code: str) -> bool:
+    return bool(code and re.search(rf"\b{re.escape(code)}\b", text, re.IGNORECASE))
+
+
+def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
+    """Resolve each shipment figure independently. Customer text takes precedence over a packing document.
+    Several documents must agree before their figure can be used by rule."""
+    lots = [_lots(text) for _, text in sources]
+    facts, evidence = {}, {}
+
+    def take(field: str, readings: list) -> None:
+        if readings[0] is not None:
+            facts[field], evidence[field] = readings[0], [sources[0][0]]
+        elif len(values := {v for v in readings if v is not None}) == 1:
+            facts[field] = values.pop()
+            evidence[field] = [name for (name, _), v in zip(sources, readings, strict=True) if v is not None]
+
+    counts = [group[2] if group else _pieces(text) for (_, text), group in zip(sources, lots, strict=True)]
+    take("pieces", counts)
+    for field, index, reader in (("weight_kg", 0, _weight), ("volume_cbm", 1, _volume)):
+        take(
+            field,
+            [
+                group[index] if group else reader(text, count or facts.get("pieces"))
+                for (_, text), group, count in zip(sources, lots, counts, strict=True)
+            ],
+        )
+    return facts, evidence
+
+
+def _document_pickup(rfq: Rfq, sources: list[tuple[str, str]], evidence: dict) -> Rfq:
+    """Use the pickup address in the instructions when the customer's mail supplies no address."""
+    if OWN_DELIVERY.search(sources[0][1]):
+        return rfq
+    addresses = [(name, _pickup(text)) for name, text in sources]
+    door = rfq.door_pickup or any(wanted for _, (wanted, _) in addresses)
+    if not door:
+        return rfq
+    postcode = rfq.pickup_postcode
+    if not postcode:
+        given = {code for _, (_, code) in addresses if code}
+        if len(given) == 1:
+            postcode = given.pop()
+    if postcode:
+        evidence["pickup_postcode"] = [name for name, (_, code) in addresses if code == postcode]
+        return rfq.model_copy(update={"door_pickup": True, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode),
+                                      "missing": tuple(k for k in rfq.missing if k != "pickup_postcode")})  # fmt: skip
+    missing = tuple(dict.fromkeys((*rfq.missing, "pickup_postcode")))
+    return rfq.model_copy(update={"door_pickup": True, "missing": missing})
+
+
 async def dangerous_goods(
     ctx: Context, message: Message, files: list[tuple[str, list[str]]] | None = None
 ) -> tuple[str, str] | None:
@@ -537,17 +593,37 @@ async def dangerous_goods(
 
 
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
+    rfq, _ = await read_request(ctx, message, deadline)
+    return rfq
+
+
+async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tuple[Rfq, str]:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     files = await _attachments(ctx, message) if message.attachments else []
     mail = message
-    if files and not any(p.search(_body(message)) for p in WEIGHT):
-        # "Please see the attached packing list": the weight stands only in the attachment, so it is read too.
-        attached = "\n".join(line for _, lines in files for line in lines)
-        message = message.model_copy(update={"body": f"{_body(message)}\n\n{attached}"})
-    text = _text(message)
-    rfq, prose = by_rules(message, deadline), None
-    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text), text)).origin:
+    sources = [("mail", _text(mail)), *((name, own_words("\n".join(lines))) for name, lines in files)]
+    cargo, evidence = _cargo_sources(sources) if files else ({}, {})
+    text = "\n\n".join(content for _, content in sources)
+    if files:
+        message = mail.model_copy(update={"subject": "", "body": text})
+
+    def rules(guess: bool = False) -> Rfq | None:
+        if not files:
+            return by_rules(mail, deadline, guess=True) if guess else by_rules(mail, deadline)
+        # Prefer the customer's routing and instructions; consult the documents if those are missing.
+        has_unread_volume = "volume_cbm" not in cargo and (DIMS.search(text) or any(p.search(text) for p in VOLUME))
+        if has_unread_volume and not guess:
+            return None
+        return by_rules(mail, deadline, guess, cargo=cargo) or by_rules(message, deadline, guess, cargo=cargo)
+
+    def apply_pickup(read: Rfq) -> Rfq:
+        if files:
+            read = _document_pickup(read, sources, evidence)
+        return _zone_origin(ctx, _town_zone(ctx, read, text), text)
+
+    rfq, prose = rules(), None
+    if rfq is not None and not (rfq := apply_pickup(rfq)).origin:
         rfq = None
     if rfq is None:
         try:
@@ -555,15 +631,15 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
                 ctx,
                 purpose="rfq.extract",
                 system=SYSTEM,
-                user=_text(message),
+                user=text,
                 schema=SCHEMA,
                 session_id=message.session_id,
                 max_output_tokens=500,
             )
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
-            guessed = by_rules(message, deadline, guess=True)
-            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text), text)).origin:
+            guessed = rules(guess=True)
+            if guessed is None or not (guessed := apply_pickup(guessed)).origin:
                 raise
             events.emit(
                 ctx,
@@ -580,8 +656,18 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             )  # fmt: skip  never the gateway's text: it can quote the OpenAI key
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
-            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text), text)
+            rfq = _from_model(result.data, message, deadline)
+            if cargo:
+                rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
+            rfq = apply_pickup(rfq)
             prose = {k: result.data.get(k) for k in PROSE}
+    if files:
+        rfq = rfq.model_copy(update={"language": _language(_text(mail))})
+        for key in ("origin", "destination"):
+            if named := [name for name, content in sources if names_code(content, getattr(rfq, key))]:
+                evidence[key] = named
+        events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
+                    payload={"sources": evidence})  # fmt: skip
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
@@ -597,4 +683,4 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     )
     if prose is not None:
         events.emit(ctx, "prose.raw", "rfq", session_id=message.session_id, message_id=message.id, payload=prose)
-    return rfq
+    return rfq, text

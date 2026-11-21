@@ -155,13 +155,27 @@ async def test_a_dry_run_never_books_at_the_portal(pipe, accepted):
     assert pipe.ctx.portal.calls == []
 
 
-@pytest.mark.parametrize("text", [
-    "We will not go ahead.", "We can't accept.", "Please do not book.", "We won't proceed.",
-    "Don't confirm.", "We are unable to take it.", "We would rather not move forward.",
-    "We won’t be moving forward.", "Too low.", "Too high.", "Not competitive.", "We will pass on this.",
-    "Bitte nicht buchen.", "Wir können das Angebot nicht annehmen.", "Wir möchten nicht fortfahren.",
-    "Leider nicht.",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We will not go ahead.",
+        "We can't accept.",
+        "Please do not book.",
+        "We won't proceed.",
+        "Don't confirm.",
+        "We are unable to take it.",
+        "We would rather not move forward.",
+        "We won’t be moving forward.",
+        "Too low.",
+        "Too high.",
+        "Not competitive.",
+        "We will pass on this.",
+        "Bitte nicht buchen.",
+        "Wir können das Angebot nicht annehmen.",
+        "Wir möchten nicht fortfahren.",
+        "Leider nicht.",
+    ],
+)
 def test_decline_phrases(text):
     assert booking.intent(text) == "decline"
 
@@ -173,8 +187,15 @@ async def test_captured_decline_never_books(pipe):
     sent_quote = quote(session_id, customer=raw["from"]).model_copy(update={"sent_message_id": raw["in_reply_to"]})
     quotes.save(pipe.ctx, sent_quote)
     pipe.ctx.portal = Portal()
-    reply = mail(raw["id"], session_id, sender=raw["from"], to=raw["to"], subject=raw["subject"],
-                 body=raw["body"], in_reply_to=raw["in_reply_to"])
+    reply = mail(
+        raw["id"],
+        session_id,
+        sender=raw["from"],
+        to=raw["to"],
+        subject=raw["subject"],
+        body=raw["body"],
+        in_reply_to=raw["in_reply_to"],
+    )
     await booking.handle_reply(pipe.ctx, reply)
     assert quotes.get(pipe.ctx, sent_quote.id).status == QuoteStatus.DECLINED
     assert kinds(pipe.ctx) == ["customer.declined"]
@@ -191,3 +212,79 @@ async def test_unsent_draft_reply_needs_a_person(pipe, body):
     assert quotes.get(pipe.ctx, draft.id).status == QuoteStatus.DRAFT
     assert kinds(pipe.ctx) == ["human.note"]
     assert pipe.ctx.portal.calls == [] and pipe.sent == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Could you confirm whether pickup is included?",
+        "Please confirm the price.",
+        "Can you tell me when to book it?",
+        "We haven't accepted the offer.",
+        "If pickup is included, please book it.",
+        "We accept that you need to check the price.",
+        "Please book a call to discuss.",
+        "Are we agreed?",
+        "Können Sie bitte buchen, wenn die Freigabe vorliegt?",
+    ],
+)
+async def test_question_or_conditional_never_books(pipe, accepted, text):
+    pipe.ctx.portal = Portal()
+    await booking.handle_reply(pipe.ctx, mail(21, 1, subject="Re: Please book it", body=text))
+    assert pipe.ctx.portal.calls == []
+    assert not bookings.for_session(pipe.ctx, 1)
+
+
+async def test_customer_notice_preserves_quote_total_and_currency(pipe, accepted):
+    q = quotes.for_session(pipe.ctx, 1)
+    option = q.option.model_copy(update={"total": Decimal("450.74"), "pickup": Decimal(80), "trucker": "Truck"})
+    quotes.save(pipe.ctx, q.model_copy(update={"total": option.total, "option": option}))
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    assert bookings.for_session(pipe.ctx, 1).price == Decimal("370.74")
+    assert "450.74 EUR all-in" in pipe.sent[0]["body"]
+
+
+@pytest.mark.parametrize(("language", "scope"), [("en", "excluding pickup"), ("de", "ohne Abholung")])
+async def test_customer_notice_identifies_partial_door_quote(pipe, accepted, language, scope):
+    q = quotes.for_session(pipe.ctx, 1)
+    quotes.save(
+        pipe.ctx, q.model_copy(update={"rfq": q.rfq.model_copy(update={"door_pickup": True, "language": language})})
+    )
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    assert scope in pipe.sent[0]["body"]
+
+
+async def test_refresh_preserves_cheaper_billed_break(pipe, accepted):
+    q = quotes.for_session(pipe.ctx, 1)
+    option = q.option.model_copy(update={"billed_kg": q.option.chargeable_kg + 100})
+    quotes.save(pipe.ctx, q.model_copy(update={"option": option}))
+    pipe.ctx.portal = Portal(RateExpired(), None)
+    from unittest.mock import AsyncMock
+
+    pipe.ctx.portal.rate = AsyncMock(wraps=pipe.ctx.portal.rate)
+    await booking.handle_reply(pipe.ctx, accepted)
+    assert pipe.ctx.portal.rate.await_args.args[-2:] == (option.billed_kg, Decimal(0))
+
+
+async def test_reentry_after_interrupted_acceptance_reuses_team_reference(pipe, accepted):
+    import asyncio
+    import contextlib
+
+    class InterruptedPortal(Portal):
+        async def book(self, rate_id, team_reference):
+            self.calls.append((rate_id, team_reference))
+            await asyncio.Future()
+
+    pipe.ctx.portal = InterruptedPortal()
+    pending = asyncio.create_task(booking.handle_reply(pipe.ctx, accepted))
+    await asyncio.sleep(0)
+    assert pipe.ctx.portal.calls
+    first = pipe.ctx.portal.calls[0]
+    pending.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await pending
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    assert pipe.ctx.portal.calls == [first] and len(pipe.sent) == 1
