@@ -44,10 +44,11 @@ async def test_unknown_shipment_gets_an_honest_answer(pipe):
     assert "no shipment under BK-ZZZZ9999" in body and "confirmed" not in body
 
 
-def shipped(ctx, session_id, customer, origin, destination, kg, postcode=None):
+def shipped(ctx, session_id, customer, origin, destination, kg, postcode=None, zone=None):
     q = quote(session_id, customer=customer)
     rfq = q.rfq.model_copy(update={"origin": origin, "destination": destination, "weight_kg": Decimal(kg),
-                                   "door_pickup": bool(postcode), "pickup_postcode": postcode})  # fmt: skip
+                                   "door_pickup": bool(postcode or zone), "pickup_postcode": postcode,
+                                   "pickup_zone": zone or (postcode[:2] if postcode else None)})  # fmt: skip
     q = q.model_copy(
         update={"rfq": rfq, "option": q.option.model_copy(update={"origin": origin, "destination": destination})}
     )
@@ -115,3 +116,12 @@ def test_exact_weight_and_exact_pickup_win_and_ambiguous_descriptions_disclose_n
     assert agent.described(ctx, "AAA to BBB, 676 kg") == []
     assert agent.match(ctx, "Other ref BK-UNKNOWN, AAA to BBB, 680 kg", "desk@example.invalid")[0] == []
     assert b not in agent.described(ctx, "AAA to BBB, 680 kg for stranger@example.invalid")
+
+
+def test_a_remembered_site_or_a_replaced_origin_still_finds_the_shipment(pipe):
+    """Our pickup postcode came from the customer's earlier site (same zone), or the zone's airport replaced the
+    origin the desk names: the desk's description still names one shipment of that company and weight."""
+    site = shipped(pipe.ctx, 1, "lindqvist-medtech@hackloop.mail", "CGN", "ORD", 676, postcode="51465")
+    assert agent.described(pipe.ctx, "Lindqvist Medtech GmbH | 51447 to ORD | 676 kg") == [site]
+    zone = shipped(pipe.ctx, 2, "auer-maschinenbau@hackloop.mail", "DUS", "PEK", 1081)
+    assert agent.described(pipe.ctx, "Auer Maschinenbau GmbH, CGN to PEK, 1081 kg") == [zone]
