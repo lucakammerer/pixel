@@ -202,7 +202,7 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     quote = await agent.handle(ctx, request, deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 10
     assert (quote.total, quote.currency, quote.option.source, quote.llm_calls) == (D("260.00"), "EUR", Source.SHEET, 1)
-    assert "260.00 EUR" in quote.body and calls == ["quote.prose"]
+    assert "260.00 EUR" in quote.body and calls == ["quote.draft"]
 
     assert quotes.for_session(ctx, 1) == quote
 

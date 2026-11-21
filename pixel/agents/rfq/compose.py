@@ -1,6 +1,7 @@
-"""The quote mail. Code writes every number and name as prose; the model writes three small slots around it (R31):
-the customer's first name and one short opening line (the closing slot is no longer rendered). Slots that fail a check are
-dropped, never the quote (P1, R9)."""
+"""The quote mail. By default (PIXEL_DRAFT) the model writes the whole body in the customer's register with a
+placeholder for every number, price, date and name, and code fills them in (`draft`, R31). A draft that fails one
+check is dropped, never the quote: the template below (`render`) writes it instead, code writing every number and
+name as prose, with the model's small slots (first name, one opening line) when `prose` ran (P1, R9)."""
 
 import json
 import random
@@ -26,8 +27,11 @@ TEXT = {
         "subject": "Quote {origin} to {destination}, {weight} kg",
         "hello_name": {"formal": "Dear {name},", "neutral": "Hello {name},", "casual": "Hi {name},"},
         "hello": "Hello,",
-        # the opening no longer thanks, so the answer to their small talk does, once
-        "well_back": ("All good here, thanks for asking!", "Going well here, thanks!", "All well on our side, thanks!"),
+        # the opening no longer thanks, so the answer to their small talk does, once, at the start of the reply
+        "well_back": {
+            "formal": ("Thank you, all is well here.", "Thank you for asking, all is well on our side."),
+            "other": ("All good here, thanks for asking.", "Going well here, thanks.", "All well on our side, thanks."),
+        },
         "core": {
             "cheapest": (
                 (
@@ -109,6 +113,7 @@ TEXT = {
         "bye": {"formal": "Kind regards,", "neutral": "Best regards,", "casual": "Best wishes,"},
         "bye_town": "Best regards to {town},",
         "wish_back": "Have a {wish} too!",
+        "wish_back_formal": "I wish you a {wish} as well.",
         "in_city": "in {place}",
         "at_airport": "at {place}",
         "day": "day",
@@ -139,17 +144,16 @@ TEXT = {
         ),
         "weekdays": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
         "date": "{weekday} {day} {month}",
-        # Every team's quote reads like the same clean template; ours reads like a person wrote it. One voice for
-        # every customer: their first name, exclamation marks, an opinion, a short line, a smiley or two, a P.S.
-        # No line says anything about the price beyond the price line itself.
+        # A colleague's voice for casual and neutral mail: their first name, an opinion, plain sentences. No emoji,
+        # filler line or P.S.; a clearly formal mail gets the calm lines above (`formal`).
         "warm": {
-            "hello": ("Hi {name}!", "Hi {name}! 👋", "Hello {name}!"),
+            "hello": ("Hi {name},", "Hello {name},"),
             "hello_anon": "Hi there!",
             "core": {
                 "cheapest": (
                     (
-                        "Good news: I've got {carrier} from {origin} to {destination} for {total} {currency} all-in, "
-                        "with {transit} in transit."
+                        "{carrier} can take it from {origin} to {destination} for {total} {currency} all-in, with "
+                        "{transit} in transit."
                     ),
                     (
                         "I checked the airlines from {origin} to {destination}, and {carrier} is the cheapest: {total} "
@@ -162,8 +166,8 @@ TEXT = {
                 ),
                 "fastest": (
                     (
-                        "Good news: {carrier} can get it from {origin} to {destination} in {transit}, for {total} "
-                        "{currency} all-in."
+                        "{carrier} can get it from {origin} to {destination} in {transit}, for {total} {currency} "
+                        "all-in."
                     ),
                     (
                         "Since speed matters, I'd go with {carrier}. It's the quickest from {origin} to {destination}: "
@@ -175,16 +179,10 @@ TEXT = {
                     ),
                 ),
             },
-            "short": ("Easy!", "Simple as that.", "Nice and simple."),
             "book": (
-                "Just reply and I'll book it right away! 👍",
-                "Shall I book it? A quick yes is all I need! 😊",
-                "Just hit reply and I'll get it booked for you! 🙂",
-            ),
-            "ps": (
-                "P.S. If the ready date moves, just let me know and I'll check the flights again.",
-                "P.S. Once it's booked, I'll send you the airline's reference straight away.",
-                "P.S. Any questions? Just ask, happy to help.",
+                "Just reply and I'll book it right away.",
+                "Shall I book it? A quick yes is all I need.",
+                "If that works, hit reply and I'll get it booked for you.",
             ),
             "bye": "Best wishes,",
         },
@@ -193,7 +191,10 @@ TEXT = {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
         "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
-        "well_back": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
+        "well_back": {
+            "formal": ("Vielen Dank der Nachfrage, bei uns ist alles bestens.",),
+            "other": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
+        },
         "core": {
             "cheapest": (
                 (
@@ -269,6 +270,7 @@ TEXT = {
         "bye": {"formal": "Mit freundlichen Grüßen", "neutral": "Viele Grüße", "casual": "Viele Grüße"},
         "bye_town": "Viele Grüße nach {town}",
         "wish_back": "Ihnen auch {wish}!",
+        "wish_back_formal": "Ihnen ebenfalls {wish}.",
         "in_city": "in {place}",
         "at_airport": "in {place}",
         "day": "Tag",
@@ -300,13 +302,13 @@ TEXT = {
         "weekdays": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"),
         "date": "{weekday}, den {day}. {month}",
         "warm": {
-            "hello": ("Hallo {name}!", "Hallo {name}! 👋"),
-            "hello_anon": "Hallo!",
+            "hello": ("Hallo {name},",),
+            "hello_anon": "Hallo,",
             "core": {
                 "cheapest": (
                     (
-                        "Gute Nachricht: Mit {carrier} kann ich Ihnen von {origin} nach {destination} {total} "
-                        "{currency} all-in anbieten, Laufzeit {transit}."
+                        "Mit {carrier} kann ich Ihnen von {origin} nach {destination} {total} {currency} all-in "
+                        "anbieten, Laufzeit {transit}."
                     ),
                     (
                         "Ich habe die Airlines von {origin} nach {destination} verglichen, {carrier} ist am "
@@ -315,8 +317,8 @@ TEXT = {
                 ),
                 "fastest": (
                     (
-                        "Gute Nachricht: {carrier} bringt Ihre Sendung in {transit} von {origin} nach {destination}, "
-                        "für {total} {currency} all-in."
+                        "{carrier} bringt Ihre Sendung in {transit} von {origin} nach {destination}, für {total} "
+                        "{currency} all-in."
                     ),
                     (
                         "Da es eilt, würde ich {carrier} nehmen. Von {origin} nach {destination} geht es damit am "
@@ -324,15 +326,9 @@ TEXT = {
                     ),
                 ),
             },
-            "short": ("Ganz einfach.", "So einfach ist das."),
             "book": (
-                "Geben Sie mir einfach kurz Bescheid, dann buche ich sofort! 👍",
-                "Soll ich buchen? Ein kurzes Ja genügt! 🙂",
-            ),
-            "ps": (
-                "P.S. Falls sich der Termin verschiebt, sagen Sie einfach Bescheid, dann prüfe ich die Flüge neu.",
-                "P.S. Nach der Buchung schicke ich Ihnen sofort die Referenz der Airline.",
-                "P.S. Fragen? Melden Sie sich gern jederzeit.",
+                "Geben Sie mir einfach kurz Bescheid, dann buche ich sofort.",
+                "Soll ich buchen? Ein kurzes Ja genügt.",
             ),
             "bye": "Viele Grüße",
         },
@@ -399,6 +395,13 @@ ECHO = re.compile(
 )
 CAPITAL = re.compile(r"\b[A-ZÄÖÜ][\wäöüß-]+")
 FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
+# A formal salutation, or a formal closing on a sign-off line of its own; "Kind regards" alone is not. Such a
+# customer gets "Dear", the calm lines, no exclamation mark and the full name.
+CLEARLY_FORMAL = re.compile(
+    r"^\s*(?:dear\b|sehr geehrte[rs]?\b|to whom it may concern\b)"
+    r"|^\s*(?:yours sincerely|yours faithfully|sincerely yours|mit freundlichen gr(?:ü|ue)(?:ß|ss)en)[\s,.]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
 NOT_SIGNED = re.compile(
@@ -536,10 +539,14 @@ def city_of(request: str, airport: str) -> str | None:
 
 def in_kind(request: str, lang: str, tone: str, name: str | None) -> tuple[str | None, str]:
     """The customer's own closing answered: their wish for the day returned, and the sign-off sent to the town
-    they greet from, or as "Cheers" or "Viele Grüße" when they write it in an English mail. Without either, the sign-off of their register."""
+    they greet from, or as "Cheers" or "Viele Grüße" when they write it in an English mail. Without either, the
+    sign-off of their register. A formal mail gets its wish back without an exclamation mark and "Kind regards"."""
     t = TEXT[lang]
     wished = WISH[lang].search(request)
-    wish = t["wish_back"].format(wish=wished.group(1)[0].lower() + wished.group(1)[1:]) if wished else None
+    back = t["wish_back_formal" if tone == "formal" else "wish_back"]
+    wish = back.format(wish=wished.group(1)[0].lower() + wished.group(1)[1:]) if wished else None
+    if tone == "formal":
+        return wish, t["bye"]["formal"]
     town = FROM_TOWN.search(request)
     if town and town.group(1).split()[0] != name:
         return wish, t["bye_town"].format(town=town.group(1))
@@ -565,40 +572,48 @@ def signed_name(request: str, signer: str = "", full: bool = False) -> str | Non
     return None
 
 
-def greeting(lang: str, name: str | None, seed: int) -> str:
-    """The salutation by first name, the same for one session in the quote and in its booking mails."""
-    w = TEXT[lang]["warm"]
+def formal(request: str) -> bool:
+    return bool(CLEARLY_FORMAL.search(request))
+
+
+def tone(request: str) -> str:
+    """The register we answer in: formal only for a clearly formal mail (`formal`), else casual or neutral."""
+    return "formal" if formal(request) else "casual" if CASUAL.search(request) else "neutral"
+
+
+def addressed(name: str, request: str, signer: str) -> str:
+    """ "Dear Jonas Kessler" as signed, without guessing Mr or Ms; the first name when the whole one is not signed."""
+    whole = signed_name(request, signer, full=True)
+    return whole if whole and " " in whole and whole.split()[0] == name else name
+
+
+def greeting(lang: str, name: str | None, seed: int, request: str = "", signer: str = "") -> str:
+    """The salutation, the same for one session in the quote and in its booking mails: by first name, "Dear" and
+    the signed name to a clearly formal mail. German keeps "Hallo Anna" for a casual mail; otherwise it is "Guten
+    Tag" with the whole signed name, never with the first name alone."""
+    t, w = TEXT[lang], TEXT[lang]["warm"]
+    register_ = tone(request) if request else "casual"
+    if lang == "de" and register_ != "casual":
+        whole = addressed(name, request, signer) if name else ""
+        return t["hello_name"]["formal"].format(name=whole) if " " in whole else t["hello"]
+    if register_ == "formal":
+        return t["hello_name"]["formal"].format(name=addressed(name, request, signer)) if name else t["hello"]
     return random.Random(f"hello:{seed}").choice(w["hello"]).format(name=name) if name else w["hello_anon"]
 
 
 def sign_off(request: str, lang: str, name: str | None) -> tuple[str | None, str]:
-    """`in_kind`, with our own "Best wishes" where it would give the sign-off of their register."""
-    tone = register(request)
-    wish, bye = in_kind(request, lang, tone, name)
-    return wish, TEXT[lang]["warm"]["bye"] if bye == TEXT[lang]["bye"][tone] else bye
+    """`in_kind`, with our own "Best wishes" where it would give the sign-off of their register; a clearly formal
+    mail keeps "Kind regards" (never "Cheers")."""
+    if formal(request):
+        return in_kind(request, lang, "formal", name)
+    register_ = register(request)
+    wish, bye = in_kind(request, lang, register_, name)
+    return wish, TEXT[lang]["warm"]["bye"] if bye == TEXT[lang]["bye"][register_] else bye
 
 
-def signature(bye: str, signer: str) -> str:
-    """Signed with the first name, as a colleague signs; the company line stays."""
-    return f"{bye}\n{(signer.split() or [signer])[0]}\n{COMPANY}"
-
-
-SMILEY = re.compile(r" ?(?:👋|🙂|😊|✈️|👍)")
-SMILEYS_MAX = 3
-
-
-def _one_each(body: str) -> str:
-    """A person uses a smiley once, not the same one in every paragraph: a repeat and any beyond the third go."""
-    seen: list[str] = []
-
-    def keep(found: re.Match) -> str:
-        face = found.group().strip()
-        if face in seen or len(seen) >= SMILEYS_MAX:
-            return ""
-        seen.append(face)
-        return found.group()
-
-    return SMILEY.sub(keep, body)
+def signature(bye: str, signer: str, full: bool = False) -> str:
+    """Signed with the first name, as a colleague signs, or the full name to a formal mail; the company line stays."""
+    return f"{bye}\n{signer if full else (signer.split() or [signer])[0]}\n{COMPANY}"
 
 
 def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
@@ -609,17 +624,19 @@ def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
 
 
 def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "", request: str = "") -> str:
-    """One personal voice for every customer (`TEXT[lang]["warm"]`, R31): greeting by first name, the model's opening
-    on a line of its own when it passed, the offer with an opinion and a short line, the validity and booking line,
-    the signature by first name, a P.S."""
+    """The mail in the customer's register (R31): a colleague's voice by first name (`TEXT[lang]["warm"]`), or to a
+    clearly formal mail "Dear" with the signed name, the calm lines, no exclamation mark and our full name. The
+    model's opening on a line of its own when it passed, the answer to their small talk at the start of the reply,
+    the offer with an opinion, the validity and booking line, the signature."""
     lang = language_of(rfq)
     t = TEXT[lang]
     w = t["warm"]
+    stiff = formal(request)
     pick = random.Random(rfq.session_id).choice  # wording varies by session; one session always reads the same
     air_only = rfq.door_pickup and not option.trucker
     needs_address = rfq.door_pickup and not rfq.pickup_postcode
     preference = "fastest" if rfq.preference == Preference.FASTEST else "cheapest"
-    core = t["air_only"] if air_only else pick(w["core"][preference])
+    core = t["air_only"] if air_only else pick((t if stiff else w)["core"][preference])
     if option.trucker:
         basis = t["basis_zone_pickup"] if needs_address else pick(t["basis_pickup"])
     else:
@@ -630,23 +647,23 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     )  # fmt: skip
     # the model's opening or none: a stock opening is the template the jury reads past (R31)
     intro = [_sentence(prose.intro)] if prose.intro and not air_only else []
-    if WELL.search(request):
-        intro.insert(0, pick(t["well_back"]))
+    if stiff:
+        intro = [s.replace("!", ".") for s in intro]
     site = "warehouse" if WAREHOUSE.search(request) else "site"
     offer = [price_line, basis.format(trucker=option.trucker, site=site)]
-    if not air_only:
-        offer.append(pick(w["short"]))  # a short line after two long ones
+    if WELL.search(request):  # answered where the reply starts: with the opening, else with the offer
+        (intro or offer).insert(0, pick(t["well_back"]["formal" if stiff else "other"]))
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
     book = [pick(t["valid"]).format(until=_until(rfq, option, t))] if option.valid_until else []
     if needs_address:
         book.append(t["pickup_address"])
     else:
-        book.append(t["book_air_only"] if air_only else pick(w["book"]))
+        book.append(t["book_air_only"] if air_only else pick((t if stiff else w)["book"]))
     name = prose.first_name or signed_name(request, signer)
     wish, bye = sign_off(request, lang, name)
     lines = [
-        greeting(lang, name, rfq.session_id),
+        greeting(lang, name, rfq.session_id, request, signer),
         "",
         *([" ".join(intro), ""] if intro else []),
         " ".join(offer),
@@ -655,11 +672,9 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         " ".join(book),
         "",
         *([wish, ""] if wish else []),
-        signature(bye, signer),
-        "",
-        pick(w["ps"]),
+        signature(bye, signer, full=stiff),
     ]
-    return _one_each("\n".join(lines))
+    return "\n".join(lines)
 
 
 def check(body: str, rfq: Rfq, option: RateOption) -> bool:
@@ -857,9 +872,333 @@ def stored(ctx: Context, session_id: int) -> Prose | None:
         data = json.loads(row["payload"]) if row else None
         if not isinstance(data, dict):
             return None
-        return Prose(**{k: v if isinstance(v := data.get(k), str) and v else None for k in PROSE_FIELDS})
+        slots = {k: v if isinstance(v := data.get(k), str) and v else None for k in PROSE_FIELDS}
+        if data.get("mode") == "draft":  # a draft's first sentence is part of its body, not an opening slot
+            slots.update(intro=None, closing=None)
+        return Prose(**slots)
     except Exception:  # noqa: BLE001
         return None
+
+
+# --- The full-body draft (PIXEL_DRAFT, R31) ------------------------------------------------------------------------
+# The model writes the whole mail in the customer's register; every number, price, date and name in it is a
+# placeholder that code fills (P1). Code checks the draft before and after filling it; any doubt returns None and
+# the quote goes out with `render`'s template.
+
+DRAFT_SYSTEM = (
+    "You are Lena, an air export clerk at a freight forwarder, writing the reply to a customer who asked for an "
+    "air freight quote. Code has priced the shipment; you write the whole mail around the facts under Facts.\n"
+    "- Write in the language with the ISO code under Facts, in the register under Facts. German always uses Sie, "
+    "never du.\n"
+    "- Begin with the salutation under Facts, exactly as given, on its own line. Then 90 to 170 words in 3 to 5 "
+    "short paragraphs. End with {{SIGNATURE}} alone on the last line; write no sign-off of your own.\n"
+    "- React to what the customer actually wrote (small talk, thanks, an attachment, their buyer, urgency, a "
+    "cut-off, one air waybill, dangerous goods) inside natural freight-desk sentences, in your own words. Answer "
+    "every point listed under Facts as asked.\n"
+    "- Write every number, price, currency, date, weekday, month, airline, trucker, airport, city and person's "
+    "name only as one of the placeholders under Facts, exactly as listed with double braces. Never write a digit. "
+    "Use no other placeholder.\n"
+    "- {{TOTAL}} exactly once; it already holds the currency, and it is the all-in price. {{CARRIER}}, "
+    "{{TRANSIT}}, {{ORIGIN}} and {{DEST_CITY}} at least once, and every placeholder marked required.\n"
+    "- Call the offer cheapest, lowest, fastest, quickest or best only as the claim under Facts allows; with "
+    "claim none, use no superlative.\n"
+    "- It is a quote: never write that anything is booked, reserved or confirmed. Offer to book it on their reply.\n"
+    "- Dangerous goods: name {{DG_GOODS}}, and ask for the DGD and the MSDS before booking.\n"
+    "- Pickup postcode missing: ask for the full pickup address with the postcode.\n"
+    "- No bullets, emojis, P.S., em dashes or en dashes. No exclamation mark in a formal mail, at most one "
+    "otherwise.\n"
+    "- Never write: hope this email finds you well, don't hesitate, rest assured, thank you for reaching out, "
+    "easy, nice and simple, simple as that, great news.\n"
+    "- Begin the sentence after the salutation differently from every earlier opening under Facts.\n"
+    'Answer as JSON {"first_name": the first name the customer signed with or null, "body": the mail}.'
+)
+DRAFT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"first_name": NULLABLE, "body": {"type": "string"}},
+    "required": ["first_name", "body"],
+}
+DRAFT_TOKENS = 320
+DRAFT_WORDS = (60, 230)  # the prompt asks 90 to 170; outside this the answer is cut off or runs on
+PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
+# Shown to the model with what each one stands for; only those that apply to this quote are offered.
+PLACEHOLDERS = {
+    "NAME": "the customer's name, as in the salutation",
+    "TOTAL": "the all-in price with its currency",
+    "CARRIER": "the airline",
+    "TRUCKER": "the trucking company that collects the cargo",
+    "TRANSIT": "the transit time",
+    "ORIGIN": "the departure airport",
+    "DEST_CITY": "the destination",
+    "PICKUP_TOWN": "the town the cargo is collected in",
+    "GROSS": "the gross weight",
+    "CHARGEABLE": "the chargeable weight, above the gross weight because the cargo is bulky",
+    "READY": "the date the cargo is ready",
+    "ARRIVAL": "the earliest arrival date",
+    "DEPARTURE": "the departure date that goes with that arrival",
+    "VALID_UNTIL": "until when the rate holds",
+    "DG_GOODS": "the dangerous goods as declared",
+    "SIGNATURE": "our sign-off and signature",
+}
+ALLOWED_CODES = {"AWB", "DGD", "MSDS"}
+EMOJI = re.compile("[\U0001f000-\U0001faff☀-➿️]")
+DASH = re.compile("[–—]")
+PS = re.compile(r"\bP\.\s?S\b|(?m:^\s*PS\b)")
+BULLET = re.compile(r"(?m)^\s*(?:[-*•]|\(?[a-z]\))\s")
+STOCK = re.compile(
+    r"\b(?:hope (?:this|the|my) (?:e-?mail|mail|message|note) finds you|(?:don'?t|do not) hesitate|rest assured|"
+    r"thanks?(?: you)? for reaching out|easy!|nice and simple|simple as that|great news|good news|ganz einfach|"
+    r"so einfach ist das|zögern Sie nicht|gute nachricht)",
+    re.IGNORECASE,
+)
+STATUS = re.compile(r"\b(?:booked|reserved|confirmed|gebucht|reserviert|bestätigt)\b", re.IGNORECASE)
+CHEAP_CLAIM = re.compile(r"\b(?:cheapest|lowest|günstigst\w*|preiswertest\w*)\b", re.IGNORECASE)
+FAST_CLAIM = re.compile(r"\b(?:fastest|quickest|schnellst\w*)\b", re.IGNORECASE)
+BEST_CLAIM = re.compile(r"\bbest\b(?!\s+(?:regards|wishes))|\b(?:beste[nmrs]?)\b", re.IGNORECASE)
+POSTCODE = re.compile(r"post ?code|postal code|zip code|postleitzahl", re.IGNORECASE)
+
+
+class Rejected(Exception):
+    """The draft failed a check; the reason goes into its `quote.prose` event."""
+
+
+@dataclass(frozen=True)
+class Facts:
+    """What code knows about the quote before the model writes it: the salutation, the placeholders it may use
+    with the values code fills in, those it must use, and the names it must not write out."""
+
+    register: str
+    salutation: str
+    values: dict[str, str]
+    required: frozenset[str]
+    claim: str
+    dg: str | None
+    banned: frozenset[str]  # matched case-insensitively: carriers, truckers, our signer
+    names: frozenset[str]  # matched as written: the customer's name, their cities and towns
+    earlier: tuple[str, ...]
+
+
+def facts(
+    ctx: Context, rfq: Rfq, option: RateOption, request: str, *, dg: str | None = None, claim: str | None = None
+) -> Facts:
+    """The draft's facts; `request` is the customer's own words. Every value is formatted here, by code."""
+    lang = language_of(rfq)
+    t = TEXT[lang]
+    signer = ctx.settings.signer
+    stiff = formal(request)
+    name = signed_name(request, signer)
+    hello = greeting(lang, name, rfq.session_id, request, signer)
+    who = next((n for n in (addressed(name, request, signer) if name else None, name) if n and n in hello), None)
+    values = {
+        "TOTAL": f"{money(option.total)} {option.currency}",
+        "CARRIER": option.carrier,
+        "TRANSIT": _transit(option, t),
+        "ORIGIN": option.origin,
+        "DEST_CITY": city_of(request, option.destination) or option.destination,
+        "GROSS": f"{weight(rfq.weight_kg, lang)} kg",
+        "SIGNATURE": signature(sign_off(request, lang, name)[1], signer, full=stiff),
+    }
+    required = {"CARRIER", "TRANSIT", "ORIGIN", "DEST_CITY"}
+    if who and who in hello:
+        salutation = hello.replace(who, "{{NAME}}", 1)
+        values["NAME"] = who
+    else:
+        salutation = "Hi there," if hello == t["warm"]["hello_anon"] and lang == "en" else hello
+    if option.trucker:
+        values["TRUCKER"] = option.trucker
+        required.add("TRUCKER")
+        zone = ctx.db.execute("SELECT area FROM pickup_zones WHERE zone = ?", (rfq.pickup_zone,)).fetchone()
+        if zone and zone["area"]:
+            values["PICKUP_TOWN"] = zone["area"]
+    if option.chargeable_kg > rfq.weight_kg:
+        values["CHARGEABLE"] = f"{weight(option.chargeable_kg, lang)} kg"
+        required.add("CHARGEABLE")
+    if ready := ready_date(request):
+        arrive = ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
+        values.update(READY=_day(ready, t), ARRIVAL=_day(arrive, t),
+                      DEPARTURE=_day(arrive - timedelta(days=option.transit_days), t))  # fmt: skip
+        required.add("ARRIVAL")
+    if option.valid_until:
+        values["VALID_UNTIL"] = _until(rfq, option, t)
+        required.add("VALID_UNTIL")
+    if dg:
+        values["DG_GOODS"] = dg
+        required.add("DG_GOODS")
+    banned = _banned(ctx) | {w.casefold() for w in signer.split() if len(w) > 2}
+    if option.trucker:
+        banned.add(option.trucker.casefold())
+    places = {values["DEST_CITY"], values.get("PICKUP_TOWN", "")} - {option.destination}
+    names = {w for w in (who or "").split() if len(w) > 1} | {p for p in places if p}
+    return Facts(
+        register=tone(request), salutation=salutation, values=values, required=frozenset(required),
+        claim=claim if claim in ("cheapest", "fastest") else "none", dg=dg, banned=frozenset(banned),
+        names=frozenset(names), earlier=_history(ctx, rfq),
+    )  # fmt: skip
+
+
+def _draft_user(rfq: Rfq, message: Message, request: str, f: Facts) -> str:
+    asked = [
+        label
+        for found, label in (
+            ("READY" in f.values, "the earliest arrival ({{ARRIVAL}}), with the cargo ready on {{READY}}"),
+            ("READY" in f.values and DEPARTURE.search(request), "the earliest departure ({{DEPARTURE}})"),
+            ("READY" in f.values and PICKUP_ASK.search(request), "the earliest pickup: on {{READY}}"),
+            (ONE_AWB.search(request), "all lots under one air waybill: yes, as one consignment"),
+            (CUTOFF.search(request), "the drop-off cut-off: it comes with the airline's booking, we pass it on"),
+        )
+        if found
+    ]
+    listed = "".join(
+        f"\n{{{{{key}}}}}{' (required)' if key in f.required else ''}: {PLACEHOLDERS[key]}" for key in f.values
+    )
+    lines = [
+        f"language: {language_of(rfq)}",
+        f"register: {f.register}",
+        f"salutation: {f.salutation}",
+        f"claim: {f.claim}",
+        "service: pickup at the customer's door, then air freight"
+        if rfq.door_pickup
+        else "service: the customer delivers to the departure airport",
+        f"bulky, charged on volume weight: {'yes' if 'CHARGEABLE' in f.values else 'no'}",
+        f"dangerous goods: {'yes, declared' if f.dg else 'no'}",
+        f"pickup postcode missing: {'yes' if rfq.door_pickup and not rfq.pickup_postcode else 'no'}",
+        f"returning customer: {'yes' if f.earlier else 'no'}",
+        f"the customer asks about: {'; '.join(asked) or 'nothing beyond the price'}",
+        f"earlier openings to this customer: {' | '.join(f.earlier[-3:]) or 'none'}",
+        f"placeholders:{listed}",
+    ]
+    return "Facts:\n" + "\n".join(lines) + f"\n\nCustomer's mail:\nSubject: {message.subject}\n\n{request[:1500]}"
+
+
+def vet(body: str, rfq: Rfq, f: Facts) -> str:
+    """The checks on the model's text before code fills it; raises `Rejected`. Returns its first sentence."""
+    lang = language_of(rfq)
+    used = PLACEHOLDER.findall(body)
+    if unknown := set(used) - set(f.values):
+        raise Rejected(f"placeholder not offered: {sorted(unknown)}")
+    for key in ("TOTAL", "SIGNATURE"):
+        if used.count(key) != 1:
+            raise Rejected(f"{key} {used.count(key)} times")
+    if missing := f.required - set(used):
+        raise Rejected(f"placeholder missing: {sorted(missing)}")
+    if not body.startswith(f.salutation):
+        raise Rejected("salutation")
+    if not body.endswith("{{SIGNATURE}}"):
+        raise Rejected("signature not last")
+    if not DRAFT_WORDS[0] <= len(body.split()) <= DRAFT_WORDS[1]:
+        raise Rejected(f"{len(body.split())} words")
+    bare = PLACEHOLDER.sub(" ", body)
+    for pattern, reason in ((re.compile(r"[{}]"), "malformed placeholder"), (DIGIT, "digit"), (SYMBOL, "symbol"),
+                            (CALENDAR, "weekday or month"), (EMOJI, "emoji"), (DASH, "dash"), (PS, "P.S."),
+                            (BULLET, "bullet"), (STOCK, "stock phrase"), (STATUS, "booking status")):  # fmt: skip
+        if pattern.search(bare):
+            raise Rejected(reason)
+    if codes := set(CODE.findall(bare)) - ALLOWED_CODES:
+        raise Rejected(f"code {sorted(codes)}")
+    lowered = bare.casefold()
+    if any(re.search(rf"(?<!\w){re.escape(b)}(?!\w)", lowered) for b in f.banned):
+        raise Rejected("carrier, trucker or signer written out")
+    if any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", bare) for n in f.names):
+        raise Rejected("name or place written out")
+    if CHEAP_CLAIM.search(bare) and f.claim != "cheapest":
+        raise Rejected("unlicensed cheapest")
+    if FAST_CLAIM.search(bare) and f.claim != "fastest":
+        raise Rejected("unlicensed fastest")
+    if BEST_CLAIM.search(bare) and f.claim == "none":
+        raise Rejected("unlicensed best")
+    if bare.count("!") > (0 if f.register == "formal" else 1):
+        raise Rejected("exclamation mark")
+    if f.dg and not ("DGD" in bare and "MSDS" in bare):
+        raise Rejected("dangerous goods papers not asked")
+    if rfq.door_pickup and not rfq.pickup_postcode and not POSTCODE.search(bare):
+        raise Rejected("pickup postcode not asked")
+    german, english = _words_lang(bare)
+    if (lang == "de" and german <= english) or (lang == "en" and english <= german):
+        raise Rejected("language")
+    if lang == "de" and INFORMAL_DE.search(bare):
+        raise Rejected("du")
+    rest = body[len(f.salutation) :].strip()
+    first = re.split(r"(?<=[.!?])\s", rest, maxsplit=1)[0].strip()
+    if not first or _start(first) in {_start(e) for e in f.earlier}:
+        raise Rejected("opening repeats an earlier one")
+    return first
+
+
+def fill(body: str, rfq: Rfq, option: RateOption, f: Facts) -> str:
+    """Code writes every value into the vetted draft, then checks the finished mail: the total once with its
+    currency, carrier and transit (`check`), and not one digit outside the values it filled in."""
+    filled = PLACEHOLDER.sub(lambda m: f.values[m.group(1)], body)
+    if not check(filled, rfq, option):
+        raise Rejected("filled mail fails check")
+    residue = filled
+    for value in sorted(f.values.values(), key=len, reverse=True):
+        residue = residue.replace(value, " ")
+    if DIGIT.search(residue):
+        raise Rejected("digit outside a placeholder")
+    return filled
+
+
+async def draft(
+    ctx: Context,
+    rfq: Rfq,
+    option: RateOption,
+    message: Message,
+    *,
+    dg: str | None = None,
+    claimed_wish: str | None = None,
+) -> str | None:
+    """The quote's one gateway call when rules read the request (R28, R31): the whole body, written by the model
+    with placeholders and filled by code. `dg` is the declared dangerous goods, `claimed_wish` "cheapest" or
+    "fastest" when code confirmed the option is that. Emits `quote.prose` (`mode: draft`) with `passed` and, on a
+    failure, the reason; returns None on any failure, and the caller renders the template. Never raises."""
+    request = own_words(message.body or "")
+    first_name = None
+    try:
+        if rfq.door_pickup and not option.trucker:
+            raise Rejected("air-only price: the template words the excluded pickup")
+        f = facts(ctx, rfq, option, request, dg=dg, claim=claimed_wish)
+        try:
+            result = await llm.ask_json(
+                ctx,
+                purpose="quote.draft",
+                system=DRAFT_SYSTEM,
+                user=_draft_user(rfq, message, request, f),
+                schema=DRAFT_SCHEMA,
+                session_id=rfq.session_id,
+                max_output_tokens=DRAFT_TOKENS,
+                model=ctx.settings.model_prose or None,
+            )
+        except Exception as exc:  # the template takes over
+            events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                        payload={"where": "draft", "error": type(exc).__name__})  # fmt: skip
+            raise Rejected(f"gateway: {type(exc).__name__}") from exc
+        raw = result.data if isinstance(result.data, dict) else {}
+        named = raw.get("first_name") if isinstance(raw.get("first_name"), str) else None
+        first_name = _first_name(named, message, ctx.settings.signer) or signed_name(request, ctx.settings.signer)
+        body = raw.get("body")
+        if not isinstance(body, str) or not body.strip():
+            raise Rejected("no body")
+        body = re.sub(r"\n{3,}", "\n\n", "\n".join(line.rstrip() for line in body.strip().splitlines()))
+        try:
+            first = vet(body, rfq, f)
+            filled = fill(body, rfq, option, f)
+        except Rejected as exc:
+            raise Rejected(str(exc), body) from exc
+    except Rejected as exc:
+        events.emit(ctx, "quote.prose", "rfq", session_id=rfq.session_id,
+                    payload={"mode": "draft", "passed": False, "reason": exc.args[0], "first_name": first_name,
+                             "rejected": exc.args[1][:2000] if len(exc.args) > 1 else None})  # fmt: skip
+        return None
+    except Exception as exc:  # noqa: BLE001  a broken check must never cost the quote
+        events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                    payload={"where": "draft", "error": f"{type(exc).__name__}: {exc}"})  # fmt: skip
+        events.emit(ctx, "quote.prose", "rfq", session_id=rfq.session_id,
+                    payload={"mode": "draft", "passed": False, "reason": type(exc).__name__,
+                             "first_name": first_name})  # fmt: skip
+        return None
+    events.emit(ctx, "quote.prose", "rfq", session_id=rfq.session_id,
+                payload={"mode": "draft", "passed": True, "first_name": first_name, "intro": first})  # fmt: skip
+    return filled
 
 
 def customer_subject(ctx: Context, message_id: int) -> str | None:

@@ -18,10 +18,16 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Implementation
 
-- `agent.py` `handle`: `extract.extract`; when rules read the request, `compose.prose` runs in parallel as the
-  one gateway call of the quote (R28); when the model read it, that call already drafted the prose (`prose.raw`)
-  and `compose.adopt` checks it. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
-  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (bids by
+- `agent.py` `handle`: `extract.extract`; when rules read the request, the one gateway call of the quote (R28) is
+  `compose.draft` once the option is chosen (`_drafted`, PIXEL_DRAFT, on by default): it may hold the quote at most
+  10 s (`PROSE_WAIT_S`), at most `DRAFT_PAST_TARGET_S` past `target_at` (bids are waited for until then, and
+  `target_at` lies inside the two-minute window of R29) and never past `hard_at`; with a second or less left it is
+  skipped. `_claim` lets the draft call the option cheapest or fastest only when it is that among two or more
+  options. Without any option yet, `compose.prose` runs instead, so the orchestrator's fallback quote has the slots
+  and its call. With PIXEL_DRAFT=off, `compose.prose` runs in parallel with the pricing, as before, at most 10 s and
+  never past `target_at`. When the model read the request, that call already drafted the prose (`prose.raw`) and
+  `compose.adopt` checks it; no draft follows. A late or failing call only costs the model's text, the quote goes out
+  with the template; `pricing/engine.py` `options` (bids by
   mail, pickup and airline, are waited for until all are in, or until the later of `target_at` and
   `PIXEL_BID_WAIT_S` after the ask, never past `hard_at`: `pricing/bids.py` `collect`); `selection.select`; `compose.render`;
   `outbox.send_quote`. A request missing origin, destination or weight emits `error` and returns None; the
@@ -51,20 +57,41 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
-- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
-  customer, formal or not (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
-  the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
-  model's slot, else `signed_name` by rule); the model's opening on a line of its own when it passed, else none (no
-  stock opening); the offer with an opinion ("I'd go with …", "Good news: …"): total and currency, carrier, transit,
-  what is included, a short line ("Simple as that."), the chargeable weight only when it is above the gross weight;
-  the validity on our desk's clock ("until 17:22 today") with the booking line; the signature by first name
-  (`signature`) and a P.S. that only says what we do anyway. At most three smileys, none twice (`_one_each`).
-  "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `sign_off` answers
-  the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off goes to the town they
-  greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, "Best wishes". Code formats every
-  number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
-  proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
-  is rendered without the model's slots (R9, P1).
+- `compose.py` `draft` (R31, PIXEL_DRAFT): the model writes the whole body, 90 to 170 words in the customer's
+  language and register, and every number, price, date, airline, trucker, airport, city and name in it is a
+  placeholder (`{{TOTAL}}`, `{{CARRIER}}`, `{{ARRIVAL}}`, …, `{{SIGNATURE}}`) whose value code formats (`facts`):
+  only the placeholders that apply to the quote are offered, with the salutation code chose. The model sees the
+  customer's own words, the register, the claim code allows, pickup or delivery, bulky, dangerous goods, a missing
+  pickup postcode, what the customer asks beyond the price (the `answers` rules) and the last openings to this
+  customer. `vet` drops the draft on any doubt before filling it: a placeholder not offered, the total or signature
+  not exactly once, a required placeholder missing (the trucker, the validity, the arrival, the chargeable weight,
+  the dangerous goods with DGD and MSDS), another salutation, the signature not last, a digit, symbol, weekday or
+  month, a three-letter code other than AWB or DGD, a carrier, trucker, signer, customer name or city written out,
+  emoji, P.S., em or en dash, bullet, stock phrase ("rest assured", "great news", …), an exclamation mark in a formal
+  mail or two in another, "booked", "reserved" or "confirmed" (offering to book passes), cheapest, fastest or best
+  without code's claim, the postcode not asked when it is missing, the other language, German `du`, an opening that
+  begins like one this customer already got. `fill` writes the values and checks the mail again: `check`, and not
+  one digit outside the filled values. Every outcome is a `quote.prose` event with `mode: draft` and `passed` (the
+  reason and the rejected text on failure; the first sentence as `intro`, so later drafts begin differently, and the
+  first name for the booking mails). A dropped draft gives `render`'s template; `fallback` never calls the model.
+- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German in the customer's register
+  (R31). Casual and neutral mail gets a colleague's voice (`TEXT[lang]["warm"]`): "Hi Anna," by the first name they
+  signed with (`greeting`: the model's slot, else `signed_name` by rule); the model's opening on a line of its own
+  when it passed, else none (no stock opening); the offer with an opinion ("I'd go with …"): total and currency,
+  carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
+  our desk's clock ("until 17:22 today") with the booking line; the signature by first name (`signature`). No emoji,
+  filler line, P.S. or dash. "Hope your week's going well" is answered at the start of the reply, with the opening
+  or else with the offer (`WELL`, "All good here, thanks for asking."); `sign_off` answers the customer's own closing
+  (`in_kind`): a wish for the day is returned, and the sign-off goes to the town they greet from, or reads "Cheers"
+  or "Viele Grüße" when theirs does; without one, "Best wishes". A clearly formal mail (`formal`: a salutation
+  "Dear …", "Sehr geehrte/r …" or "To whom it may concern", or "Yours sincerely", "Yours faithfully", "Mit
+  freundlichen Grüßen" on a sign-off line of its own; "Kind regards" alone is not) gets the register back: "Dear
+  Jonas Kessler" as signed, without guessing Mr or Ms (`addressed`), the calm offer and booking lines, no exclamation
+  mark, never "Cheers", "Kind regards" and our full name. German keeps Sie throughout and greets "Hallo Anna" only a
+  casual mail; otherwise "Guten Tag Anna Muster" with the whole signed name, or "Guten Tag", never "Guten Tag" with a
+  first name alone. Code formats every number and name; two to three phrasings per sentence, picked by session, so
+  two quotes do not read alike. `check` proves the finished mail holds the total exactly once with its currency,
+  carrier and transit; on failure the mail is rendered without the model's slots (R9, P1).
 - `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
   own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
   transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
@@ -209,7 +236,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   must name the goods and ask for the DGD and the MSDS (round 11 was accepted that way, at the normal price).
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.
-- The prose slots must not contain a price or a code: the scorer reads the one total we write.
+- The prose slots must not contain a price or a code: the scorer reads the one total we write. A draft writes
+  none either: every value is a placeholder, and a digit outside one drops the draft.
+- Bids are waited for until `target_at`, so a model call made after the pricing that had to end by `target_at` would
+  almost never run, and a quote without its gateway call earns no cost points (R28): the draft may run a little past
+  `target_at` (`DRAFT_PAST_TARGET_S`), inside R29's two minutes.
 - The total is written like the portal's and the carriers' own: no thousands separator, a decimal point, also in a
   German mail. A grouped total can be read as a different number.
 - Every step of the prose fails soft: an odd model answer, a missing name, a broken stored event or a rendering

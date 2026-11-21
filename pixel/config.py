@@ -21,6 +21,7 @@ class Settings:
     model_prose: str = ""  # the mail's prose slots; empty: `model`
     signer: str = "Lena Berger"  # the person who signs our mails (R31)
     precheck: str = "on"  # agents/rfq/check.py: on (every quote is checked, findings alert a person) or off
+    draft_quotes: bool = True  # agents/rfq/compose.py `draft`: the model writes the whole body; off: the prose slots
 
 
 @cache
@@ -42,4 +43,5 @@ def settings() -> Settings:
         model_prose=env.get("PIXEL_MODEL_PROSE", ""),
         signer=env.get("PIXEL_SIGNER", "Lena Berger"),
         precheck=env.get("PIXEL_PRECHECK", "on").strip().lower(),
+        draft_quotes=env.get("PIXEL_DRAFT", "on").strip().lower() not in ("0", "off", "false"),
     )

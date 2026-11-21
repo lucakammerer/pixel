@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pixel import llm
 from pixel.agents.rfq import check, compose, dangerous, extract
-from pixel.contracts import Message, Quote, RateOption, Rfq
+from pixel.contracts import Message, Preference, Quote, RateOption, Rfq
 from pixel.core import events, feedback, outbox, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
@@ -13,7 +13,12 @@ from pixel.crm import quotes
 from pixel.pricing import calc, engine, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
-PROSE_WAIT_S = 10
+PROSE_WAIT_S = 10  # the quote's text may hold the quote this long, the prose slots or the draft
+DRAFT_MIN_S = 1.0  # with less time left the template goes at once
+# Bids are waited for until target_at, so the option is often chosen just then. The draft may hold the quote this
+# much past it, never past hard_at: target_at (100 s) lies inside the scorer's full-time window (R29, 2 minutes),
+# and a quote without its gateway call earns no cost points (R28).
+DRAFT_PAST_TARGET_S = 10.0
 AIRPORTS_WAIT_S = 5.0
 AIRPORTS_SYSTEM = (
     "You check the airports of an air freight request. A code read from the mail is on none of the lanes we "
@@ -36,10 +41,24 @@ def _fx_for(currency: str, options: list[RateOption]) -> Decimal | None:
     return next((o.fx_eur for o in options if o.currency == currency and o.fx_eur and o.fx_eur > 0), None)
 
 
-def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
+def _chosen(rfq: Rfq, options: list[RateOption]) -> RateOption:
     option = selection.select(rfq, options)
     if rfq.currency and option.currency != rfq.currency:
         option = calc.in_currency(option, rfq.currency, _fx_for(rfq.currency, options))
+    return option
+
+
+def _quote(
+    ctx: Context,
+    rfq: Rfq,
+    options: list[RateOption],
+    prose: compose.Prose | None,
+    fallback: bool,
+    drafted: tuple[RateOption, str] | None = None,
+) -> Quote:
+    """The quote for the chosen option: the model's drafted body when it was written for this option, else the
+    template (`compose.render`)."""
+    option = _chosen(rfq, options)
     subject, body = compose.render(
         rfq,
         option,
@@ -48,6 +67,8 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
         ctx.settings.signer,
         compose.customer_body(ctx, rfq.message_id),
     )
+    if drafted and drafted[0] == option:
+        body = drafted[1]
     calls = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE kind = 'llm.call' AND session_id = ?", (rfq.session_id,)
     ).fetchone()[0]
@@ -95,11 +116,14 @@ def _check(ctx: Context, rfq: Rfq, quote: Quote) -> None:
 
 
 def _noted(ctx: Context, rfq: Rfq, quote: Quote) -> Quote:
-    """The quote with the dangerous-goods note, when the request's documents declare some (`dangerous.py`)."""
+    """The quote with the dangerous-goods note, when the request's documents declare some (`dangerous.py`), unless
+    its drafted body already names the goods and asks for the DGD and the MSDS."""
     found = dangerous.declared(ctx, rfq)
     if not found:
         return quote
     goods, source = found
+    if goods in quote.body and "DGD" in quote.body and "MSDS" in quote.body:
+        return quote
     return quote.model_copy(update={"body": dangerous.with_note(quote.body, goods, compose.language_of(rfq), source)})
 
 
@@ -113,15 +137,18 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
                     "missing": list(rfq.missing)})  # fmt: skip
         return None
     rfq = await served_airports(ctx, rfq, message, text=text, deadline=deadline)
-    # The one gateway call per quote (R28): when rules read the request, it writes the prose slots (R31);
-    # when the model read it, the same call already drafted them.
-    # The prose may hold the quote at most PROSE_WAIT_S after it started, and never past target_at: a slow or
-    # broken model call costs us the human slots, never the quote or its time points.
+    # The one gateway call per quote (R28): when rules read the request, it drafts the whole body once the option
+    # is chosen (PIXEL_DRAFT, `_drafted`), or with PIXEL_DRAFT=off writes the prose slots alongside the pricing
+    # (R31); when the model read it, the same call already drafted the slots.
+    # The text may hold the quote at most PROSE_WAIT_S after it started, the slots never past target_at, the draft
+    # never more than DRAFT_PAST_TARGET_S past it: a slow or broken model call costs us the human text, never the
+    # quote or its time points.
     task = None
-    if rfq.extracted_by == "rules":
+    draft = ctx.settings.draft_quotes and rfq.extracted_by == "rules"
+    if rfq.extracted_by == "rules" and not draft:
         task = poller.spawn(ctx, compose.prose(ctx, rfq, message))
         prose_by = min(timing.now() + timedelta(seconds=PROSE_WAIT_S), deadline.target_at)
-    else:
+    elif rfq.extracted_by != "rules":
         compose.adopt(ctx, rfq, message, _raw_prose(ctx, rfq.session_id))
     options = await engine.options(ctx, rfq, deadline)
     if rfq.door_pickup:
@@ -131,12 +158,52 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
             await asyncio.wait_for(asyncio.shield(task), max((prose_by - timing.now()).total_seconds(), 0.0))
         except Exception:  # noqa: BLE001, S110  late or failed: the quote goes out with the fixed phrases
             pass  # a late task keeps running and stores its slots for the fallback
-    prose = compose.stored(ctx, rfq.session_id)
     if not options:
+        if draft:  # the orchestrator's fallback quotes later without a model call: the slots are this quote's call
+            poller.spawn(ctx, compose.prose(ctx, rfq, message))
         return None
-    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, prose, fallback=False))
+    drafted = await _drafted(ctx, rfq, options, message, deadline) if draft else None
+    prose = compose.stored(ctx, rfq.session_id)
+    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, prose, fallback=False, drafted=drafted))
     quotes.save(ctx, sent)
     return sent
+
+
+def _claim(rfq: Rfq, option: RateOption, options: list[RateOption]) -> str | None:
+    """What the draft may call the option: "cheapest" or "fastest", the customer's wish, only when code finds it
+    is that among two or more options."""
+    if len(options) < 2:
+        return None
+    if rfq.preference == Preference.FASTEST:
+        return "fastest" if option.transit_days <= min(o.transit_days for o in options) else None
+    return "cheapest" if option.total_eur <= min(o.total_eur for o in options) else None
+
+
+async def _drafted(
+    ctx: Context, rfq: Rfq, options: list[RateOption], message: Message, deadline: Deadline
+) -> tuple[RateOption, str] | None:
+    """The model's whole body for the chosen option (`compose.draft`), waited for at most PROSE_WAIT_S, never more
+    than DRAFT_PAST_TARGET_S past target_at and never past hard_at; with DRAFT_MIN_S or less left, or on any
+    failure, None and the template goes out."""
+    option = _chosen(rfq, options)
+    latest = min(deadline.target_at + timedelta(seconds=DRAFT_PAST_TARGET_S), deadline.hard_at)
+    budget = min(float(PROSE_WAIT_S), (latest - timing.now()).total_seconds())
+    if budget <= DRAFT_MIN_S:
+        events.emit(ctx, "quote.prose", "rfq", session_id=rfq.session_id,
+                    payload={"mode": "draft", "passed": False, "reason": "no time left"})  # fmt: skip
+        return None
+    found = dangerous.declared(ctx, rfq)
+    try:
+        body = await asyncio.wait_for(
+            compose.draft(ctx, rfq, option, message, dg=found[0] if found else None,
+                          claimed_wish=_claim(rfq, option, options)),
+            timeout=budget,
+        )  # fmt: skip
+    except Exception as exc:  # noqa: BLE001  late or failed: the template goes out
+        events.emit(ctx, "quote.prose", "rfq", session_id=rfq.session_id,
+                    payload={"mode": "draft", "passed": False, "reason": f"timeout: {type(exc).__name__}"})  # fmt: skip
+        return None
+    return (option, body) if body else None
 
 
 async def served_airports(

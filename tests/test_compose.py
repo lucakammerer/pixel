@@ -77,14 +77,14 @@ def test_reply_subject_name_and_signer():
         compose.greeting("en", "Anna", 1) + "\n\nHappy to help get the machine parts moving quickly."
     )
     # The mail ends on the booking sentence and the signature: no stock closing line (R31).
-    assert "Have a good day" not in body and f"Best wishes,\nLena\n{compose.COMPANY}\n\nP.S. " in body
+    assert "Have a good day" not in body and body.endswith(f"Best wishes,\nLena\n{compose.COMPANY}")
     assert compose.reply_subject("AW: Anfrage") == "AW: Anfrage" and compose.reply_subject("") is None
 
 
 def test_without_subject_or_prose_still_a_full_mail():
     subject, body = compose.render(rfq("de"), OPTION)
     assert subject == "Angebot AAA nach BBB, 1.200 kg"
-    assert body.startswith("Hallo!\n\n") and "Viele Grüße" in body
+    assert body.startswith("Hallo,\n\n") and "Viele Grüße" in body
 
 
 @pytest.mark.parametrize(
@@ -232,12 +232,14 @@ def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
     assert compose.ready_date("Please quote 300 kg, it must arrive by 2026-12-01.") is None
 
 
-def test_every_customer_gets_the_same_personal_voice():
+def test_a_formal_mail_is_answered_formally_and_a_casual_one_in_kind():
     request = "Dear Sir or Madam,\n\nplease quote AAA to BBB.\n\nKind regards\nPetra Hofmann\nHead of Logistics"
     option = OPTION.model_copy(update={"valid_until": datetime(2026, 11, 21, 16, 22, tzinfo=UTC)})
     _, body = compose.render(rfq("en"), option, request=request)
-    # Named from the signature without a model slot, personal even to a formal mail, validity on our clock.
-    assert body.startswith(compose.greeting("en", "Petra", 1)) and "Best wishes,\nLena\n" in body and "!" in body
+    # Named from the signature without a model slot, the whole signed name and ours, validity on our clock.
+    assert body.startswith("Dear Petra Hofmann,\n\n")
+    assert body.endswith(f"Kind regards,\nLena Berger\n{compose.COMPANY}")
+    assert "!" not in body and "Cheers" not in body
     assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
     _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
     # Their "Cheers" is answered in kind; the rest reads as every other mail.
@@ -245,7 +247,7 @@ def test_every_customer_gets_the_same_personal_voice():
     _, both = compose.render(
         rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Gruesse / Many greetings\nDeniz"
     )
-    assert "Viele Grüße,\nLena\n" in both and "\nP.S. " in both
+    assert "Viele Grüße,\nLena\n" in both and "P.S." not in both
 
 
 def test_the_customers_own_closing_is_answered_in_kind():
@@ -256,7 +258,7 @@ def test_the_customers_own_closing_is_answered_in_kind():
     )
     _, body = compose.render(rfq("en"), OPTION, request=request)
     assert "Have a lovely day too!\n\nBest regards to Exampletown,\nLena\n" in body
-    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 6
+    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 5
     assert body.count("1234.57 EUR") == 1 and compose.check(body, rfq("en"), OPTION)
     german = "Guten Tag,\n\nbitte um ein Angebot.\n\nEin schönes Wochenende und Grüße aus Exampletown\nAnna Muster"
     _, body = compose.render(rfq("de"), OPTION, request=german)
@@ -352,7 +354,75 @@ def test_the_earliest_departure_is_answered_only_when_asked():
 def test_the_customers_small_talk_is_answered_before_the_price(opening, answered):
     _, body = compose.render(rfq("en"), OPTION, request=f"Hi there,\n\n{opening}\n\nCheers,\nKlaus")
     paragraph = body.split("\n\n")[1]
-    assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]) == answered
+    assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]["other"]) == answered
     assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
     assert ("thank" in paragraph.lower()) == answered  # the opening no longer thanks: the small-talk answer does
     assert body.count("1234.57 EUR") == 1
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize(
+    "request_",
+    [
+        "",
+        "Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom",
+        "Dear Sir or Madam,\n\nplease quote AAA to BBB.\n\nYours sincerely\nPetra Hofmann",
+        "Hallo,\n\nbitte um ein Angebot.\n\nViele Grüße\nAnna",
+    ],
+)
+def test_the_template_has_no_emoji_filler_ps_or_dash(language, request_):
+    for session in range(1, 13):
+        _, body = compose.render(rfq(language, session), OPTION, request=request_)
+        assert not compose.EMOJI.search(body) and not compose.DASH.search(body) and "P.S." not in body
+        assert not re.search(r"Easy!|Simple as that|Nice and simple|Ganz einfach|So einfach ist das|Good news|"
+                             r"Gute Nachricht", body)  # fmt: skip
+        assert body.count("!") <= (0 if compose.formal(request_) else 1)
+
+
+@pytest.mark.parametrize(
+    ("request_", "formal"),
+    [
+        ("Dear Sir or Madam,\n\nplease quote.", True),
+        ("Sehr geehrter Herr Berger,\n\nbitte um ein Angebot.", True),
+        ("Sehr geehrte Damen und Herren,\n\nbitte um ein Angebot.", True),
+        ("To whom it may concern,\n\nplease quote.", True),
+        ("Hello,\n\nplease quote.\n\nYours sincerely,\nJonas Kessler", True),
+        ("Guten Tag,\n\nbitte um ein Angebot.\n\nMit freundlichen Grüßen\nJonas Kessler", True),
+        ("Hello,\n\nplease quote.\n\nKind regards,\nJonas", False),
+        ("Hi,\n\nwe sign yours sincerely only on letters, ha. Please quote.\n\nTom", False),
+        ("Hi Lena,\n\nmy dear colleague asked me to send this.\n\nTom", False),
+    ],
+)
+def test_clearly_formal_reads_the_salutation_and_the_sign_off_line(request_, formal):
+    assert compose.formal(request_) == formal
+
+
+def test_formal_english_never_answers_with_cheers_or_the_casual_small_talk():
+    request = "Dear Ms Berger,\n\nI hope you are doing well. Please quote AAA to BBB.\n\nYours sincerely\nJonas Kessler"
+    for session in range(1, 6):
+        _, body = compose.render(rfq("en", session), OPTION, request=request + "\nCheers")
+        assert body.startswith("Dear Jonas Kessler,\n\nThank you")
+        assert "Cheers" not in body and "Going well here, thanks" not in body and "!" not in body
+        assert body.endswith(f"Kind regards,\nLena Berger\n{compose.COMPANY}")
+
+
+@pytest.mark.parametrize(
+    ("request_", "hello"),
+    [
+        ("Sehr geehrte Frau Berger,\n\nbitte um ein Angebot.\n\nMit freundlichen Grüßen\nAnna Muster",
+         "Guten Tag Anna Muster,"),
+        ("Guten Tag,\n\nbitte um ein Angebot.\n\nAnna", "Guten Tag,"),
+        ("Hallo Lena,\n\nbitte um ein Angebot.\n\nViele Grüße\nAnna", "Hallo Anna,"),
+    ],
+)  # fmt: skip
+def test_german_greets_by_first_name_only_when_casual(request_, hello):
+    _, body = compose.render(rfq("de"), OPTION, request=request_)
+    assert body.startswith(hello + "\n\n") and not re.match(r"Guten Tag [A-Z][a-z]+,", body)
+    assert not compose.INFORMAL_DE.search(body.split("\n\n", 1)[1])
+
+
+def test_the_small_talk_answer_opens_the_offer_without_a_line_of_its_own():
+    _, body = compose.render(rfq("en"), OPTION, request="Hi,\n\nHope you're doing well! Quote AAA-BBB?\n\nTom")
+    paragraph = body.split("\n\n")[1]
+    assert any(paragraph.startswith(w + " ") for w in compose.TEXT["en"]["well_back"]["other"])
+    assert "1234.57 EUR" in paragraph
