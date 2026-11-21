@@ -263,3 +263,15 @@ What follows:
   or kilos asked back for the reference in 158 of 732, now none (#244). Wrong in every harness: 0. Open: an offer
   in USD without a stated rate goes to the model; scans and images (channel matrix, Accuracy). Next: follow-up
   answers naming other airports and multi-part threads.
+- 22.11. 00:50, unseen-shape cycles 7 to 9 (live to round 83, mail 23698). Generated, hand-read answers: every
+  captured request answered with another airport in passing (section 15, through `read_request`): 40 of 280 made it
+  the origin (#255), and a request only in its attachment lost the document's "fastest" to the answer's lane (#274:
+  an answer changes only what we asked or the request left open). The rate desk's answer as a table in an
+  attachment gave no rate and no model reading (#251, section 16). Side prices beside an unlabelled offer ("from",
+  "ab", minimum, earlier offer, option, "extra") went to the model in 1060 of 14112 generated bids (#259). Units: a
+  volume in litres was read as none (24 of 528 generated requests, #269; round 82's cubic feet: febf549). simulate
+  had counted every request as "model" since the cross-check (#250) and was blind (#257). Live 67 to 83: requests
+  only in a pdf or docx (67, 68, 75), French, German, Chinese (70 to 74), "attach the offer as a pdf" (76 to 79):
+  captured with rows. Wrong in every harness: 0. Open: multi-lot mails in pounds, tonnes, cubic feet or litres go
+  to the model (`_lots`, Owner: Cost); a customer's second mail before our quote never came live, which version the
+  scorer prices is unknown. Next: the live mail since mail 23698.
