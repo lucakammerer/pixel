@@ -1,0 +1,32 @@
+from datetime import timedelta
+
+from pixel.contracts import MailKind
+from pixel.core import events, feedback, poller, timing, watchdog
+from tests.test_extract import RECEIVED, mail
+from tests.test_outbox import make_ctx
+
+
+async def test_a_request_open_past_90_seconds_is_alerted_once_with_its_step(conn, monkeypatch):
+    posted = []
+
+    async def post(ctx, issues):
+        posted.append(issues)
+
+    monkeypatch.setattr(feedback, "post", post)
+    ctx = make_ctx(conn, alert_url="https://hook.test/x")
+    poller.store(
+        ctx, mail("Please quote AAA-BBB, 100 kg, door pickup.").model_copy(update={"kind": MailKind.CUSTOMER_RFQ})
+    )
+    at = RECEIVED
+    monkeypatch.setattr(timing, "now", lambda: at)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=7)
+    events.emit(ctx, "bid.requested", "pricing", session_id=7, message_id=70, payload={"pickup": True})
+    at = RECEIVED + timedelta(seconds=89)
+    assert await watchdog.once(ctx) == 0
+    at = RECEIVED + timedelta(seconds=91)  # from when the mail was stored, however late we polled it
+    assert await watchdog.once(ctx) == 1
+    assert {k: posted[0][0][k] for k in ("issue", "session", "age_s", "step")} == {
+        "issue": "stuck", "session": 7, "age_s": 91, "step": "pickup"}  # fmt: skip
+    at = RECEIVED + timedelta(seconds=150)
+    assert await watchdog.once(ctx) == 0 and len(posted) == 1
+    assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'quote.stuck'").fetchone()[0] == 1

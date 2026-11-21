@@ -38,7 +38,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/core/`: `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, fallback),
   `outbox.py` (all outgoing mail; every quote with itself as a PDF from `pdf.py`), `events.py` (the log and its live stream), `db.py`, `context.py`;
   `feedback.py` (what each request scored, why it lost points, which balanced rule fits the scorer, and the
-  call to `PIXEL_ALERT_URL` when something needs repair)
+  call to `PIXEL_ALERT_URL` when something needs repair); `watchdog.py` (a request still without our quote 90 s
+  after it was stored, alerted once with the step it hangs in)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,

@@ -15,7 +15,7 @@ from pixel.api.gateway import Gateway
 from pixel.api.mailbox import Mailbox
 from pixel.api.portal import Portal
 from pixel.config import Settings, settings
-from pixel.core import db, feedback, orchestrator, poller, webhook
+from pixel.core import db, feedback, orchestrator, poller, watchdog, webhook
 from pixel.core.context import Context
 from pixel.core.events import emit
 from pixel.ui import crm, dashboard, home, routes
@@ -56,6 +56,8 @@ async def lifespan(app: FastAPI):
     if ctx.settings.api_key:
         task = asyncio.create_task(poller.run(ctx, lambda m: orchestrator.dispatch(ctx, m)))
         ctx.tasks.add(asyncio.create_task(feedback.run(ctx)))
+        if not ctx.settings.dry_run:
+            ctx.tasks.add(asyncio.create_task(watchdog.run(ctx)))
     else:
         emit(ctx, "error", "app", payload={"where": "start", "error": "PIXEL_API_KEY is not set: not polling"})
     try:
