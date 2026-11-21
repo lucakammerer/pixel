@@ -215,12 +215,11 @@ def _sentence(text: str) -> str:
 
 
 def ready_date(text: str) -> date | None:
-    """The date the cargo is ready: the first date after "ready", else the only date in the request."""
+    """The date the cargo is ready: the first date after "ready". Any other date may be a deadline, so none."""
     found = READY.search(text)
-    dates = DATE.findall(text)
-    groups = found.groups()[1:] if found else dates[0] if len(dates) == 1 else None
-    if not groups:
+    if not found:
         return None
+    groups = found.groups()[1:]
     y, m, d, dd, mm, yy = groups
     try:
         return date(int(y), int(m), int(d)) if y else date(int(yy), int(mm), int(dd))

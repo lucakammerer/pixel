@@ -213,3 +213,7 @@ def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
     _, body = compose.render(rfq("en"), pickup, request=request)
     assert "Wednesday 25 November" in body and "Sunday 29 November" in body  # 3 days transit, a day to the airport
     assert "single air waybill" in body and body.count("1234.57 EUR") == 1
+
+
+def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
+    assert compose.ready_date("Please quote 300 kg, it must arrive by 2026-12-01.") is None
