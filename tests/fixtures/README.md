@@ -23,6 +23,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - Spreadsheet changes need no files: `tools/benchmark_generalization.py` `XLSX_CHANGES` edits every kit `.xlsx` in
   memory and requires the original's tariffs or a refusal. Known gaps for them go in
   `tariffs/variants/xlsx_known_gaps.json`, keyed `change:file`.
+- `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
+  among airlines the customer's wish decides, not the 50/50 rule of R15.
 
 A row or variant may carry `known_gap`: the reference answer is right and the code is not yet. The note names what
 the code does, why it matters for the price, and ends with `Owner: <role>.`. The benchmark reports it as a gap
