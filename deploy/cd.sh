@@ -50,7 +50,13 @@ move() {
   in_app "uv sync --locked --no-dev -q"
 }
 # The live commit is not in $new: deployed by hand (tools/deploy.sh) and not merged yet, or $new is older than it.
-behind() { ! as git -C "$REPO" merge-base --is-ancestor "$(as git -C "$APP" rev-parse HEAD)" "$new" 2> /dev/null; }
+# After 10 minutes main wins: a branch rebased after its hand deploy never puts that commit into main.
+behind() {
+  head=$(as git -C "$APP" rev-parse HEAD)
+  as git -C "$REPO" merge-base --is-ancestor "$head" "$new" 2> /dev/null && return 1
+  grep -q "^$head " "$CD/behind" 2> /dev/null || echo "$head $(date +%s)" > "$CD/behind"
+  [ $(($(date +%s) - $(cut -d' ' -f2 "$CD/behind"))) -lt 600 ]
+}
 # A change to these on main takes effect only once installed by hand; say so instead of installing it.
 pinned() {
   cmp -s "$APP/deploy/cd.sh" "$CD/cd.sh" || log "deploy/cd.sh on main differs from $CD/cd.sh, install it by hand"
