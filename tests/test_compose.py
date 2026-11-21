@@ -70,9 +70,9 @@ def test_reply_subject_name_and_signer():
                           closing="Have a good day.")  # fmt: skip
     subject, body = compose.render(rfq("en"), OPTION, prose, "Machine parts to BBB", SIGNER)
     assert subject == "Re: Machine parts to BBB"
-    assert body.startswith("Hello Anna,\n\nHappy to help get the machine parts moving quickly.")
-    # The mail ends on the booking sentence and the signature: no stock closing line (R31).
-    assert "Have a good day" not in body and body.endswith(f"Best regards,\n{SIGNER}\n{compose.COMPANY}")
+    assert body.startswith("Hello Anna,\n\nHappy to help get the machine parts moving quickly.\n\n")
+    # The model's last line closes the booking paragraph, right before the signature (R31).
+    assert body.endswith(f"Have a good day.\n\nBest regards,\n{SIGNER}\n{compose.COMPANY}")
     assert compose.reply_subject("AW: Anfrage") == "AW: Anfrage" and compose.reply_subject("") is None
 
 
@@ -245,7 +245,7 @@ def test_the_customers_own_closing_is_answered_in_kind():
     )
     _, body = compose.render(rfq("en"), OPTION, request=request)
     assert "Have a lovely day too!\n\nBest regards to Exampletown,\nLena Berger" in body
-    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 5
+    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 6
     assert body.count("1234.57 EUR") == 1 and compose.check(body, rfq("en"), OPTION)
     german = "Guten Tag,\n\nbitte um ein Angebot.\n\nEin schönes Wochenende und Grüße aus Exampletown\nAnna Muster"
     _, body = compose.render(rfq("de"), OPTION, request=german)
@@ -254,9 +254,38 @@ def test_the_customers_own_closing_is_answered_in_kind():
 
 def test_an_opening_that_repeats_the_mail_back_is_dropped():
     echo = "I've noted that the delivery to the airport is arranged by you."
-    two = "Thanks for the machine parts request. We will take good care of it."
-    for intro in (echo, two):
+    robotic = "Thank you for your inquiry regarding your shipment details."
+    stiff = "Thank you for your inquiry regarding the laboratory glassware shipment."
+    three = "Thanks for the machine parts request. We will take good care of it. It is a pleasure."
+    for intro in (echo, robotic, stiff, three):
         assert compose.clean({"intro": intro}, rfq("en"), message(), SIGNER).intro is None
+
+
+def test_a_natural_two_sentence_opening_stands_in_its_own_paragraph():
+    """Round 22: a warm two-beat opening was dropped for its second sentence, and a kept one ran into the price."""
+    intro = "Sounds like these machine parts are in a hurry. I got straight onto it for you."
+    prose = compose.clean({"intro": intro}, rfq("en"), message(), SIGNER)
+    assert prose.intro == intro
+    _, body = compose.render(rfq("en"), OPTION, prose, request=message().body)
+    paragraphs = body.split("\n\n")
+    assert paragraphs[1] == intro and "1234.57 EUR" in paragraphs[2] and "1234.57 EUR" not in paragraphs[1]
+    assert compose.check(body, rfq("en"), OPTION)
+
+
+def test_the_closing_slot_ends_the_booking_paragraph():
+    closing = "Just let me know if anything changes on your side."
+    prose = compose.clean({"closing": closing}, rfq("en"), message(), SIGNER)
+    assert prose.closing == closing
+    _, body = compose.render(rfq("en"), OPTION, prose, request=message().body)
+    assert body.endswith(f"{closing}\n\nBest regards,\n{SIGNER}\n{compose.COMPANY}")
+    assert body.count(closing) == 1 and compose.check(body, rfq("en"), OPTION)
+    # A closing of two sentences is dropped; the customer's own wish, answered in kind, takes its place.
+    assert compose.clean({"closing": "Happy to adjust. Just ask."}, rfq("en"), message(), SIGNER).closing is None
+    _, wished = compose.render(rfq("en"), OPTION, prose, request="Hi,\n\nquote please. Have a nice day!\n\nTom")
+    assert closing not in wished and "Have a nice day too!" in wished
+    german = compose.clean({"closing": "Melden Sie sich gerne, falls sich bei Ihnen etwas ändert."}, rfq("de"),
+                           message(), SIGNER)  # fmt: skip
+    assert german.closing and compose.check(compose.render(rfq("de"), OPTION, german)[1], rfq("de"), OPTION)
 
 
 def test_two_sessions_do_not_read_alike():

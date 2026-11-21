@@ -36,8 +36,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
   when the postcode is missing, including when the quoted pickup price is for the zone pending address confirmation.
 - `pricing/bids.py` `parse` binds the amount to its label and unit. `pricing/calc.py` multiplies rates per kg by
-  chargeable weight, preserves exchange-rate precision during conversion and rounds transit in hours up to whole
-  days. `pricing/engine.py` starts carrier sourcing when the portal is slow or unavailable.
+  chargeable weight, preserves exchange-rate precision during conversion, converts the selected option into
+  `rfq.currency` via `in_currency` when an exchange rate is available in the session or recent `option.found`
+  events (`agent.py` `_fx_for`), and rounds transit in hours up to whole days. `pricing/engine.py` starts carrier
+  sourcing when the portal is slow or unavailable.
 
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
   weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly
@@ -49,25 +51,29 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose the way a
   clerk would: greeting in the customer's register (`register`: formal "Dear", neutral "Hello", casual "Hi") with
-  the first name they signed with (the model's slot, else `signed_name` by rule), one paragraph that opens with a
-  short line (the model's, else a thank-you naming the goods in the customer's own words, `goods_of`) and gives the quoted total and its currency, carrier, transit, what is included and the chargeable
-  weight only when it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with
-  the booking sentence, and a person's signature (`PIXEL_SIGNER`). "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `in_kind` answers the customer's own closing:
-  a wish for the day is returned, and the sign-off goes to the town they greet from, or reads "Cheers" or "Viele
-  Grüße" when theirs does; without one, the sign-off of their register and no closing line. Code formats every
-  number and name; three to four phrasings per sentence, picked by session, so two quotes
-  do not read alike. `check` proves the finished mail holds the total exactly once with its currency, carrier and
-  transit; on failure the mail is rendered without the model's slots (R9, P1).
+  the first name they signed with (the model's slot, else `signed_name` by rule), a short opening paragraph (the
+  model's intro, else a thank-you naming the goods in the customer's own words, `goods_of`), then an offer paragraph
+  giving the quoted total and its currency, carrier, transit, what is included and the chargeable weight only when
+  it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with the booking
+  sentence (and optional model `closing` when no customer wish is already answered), and a person's signature
+  (`PIXEL_SIGNER`). "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!");
+  `in_kind` answers the customer's own closing: a wish for the day is returned, and the sign-off goes to the town
+  they greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, the sign-off of their register.
+  Code formats every number and name; three to four phrasings per sentence, picked by session, so two quotes do not
+  read alike. `check` proves the finished mail holds the total exactly once with its currency, carrier and transit;
+  on failure the mail is rendered without the model's slots (R9, P1).
 - `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
   own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
   transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
   when they ask for the earliest departure, one air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
-  `closing`, on `PIXEL_MODEL_PROSE` when set. The intro is one short sentence; `clean` drops it when it repeats the mail back ("I've noted", "the details you
-  provided") or runs past one sentence. The closing slot is no longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a
-  currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German
-  `du`, or is too long; the first name must stand in the customer's mail. The checked slots are stored as
+  `closing`, on `PIXEL_MODEL_PROSE` when set. The intro is one or two short sentences (up to 180 chars); `clean`
+  drops it when it repeats the mail back ("I've noted", "the details you provided", "inquiry regarding") or runs
+  past two sentences. `closing` is one short optional sentence (up to 140 chars), rendered at the end of the booking
+  paragraph when no customer wish is already echoed. `clean` drops each slot that holds a digit, a three-letter
+  code, a currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language,
+  German `du`, or is too long; the first name must stand in the customer's mail. The checked slots are stored as
   `quote.prose`, so the fallback quote and the booking mails use them too.
 - `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.

@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from pixel import llm
 from pixel.agents.rfq import compose, dangerous, extract
@@ -9,7 +10,7 @@ from pixel.core import events, feedback, outbox, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.crm import quotes
-from pixel.pricing import engine, portal_rates, selection, session, store
+from pixel.pricing import calc, engine, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
@@ -27,8 +28,36 @@ AIRPORTS_SCHEMA = {
 }
 
 
+def _fx_for(ctx: Context, currency: str, options: list[RateOption]) -> Decimal | None:
+    if currency == "EUR":
+        return Decimal(1)
+    for option in options:
+        rate = option.fx_eur
+        if option.currency == currency and rate is not None and rate.is_finite() and rate > 0:
+            return rate
+    row = ctx.db.execute(
+        """
+        SELECT json_extract(payload, '$.option.fx_eur')
+        FROM events
+        WHERE kind = 'option.found'
+          AND json_extract(payload, '$.option.currency') = ?
+          AND json_extract(payload, '$.option.fx_eur') IS NOT NULL
+        ORDER BY id DESC LIMIT 1
+        """,
+        (currency,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return Decimal(str(row[0]))
+    except InvalidOperation:
+        return None
+
+
 def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
     option = selection.select(rfq, options)
+    if rfq.currency and option.currency != rfq.currency:
+        option = calc.in_currency(option, rfq.currency, _fx_for(ctx, rfq.currency, options))
     subject, body = compose.render(
         rfq,
         option,

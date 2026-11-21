@@ -1,6 +1,6 @@
 """The quote mail. Code writes every number and name as prose; the model writes three small slots around it (R31):
-the customer's first name and one short opening line (the closing slot is no longer rendered). Slots that fail a check are
-dropped, never the quote (P1, R9)."""
+the customer's first name, a short opening in a paragraph of its own and an optional last line before the sign-off.
+Slots that fail a check are dropped, never the quote (P1, R9)."""
 
 import json
 import random
@@ -268,17 +268,22 @@ TEXT = {
 }
 
 PROSE_SYSTEM = (
-    "You are an air export coordinator at a freight forwarder, replying by mail to a customer who asked for an air "
-    "freight quote. Code writes the greeting, the price, the routing and the sign-off; you write only three short "
-    "pieces, in the language with ISO code {language}, matching the customer's tone (German: always formal Sie). "
+    "You are an air export coordinator at a forwarder's Munich desk, answering a customer by mail. Code writes the "
+    "greeting, the price, the routing and the sign-off; you write only three short pieces, in the language with "
+    "ISO code {language}. Match how the customer writes: relaxed and friendly when they write 'Hi' or 'Cheers', "
+    "warm and professional when they write 'Dear' or 'Kind regards', German always formal Sie. "
     "first_name: the customer's first name only if they signed the mail with it, else null. "
-    "intro: ONE short sentence, at most fifteen words, the way a colleague opens a reply: a thank-you with one "
-    "specific word about the goods or the urgency. Never repeat or summarise their mail back to them, and never "
-    "say that you noted, read or received their details. "
-    "closing: always null. "
+    "intro: one or two short sentences, the way a person opens a reply to someone they like working with: react "
+    "in plain words to what they ship, the hurry or the context, for example 'Glassware is always one we handle "
+    "with a little extra care.' or 'Sounds like this one is in a hurry, so I got straight onto it.' Never open "
+    "with 'Thank you for your inquiry regarding', 'Thank you for the details on' or a summary of their mail, and "
+    "never say that you noted, read or received anything. "
+    "closing: one short, natural last line before the sign-off, such as 'Just let me know if anything changes on "
+    "your side.' or 'Happy to adjust if your schedule shifts.', or null when the mail reads better without it; "
+    "never a greeting, a sign-off or a wish for the day. "
     "Never write digits, numbers, prices, currencies, dates, weekdays, months, airlines, airports, cities or "
-    "countries. Do not greet and do not sign. Sound like a person, not a template: no 'we are pleased to', no "
-    'exclamation marks. Answer as JSON {{"first_name": ..., "intro": ..., "closing": ...}}.'
+    "countries. Sound like a person, not a template: no 'we are pleased to', no 'do not hesitate', no exclamation "
+    'marks. Answer as JSON {{"first_name": ..., "intro": ..., "closing": ...}}.'
 )
 NULLABLE = {"type": ["string", "null"]}
 PROSE_FIELDS = {"first_name": NULLABLE, "intro": NULLABLE, "closing": NULLABLE}
@@ -302,10 +307,12 @@ FRAME = re.compile(r"^\s*(hello|hi|dear|hallo|guten tag|sehr geehrte)\b|\b(best 
                    r"freundliche grüße|mit freundlichen)\b", re.IGNORECASE)  # fmt: skip
 INFORMAL_DE = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer|eure\w*)\b", re.IGNORECASE)
 NAME = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]{1,19}")
-LIMITS = {"intro": 140, "closing": 140}
-# An opening that hands the customer's mail back to them, or runs past one sentence, reads like a machine.
-ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|bezüglich|sorgfältig|"
-                  r"zur Kenntnis)\b|[.!?]\s+\S", re.IGNORECASE)  # fmt: skip
+LIMITS = {"intro": 180, "closing": 140}
+SENTENCES = {"intro": 2, "closing": 1}
+# An opening that hands the customer's mail back to them reads like a machine.
+ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|(?:inquiry|enquiry|"
+                  r"request) regarding|bezüglich|sorgfältig|zur Kenntnis)\b", re.IGNORECASE)  # fmt: skip
+NEXT_SENTENCE = re.compile(r"[.!?]\s+\S")
 FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
 CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
@@ -526,7 +533,7 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     if WELL.search(request):
         intro = f"{pick(t['well_back'])} {intro}"
     site = "warehouse" if WAREHOUSE.search(request) else "site"
-    offer = [intro, price_line, basis.format(trucker=option.trucker, site=site)]
+    offer = [price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
     book = [pick(t["valid"]).format(until=_until(rfq, option, t))] if option.valid_until else []
@@ -536,8 +543,12 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         book.append(t["book_air_only"] if air_only else pick(t["book"]))
     name = prose.first_name or signed_name(request, signer)
     wish, bye = in_kind(request, lang, tone, name)
+    if prose.closing and not wish:  # the customer's own wish answered is closing enough
+        book.append(_sentence(prose.closing))
     lines = [
         t["hello_name"][tone].format(name=name) if name else t["hello"],
+        "",
+        intro,
         "",
         " ".join(offer),
         "",
@@ -600,7 +611,7 @@ def _sentence_ok(text: str, slot: str, lang: str, banned: set[str]) -> bool:
         return False
     if DIGIT.search(text) or CODE.search(text) or SYMBOL.search(text) or CALENDAR.search(text) or FRAME.search(text):
         return False
-    if slot == "intro" and ECHO.search(text):
+    if len(NEXT_SENTENCE.findall(text)) >= SENTENCES[slot] or (slot == "intro" and ECHO.search(text)):
         return False
     lowered = text.casefold()
     if any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowered) for name in banned):
