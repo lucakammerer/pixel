@@ -87,5 +87,5 @@ Each lives in one place; change it there.
 | --- | --- | --- |
 | Q4 | The best price is the all-in total of the option the customer asked for, pickup included | `engine.combine` |
 | Q6 | Balanced = price as a multiple of the best price plus speed as a multiple of the best speed, equal weights, among bids only (fits six scored door-to-port rounds; not confirmed by 5U); the winner then competes by the customer's wish | `selection.balanced`, `selection.select` |
-| Q7 | We quote in the chosen rate's own currency and compare in EUR with the rate's exchange rate | `selection.select`, `compose.render` |
+| Q7 | We quote in the currency the customer asked for, converted by `calc.in_currency` with an exchange rate one of the request's own options carries (else in the rate's own currency), and compare in EUR with the rate's exchange rate | `selection.select`, `agent._quote`, `compose.render` |
 | Q13 | The pickup zone is the first two digits of the postcode | `pickup.zone_of` |
