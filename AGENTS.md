@@ -135,8 +135,9 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
 5. **The host deploys itself, no model and no Mac:** `pixel-cd.timer` runs `deploy/cd.sh` every 30 s as root on
    the live host. It fetches `origin/main` into its own clone `/opt/pixel/cd/repo` (read-only deploy key of the user
    pixel) and always takes the newest commit, never one that does not hold the live commit: a commit deployed by hand
-   stays live until main holds it. When every changed path is under `docs/`, `bench/`, `tests/`, `.github/`, is a
-   top-level `.md` file or belongs to the deploy job itself, it moves the live checkout without a restart. Otherwise it tests the commit in the clone (`uv sync --locked`, `uv run pytest -q`, `uv run ruff check .`);
+   stays live until main holds it, at most 10 minutes. When every changed path is under `docs/`, `bench/`, `tests/`,
+   `.github/`, is a top-level `.md` file or belongs to the deploy job itself, it moves the live checkout without a
+   restart. Otherwise it tests the commit in the clone (`uv sync --locked`, `uv run pytest -q`, `uv run ruff check .`);
    red is refused for good and sent to `PIXEL_ALERT_URL`. Green waits for `tools/window.py`, at most one restart per
    round and from a request's third minute on; a merge since the live commit with `URGENT` in its title lifts both
    (the answer to the current request must still be out). Then it moves the live checkout, `uv sync --locked --no-dev`,
