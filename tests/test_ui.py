@@ -79,8 +79,20 @@ def test_takeover_edit_send_release(client, pipe):
     page = client.get("/sessions/2").text
     assert "Draft text" in page and "Release to autopilot" in page
 
-    client.post("/sessions/2/send", data={"to": "ops@globex.example", "subject": "Your quote", "body": "Kestrel Airways, 3 days, EUR 370.74 all-in."})
-    assert pipe.sent[-1] == {"to": "ops@globex.example", "subject": "Your quote", "body": "Kestrel Airways, 3 days, EUR 370.74 all-in.", "purpose": "quote"}
+    client.post(
+        "/sessions/2/send",
+        data={
+            "to": "ops@globex.example",
+            "subject": "Your quote",
+            "body": "Kestrel Airways, 3 days, EUR 370.74 all-in.",
+        },
+    )
+    assert pipe.sent[-1] == {
+        "to": "ops@globex.example",
+        "subject": "Your quote",
+        "body": "Kestrel Airways, 3 days, EUR 370.74 all-in.",
+        "purpose": "quote",
+    }
     assert quotes.for_session(pipe.ctx, 2).status == QuoteStatus.SENT
     assert "Draft text" not in client.get("/sessions/2").text
 

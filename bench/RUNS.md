@@ -128,4 +128,9 @@ What follows:
   low) and 16 and 18 with one (too high: the scorer's best lies below every option at the history zone we saw).
   Which pickup the scorer means is unproven; evidence is with the main loop. Next: switch the reading as soon as
   a verdict or the feedback analysis shows what fits.
+- 21.11. 19:05, ask instead of guessing: asked after the round, Lindqvist (round 18) named 51115 Bergisch Gladbach
+  and Weidner (round 20) Augsburg; the history was right once (round 19). A door request that names no place now
+  sends one question for exactly the missing facts and is read again with the answer; the earlier site is only the
+  fallback after 60 s. Next: the verdict of the first round that gets the question first (does it count as our
+  first reply?).
 

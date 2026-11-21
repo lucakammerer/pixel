@@ -87,3 +87,10 @@ async def test_a_request_in_tonnes_between_cities_is_a_request_by_rules(ctx):
            "body": "Hello, we need to ship 1.2 t of machine parts from Munich to Tokyo.", "in_reply_to": None,
            "references": [], "received_at": "2026-11-21T16:00:00+00:00", "attachments": []}  # fmt: skip
     assert await classify(ctx, poller.ingest(ctx, to_message(raw, "in"))) == MailKind.CUSTOMER_RFQ
+
+
+async def test_the_customers_answer_to_our_question_is_left_to_the_waiting_request(ctx):
+    rfq = mail(RFQ)  # Lindqvist; her answer quotes our question 4723 in the thread
+    _store(ctx, rfq.model_copy(update={"id": 4723, "direction": "out", "to": rfq.sender}), "question")
+    answer = poller.ingest(ctx, mail("customer-names-pickup.json"))
+    assert await classify(ctx, answer) == MailKind.OTHER
