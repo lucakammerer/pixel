@@ -27,7 +27,8 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
   line, `Valid 01.11.2026 - 30.11.2026`; any of the date formats in `DATE_FORMATS`), the rate unit (`All rates are
   per 100 kg` divides every rate by 100), `Origin:` headings, a break header (`from 0 kg`, `-45`/`+45`, `0 kg+`; `-45`
   is the 0 kg break; `Fuel`/`Security` in the header mean surcharge columns), table rows (lane, transit and minimum
-  in the order the last header naming both gives them, `LEAD_COLUMN`, one rate per break), lane blocks (`Transit`, `Minimum`, `from N kg R`, `Fuel`, `Security` on their own lines,
+  in the order the header gives them, `_lead`: the line with the breaks or the one right above it, never a note,
+  one rate per break), lane blocks (`Transit`, `Minimum`, `from N kg R`, `Fuel`, `Security` on their own lines,
   across page breaks) and surcharge sentences (`<lane>: fuel X per kg, security Y per kg`). A lane is the first two
   IATA codes before the first number, or one code under an `Origin:` heading. A row with the wrong count of numbers
   refuses the whole file (ValueError) instead of guessing.
@@ -57,7 +58,8 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 - A sheet read by column position turns into wrong values when an update reorders its columns: Minimum and Transit
   swapped read the minimum as transit days, and `check` only noticed when the numbers left its ranges. `_read`
   takes their order from the header, also when it stands one row above the breaks (`Destination  Transit  Minimum`
-  over `-45  +45 ...`); `check` refuses a minimum that looks like days.
+  over `-45  +45 ...`), never from a note or a legend line that names both words; `check` refuses a minimum that looks
+  like days.
   `tests/fixtures/tariffs/variants/` holds sheets with one change each; every change must be parsed right or
   refused, never parsed into wrong values.
 - A sheet in another currency than EUR parsed, but sheet pricing had no exchange rate for it and dropped the sheet.

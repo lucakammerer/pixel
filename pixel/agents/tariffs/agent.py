@@ -199,6 +199,13 @@ def _codes(text: str, currency: str | None) -> list[str]:
     return [c for c in CODE.findall(text) if c != currency]
 
 
+def _lead(line: str) -> list[str] | None:
+    named = [m.lastgroup for m in LEAD_COLUMN.finditer(line)]
+    return (
+        named if sorted(named) == ["minimum", "transit"] and not re.search(r"\d", BREAK_TOKEN.sub("", line)) else None
+    )
+
+
 def _read(lines: list[str]) -> Sheet:
     sheet = Sheet()
     origin: str | None = None
@@ -207,9 +214,11 @@ def _read(lines: list[str]) -> Sheet:
     block: tuple[str, str] | None = None
     lead = ["transit", "minimum"]
     per_kg = Decimal(1)
+    above = ""
     for raw in lines:
         line = raw.strip()
         lower = line.lower()
+        previous, above = above, line
         if not line:
             continue
         if sheet.carrier is None:
@@ -235,11 +244,11 @@ def _read(lines: list[str]) -> Sheet:
             codes = _codes(line, sheet.currency)
             origin = codes[-1] if codes else None
             continue
-        named = [m.lastgroup for m in LEAD_COLUMN.finditer(line)]
-        if sorted(named) == ["minimum", "transit"] and not re.search(r"\d", BREAK_TOKEN.sub("", line)):
-            lead = named
         tokens = list(BREAK_TOKEN.finditer(line))
         if len(tokens) >= 2:
+            # The header orders the columns: on the breaks' line or right above it, never a note or legend sentence.
+            if named := _lead(line) or (not re.search(r"[;:]|\.$", previous) and _lead(previous)):
+                lead = named
             breaks = [_break_kg(t) for t in tokens]
             surcharge_columns = "fuel" in lower and "security" in lower
             block = None
