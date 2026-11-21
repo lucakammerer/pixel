@@ -93,7 +93,7 @@ uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored ma
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
 uv run python -m tools.kpi                      # accuracy, cost and speed on the replayed request fixtures, as JSON
 uv run python -m tools.benchmark_generalization # fixtures vs code: prices, sheets, wording, routing, bids; exit 1 on a fail
-uv run python -m tools.benchmark_generalization --gaps   # open known gaps, grouped by owner
+uv run python -m tools.benchmark_generalization --gaps   # the channel matrix, then the open known gaps by owner
 uv run python -m tools.simulate                 # generated mails and attachments per axis: right, model, wrong
 tools/kpi_pr.sh <pull request>                  # the same online on the live host, posted as a comment
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md

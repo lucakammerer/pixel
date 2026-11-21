@@ -351,6 +351,14 @@ Shared, reviewed by whoever did not write the change: `pixel/crm/`, `pixel/ui/ro
 `pixel/agents/rfq/booking.py`, `pixel/agents/tracking/`, `pixel/contracts.py`, `docs/`, `tools/`.
 
 Generalization and Frontend work in files that cannot break a quote; a pipeline owner merges their branches.
+
+**Channel matrix.** 5U raises the difficulty one channel at a time: rounds 63 to 67 were lost because carriers
+suddenly answered only in attachments, a channel no fixture or generated case had, while our cases went deep on
+shapes already seen. `tools/benchmark_generalization.py` section 12 holds every mail kind the router knows against
+every place its information can sit (body; pdf, scan, docx, xlsx, txt or csv, audio attachment; body and attachment
+disagreeing); each cell is covered by a case or listed with its owner in `tests/fixtures/channel-gaps.json`, and
+`--gaps` prints the holes. The rule: every new shape seen live adds its cell's neighbours, the same kind in every
+other carrier of information, before the next one goes live.
 Everyone takes a night shift at the dashboard.
 
 Every pull request states what it changes in accepted rate, response time or spend per quote, measured on replayed

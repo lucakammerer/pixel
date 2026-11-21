@@ -42,7 +42,14 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   contradicts itself), which source a right reading takes for weight and volume, and the round or pull request that
   says so. The generator computes each case's answer from its own figures and this table, never from the code.
   `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
-  `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right.
+  `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right. The same
+  family puts each other kind's decisive fact (an acceptance or decline, the tracking desk's reference, a booking
+  confirmation's references, a whole tariff) only in an attachment, in every format.
+- `channel-gaps.json`: the cells of the channel matrix (`tools/benchmark_generalization.py` section 12: every mail
+  kind against where its information sits, body, pdf, scan, docx, xlsx, txt or csv, audio, or body and attachment
+  disagreeing) that no captured mail, kit sheet, pickup offer or generated case covers yet, keyed
+  `"<kind> <channel>"`, each note ending `Owner: <role>.`. A cell with neither fails the benchmark and the tests; a
+  listed cell that a case covers now is printed so its note goes.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 

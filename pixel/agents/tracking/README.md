@@ -43,6 +43,9 @@ in the inbound thread and uses no gateway call.
 - The tracking desk names no reference. It writes the shipment as the customer requested it: for a door-to-port
   request `<pickup postcode> to <destination>`, with the weight and the company name. The company is matched against
   the customer's address, the postcode against the request the shipment was quoted for.
+- The reference can stand only in an attached enquiry: `question` gives `match` the subject, the body and every
+  attachment code can read. A scan, a voice message, and an attachment that disagrees with the mail are open cells
+  of the channel matrix (`tests/fixtures/channel-gaps.json`).
 - The status words come from the shipment (`booking`, `booked`, `confirmed`, `failed`); never promise a flight or a
   delivery date we do not hold.
 
