@@ -29,7 +29,7 @@ The answer greets the asker by the name they signed with and signs off as the qu
 town they greet from, or with their own "Viele Grüße" or "Cheers".
 `details` uses the ready date to calculate the arrival when that date is available. `VARIANT` picks the answer:
 `scored` (prose, then the record block with the customer's address), `a` (without the address, the pickup by town),
-`b` (the block's facts in the prose, no block). One variant per booked round, measured by the +10 on the board;
+`b` (the block's facts in the prose, no block), `c` (`b` without its filler sentences). One variant per booked round, measured by the +10 on the board;
 going back is that one line. Every variant carries our reference, the airline's, the airline, "booked and ready to
 ship", transit days, lane and weight. If there are several plausible shipments or none,
 the reply asks for a booking reference and includes no shipment records. The reply goes through the outbox

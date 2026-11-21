@@ -23,7 +23,8 @@ WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
 # "scored": prose, then the record block with the customer's address; scored +10 on every right first answer.
 # "a": the same without the address line, the pickup named by its town ("from your site in Bremen, flying HAM to EZE").
 # "b": as "a", the record block's facts in the prose and no block.
-VARIANT = "b"
+# "c": "b" without the filler ("It has not left yet:", "in case you need it"), every fact kept.
+VARIANT = "c"
 
 STATUS = {
     "booking": "is with {carrier} for booking, and I am waiting for their reply",
@@ -154,14 +155,18 @@ def _paragraph(s: Shipment, detail: Detail, today: date, variant: str) -> str:
     else:
         site = f"your site in {detail.town}" if detail.town else "your site"
         route = f"from {site}, flying {s.origin} to {s.destination}," if detail.postcode else None
-    statuses = {**STATUS, "confirmed": CONFIRMED} if variant == "b" else STATUS
+    short = variant == "c"
+    statuses = {**STATUS, "confirmed": CONFIRMED} if variant in ("b", "c") else STATUS
     status = statuses.get(s.status, "is in status " + s.status).format(carrier=s.carrier, under=under)
     text = [f"Your shipment of {s.weight_kg} kg {route or f'from {s.origin} to {s.destination}'} {status}."]
     if s.transit_days:
         transit = f"{s.transit_days} day{'' if s.transit_days == 1 else 's'} in transit"
         if detail.ready and s.status in ("booked", "confirmed"):
             arrive = day(detail.ready + timedelta(days=s.transit_days + (1 if detail.postcode else 0)))
-            if detail.ready > today:
+            if detail.ready > today and short:
+                text.append(f"It will be ready on {day(detail.ready)} and, with {transit}, should arrive at "
+                            f"{s.destination} on {arrive}.")  # fmt: skip
+            elif detail.ready > today:
                 text.append(f"It has not left yet: it will be ready on {day(detail.ready)}, and with {transit} it "
                             f"should arrive at {s.destination} on {arrive}.")  # fmt: skip
             else:
@@ -169,7 +174,7 @@ def _paragraph(s: Shipment, detail: Detail, today: date, variant: str) -> str:
                             f"{arrive}.")  # fmt: skip
         else:
             text.append(f"The routing takes {transit}.")
-    text.append(f"Our own reference for it is {s.id}, in case you need it.")
+    text.append(f"Our reference is {s.id}." if short else f"Our own reference for it is {s.id}, in case you need it.")
     return " ".join(text)
 
 
@@ -208,7 +213,7 @@ def answer(
         today = today or datetime.now(UTC).date()
         details = details or {}
         body = "\n\n".join(_paragraph(s, details.get(s.id, Detail()), today, variant) for s in found[:5])
-        if variant != "b":
+        if variant not in ("b", "c"):
             body += "\n\nHere is the status from our records:\n\n" + "\n\n".join(record(s, variant) for s in found[:5])
     return f"{hello}\n\n{body}\n\nJust reply if you need anything else.\n\n{bye}\n{signer}\n{COMPANY}"
 

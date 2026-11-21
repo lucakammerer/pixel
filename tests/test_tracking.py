@@ -88,7 +88,7 @@ async def test_the_desk_describes_a_door_shipment_by_pickup_postcode_weight_and_
     assert "lindqvist-medtech@hackloop.mail" not in body and "51447" not in body
 
 
-@pytest.mark.parametrize("variant", ["scored", "a", "b"])
+@pytest.mark.parametrize("variant", ["scored", "a", "b", "c"])
 def test_every_variant_carries_every_fact_the_scored_answer_carried(pipe, variant):
     s = shipped(pipe.ctx, 1, "lindqvist-medtech@hackloop.mail", "CGN", "ORD", 676, postcode="51447")
     body = agent.answer([s], None, details={s.id: agent.Detail(postcode="51447", town="Bergisch Gladbach")},
