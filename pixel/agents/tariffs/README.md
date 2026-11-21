@@ -19,7 +19,10 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 ## Implementation
 
 - `parse`: every text format becomes lines (`_lines`: xlsx rows, docx paragraphs and tables in order, PDF text,
-  txt), and one reader (`_read`) interprets them: title (`<carrier> | ...`), `Currency`, `Valid from/to` (also on one
+  txt; a voice message, mp3, wav, m4a or ogg, one line per spoken sentence by a local `faster-whisper` model
+  (`_transcribe`, no gateway spend, about a second per minute of speech; its ~150 MB download goes to the pixel
+  user's Hugging Face cache on first use) with spoken prices written as amounts, "340 euros and 60 cents" as
+  340.60 EUR (`_spoken`)), and one reader (`_read`) interprets them: title (`<carrier> | ...`), `Currency`, `Valid from/to` (also on one
   line, `Valid 01.11.2026 - 30.11.2026`; any of the date formats in `DATE_FORMATS`), the rate unit (`All rates are
   per 100 kg` divides every rate by 100), `Origin:` headings, a break header (`from 0 kg`, `-45`/`+45`, `0 kg+`; `-45`
   is the 0 kg break; `Fuel`/`Security` in the header mean surcharge columns), table rows (lane, transit and minimum

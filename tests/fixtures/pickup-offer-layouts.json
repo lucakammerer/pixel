@@ -1,5 +1,5 @@
 {
-  "note": "Trucker offers of rounds 63 and 64 (21.11.2026), sent only as an attachment: the mail body and the attachment's text as tariffs.agent._lines reads it. The waiting time per hour is never the price.",
+  "note": "Trucker offers of rounds 63 to 65 (21.11.2026), sent only as an attachment: the mail body and the attachment's text as tariffs.agent._lines reads it, or for a voice message the local transcript one sentence per line before _spoken. The waiting time per hour is never the price.",
   "offers": [
     {
       "layout": "letter",
@@ -36,6 +36,64 @@
       "total": "104.62",
       "currency": "EUR",
       "pickup_hours": 28
+    },
+    {
+      "layout": "voice_base_and_weight_charge",
+      "file": "voice-message.mp3",
+      "body": "Our dispatcher recorded our price offer as a voice message. You find the recording in the attachment (voice-message.mp3).",
+      "transcript": [
+        "Good day, Bodenzi Fract here, with a message for the forwarding team.",
+        "Collection at Postcode 51252, Delivery to Cologne Airport, 1,410 kilos.",
+        "The base charge is 115 euros.",
+        "The weight charge is 225 euros and 60 cents.",
+        "So the total is 340 euros and 60 cents.",
+        "Waiting time after the first 30 minutes is 45 euros for each hour.",
+        "And that is not part of the total.",
+        "We need 12 hours from your order to the collection.",
+        "The offer is valid until the 21st of November at 2132 UTC time.",
+        "The offer number is in the text of our mail.",
+        "No booking is necessary.",
+        "Goodbye."
+      ],
+      "total": "340.60",
+      "currency": "EUR",
+      "pickup_hours": 12
+    },
+    {
+      "layout": "voice_said_twice",
+      "file": "voice-message.mp3",
+      "body": "Our dispatcher recorded our price offer as a voice message. You find the recording in the attachment (voice-message.mp3).",
+      "transcript": [
+        "Hi, this is the dispatcher at MainTel Transport Logistic.",
+        "I'm calling back about your pickup.",
+        "So we collect at Postcode 51943 and bring it to Cologne Airport.",
+        "You gave us 2869.06 kilos.",
+        "We can do that for 431 euros and 60 cents.",
+        "I say again, 431 euros and 60 cents, and that is all in.",
+        "The driver can be there 13 hours after your order.",
+        "I keep the price until the 21st of November at 2144 UTC time.",
+        "You find the offer number in my mail.",
+        "You do not need to book.",
+        "Okay, bye."
+      ],
+      "total": "431.60",
+      "currency": "EUR",
+      "pickup_hours": 13
     }
+  ],
+  "request_transcript": [
+    "Hello, this is Klaus Weidner from Weidner Speelvaring GMBH.",
+    "I am calling with a request for an air freight quotation.",
+    "We have textile samples, 11 pieces.",
+    "The gross weight is 1,804 kilos.",
+    "The volume is 17.18 cubic meters.",
+    "Please collect the goods at our site in Germany.",
+    "The postcode is 51943, that is in Bergisch Gladbach.",
+    "Please arrange the truck.",
+    "The shipment goes to Lima Airport Airport Code LIM.",
+    "The goods are ready on the 24th of November.",
+    "We want the cheapest option.",
+    "Please send me your all-in-pricing euros by mail.",
+    "Thank you and goodbye."
   ]
 }

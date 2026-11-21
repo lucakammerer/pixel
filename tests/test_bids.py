@@ -12,6 +12,7 @@ import pytest
 
 from pixel import llm
 from pixel.agents.rfq import agent, extract
+from pixel.agents.tariffs.agent import _spoken
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import Attachment, LaneTariff, LlmResult, Message, RateOption, Rfq, Source
@@ -114,6 +115,8 @@ def kinds(ctx, kind):
         ("Hello,\nour all-in price is EUR 1.234,50, transit 3 days.\nRegards", "1234.50", "EUR", 3),
         ("Freight 2.10/kg\nTotal: 980.00 USD (1 USD = 0.92 EUR)\nTransit time: 4 days", "980.00", "USD", 4),
         ("We offer 845,00 € all in, 2 Tage Laufzeit.\n\n> Please quote 100 kg, EUR 5 per kg", "845.00", "EUR", 2),
+        ("EUR 900,00 all-in. Transitzeit: 3 Tage. Laufzeit des Angebots: 14 Tage.", "900.00", "EUR", 3),
+        ("EUR 900.00 all-in, 2 days. Transit via DXB, 1 day stopover.", "900.00", "EUR", 2),
     ],
 )
 def test_rules_read_a_bid(body, total, currency, days):
@@ -234,9 +237,11 @@ OFFERS = json.loads((Path(__file__).parent / "fixtures" / "pickup-offer-layouts.
 
 @pytest.mark.parametrize("offer", OFFERS, ids=[o["layout"] for o in OFFERS])
 def test_rules_read_every_attached_offer_layout_and_never_the_waiting_time(offer):
-    """Rounds 63 and 64: a letter, a table with its currency only in the header, a quotation. "45.00 EUR for each
-    hour" of waiting read as the price would quote the pickup far too low; a model call per trucker costs spend."""
-    body = bids._own_text(offer["body"]) + "\n" + offer["attachment_text"]
+    """Rounds 63 to 65: a letter, a table with its currency only in the header, a quotation, a voice message. "45.00
+    EUR for each hour" of waiting read as the price would quote the pickup far too low; a model call per trucker
+    costs spend."""
+    text = offer.get("attachment_text") or "\n".join(_spoken(offer["transcript"]))
+    body = bids._own_text(offer["body"]) + "\n" + text
     message = Message(id=9, session_id=1, direction="in", sender="t@x", to="us@x", subject="Re: Pickup", body=body,
                       sent_at=NOW)  # fmt: skip
     found = bids.parse(message, rfq(), needs_transit=False)
