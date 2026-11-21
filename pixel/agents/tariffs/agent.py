@@ -35,7 +35,7 @@ LEAD_COLUMN = re.compile(
 IMAGES = {".jpg", ".jpeg", ".png"}
 AUDIO = {".mp3", ".wav", ".m4a", ".ogg"}
 TEXTS = {".txt", ".csv", ".tsv", ".md", ".json", ".xml"}
-READABLE = {".xlsx", ".docx", ".pdf", ".html", ".htm", ".eml", ".zip", *TEXTS, *AUDIO}
+READABLE = {".xlsx", ".xls", ".docx", ".pdf", ".html", ".htm", ".eml", ".zip", *TEXTS, *AUDIO}
 # A file inside a zip larger than this is skipped: no archive may stall a request's handler.
 ZIP_MEMBER_BYTES = 20_000_000
 SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
@@ -148,6 +148,8 @@ def _kind(filename: str, content: bytes) -> str:
         return suffix
     if content.startswith(b"%PDF"):
         return ".pdf"
+    if content.startswith(b"\xd0\xcf\x11\xe0"):  # an old Office file: only a sheet has a reader
+        return ".xls"
     if content.startswith(b"PK"):
         try:
             names = set(zipfile.ZipFile(io.BytesIO(content)).namelist())
@@ -258,6 +260,30 @@ def _cell(value: object) -> str:
     return str(value).strip()
 
 
+def _xls_lines(content: bytes) -> list[str]:
+    """An Excel 97 sheet, as `.xlsx` rows read: xlrd gives every number as a float and a date as a day count."""
+    import xlrd
+
+    try:
+        book = xlrd.open_workbook(file_contents=content)
+    except xlrd.XLRDError as e:
+        raise Unreadable(f"no sheet in this office file: {e}") from e
+
+    def value(cell) -> object:
+        if cell.ctype == xlrd.XL_CELL_DATE:
+            return xlrd.xldate_as_datetime(cell.value, book.datemode)
+        if cell.ctype == xlrd.XL_CELL_NUMBER:
+            number = Decimal(repr(cell.value))
+            return int(number) if number == number.to_integral_value() else number
+        return cell.value
+
+    return [
+        "  ".join(_cell(v) for c in sheet.row(r) if (v := value(c)) is not None and str(v).strip())
+        for sheet in book.sheets()
+        for r in range(sheet.nrows)
+    ]
+
+
 def _lines(filename: str, content: bytes) -> list[str]:
     suffix = _kind(filename, content)
     if suffix == ".xlsx":
@@ -269,6 +295,8 @@ def _lines(filename: str, content: bytes) -> list[str]:
             for sheet in book.worksheets
             for row in sheet.iter_rows(values_only=True)
         ]
+    if suffix == ".xls":
+        return _xls_lines(content)
     if suffix == ".docx":
         import docx
         from docx.table import Table
