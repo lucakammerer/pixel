@@ -1,0 +1,45 @@
+{
+  "note": "An airline's answer that declines our lane, written in shapes besides the captured one, with the lanes a person reads as the ones it flies. null: in doubt, nothing is learned and the airline is asked again.",
+  "declines": [
+    {
+      "shape": "captured",
+      "mail": "mails/bid-decline-lane.json",
+      "lanes": ["CGN-NBO", "CGN-SIN", "DUS-BOM", "DUS-DEL", "DUS-JFK", "DUS-KUL", "FRA-ATL", "FRA-JNB", "FRA-TLV", "HAM-GRU", "MUC-LAX", "STR-EZE"]
+    },
+    {
+      "shape": "list first, semicolons, lower case, 'and'",
+      "body": "Hello,\n\nwe fly cgn-eze; dus-jfk and muc/lax.\n\nWe do not serve FRA-JFK, sorry.\n\nKind regards",
+      "lanes": ["CGN-EZE", "DUS-JFK", "MUC-LAX"]
+    },
+    {
+      "shape": "passive decline, bulleted list, 'to'",
+      "body": "FRA-JFK is not served by us. We operate:\n- CGN to EZE\n- DUS–JFK\n- HAM-GRU\n\nRegards",
+      "lanes": ["CGN-EZE", "DUS-JFK", "HAM-GRU"]
+    },
+    {
+      "shape": "list names the declined lane",
+      "body": "We do not serve FRA-JFK. We fly DUS-JFK, FRA-JFK.",
+      "lanes": null
+    },
+    {
+      "shape": "list says it is incomplete",
+      "body": "We do not serve this lane/zone: FRA-JFK.\nWe fly DUS-JFK, MUC-LAX, among others.",
+      "lanes": null
+    },
+    {
+      "shape": "list cut short",
+      "body": "We do not serve this lane/zone: FRA-JFK.\nWe fly DUS-JFK, MUC-LAX ...",
+      "lanes": null
+    },
+    {
+      "shape": "declines for capacity, not the lane",
+      "body": "Sorry, no capacity this week. We fly DUS-JFK.",
+      "lanes": null
+    },
+    {
+      "shape": "decline without a list",
+      "body": "We do not serve this lane/zone: FRA-JFK.",
+      "lanes": null
+    }
+  ]
+}

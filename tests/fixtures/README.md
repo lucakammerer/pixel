@@ -14,6 +14,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `rfqs/rewrites.jsonl`: several requests (lanes, weights, volumes, dimensions, fastest, door pickup), each written
   many ways, languages and number formats, with the same expected fields. `probe_*` rows test phrasings that trip
   keyword rules.
+- `lane-declines.json`: an airline's decline of our lane with the lanes it flies, in the captured shape and written
+  ones (list first, bullets, lower case, separators), plus declines that must teach nothing: a list that names the
+  declined lane, says it is incomplete or is cut short, a decline for capacity, a decline without a list.
 - `ratedesk-layouts.json`: the rate desk's captured answer as tables (header names, column order, currency in the
   header or the cell, German), with each priced airline read by hand; benchmark section 16 writes its own lines and
   each table into every attachment format behind a mail that only points to the file.
