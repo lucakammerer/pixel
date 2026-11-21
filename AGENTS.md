@@ -136,8 +136,9 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
    round unless a merge since the live commit has `URGENT` in its title, then moves the live checkout, `uv sync --locked --no-dev`,
    restarts and checks that the UI answers; if not, it goes back to the previous commit and alerts. Root runs only
    files installed by hand: the job as `/opt/pixel/cd/cd.sh` and the units in `/etc/systemd/system`. A merged change
-   to `deploy/cd.sh`, `deploy/pixel-cd.*` or `deploy/pixel.service` only logs that it differs; install it with
-   `sudo install` on the host. One line per decision in `/opt/pixel/cd/cd.log`; `touch /opt/pixel/cd/PAUSE` pauses
+   to `deploy/cd.sh`, `deploy/pixel-cd.*` or `deploy/pixel.service` only logs that it differs; install it on the host
+   under the job's lock and by rename, never in place, because `sh` reads a running script as it goes:
+   `sudo flock /opt/pixel/cd/lock sh -c 'install -m 755 <file> /opt/pixel/cd/cd.sh.new && mv /opt/pixel/cd/cd.sh.new /opt/pixel/cd/cd.sh'`. One line per decision in `/opt/pixel/cd/cd.log`; `touch /opt/pixel/cd/PAUSE` pauses
    it. A fix for a round we just lost may go live from its branch first (pause the job, `tools/deploy.sh`); it is
    merged right after.
 
