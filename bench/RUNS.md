@@ -113,4 +113,9 @@ What follows:
   the zone's airport wins unless the mail names the origin. #48: a refused model gives a guess, not a miss. Open for
   others: `rfq.currency` is read but used nowhere (a USD request gets an EUR quote); booking `intent` books "we will
   not go ahead". Next: replay every live request of the day offline after each round.
+- 21.11. 18:50, "pickup from our warehouse" with no place (rounds 15-18, all lost): #69 takes the site the customer
+  named in an earlier request, which turned two misses into quotes, but 15 and 17 went out without a pickup (too
+  low) and 16 and 18 with one (too high: the scorer's best lies below every option at the history zone we saw).
+  Which pickup the scorer means is unproven; evidence is with the main loop. Next: switch the reading as soon as
+  a verdict or the feedback analysis shows what fits.
 
