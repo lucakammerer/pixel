@@ -110,6 +110,20 @@ async def test_confirmation_marks_confirmed_and_tells_once(pipe, accepted):
     assert len(pipe.sent) == 1 and "BK-AB12CD34" in pipe.sent[0]["body"]
 
 
+async def test_confirmation_of_a_booking_by_mail_found_by_our_reference(pipe, accepted):
+    # Round 27: booked by mail, so no airline reference was stored; the confirmation came in a thread of its own.
+    pipe.ctx.portal = Portal(BookingUnavailable("Booking is down. Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    pipe.sent.clear()
+    body = f"Hello,\n\nyour booking BK-43VLF40X is confirmed.\n\nBooking reference: BK-43VLF40X\nYour reference: {b.team_reference}\n"
+    await booking.handle_confirmation(
+        pipe.ctx, mail(31, 31, sender="bookings@kestrel.example", subject="Booking BK-43VLF40X confirmed", body=body)
+    )
+    done = bookings.get(pipe.ctx, b.id)
+    assert done.status == BookingStatus.CONFIRMED and done.booking_reference == "BK-43VLF40X"
+    assert len(pipe.sent) == 1 and "BK-43VLF40X" in pipe.sent[0]["body"]
+
+
 @pytest.mark.parametrize(
     ("text", "said"),
     [

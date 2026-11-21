@@ -135,6 +135,12 @@ Three lines per scenario: what we tried, what changed, what is next.
   (Tobias Auer, 17:43:52 UTC, answered in the same second, after #126 went live at 17:42) brought +10. Changed:
   nothing; the tracking sign-off keeps no comma, as in every answer that scored. Next: round 27's question (Jonas
   Kessler, a carrier booked by mail), then the `human` column after #132.
+- 21.11. 19:05 CET: round 27 lost its +10 tracking. Booked by mail with Meridian Freightways; their reply
+  ("Booking reference: BK-43VLF40X, Status: booked", routed as a carrier bid) stored no reference, so their
+  "Booking BK-43VLF40X confirmed" came in a thread of its own, matched no booking (`error`: confirmation for an
+  unknown booking), the customer never heard and tracking said "waiting for their reply". Changed:
+  `handle_confirmation` finds the booking by our reference, which the confirmation names. Next: the first booking by
+  mail after this goes live, and whether its customer gets the confirmation.
 
 ### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
 

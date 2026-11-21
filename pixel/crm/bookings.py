@@ -21,6 +21,10 @@ def by_reference(ctx: Context, booking_reference: str) -> Booking | None:
     return _one(ctx, "UPPER(booking_reference) = UPPER(?)", booking_reference)
 
 
+def by_team_reference(ctx: Context, team_reference: str) -> Booking | None:
+    return _one(ctx, "UPPER(team_reference) = UPPER(?)", team_reference)
+
+
 def for_session(ctx: Context, session_id: int) -> Booking | None:
     """The session's newest booking."""
     return _one(ctx, "session_id = ?", session_id)
