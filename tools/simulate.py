@@ -4,6 +4,7 @@ by the code under test.
 
 uv run python -m tools.simulate            # per axis: read right, left to the model, read wrong
 uv run python -m tools.simulate --show 10  # the first wrong cases outside the known gaps, in full
+uv run python -m tools.simulate --seed 3   # the same grid with other figures; a failing seed becomes a fixture
 
 Two families. `document`: a mail with an attached packing list, letter of instruction or specification (PDF, xlsx,
 docx) in the layouts seen since round 33 and their neighbours. Which source a right reading takes depends on how
@@ -11,9 +12,10 @@ mail and document relate (`relation`): `tests/fixtures/rfqs/simulate-sources.jso
 a correction the customer makes or an attachment for another shipment is never read as "the document wins".
 `mail`: the cargo written in the mail alone, in the units and number formats customers use.
 
-Right: every judged field within 1% (a 1% volume error moves no price out of the 5% band). Model: the rules gave
-up and the model would read it, not measured offline. Wrong: the rules read a field wrong, a lost round. A wrong
-case inside `tests/fixtures/rfqs/simulate-known-gaps.json` is a known gap; any other fails the run.
+Right: every judged field within 1% or 0.005 (a volume written with two decimals); neither moves a price out of
+the 5% band. Model: the rules gave up and the model would read it, not measured offline. Wrong: the rules read a
+field wrong, a lost round. A wrong case inside `tests/fixtures/rfqs/simulate-known-gaps.json` is a known gap; any
+other fails the run.
 """
 
 import argparse
@@ -45,6 +47,7 @@ LB = D("0.45359237")
 ORIGINS, DESTINATIONS = ("MUC", "FRA", "HAM", "STR", "DUS"), ("GRU", "SGN", "CAI", "ORD", "PVG", "YYZ")
 GOODS = ("automotive sensors", "furniture samples", "spare parts", "laboratory glassware", "textile rolls")
 TOLERANCE = D("0.01")
+WRITTEN = D("0.005")  # half the last digit of a volume written with two decimals; under 1 kg chargeable
 
 
 @dataclass
@@ -356,8 +359,8 @@ class ModelNeeded(Exception):
 
 
 def _close(got, want) -> bool:
-    if isinstance(want, D):
-        return abs(D(got) - want) <= want * TOLERANCE
+    if isinstance(want, D):  # within 1%, or within the mail's written precision (0.38 cbm for a table's 0.384)
+        return abs(D(got) - want) <= max(want * TOLERANCE, WRITTEN)
     return got == want
 
 
@@ -441,14 +444,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--show", type=int, default=0, help="print this many wrong cases outside the known gaps")
     parser.add_argument("--family", choices=("document", "mail"))
+    parser.add_argument("--seed", type=int, help="draw other figures for the same grid (default: 7 and 11)")
     args = parser.parse_args()
-    cases = [c for c in (*document_cases(), *mail_cases()) if args.family in (None, c.family)]
+    seeds = {} if args.seed is None else {"seed": args.seed}
+    cases = [c for c in (*document_cases(**seeds), *mail_cases(**seeds)) if args.family in (None, c.family)]
     outcomes = asyncio.run(run(cases))
     report(outcomes)
     unknown = [o for o in outcomes if o.verdict == "wrong" and not o.gap]
     for o in unknown[: args.show]:
         print(f"\n--- {o.case.family} {o.case.axes}\n{'; '.join(o.wrong)}\n{o.case.body}")
-    stale = stale_gaps(outcomes) if not args.family else []
+    stale = stale_gaps(outcomes) if not (args.family or seeds) else []
     print(f"\n{len(unknown)} wrong outside the known gaps")
     if stale:
         print("known gaps that read right now, delete their note:\n  " + "\n  ".join(stale))
