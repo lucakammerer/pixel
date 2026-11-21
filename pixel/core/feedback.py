@@ -23,7 +23,9 @@ import httpx
 from pixel.contracts import RateOption
 from pixel.core import db, events
 from pixel.core.context import Context
+from pixel.crm import quotes
 from pixel.pricing import selection, session
+from tools.board_me import normalize
 
 POLL_S = 10
 ACCURACY, TIME, BONUS = Decimal(45), Decimal(15), Decimal(10)
@@ -100,6 +102,9 @@ def _session(ctx: Context, sent_at: str) -> int | None:
 
 
 def _quoted(ctx: Context, session_id: int) -> RateOption | None:
+    quote = quotes.for_session(ctx, session_id)
+    if quote and quote.sent_at is not None:
+        return quote.option
     row = ctx.db.execute(
         "SELECT payload FROM events WHERE session_id = ? AND kind = 'quote.drafted' ORDER BY id DESC LIMIT 1",
         (session_id,),
@@ -123,12 +128,18 @@ def _round(ctx: Context, row: dict[str, Any], delta: Decimal | None) -> None:
 
 
 async def once(ctx: Context) -> int:
-    """One poll: a `feedback` event for every request whose verdict is new. Returns how many."""
+    """Store finalized score updates and return the number of new verdicts processed for feedback."""
     data = await ctx.board.me()
+    requests = [r for r in data.get("requests", []) if r.get("verdict") in FINAL]
+    stored = {str(score["round"]): score for score in quotes.latest_scores(ctx)}
+    for row in requests:
+        score = json.loads(json.dumps(normalize(row) | {"round": row["round_no"]}, default=str))
+        if stored.get(str(score["round"])) != score:
+            events.emit(ctx, "score", "board", payload=score)
+            stored[str(score["round"])] = score
     state = json.loads(db.get(ctx.db, STATE) or '{"total": null, "verdicts": {}}')
     total = Decimal(str(data.get("total") or 0))
-    new = [r for r in data.get("requests", []) if r.get("verdict") in FINAL
-           and state["verdicts"].get(str(r["round_no"])) != r["verdict"]]  # fmt: skip
+    new = [r for r in requests if state["verdicts"].get(str(r["round_no"])) != r["verdict"]]
     first = state["total"] is None  # nothing to compare the total with: remember the verdicts, explain nothing
     for row in [] if first else new:
         _round(ctx, row, total - Decimal(state["total"]) if len(new) == 1 else None)

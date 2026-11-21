@@ -29,6 +29,11 @@ PRICED = re.compile(
 TOTAL_WORDS = re.compile(r"total|all[- ]in|gesamt|in total|overall", re.IGNORECASE)
 TRANSIT = re.compile(r"(\d+)\s*(?:calendar\s+)?(?:days?|tage?n?)\b|transit\D{0,20}(\d+)", re.IGNORECASE)
 HOURS = re.compile(r"(\d+)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
+PICKUP_HOURS = re.compile(
+    r"\b(?:pick\s*up(?:\s+time)?|collect(?:ion)?|abholung)\s*:?\s*(?:within\s+|in\s+)?" + HOURS.pattern,
+    re.IGNORECASE,
+)
+VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
@@ -61,6 +66,12 @@ def _own_text(body: str) -> str:
             break
         lines.append(line)
     return "\n".join(lines)
+
+
+def _pickup_hours(body: str) -> int | None:
+    text = _own_text(body)
+    match = PICKUP_HOURS.search(text) or HOURS.search(VALIDITY_HOURS.sub("", text))
+    return int(match.group(1)) if match else None
 
 
 def _price(text: str) -> tuple[Decimal, str] | None:
@@ -276,9 +287,8 @@ async def record(ctx: Context, message: Message) -> None:
                         payload={"where": "bid.read", "error": type(exc).__name__})  # fmt: skip
     if option is not None:
         if pickup:
-            hours = HOURS.search(_own_text(message.body))
             option = option.model_copy(update={"freight": Decimal(0), "pickup": option.total, "trucker": name,
-                                               "pickup_hours": int(hours.group(1)) if hours else None})  # fmt: skip
+                                               "pickup_hours": _pickup_hours(message.body)})  # fmt: skip
         elif kind == "ratedesk":
             option = option.model_copy(update={"source": Source.RATEDESK})
         listed = [option.model_copy(update={"carrier": name})]

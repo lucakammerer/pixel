@@ -4,11 +4,13 @@ import asyncio
 import re
 from collections.abc import Awaitable, Callable
 
+from pixel.agents.rfq.booking import CONFIRMED
 from pixel.api.mailbox import RATEDESK, mapping_gaps
 from pixel.contracts import Message
 from pixel.core import db
 from pixel.core.context import Context
 from pixel.core.events import emit
+from pixel.crm import bookings
 
 SINCE_KEY = "poller.since_id"
 NAMES_OUR_MAIL = re.compile(r'your mail "(.+?)"')
@@ -34,6 +36,9 @@ def session_of(ctx: Context, message: Message) -> int:
         ).fetchone()
         if row:
             return row["session_id"]
+    match = CONFIRMED.search(message.subject) or CONFIRMED.search(message.body)
+    if match and (booking := bookings.by_reference(ctx, match.group(1).rstrip(".,:;"))):
+        return booking.session_id
     return message.id
 
 
