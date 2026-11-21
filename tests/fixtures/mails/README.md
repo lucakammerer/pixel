@@ -28,6 +28,8 @@ Captured mails of a request, from the request to the confirmed booking:
 
 - `rfq-door-no-origin.json`: the first scored request. Door-to-port, fastest, a currency asked for; it names the
   destination and the pickup postcode but no origin airport.
+- `rfq-port-to-port.json`: a request that names both airports and delivers to the airport itself; the rules read
+  it without a model.
 - `customer-accepts.json`: the customer's acceptance of our quote, 25 seconds after it, in the quote's thread.
 - `customer-thanks.json`: the customer's answer to our booking notice; nothing to do, no acceptance.
 - `booking-confirmed.json`: the airline's confirmation, a thread of its own about 40 seconds after the booking, with
