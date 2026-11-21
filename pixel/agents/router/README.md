@@ -19,7 +19,8 @@ kind, `by` (`rules` or `model`) and the rule that decided.
 `agent.py` `rules`, first match wins:
 
 1. Sender is `tracking@hackloop.mail`: `tracking_question`. Sender is `ratedesk@hackloop.mail`: `ratedesk_reply`.
-2. A mail in a customer thread from that thread's customer (`sessions.customer`): `customer_reply`.
+2. A mail in a customer thread from that thread's customer (`sessions.customer`): `customer_reply`; when it answers
+   our question for a missing fact (`messages.purpose` `question`): `other`, the request's handler reads it.
 3. Subject `Booking <reference> confirmed` from anyone else: `booking_confirmation`.
 4. It answers one of our mails sent with purpose `bid_request` (`messages.purpose`, set by `core/outbox.py` `send`):
    `carrier_bid`.

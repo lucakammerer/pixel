@@ -1,0 +1,52 @@
+[
+  {
+    "round": 15,
+    "fixture": "rfq-door-warehouse-no-postcode.json",
+    "read": "zone 93 (signature town), MUC, no pickup",
+    "quoted": "1058.20",
+    "verdict": "too_low",
+    "best_above": "1113.89"
+  },
+  {
+    "round": 16,
+    "fixture": "rfq-door-warehouse-known-customer.json",
+    "read": "36627 (the customer's one earlier site), FRA, Helix + Bodenseefracht 197.12",
+    "quoted": "1688.10",
+    "verdict": "too_high",
+    "best_below": "1607.71"
+  },
+  {
+    "round": 17,
+    "fixture": "rfq-door-warehouse-earlier-sites.json",
+    "read": "21663 (the latest of two sites), HAM, no pickup",
+    "quoted": "3844.65",
+    "verdict": "too_low",
+    "best_above": "4047.00"
+  },
+  {
+    "round": 18,
+    "fixture": "rfq-door-warehouse-two-sites.json",
+    "read": "21663 (the latest of two sites), HAM, Juniper + Maintal 222.88",
+    "quoted": "2602.88",
+    "verdict": "too_high",
+    "best_below": "2478.93",
+    "note": "cheapest HAM pair 2500.44; asked afterwards, the customer named 51115 Bergisch Gladbach (zone 51, CGN): customer-names-pickup.json"
+  },
+  {
+    "round": 19,
+    "fixture": "rfq-door-warehouse-one-site.json",
+    "read": "51896 (the customer's one earlier site), CGN",
+    "quoted": "6175.48",
+    "verdict": "accepted",
+    "best": "6175.48"
+  },
+  {
+    "round": 20,
+    "fixture": "rfq-door-warehouse-wrong-site.json",
+    "read": "61391 (the customer's one earlier site), FRA, cheapest trucker",
+    "quoted": "3723.64",
+    "verdict": "too_high",
+    "best_below": "3546.32",
+    "note": "asked afterwards, the customer named Augsburg (zone 86, MUC): customer-names-pickup-town.json"
+  }
+]

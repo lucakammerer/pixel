@@ -97,3 +97,11 @@ and no signature town. The customer (Nordlicht Audio) had named "our site in 366
 pickup from our warehouse", no place; this customer (Lindqvist Medtech) had named 51447 in round 1 and 21663 in
 round 11: the latest one counts.
 
+`rfq-door-warehouse-two-sites.json`: round 18, pickup "from our warehouse"; the customer had named two sites before.
+`customer-names-pickup.json`: her answer when asked afterwards: "The pickup address is 51115 Bergisch Gladbach".
+`rfq-door-warehouse-one-site.json`: round 19, same wording from a customer with one earlier site (51896): accepted.
+`rfq-door-warehouse-wrong-site.json`: round 20, same wording; the customer's one earlier site (61391) was wrong.
+`customer-names-pickup-town.json`: his answer when asked: "The pickup is in Augsburg, Germany" (town only, zone 86).
+`tests/fixtures/warehouse-rounds.json` lists rounds 15 to 19 with what we read, what we quoted, the verdict and the
+bound it gives on the scorer's best price.
+

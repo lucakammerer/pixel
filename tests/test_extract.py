@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -11,7 +12,7 @@ from pixel.agents.rfq import extract
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import LlmResult, Message, Preference
-from pixel.core import events
+from pixel.core import events, outbox, poller
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
 from pixel.pricing import store
@@ -364,7 +365,8 @@ async def test_the_pickup_lines_town_wins_over_the_signatures(conn, emitted):
     store.save_zones(ctx, [{"zone": "24", "area": "Kiel", "airport": "AAA"},
                            {"zone": "93", "area": "Regensburg", "airport": "CCC"}])  # fmt: skip
     rfq = extract.by_rules(message.model_copy(update={"body": message.body.replace("24983 ", "")}), DEADLINE)
-    assert extract._town_zone(ctx, rfq, extract._text(message)).pickup_zone == "24"  # the pickup line's town
+    rfq = extract._town_zone(ctx, rfq, extract._text(message))
+    assert rfq.pickup_zone == "24"  # the pickup line's town
     assert (await extract.extract(ctx, message, DEADLINE)).origin == "AAA"
 
 
@@ -475,7 +477,7 @@ async def test_a_pickup_with_no_place_takes_the_site_this_customer_named_before(
     assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("AAA", "36627", "36", "rules")
 
 
-async def test_of_several_earlier_sites_the_latest_counts(conn, monkeypatch):
+async def test_of_several_earlier_sites_the_first_counts(conn, monkeypatch):
     async def boom(ctx, **kw):
         raise AssertionError("no model call expected")
 
@@ -486,4 +488,49 @@ async def test_of_several_earlier_sites_the_latest_counts(conn, monkeypatch):
     for name in ("rfq-door-no-origin.json", "rfq-dg-instruction-bullets.json"):  # Lindqvist: 51447, then 21663
         await extract.extract(ctx, captured(name).model_copy(update={"attachments": []}), DEADLINE)
     rfq = await extract.extract(ctx, captured("rfq-door-warehouse-earlier-sites.json"), DEADLINE)
-    assert (rfq.origin, rfq.destination, rfq.pickup_postcode, rfq.extracted_by) == ("AAA", "EZE", "21663", "rules")
+    # Round 18: no airline and trucker from HAM (21663, the latest site) came under the scorer's best.
+    assert (rfq.origin, rfq.destination, rfq.pickup_postcode, rfq.extracted_by) == ("CCC", "EZE", "51447", "rules")
+
+
+async def test_a_door_request_whose_customer_named_sites_in_two_zones_asks_and_reads_the_answer(conn, monkeypatch):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "51", "area": "Bergisch Gladbach", "airport": "CCC"},
+                           {"zone": "21", "area": "Lueneburg", "airport": "AAA"}])  # fmt: skip
+    for name in ("rfq-door-no-origin.json", "rfq-dg-instruction-bullets.json"):  # Lindqvist: 51447, then 21663
+        await extract.extract(ctx, captured(name).model_copy(update={"attachments": []}), DEADLINE)
+    request, answer = captured("rfq-door-warehouse-two-sites.json"), captured("customer-names-pickup.json")
+    asked = []
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        asked.append((to, subject, body, purpose))
+        poller.ingest(ctx, answer)  # "The pickup address is 51115 Bergisch Gladbach", in the request's thread
+        return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    request = poller.ingest(ctx, request)
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    ((to, subject, body, purpose),) = asked
+    assert (to, subject, purpose) == (request.sender, "Re: Air freight quote to SGN", "question")
+    assert "postcode" in body and not re.search(r"\d", body)  # a question, never a price
+    assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("CCC", "51115", "51", "rules")
+
+
+async def test_a_customer_with_one_known_site_is_still_asked_and_a_town_answer_gives_the_zone(conn, monkeypatch):
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "61", "area": "Bad Homburg", "airport": "CCC"},
+                           {"zone": "86", "area": "Augsburg", "airport": "AAA"}])  # fmt: skip
+    await extract.extract(ctx, captured("rfq-dg-packing-list.json").model_copy(update={"attachments": []}), DEADLINE)
+    request, answer = captured("rfq-door-warehouse-wrong-site.json"), captured("customer-names-pickup-town.json")
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        poller.ingest(ctx, answer)  # "The pickup is in Augsburg, Germany."
+        return answer.model_copy(update={"id": answer.id - 2, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    request = poller.ingest(ctx, request)  # round 20: Weidner had named 61391 before, which was wrong
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert (rfq.origin, rfq.pickup_zone, rfq.pickup_postcode, rfq.extracted_by) == ("AAA", "86", None, "rules")

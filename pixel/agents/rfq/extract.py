@@ -1,9 +1,11 @@
+import asyncio
 import re
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from pixel import llm
 from pixel.contracts import Message, Preference, Rfq
-from pixel.core import events
+from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import store
@@ -486,22 +488,21 @@ def _plain(text: str) -> str:
 PLACE_WORDS = re.compile(r"\b(?:site|warehouse|premises|plant|factory|lager|werk|standort)\b", re.IGNORECASE)
 
 
-def _known_postcode(ctx: Context, rfq: Rfq) -> str | None:
-    """The pickup postcode this customer gave in an earlier request (the CRM's memory of their site)."""
-    row = ctx.db.execute(
+def _known_sites(ctx: Context, rfq: Rfq) -> list[str]:
+    """The pickup postcodes this customer gave in earlier requests, first named first (the CRM's memory)."""
+    rows = ctx.db.execute(
         "SELECT json_extract(payload, '$.pickup_postcode') AS postcode FROM events WHERE kind = 'rfq.extracted'"
-        " AND json_extract(payload, '$.customer') = ? AND session_id != ? AND postcode IS NOT NULL"
-        " ORDER BY id DESC LIMIT 1",
+        " AND json_extract(payload, '$.customer') = ? AND session_id != ? AND postcode IS NOT NULL ORDER BY id",
         (rfq.customer, rfq.session_id),
-    ).fetchone()
-    return row["postcode"] if row else None
+    ).fetchall()
+    return list(dict.fromkeys(r["postcode"] for r in rows))
 
 
-def _town_zone(ctx: Context, rfq: Rfq, text: str) -> Rfq:
-    """A door-to-port pickup without a postcode: the zone of the town named where the pickup is described ("from
-    our warehouse in Augsburg"), else the site this customer gave in an earlier request. "Pickup from our warehouse"
-    with no place came twice (rounds 15, 16); both customers had named their site before. A town anywhere else in
-    the mail, such as the signature's ("Best greetings from Regensburg"), only when nothing else is known."""
+def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
+    """A door-to-port pickup without a postcode ("pickup from our warehouse"): the town named where the pickup is
+    described. Without it the place stays open to be asked; only with `guess` (no answer in time) the customer's
+    first-named earlier site, then a town anywhere in the mail such as the signature's. The history was right once
+    (round 19) and wrong twice: asked, Lindqvist named 51115 (not 21663), Weidner Augsburg (not 61391)."""
     if not rfq.door_pickup or rfq.pickup_zone:
         return rfq
     areas = {_plain(r["area"]): r["zone"] for r in ctx.db.execute("SELECT zone, area FROM pickup_zones")}
@@ -511,15 +512,64 @@ def _town_zone(ctx: Context, rfq: Rfq, text: str) -> Rfq:
         return {areas[a] for a in named if not any(a != b and a in b for b in named)}  # "Munich" in "Munich South"
 
     zones = towns("\n".join(line for line in text.splitlines() if DOOR.search(line) or PLACE_WORDS.search(line)))
-    postcode = None
-    if len(zones) != 1 and (postcode := _known_postcode(ctx, rfq)):
+    postcode, sites = None, _known_sites(ctx, rfq)
+    if len(zones) != 1 and sites and guess:
+        postcode = sites[0]
         zones = {zone_of(postcode)}
-    if len(zones) != 1:
+    if len(zones) != 1 and guess:
         zones = towns(text)
     if len(zones) != 1:
         return rfq
     return rfq.model_copy(update={"pickup_zone": zones.pop(), "pickup_postcode": postcode,
                                   "missing": tuple(m for m in rfq.missing if m != "pickup_postcode")})  # fmt: skip
+
+
+ASK_WAIT_S = 60  # customers answered within about 10 s, truckers about 31 s later: the quote stays inside 120 s
+FACTS = {
+    "pickup": ("the postcode we should collect the goods from", "die Postleitzahl, unter der wir die Ware abholen"),
+    "origin": ("the airport the goods leave from", "den Abflughafen"),
+    "destination": ("the destination airport", "den Zielflughafen"),
+    "weight": ("the gross weight in kg", "das Bruttogewicht in kg"),
+}
+ASK = {
+    "en": "Hello,\n\nthank you for your request. Could you tell us {facts}? As soon as we have it, you will receive "
+    "our all-in offer.\n\nBest regards\n{signer}",
+    "de": "Guten Tag,\n\nvielen Dank für Ihre Anfrage. Könnten Sie uns noch {facts} nennen? Sobald wir das haben, "
+    "erhalten Sie unser Angebot.\n\nFreundliche Grüße\n{signer}",
+}
+
+
+def _unknown(rfq: Rfq) -> list[str]:
+    """The facts a price still needs that the request did not give."""
+    facts = ["pickup"] if rfq.door_pickup and not rfq.pickup_zone else ["origin"] if not rfq.origin else []
+    return facts + ["destination"] * (not rfq.destination) + ["weight"] * (rfq.weight_kg <= 0)
+
+
+async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadline: Deadline) -> str | None:
+    """One short mail in the customer's thread asking for exactly the missing facts, never a price; their answer if
+    it comes within ASK_WAIT_S of the request. A customer held back the pickup and gave it at once when asked (round
+    18). Asked once per request."""
+    if ctx.db.execute("SELECT 1 FROM messages WHERE session_id = ? AND purpose = 'question'",
+                      (message.session_id,)).fetchone():  # fmt: skip
+        return None
+    de = rfq.language == "de"
+    names = [FACTS[f][de] for f in facts]
+    joined = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {'und' if de else 'and'} {names[-1]}"
+    subject = message.subject if REPLY_SUBJECT.match(message.subject) else f"Re: {message.subject}"
+    try:
+        question = await outbox.send(
+            ctx, to=message.sender, subject=subject, session_id=message.session_id, in_reply_to=message.id,
+            body=ASK["de" if de else "en"].format(facts=joined, signer=ctx.settings.signer), purpose="question",
+        )  # fmt: skip
+    except Exception:  # noqa: BLE001 - held (dry run, takeover) or failed: the guess takes over
+        return None
+    answer = ("SELECT body FROM messages WHERE session_id = ? AND direction = 'in' AND id > ? AND lower(sender) = ?"
+              " ORDER BY id LIMIT 1")  # fmt: skip
+    while not (row := ctx.db.execute(answer, (message.session_id, question.id, message.sender.lower())).fetchone()):
+        if datetime.now(UTC) >= deadline.received_at + timedelta(seconds=ASK_WAIT_S):
+            return None
+        await asyncio.sleep(1)
+    return row["body"]
 
 
 def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
@@ -642,13 +692,26 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             return None
         return by_rules(mail, deadline, guess, cargo=cargo) or by_rules(message, deadline, guess, cargo=cargo)
 
-    def apply_pickup(read: Rfq) -> Rfq:
+    def apply_pickup(read: Rfq, guess: bool = True) -> Rfq:
         if files:
             read = _document_pickup(read, sources, evidence)
-        return _zone_origin(ctx, _town_zone(ctx, read, text), text)
+        return _zone_origin(ctx, _town_zone(ctx, read, text, guess), text)
+
+    async def ask(read: Rfq) -> Rfq:
+        """Asks once for the facts still missing and reads the request again with the customer's answer."""
+        nonlocal mail, message, sources, text
+        read = apply_pickup(read, guess=False)
+        if not (facts := _unknown(read)) or (said := await _ask(ctx, mail, read, facts, deadline)) is None:
+            return read
+        mail = mail.model_copy(update={"body": f"{_body(mail)}\n\n{own_words(said)}"})
+        sources = [("mail", _text(mail)), *sources[1:]]
+        text = "\n\n".join(content for _, content in sources)
+        message = mail.model_copy(update={"subject": "", "body": text}) if files else mail
+        again = rules()
+        return apply_pickup(again, guess=False) if again is not None else read
 
     rfq, prose = rules(), None
-    if rfq is not None and not (rfq := apply_pickup(rfq)).origin:
+    if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
     if rfq is None:
         try:
@@ -684,7 +747,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             rfq = _from_model(result.data, message, deadline)
             if cargo:
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
-            rfq = apply_pickup(rfq)
+            rfq = apply_pickup(await ask(rfq))
             prose = {k: result.data.get(k) for k in PROSE}
     if files:
         rfq = rfq.model_copy(update={"language": _language(_text(mail))})
