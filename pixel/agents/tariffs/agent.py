@@ -187,9 +187,16 @@ def _lines(filename: str, content: bytes) -> list[str]:
         return text.splitlines()
     if suffix in (".txt", ".csv"):
         try:
-            return content.decode("utf-8").splitlines()
+            text = content.decode("utf-8")
         except UnicodeDecodeError:
-            return content.decode("latin-1").splitlines()
+            text = content.decode("latin-1")
+        if suffix == ".csv":  # cells as a spreadsheet's line: a quoted "1.586,00" stays one number
+            delimiter = next((d for d in ";\t" if d in text), ",")
+            return [
+                "  ".join(c.strip() for c in row if c.strip())
+                for row in csv.reader(text.splitlines(), delimiter=delimiter)
+            ]
+        return text.splitlines()
     if suffix in AUDIO:
         return _spoken(_transcribe(content))
     raise Unreadable(f"no code parser for {suffix or filename}")

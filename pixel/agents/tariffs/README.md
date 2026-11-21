@@ -19,7 +19,8 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 ## Implementation
 
 - `parse`: every text format becomes lines (`_lines`: xlsx rows, docx paragraphs and tables in order, PDF text,
-  txt; a voice message, mp3, wav, m4a or ogg, one line per spoken sentence by a local `faster-whisper` model
+  txt, csv rows as cells like an xlsx row's (`;` or a tab between them when the file has one, else `,`); a voice
+  message, mp3, wav, m4a or ogg, one line per spoken sentence by a local `faster-whisper` model
   (`_transcribe`, no gateway spend, about a second per minute of speech; its ~150 MB download goes to the pixel
   user's Hugging Face cache; the live process loads it at start, `app.py` `_preload_speech`), one line per
   sentence, with spoken prices and small numbers written as figures: "340 euros and 60 cents" as 340.60 EUR, "four
@@ -78,6 +79,11 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 - A refused text, xlsx or docx sheet is dropped (`tariff.failed`), not read by the model: the carrier's older
   version keeps pricing. A minimum written `1,250.00` and a remarks column holding a number are refused today
   (`tests/fixtures/tariffs/variants/`).
+- A csv came through `_lines` as raw text ("Total gross weight (kg):,1586", a German `"1.586,00"` split at its
+  comma): neither a packing list nor a tariff in csv was read. `tools/simulate.py` writes both in every format.
+- Two channels are known gaps (`tests/fixtures/channel-gaps.json`): a tariff written in the mail itself is never
+  read, `handle` ingests attachments only; a mail that changes what its sheet says (validity, currency, a lane) is
+  not read either, only a stated exchange rate (`_stated_fx`).
 
 ## Open
 

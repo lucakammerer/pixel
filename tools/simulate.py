@@ -6,15 +6,19 @@ uv run python -m tools.simulate            # per axis: read right, left to the m
 uv run python -m tools.simulate --show 10  # the first wrong cases outside the known gaps, in full
 uv run python -m tools.simulate --seed 3   # the same grid with other figures; a failing seed becomes a fixture
 
-Two families. `document`: a mail with an attached packing list, letter of instruction or specification (PDF, xlsx,
-docx) in the layouts seen since round 33 and their neighbours. Which source a right reading takes depends on how
-mail and document relate (`relation`): `tests/fixtures/rfqs/simulate-sources.json` says it per relation and why, so
-a correction the customer makes or an attachment for another shipment is never read as "the document wins".
-`mail`: the cargo written in the mail alone, in the units and number formats customers use.
+Three families. `document`: a mail with an attached packing list, letter of instruction or specification (PDF, xlsx,
+docx, txt, csv) in the layouts seen since round 33 and their neighbours. Which source a right reading takes depends
+on how mail and document relate (`relation`): `tests/fixtures/rfqs/simulate-sources.json` says it per relation and
+why, so a correction the customer makes or an attachment for another shipment is never read as "the document wins".
+`mail`: the cargo written in the mail alone, in the units and number formats customers use. The document family
+also puts the other kinds' decisive fact in an attachment of each format, read by their handlers' own functions: a
+customer's acceptance or decline (`booking.reply_intent`), the tracking desk's reference (`tracking.question`,
+`match`), the airline's and our reference in a booking confirmation (`booking.confirmed_references`) and a
+carrier's tariff (`tariffs.agent.handle`, priced against `tariffs/variants/variants.jsonl`).
 
 `bid` (`--family bid`): a carrier's answer to our bid request, an airline's (total, currency, exchange rate, transit
 days) or a trucker's (pickup price, currency, exchange rate, pickup hours), read by `pricing.bids.record` as a live
-mail is: in the body, only in an attachment (pdf, docx, xlsx, txt) or in both; as a sentence, key-value lines, a
+mail is: in the body, only in an attachment (pdf, docx, xlsx, txt, csv) or in both; as a sentence, key-value lines, a
 table with the currency only in its header, a letter, a quotation, charges without a total, a rate per kg with or
 without its total; beside a surcharge per hour, day, pallet or piece, an offer validity, an exchange rate line,
 another lane's price or a date; in EUR (ISO code, euro sign, decimal comma, thousands by comma or space), USD, GBP
@@ -29,10 +33,12 @@ other fails the run.
 
 import argparse
 import asyncio
+import csv
 import io
 import itertools
 import json
 import random
+import re
 import sqlite3
 import textwrap
 from collections import defaultdict
@@ -42,15 +48,19 @@ from decimal import Decimal as D
 from pathlib import Path
 
 from pixel import llm
-from pixel.agents.rfq import extract
+from pixel.agents.rfq import booking, extract
+from pixel.agents.tariffs import agent as tariffs
+from pixel.agents.tracking import agent as tracking
 from pixel.config import settings
 from pixel.contracts import Attachment, Message, Rfq
 from pixel.core import db, events
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
 from pixel.pricing import bids, session, store
+from pixel.pricing.calc import price_tariff
 
 FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "rfqs"
+VARIANTS = FIXTURES.parent / "tariffs" / "variants"
 SOURCES = json.loads((FIXTURES / "simulate-sources.json").read_text())
 KNOWN_GAPS = FIXTURES / "simulate-known-gaps.json"
 RECEIVED = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
@@ -81,7 +91,13 @@ class Case:
     body: str
     files: list[tuple[str, bytes]]
     want: dict[str, object]
+    kind: str = "customer_rfq"
     request: dict[str, object] = field(default_factory=dict)  # a bid: the request it answers
+
+    @property
+    def disagrees(self) -> bool:
+        """Mail and attachment state different figures."""
+        return self.axes.get("relation") not in (None, "agrees", "silent")
 
 
 @dataclass
@@ -155,7 +171,8 @@ def _pdf(lines: list[list[str]]) -> bytes:
     """A one-page PDF laid out as the scorer's: each cell its own text object, a label at x 50 and its value at 200."""
     ops, y = [], 790
     for cells in lines:
-        xs = (50, 200) if len(cells) == 2 else range(50, 50 + 100 * len(cells), 100)
+        step = min(100, 500 // len(cells))  # a tariff's nine columns still fit the page
+        xs = (50, 200) if len(cells) == 2 else range(50, 50 + step * len(cells), step)
         for x, text in zip(xs, cells, strict=False):
             text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
             ops.append(f"BT /F1 10 Tf {x} {y} Td ({text}) Tj ET")
@@ -209,9 +226,21 @@ def _docx(lines: list[list[str]]) -> bytes:
     return out.getvalue()
 
 
-WRITERS = {"pdf": _pdf, "xlsx": _xlsx, "docx": _docx}
+def _txt(lines: list[list[str]]) -> bytes:
+    return "\n".join("  ".join(c.ljust(20) for c in cells).rstrip() for cells in lines).encode()
+
+
+def _csv(lines: list[list[str]]) -> bytes:
+    """As a spreadsheet exports it: German decimal commas come with semicolons between the cells."""
+    german = any(re.fullmatch(r"\d[\d.]*,\d+", c) for cells in lines for c in cells)
+    out = io.StringIO()
+    csv.writer(out, delimiter=";" if german else ",").writerows(lines)
+    return out.getvalue().encode()
+
+
+WRITERS = {"pdf": _pdf, "xlsx": _xlsx, "docx": _docx, "txt": _txt, "csv": _csv}
 NAMES = {"pdf": ("SLI_{n}.pdf", "packing-spec_{n}.pdf"), "xlsx": ("PL_{n}.xlsx", "shipment_details_{n}.xlsx"),
-         "docx": ("packing-list_{n}.docx",)}  # fmt: skip
+         "docx": ("packing-list_{n}.docx",), "txt": ("packing-list_{n}.txt",), "csv": ("PL_{n}.csv",)}  # fmt: skip
 
 
 def _cargo_sentence(pieces: int, kg: D, cbm: D | None, sides: tuple[int, int, int] | None, lang: str) -> str:
@@ -242,7 +271,7 @@ CORRECTIONS = {
     "correction_de": ("de", "Korrektur: Das Bruttogewicht beträgt jetzt {kg} kg, die angehängte Liste ist veraltet."),
 }
 DOCUMENT_AXES = {
-    "format": ("pdf", "xlsx", "docx"),
+    "format": tuple(WRITERS),
     "totals": ("before", "after", "none", "only"),
     "rows": ("1", "2"),
     "unit": ("cm", "mm"),
@@ -298,6 +327,54 @@ def document_cases(seed: int = 7, step: int = 1) -> list[Case]:
         if axes["relation"] == "inconsistent" and axes["totals"] in ("none", "only"):
             continue  # no stated total or no table to contradict it: the same document as doc_volume
         cases.append(_document_case(i, axes, seed))
+    return cases + other_kind_cases()
+
+
+REPLIES = {
+    ("accept", "en"): "We accept your offer. Please book the shipment.",
+    ("accept", "de"): "Wir nehmen Ihr Angebot an. Bitte buchen Sie die Sendung.",
+    ("decline", "en"): "Thank you, but we will not go ahead with your offer.",
+    ("decline", "de"): "Leider ist uns Ihr Angebot zu teuer, wir lehnen ab.",
+}
+COVER = {"en": "Hello,\n\nplease find our answer in the attached letter.\n\nBest regards\nMira Petersen",
+         "de": "Guten Tag,\n\nunsere Antwort finden Sie im angehängten Schreiben.\n\nViele Grüße\nMira Petersen"}  # fmt: skip
+REFERENCES = {"airline": ("Booking reference:", "BK-7Q4XK2M9"), "team": ("Your reference:", "PX-A1B2C3")}
+
+
+def _tariff_sheet() -> tuple[list[list[str]], dict[str, str]]:
+    """The control sheet of the tariff variants as cells, and its lane facts and spot prices by its generator."""
+    row = json.loads((VARIANTS / "variants.jsonl").read_text().splitlines()[0])
+    text = (VARIANTS / row["file"]).read_text()
+    cells = [[c.strip() for c in line.split("  ") if c.strip()] for line in text.splitlines()]
+    want = {f"{s['lane']} {s['weight_kg']} kg": f"{s['total']} on {s['billed_kg']}" for s in row["spots"]}
+    want |= {
+        f"{lane} transit, minimum": f"{f['transit_days']}, {f['minimum']}" for lane, f in row["lane_facts"].items()
+    }
+    return [c for c in cells if c], want
+
+
+def other_kind_cases() -> list[Case]:
+    """Each other kind's decisive fact only in the attachment, in every format the RFQ documents come in."""
+    cases, (sheet, prices) = [], _tariff_sheet()
+    for fmt, write in WRITERS.items():
+        for (says, lang), text in REPLIES.items():
+            lines = [["Re: your quotation"], ["Date:", "2026-11-21"], [text], ["Mira Petersen, Nordlicht Audio"]]
+            cases.append(Case("document", {"kind": "customer_reply", "format": fmt, "says": says, "lang": lang},
+                              "Re: Air freight quote", COVER[lang], [(f"answer.{fmt}", write(lines))],
+                              {"intent": says}, "customer_reply"))  # fmt: skip
+        for which, (label, reference) in REFERENCES.items():
+            lines = [["Shipment enquiry"], ["Customer:", "Nordlicht Audio"], [label, reference]]
+            cases.append(Case("document", {"kind": "tracking_question", "format": fmt, "reference": which},
+                              "Status request", "Hello,\n\nwhere is the shipment in the attached enquiry?",
+                              [(f"enquiry.{fmt}", write(lines))], {"reference": reference}, "tracking_question"))  # fmt: skip
+        lines = [["Booking confirmation"], *(list(r) for r in REFERENCES.values()), ["Status:", "booked"]]
+        cases.append(Case("document", {"kind": "booking_confirmation", "format": fmt}, "Booking confirmation",
+                          "Hello,\n\nplease find the confirmation of your booking attached.\n\nKestrel Airways",
+                          [(f"confirmation.{fmt}", write(lines))], {k: r for k, (_, r) in REFERENCES.items()},
+                          "booking_confirmation"))  # fmt: skip
+        cases.append(Case("document", {"kind": "tariff", "format": fmt}, "Tariff update",
+                          "Hello,\n\nplease find our new air export tariff attached.\n\nTestline Cargo",
+                          [(f"testline-cargo-tariff-2026-11.{fmt}", write(sheet))], prices, "tariff"))  # fmt: skip
     return cases
 
 
@@ -360,16 +437,11 @@ def mail_cases(seed: int = 11) -> list[Case]:
     return cases
 
 
-def _txt(lines: list[list[str]]) -> bytes:
-    return "\n".join("  ".join(cells) for cells in lines).encode()
-
-
-WRITERS["txt"] = _txt
 CARRIERS = {"airline": ("Kestrel Air Cargo", "kestrel@carrier.example"),
             "trucker": ("Nordwind Trucking", "nordwind@carrier.example")}  # fmt: skip
 BID_AXES = {
     "carrier": tuple(CARRIERS),
-    "place": ("body", "pdf", "docx", "xlsx", "txt", "both"),
+    "place": ("body", "pdf", "docx", "xlsx", "txt", "csv", "both"),
     "layout": ("sentence", "keyvalue", "table", "letter", "quotation", "components", "per_kg", "per_kg_total"),
     "distractor": ("none", "per_hour", "per_day", "per_pallet", "per_piece", "validity", "fx_line", "second_lane",
                    "date"),
@@ -480,7 +552,7 @@ def _bid_case(i: int, axes: dict[str, str], seed: int) -> Case:
     if distractor:
         lines.insert(rng.randint(0, len(lines)), [distractor])
     place, files = axes["place"], []
-    fmt = rng.choice(("pdf", "docx", "xlsx", "txt")) if place == "both" else place
+    fmt = rng.choice(tuple(WRITERS)) if place == "both" else place
     name = f"offer-Q{rng.randint(1000, 9999)}.{fmt}"
     text = "\n".join("  ".join(c) for c in lines)
     if place != "body":  # a pdf wraps a long line as a letter does
@@ -493,7 +565,7 @@ def _bid_case(i: int, axes: dict[str, str], seed: int) -> Case:
     want = {"total": total, "currency": currency, "fx_eur": fx, "transit_days" if kind == "airline" else
             "pickup_hours": time}  # fmt: skip
     subject = f"Re: Rate request {o}-{d}" if kind == "airline" else f"Re: Pickup request {f['pc']} to {o}"
-    return Case("bid", axes, subject, body, files, want, {"origin": o, "destination": d, "weight_kg": D(kg)})
+    return Case("bid", axes, subject, body, files, want, request={"origin": o, "destination": d, "weight_kg": D(kg)})
 
 
 def bid_cases(seed: int = 13, step: int = 1) -> list[Case]:
@@ -534,6 +606,51 @@ def gap_of(case: Case, gaps: list[dict]) -> str | None:
     return None
 
 
+async def _rfq(ctx: Context, message: Message, case: Case) -> dict:
+    rfq, _ = await extract.read_request(ctx, message, deadline_for(RECEIVED, ctx.settings))
+    return {k: getattr(rfq, k) for k in case.want}
+
+
+async def _reply(ctx: Context, message: Message, case: Case) -> dict:
+    return {"intent": await booking.reply_intent(ctx, message)}
+
+
+async def _tracking(ctx: Context, message: Message, case: Case) -> dict:
+    return {"reference": tracking.match(ctx, await tracking.question(ctx, message), message.sender)[1]}
+
+
+async def _tariff(ctx: Context, message: Message, case: Case) -> dict:
+    """Ingested into a store of its own, then priced at the generator's spot weights."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.init(conn)
+    ctx = Context(ctx.settings, conn, ctx.mailbox, None, None, None)
+    await tariffs.handle(ctx, message)
+    got = {}
+    for key in case.want:
+        lane, spot = key.split(" ", 1)
+        origin, destination = lane.split("-")
+        found = store.lookup(ctx, origin, destination, RECEIVED.date())
+        if not found:
+            got[key] = "not stored"
+        elif spot.endswith(" kg"):
+            rfq = Rfq(session_id=1, message_id=1, customer="simulate", origin=origin, destination=destination,
+                      weight_kg=D(spot.split()[0]), received_at=RECEIVED, deadline_at=RECEIVED)  # fmt: skip
+            option = price_tariff(found[0], rfq)
+            got[key] = f"{option.total} on {option.billed_kg}"
+        else:
+            got[key] = f"{found[0].transit_days}, {found[0].minimum}"
+    return got
+
+
+async def _confirmation(ctx: Context, message: Message, case: Case) -> dict:
+    return dict(zip(REFERENCES, await booking.confirmed_references(ctx, message), strict=True))
+
+
+READERS = {"customer_rfq": _rfq, "customer_reply": _reply, "tracking_question": _tracking, "tariff": _tariff,
+           "booking_confirmation": _confirmation}  # fmt: skip
+
+
 async def read(case: Case, ctx: Context) -> Outcome:
     message = Message(
         id=1, session_id=1, direction="in", sender="buyer@example.com", to="us@example.com", subject=case.subject,
@@ -549,12 +666,12 @@ async def read(case: Case, ctx: Context) -> Outcome:
 
     llm.ask_json = model
     try:
-        rfq, _ = await extract.read_request(ctx, message, deadline_for(RECEIVED, ctx.settings))
+        got = await READERS[case.kind](ctx, message, case)
     except ModelNeeded:
         return Outcome(case, "model")
     if called:
         return Outcome(case, "model")
-    wrong = [f"{k}: {getattr(rfq, k)} != {v}" for k, v in case.want.items() if not _close(getattr(rfq, k), v)]
+    wrong = [f"{k}: {got[k]} != {v}" for k, v in case.want.items() if not _close(got[k], v)]
     return Outcome(case, "wrong" if wrong else "right", wrong)
 
 
@@ -614,8 +731,10 @@ def stale_gaps(outcomes: list[Outcome]) -> list[str]:
 
 
 def report(outcomes: list[Outcome]) -> None:
-    for family in dict.fromkeys(o.case.family for o in outcomes):
-        mine = [o for o in outcomes if o.case.family == family]
+    groups = defaultdict(list)
+    for o in outcomes:
+        groups[o.case.family if o.case.kind == "customer_rfq" else f"{o.case.family}: {o.case.kind}"].append(o)
+    for family, mine in groups.items():
         count = {v: sum(o.verdict == v for o in mine) for v in ("right", "model", "wrong")}
         known = sum(bool(o.gap) for o in mine if o.verdict == "wrong")
         print(f"\n[{family}] {len(mine)} cases: {count['right']} right, {count['model']} model, "

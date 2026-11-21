@@ -173,3 +173,8 @@ def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
     outcomes = asyncio.run(simulate.run(cases))
     assert [f"{o.case.family} {o.case.axes}: {o.wrong}" for o in outcomes if o.verdict == "wrong" and not o.gap] == []
     assert simulate.stale_gaps(outcomes) == []
+
+
+def test_every_kind_and_channel_has_a_case_or_a_known_gap():
+    """Rounds 63 to 67 were lost to carrier answers in attachments, a channel no fixture or generated case had."""
+    assert bench.print_matrix(bench.channel_coverage(), bench.channel_gaps()) == []

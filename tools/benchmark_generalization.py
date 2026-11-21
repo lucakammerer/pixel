@@ -2,7 +2,7 @@
 
 Usage:
     uv run python -m tools.benchmark_generalization          # every check, exit 1 on a failure
-    uv run python -m tools.benchmark_generalization --gaps   # only the open known gaps, grouped by owner
+    uv run python -m tools.benchmark_generalization --gaps   # the channel matrix, then the open known gaps by owner
     uv run python -m tools.benchmark_generalization --stub   # an empty rfqs/live.jsonl row per new captured request
 
 Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `data/start-kit/`:
@@ -23,6 +23,11 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 11. Mail against its attached document (rounds 33 to 35): every figure the document states, changed in the mail,
    in every column order, file format and document layout (`tools/document_conflicts.py`); the document's figure
    is the right reading.
+12. Channel matrix: every mail kind the router knows (a carrier's bid split into airline and trucker) against where
+   its information sits (body; pdf, scan, docx, xlsx, txt or csv, audio attachment; body and attachment
+   disagreeing). A cell counts the captured mails, kit sheets, pickup offers and `tools/simulate.py` cases that put
+   it there; a cell without one is listed in `channel-gaps.json` with its owner, or the run fails. `--gaps` prints
+   the matrix first.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -55,7 +60,7 @@ from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
 from pixel.pricing import bids
 from pixel.pricing.calc import chargeable_kg, price_tariff
-from tools import document_conflicts
+from tools import document_conflicts, simulate
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -711,6 +716,79 @@ def audit_bids() -> list[BidRead]:
     return results
 
 
+# Where a mail's information sits. A scan is an image or a pdf without text; conflict: the mail and its attachment
+# state different facts.
+CHANNELS = ("body", "pdf", "scan", "docx", "xlsx", "txt", "audio", "conflict")
+SUFFIXES = {".pdf": "pdf", ".docx": "docx", ".xlsx": "xlsx", ".xls": "xlsx", ".txt": "txt", ".csv": "txt"}
+SUFFIXES |= dict.fromkeys(agent.IMAGES, "scan") | dict.fromkeys(agent.AUDIO, "audio")
+# The router's kinds; a carrier's bid comes from an airline or a trucker and is read apart.
+KINDS = tuple(name for k in MailKind if k is not MailKind.OTHER
+              for name in (("airline_bid", "pickup_bid") if k is MailKind.CARRIER_BID else (k.value,)))  # fmt: skip
+# Captured mails by their name (`mails/README.md`), the first prefix that fits.
+CAPTURED = {"rfq-": "customer_rfq", "synthetic-rfq-": "customer_rfq", "customer-": "customer_reply",
+            "tracking-": "tracking_question", "synthetic-tracking": "tracking_question", "bid-pickup-": "pickup_bid",
+            "bid-": "airline_bid", "ratedesk-": "ratedesk_reply", "booking-": "booking_confirmation",
+            "synthetic-tariff": "tariff"}  # fmt: skip
+CHANNEL_GAPS = FIXTURES / "channel-gaps.json"
+
+
+def channel_coverage() -> dict[tuple[str, str], int]:
+    """Per kind and channel, how many captured mails, kit sheets, pickup offers and generated cases (`tools/simulate.py`)
+    put the information there. A captured attachment counts only with its file embedded; a mail without one, as body."""
+    found: dict[tuple[str, str], int] = {}
+
+    def add(kind: str, channel: str | None) -> None:
+        if channel:
+            found[kind, channel] = found.get((kind, channel), 0) + 1
+
+    for path in sorted([*MAILS.glob("*.json"), *(FIXTURES / "voice").glob("*.json")]):
+        kind = next((k for prefix, k in CAPTURED.items() if path.name.startswith(prefix)), None)
+        attachments = json.loads(path.read_text()).get("attachments") or []
+        for a in attachments if kind else []:
+            add(kind, a.get("content_base64") and SUFFIXES.get(Path(a["filename"]).suffix.lower()))
+        if kind and not attachments:
+            add(kind, "body")
+    for path in START_KIT.iterdir():
+        if path.suffix != ".csv":
+            add("tariff", SUFFIXES.get(path.suffix.lower()))
+    offers = json.loads((FIXTURES / "pickup-offer-layouts.json").read_text())
+    for offer in offers["offers"]:
+        add("pickup_bid", SUFFIXES.get(Path(offer["file"]).suffix.lower()))
+    if offers.get("request_transcript"):
+        add("customer_rfq", "audio")
+    for case in [*simulate.document_cases(step=7), *simulate.mail_cases()]:
+        for name, _ in case.files:
+            add(case.kind, SUFFIXES.get(Path(name).suffix.lower()))
+        add(case.kind, None if case.files else "body")
+        add(case.kind, "conflict" if case.disagrees else None)
+    return found
+
+
+def channel_gaps() -> dict[str, str]:
+    """`channel-gaps.json`: a cell no case covers yet, keyed "<kind> <channel>", its note ending `Owner: <role>.`"""
+    return json.loads(CHANNEL_GAPS.read_text())
+
+
+def print_matrix(covered: dict[tuple[str, str], int], gaps: dict[str, str]) -> list[str]:
+    """The matrix, each cell the number of cases, `gap` or EMPTY; returns what fails: empty cells and unknown keys."""
+    print(f"    {'':<22}" + "".join(f"{c:>9}" for c in CHANNELS))
+    empty = []
+    for kind in KINDS:
+        cells = []
+        for channel in CHANNELS:
+            n, key = covered.get((kind, channel), 0), f"{kind} {channel}"
+            cells.append(str(n) if n else "gap" if key in gaps else "EMPTY")
+            empty += [] if n or key in gaps else [f"{key}: no case and no known gap"]
+        print(f"    {kind:<22}" + "".join(f"{c:>9}" for c in cells))
+    cells = {f"{k} {c}" for k in KINDS for c in CHANNELS}
+    for key in gaps:
+        if key not in cells:
+            empty.append(f"{key}: not a cell of the matrix")
+        elif covered.get(tuple(key.split(" "))):
+            print(f"    ok   {key}: covered now, delete its gap")
+    return empty
+
+
 def _print(title: str, report: Report, ok: str) -> None:
     print(f"\n{title}: {report.passed}/{report.total}")
     for failure in report.failures:
@@ -734,6 +812,9 @@ def open_gaps() -> dict[str, list[str]]:
         if r.right is False and r.known_gap and r.known_gap not in seen_gaps:
             seen_gaps.add(r.known_gap)
             found.append((f"document conflict {key}", r.known_gap))
+    covered = channel_coverage()
+    uncovered = [(f"channel {k}", note) for k, note in channel_gaps().items() if not covered.get(tuple(k.split()))]
+    found += sorted(uncovered, key=lambda gap: gap[1])  # one note's cells together: printed once
     by_owner: dict[str, list[str]] = {}
     for case, note in found:
         owner = m.group(1) if (m := re.search(r"Owner: (\w+)", note)) else "unassigned"
@@ -742,6 +823,9 @@ def open_gaps() -> dict[str, list[str]]:
 
 
 def print_gaps() -> None:
+    print("Channel matrix: cases per kind and where the information sits\n")
+    print_matrix(channel_coverage(), channel_gaps())
+    print()
     for owner, notes in sorted(open_gaps().items()):
         print(f"## {owner} ({len(notes)})\n")
         seen = set()
@@ -902,6 +986,11 @@ def main() -> int:
     for r in conflicts_wrong[:20]:
         print(f"    FAIL {r.name}: {'; '.join(r.wrong_fields)}")
 
+    print("\n[12] Channel matrix: cases per kind and where the information sits (gap: a known gap, --gaps)")
+    empty = print_matrix(channel_coverage(), channel_gaps())
+    for line in empty:
+        print(f"    FAIL {line}")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -914,6 +1003,7 @@ def main() -> int:
         or live_wrong
         or mutated_wrong
         or conflicts_wrong
+        or empty
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")

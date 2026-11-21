@@ -37,13 +37,22 @@ from pixel.contracts import (
 from pixel.core import db, events
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
-from pixel.ui import crm, dashboard, routes
+from pixel.ui import crm, dashboard, home, routes
 
 KIT = Path("data/start-kit")
 US = "pixel@hackloop.mail"
-COMPANIES = ("acme", "globex", "initech", "umbrella", "hooli", "stark", "wayne", "tyrell", "cyberdyne", "soylent",
-             "wonka", "oscorp", "aperture", "vandelay")  # fmt: skip
-ROLES = ("ops", "logistics", "export", "shipping", "freight", "buyer")
+COMPANIES = (  # invented: (address, company, person, town); the UI reads the company from the signature
+    ("brandt-optik", "Brandt Optik GmbH", "Jana Brandt", "Jena"),
+    ("kranich-medizintechnik", "Kranich Medizintechnik GmbH", "Lukas Kranich", "Tuttlingen"),
+    ("hafenkontor-textil", "Hafenkontor Textil KG", "Ole Jensen", "Hamburg"),
+    ("seidel-elektronik", "Seidel Elektronik GmbH", "Mehmet Aydin", "Dresden"),
+    ("lindenhof-roesterei", "Lindenhof Rösterei GmbH", "Clara Weiss", "Bremen"),
+    ("vogt-maschinenbau", "Vogt Maschinenbau GmbH", "Stefan Vogt", "Augsburg"),
+    ("nordwind-audio", "Nordwind Audio GmbH", "Mira Holm", "Kiel"),
+    ("berger-pharma", "Berger Pharma AG", "Nina Berger", "Basel"),
+    ("falke-automotive", "Falke Automotive GmbH", "Tim Falke", "Wolfsburg"),
+    ("isar-solar", "Isar Solartechnik GmbH", "Lea Huber", "Munich"),
+)
 FATES = ("quoted",) * 5 + ("booked",) * 5 + ("confirmed",) * 4 + ("declined",) * 3 + ("fallback",) * 2 + (
     "failed", "missed")  # fmt: skip
 CENT = Decimal("0.01")
@@ -66,7 +75,8 @@ class Kit:
 class Seeder:
     def __init__(self, ctx: Context, kit: Kit, rng: random.Random):
         self.ctx, self.kit, self.rng = ctx, kit, rng
-        self.customers = [f"{rng.choice(ROLES)}@{c}.example" for c in COMPANIES]
+        self.customers = [f"{slug}@mail.example" for slug, *_ in COMPANIES]
+        self.signature = {f"{slug}@mail.example": f"{person}\n{name}, {town}" for slug, name, person, town in COMPANIES}
         self.next_id = (ctx.db.execute("SELECT MAX(id) FROM messages").fetchone()[0] or 4000) + 1
         self.round = ctx.db.execute("SELECT COUNT(*) FROM events WHERE kind = 'score'").fetchone()[0]
 
@@ -112,7 +122,7 @@ class Seeder:
             + f" from {origin} to {destination}"
             + (f", door pickup in {zone['area']} ({zone['zone']}xxx)" if zone else ", airport to airport")
             + (". We need it there as fast as possible." if fastest else ".")
-            + "\n\nKind regards"
+            + f"\n\nKind regards\n{self.signature[customer]}"
         )
         m = self.mail(t0, None, "in", customer, US, subject, body, kind=MailKind.CUSTOMER_RFQ)
         sid = m.session_id
@@ -382,7 +392,7 @@ def main() -> None:
                 await task
 
     app = FastAPI(title="PIXEL preview", lifespan=lifespan)
-    for module in (routes, dashboard, crm):
+    for module in (home, routes, dashboard, crm):
         app.include_router(module.router)
     app.state.ctx = ctx
     print(f"preview on http://localhost:{args.port} (synthetic data, nothing is sent)")

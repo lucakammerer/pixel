@@ -108,7 +108,11 @@ async def quote_with_deadline(ctx: Context, message: Message) -> None:
     task = asyncio.create_task(rfq.handle(ctx, message, deadline))
     reason = "handler_finished"
     try:
-        timeout = max(0.0, (deadline.recovery_at - now()).total_seconds())
+        # A request first seen after the takeover time (a restart, a poll backlog) keeps its handler until `hard_at`:
+        # recovery asks no airline, so a takeover at once would leave a bid-only lane without a price.
+        started = now()
+        recovery_at = deadline.recovery_at if started <= deadline.recovery_at else deadline.hard_at
+        timeout = max(0.0, (recovery_at - started).total_seconds())
         done, _ = await asyncio.wait({task}, timeout=timeout)
         if done:
             task.result()

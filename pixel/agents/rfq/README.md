@@ -32,7 +32,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   one optional `rfq.airports` call. Quoted older correspondence is excluded.
 - `agent.py` `fallback` reads the RFQ and the stored options on its current lane. A late complete option can be
   sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30
-  from receipt. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
+  from receipt; a request first seen after 2:30 (a restart, a poll backlog) keeps `handle` until `hard_at`, because
+  recovery asks no airline. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
   A door request waits for a priced trucker until `hard_at`. If pickup is
   still unpriced at that point, the reply states the airport-to-airport price and excludes pickup. A zone hint
   used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
@@ -118,6 +119,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 - A carrier's answer can carry a number the rules take for its price in a layout they have not seen: round 67
   quoted a trucker's "45.00 EUR for each hour" of waiting instead of its 181.96 total and was rejected as too low.
+  `pricing/bids.py` `_price` skips a figure "per", "je", "for each" or "for every" unit, and a total line takes a
+  table's currency only from the nearest header above it that names one, never under a "(kg)" or "per kg" header.
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
   selection and records it (`option.failed`, `error: implausible`); `check.py` `_implausible` blocks a quote that
   still holds one. Evidence and limits: `docs/calc.md`, when a bid is not trusted.
@@ -128,6 +131,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   available.", "Could you book it, please?"). `booking.py` `intent` takes an acceptance anywhere in a sentence that
   is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes
   goes to a person, nothing is booked and the tracking bonus is lost.
+- The yes, the no or the airline's confirmation can stand only in an attachment (a signed letter, a confirmation
+  sheet) under a body that says "see attached". `booking.py` `reply_intent` reads every attachment code can read
+  when the reply's own words say nothing; `confirmed_references` reads both references from the body and every
+  attachment. A scan, a voice message, and an attachment that disagrees with the mail are open cells of the
+  channel matrix (`tests/fixtures/channel-gaps.json`).
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
   name, sign-off and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods

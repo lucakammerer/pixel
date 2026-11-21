@@ -43,8 +43,9 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   `extract.py`, `compose.py`, `booking.py`), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,
   `bids.py`, `pickup.py`, `engine.py`
-- `pixel/crm/`: quotes, bookings, shipments, customers; `pixel/ui/`: requests (`routes.py`), CRM viewer (`crm.py`),
-  performance (`dashboard.py`), shared HTML and styles (`page.py`)
+- `pixel/crm/`: quotes, bookings, shipments, customers; `pixel/ui/`: start page at `/` (`home.py`, with
+  `pipeline.py` and `impact.py`), requests at `/requests` (`routes.py`), CRM viewer (`crm.py`), performance
+  (`dashboard.py`), company names from signatures (`names.py`), shared HTML and styles (`page.py`)
 - `pixel/llm.py`: the only gateway caller
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
@@ -93,7 +94,7 @@ uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored ma
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
 uv run python -m tools.kpi                      # accuracy, cost and speed on the replayed request fixtures, as JSON
 uv run python -m tools.benchmark_generalization # fixtures vs code: prices, sheets, wording, routing, bids; exit 1 on a fail
-uv run python -m tools.benchmark_generalization --gaps   # open known gaps, grouped by owner
+uv run python -m tools.benchmark_generalization --gaps   # the channel matrix, then the open known gaps by owner
 uv run python -m tools.simulate                 # generated mails and attachments per axis: right, model, wrong
 tools/kpi_pr.sh <pull request>                  # the same online on the live host, posted as a comment
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md

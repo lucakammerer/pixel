@@ -12,6 +12,6 @@
   {
     "family": "bid",
     "axes": {"layout": "table", "money": "sign"},
-    "note": "An offer table with its currency only as '(€)' in the header: `bids.HEADER_CURRENCY` knows ISO codes only, so the total line has no currency and the model reads it (branch generalization/round-65-voice-offers reads the sign). Owner: Accuracy."
+    "note": "An offer table with its currency only as '(€)' in the header: `bids.HEADER_UNIT` knows ISO codes only, so the total line has no currency and the model reads it (branch generalization/round-65-voice-offers reads the sign). Owner: Accuracy."
   }
 ]

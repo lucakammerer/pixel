@@ -33,6 +33,10 @@ async def source(ctx: Context, message: Message, deadline: Deadline) -> None:
                     (session_id,),
                 ).fetchone():
                     return
+                # Rules that cannot read it sent the handler to the model, the request's one call, even when the
+                # takeover cancelled it before its `llm.call` was written.
+                if extract.by_rules(message, deadline) is None:
+                    return
                 rfq = await extract.extract(ctx, message, deadline)
             if not rfq.origin or not rfq.destination or rfq.weight_kg <= 0:
                 return

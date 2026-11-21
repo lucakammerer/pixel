@@ -162,11 +162,13 @@ mail can start while portal reads are pending. Bid collection ends when all expe
 closes. That window runs until the later of `target_at` and `PIXEL_BID_WAIT_S` after the enquiries, capped at
 `hard_at`. A late start therefore still leaves time for a trucker to price the pickup.
 
-If the live agent finishes without sending or reaches `recovery_at`, the orchestrator takes over and checks stored
+If the live agent finishes without sending or reaches `recovery_at` (`hard_at` for a request first seen after
+`recovery_at`: recovery asks no airline), the orchestrator takes over and checks stored
 options for the current lane until a complete price arrives or `hard_at` is reached. It gives an in-flight quote time
 to finish. In the meantime, `core/quote_recovery.py` `source` has up to 20 seconds before `hard_at` to recheck sheets
 and the portal for missing air prices and request pickup bids from eligible truckers without an enquiry for the
-pickup. It uses the normal extraction path if no RFQ was stored and no model read has already finished.
+pickup. It uses the normal extraction path if no RFQ was stored and the rules can read the mail; otherwise the
+handler's model read, finished or cancelled, was the request's one gateway call.
 A door request needs a priced trucker before `hard_at`. At
 `hard_at`, an available airport-to-airport price may be sent with pickup excluded and `complete_service=false`.
 A missing postcode prompts a request for the pickup address in that quote. If air freight itself is still
@@ -351,6 +353,14 @@ Shared, reviewed by whoever did not write the change: `pixel/crm/`, `pixel/ui/ro
 `pixel/agents/rfq/booking.py`, `pixel/agents/tracking/`, `pixel/contracts.py`, `docs/`, `tools/`.
 
 Generalization and Frontend work in files that cannot break a quote; a pipeline owner merges their branches.
+
+**Channel matrix.** 5U raises the difficulty one channel at a time: rounds 63 to 67 were lost because carriers
+suddenly answered only in attachments, a channel no fixture or generated case had, while our cases went deep on
+shapes already seen. `tools/benchmark_generalization.py` section 12 holds every mail kind the router knows against
+every place its information can sit (body; pdf, scan, docx, xlsx, txt or csv, audio attachment; body and attachment
+disagreeing); each cell is covered by a case or listed with its owner in `tests/fixtures/channel-gaps.json`, and
+`--gaps` prints the holes. The rule: every new shape seen live adds its cell's neighbours, the same kind in every
+other carrier of information, before the next one goes live.
 Everyone takes a night shift at the dashboard.
 
 Every pull request states what it changes in accepted rate, response time or spend per quote, measured on replayed

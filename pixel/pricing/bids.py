@@ -47,8 +47,9 @@ PRICE_IS = re.compile(
     r"|\bdeliver\b[^\d\n.]{0,40}?\bfor)\s*$",
     re.IGNORECASE,
 )
-# An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none.
-HEADER_CURRENCY = re.compile(rf"\((?P<c>{CURRENCY})\)")
+# An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none. The nearest
+# header above the total counts: "Chargeable weight (kg)" or "per kg (EUR)" over it is no price in that currency.
+HEADER_UNIT = re.compile(rf"\((?P<u>{CURRENCY}|kgs?|lbs?|cbm|m3|pcs)\)", re.IGNORECASE)
 TOTAL_LINE = re.compile(rf"^\s*{TOTAL_LABEL}[\s:,-]*(?P<n>{AMOUNT})\s*$", re.IGNORECASE)
 KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
@@ -57,7 +58,7 @@ KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
 FLAT = r"(?!(?:shipment|consignment|awb|air\s*waybill|sendung|auftrag)\b)"
 # "45.00 EUR for each hour" of waiting is a surcharge per unit, never the offer's price.
 OTHER_BASIS = re.compile(
-    rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro|je|(?:for\s+)?each|an?)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE
+    rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro|je|(?:for\s+)?(?:each|every)|an?)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE
 )
 TRANSIT = re.compile(
     r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b",
@@ -128,13 +129,16 @@ def _rate(text: str) -> Decimal:
 def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
     found, labelled = set(), set()
     unsure = False  # a charge per unit, or a total without its currency: only a labelled price counts
-    headers = {m.group("c") for m in HEADER_CURRENCY.finditer(text)}
+    header = None  # "": the nearest header names a unit that is no currency
     text = UNWRAP.sub(lambda m: f"{m.group(1) or ''} ", text)
     for line in FX.sub("", text).splitlines():
-        if (m := TOTAL_LINE.match(line)) and len(headers) != 1:
+        if units := {m.group("u").upper() for m in HEADER_UNIT.finditer(line)}:
+            money = units & set(CURRENCY.split("|"))
+            header = money.pop() if len(money) == 1 and not re.search(KG_BASIS, line, re.IGNORECASE) else ""
+        if (m := TOTAL_LINE.match(line)) and header is None:  # no header names its unit
             unsure = True
-        elif m:
-            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), next(iter(headers)))
+        elif m and header:
+            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), header)
             found.add(price)
             labelled.add(price)
         prices = list(PRICED.finditer(line))
