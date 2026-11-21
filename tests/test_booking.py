@@ -473,3 +473,35 @@ async def test_a_packing_list_in_a_reply_is_no_acceptance(pipe):
     assert pipe.ctx.portal.calls == []
     assert quotes.get(pipe.ctx, "Q-1").status == QuoteStatus.SENT
     assert "customer.accepted" not in kinds(pipe.ctx)
+
+
+async def test_changed_cargo_after_the_quote_is_requoted_in_reply_to_the_change(pipe, monkeypatch):
+    # Round 86: "the shipment details have changed to: 5 pieces, 1317 kg gross weight, 8.18 cbm. Could you please
+    # update your offer?" went to a person; the scorer scores our answer to that mail and saw none.
+    from pixel.agents.rfq import agent
+    from pixel.contracts import Message
+    from pixel.pricing import engine
+
+    raw = json.loads((Path(__file__).parent / "fixtures/mails/reply-changed-cargo-update-offer.json").read_text())
+    change = Message(id=raw["id"], session_id=1, direction="in", sender="buyer@acme.example", to=raw["to"],
+                     subject=raw["subject"], body=raw["body"], in_reply_to=501, sent_at=raw["received_at"])  # fmt: skip
+    first = quote(1)
+    first = first.model_copy(update={"rfq": first.rfq.model_copy(update={"weight_kg": Decimal(753),
+                                                                         "volume_cbm": Decimal("4.87")})})  # fmt: skip
+    quotes.save(pipe.ctx, first)
+    seen = {}
+
+    async def options(ctx, rfq, deadline):
+        seen["rfq"] = rfq
+        new = first.option.model_copy(update={"chargeable_kg": Decimal("1366.06"), "total": Decimal("4100.00"),
+                                              "total_eur": Decimal("4100.00"), "rate_id": "R-new"})  # fmt: skip
+        pipe.emit(ctx, "option.found", "pricing", session_id=1, payload={"option": new.model_dump(mode="json")})
+        return [new, first.option]
+
+    monkeypatch.setattr(engine, "options", options)
+    monkeypatch.setattr(agent, "_check", lambda *a: None)
+    await booking.handle_reply(pipe.ctx, change)
+
+    assert (seen["rfq"].weight_kg, seen["rfq"].volume_cbm, seen["rfq"].pieces) == (Decimal(1317), Decimal("8.18"), 5)
+    assert [s["purpose"] for s in pipe.sent] == ["quote"] and pipe.quoted == [(24612, Decimal("4100.00"))]
+    assert "human.note" not in kinds(pipe.ctx)

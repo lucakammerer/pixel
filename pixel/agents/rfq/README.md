@@ -85,6 +85,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
+- A reply to a sent, not yet accepted quote whose own words give another weight or volume (`booking.py`
+  `changed_cargo`; our chargeable or billed weight quoted back is no change) is priced again: `agent.py` `requote`
+  runs `engine.options` at the new cargo, selects only from options found for it, and sends a quote with its PDF in
+  reply to the change mail (`outbox.send_quote(reply_to=...)`, its own claim). Round 86: the scorer scored our
+  answer to the change mail, not the first quote.
 - `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
   the selected billed weight. A 503 or an option without a rate id goes to the airline by mail. The carrier
   receives the air purchase price. The customer's booking notice states the accepted quote total, including

@@ -70,11 +70,32 @@ def intent(text: str) -> str:
     return "other"
 
 
-async def reply_intent(ctx: Context, message: Message) -> str:
-    """The reply's own words decide; only when they say nothing does an attachment (a signed offer, a letter)."""
+def _own(message: Message) -> str:
     # A reply written below the quoted mail keeps its own lines after the quote.
     unquoted = "\n".join(line for line in message.body.splitlines() if not line.lstrip().startswith(">"))
-    own = extract.HISTORY.split(unquoted, maxsplit=1)[0].strip()
+    return extract.HISTORY.split(unquoted, maxsplit=1)[0].strip()
+
+
+def changed_cargo(quote: Quote, message: Message) -> dict:
+    """Weight, volume and pieces the reply's own words state when weight or volume differ from the quoted cargo;
+    our own chargeable or billed weight quoted back is no change."""
+    own = _own(message)
+    lots = extract._lots(own)
+    pieces = lots[2] if lots else extract._pieces(own)
+    weight = lots[0] if lots else extract._weight(own, pieces)
+    volume = lots[1] if lots else extract._volume(own, pieces)
+    rfq, ours = quote.rfq, {quote.option.chargeable_kg, quote.option.billed_kg}
+    if weight in ours:
+        weight = None
+    if (weight is None or weight == rfq.weight_kg) and (volume is None or volume == rfq.volume_cbm):
+        return {}
+    found = {"weight_kg": weight, "volume_cbm": volume, "pieces": pieces}
+    return {k: v for k, v in found.items() if v is not None}
+
+
+async def reply_intent(ctx: Context, message: Message) -> str:
+    """The reply's own words decide; only when they say nothing does an attachment (a signed offer, a letter)."""
+    own = _own(message)
     subject = "" if extract.REPLY_SUBJECT.match(message.subject) else message.subject
     said = intent(own or subject)
     # A reply that asks something ("Bleibt der Preis gleich?") wants a person, whatever its attachment says.
@@ -92,6 +113,11 @@ async def handle_reply(ctx: Context, message: Message) -> None:
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
             payload={"note": "Customer replied to an unsent draft", "intent": said, "quote_id": quote.id},
         )  # fmt: skip
+        return
+    if quote is not None and quote.status != QuoteStatus.ACCEPTED and (changes := changed_cargo(quote, message)):
+        from pixel.agents.rfq import agent  # agent imports core.poller, which imports this module
+
+        await agent.requote(ctx, message, quote.rfq.model_copy(update=changes))
         return
     if quote is None or said == "other":
         events.emit(

@@ -21,7 +21,7 @@ class Pipeline:
     """Fake `core.outbox` (mail goes into `sent`) on the real event log."""
 
     def __init__(self, ctx: Context):
-        self.ctx, self.sent, self.held = ctx, [], False
+        self.ctx, self.sent, self.held, self.quoted = ctx, [], False, []
 
     def emit(self, ctx, kind, actor, *, ts=None, **kwargs):
         event = events.emit(ctx, kind, actor, **kwargs)
@@ -36,8 +36,9 @@ class Pipeline:
                           "in_reply_to": in_reply_to, "purpose": purpose})  # fmt: skip
         return mail(900 + len(self.sent), session_id, sender="us@pixel", to=to, subject=subject, body=body)
 
-    async def send_quote(self, ctx, quote, *, operator=False):
+    async def send_quote(self, ctx, quote, *, operator=False, reply_to=None):
         self.sent.append({"to": quote.rfq.customer, "subject": quote.subject, "body": quote.body, "purpose": "quote"})
+        self.quoted.append((reply_to, quote.total))
         return quote.model_copy(
             update={"status": QuoteStatus.SENT, "sent_at": datetime.now(UTC), "sent_message_id": 999}
         )

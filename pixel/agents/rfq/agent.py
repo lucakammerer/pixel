@@ -8,7 +8,7 @@ from pixel.agents.rfq import check, compose, dangerous, extract
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import events, feedback, outbox, poller, timing
 from pixel.core.context import Context
-from pixel.core.orchestrator import Deadline
+from pixel.core.orchestrator import Deadline, deadline_for
 from pixel.crm import quotes
 from pixel.pricing import calc, engine, portal_rates, selection, session, store
 
@@ -147,6 +147,34 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         return None
     quote = await _in_language(ctx, _quote(ctx, rfq, options, prose, fallback=False), deadline.hard_at)
     sent = await outbox.send_quote(ctx, quote)
+    quotes.save(ctx, sent)
+    return sent
+
+
+async def requote(ctx: Context, message: Message, rfq: Rfq) -> Quote | None:
+    """The customer changed the cargo after our quote (round 86: "shipment details have changed to: 5 pieces, 1317
+    kg"); the scorer scores our answer to that mail. Priced again by the same engine at the new cargo, from options
+    found for it only, and sent as a quote with its PDF in reply to the change mail, before its own deadline."""
+    deadline = deadline_for(message.sent_at, ctx.settings)
+    rfq = rfq.model_copy(update={"received_at": deadline.received_at, "deadline_at": deadline.expires_at})
+    marker = events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=message.id,
+                         payload=rfq.model_dump(mode="json")).id  # fmt: skip
+    await engine.options(ctx, rfq, deadline)
+    rows = ctx.db.execute(
+        "SELECT payload FROM events WHERE session_id = ? AND kind = 'option.found' AND id > ? ORDER BY id",
+        (rfq.session_id, marker),
+    ).fetchall()
+    fresh = [RateOption.model_validate(json.loads(r["payload"])["option"]) for r in rows]
+    options = engine.combine(rfq, fresh, feedback.pickup_rule(ctx), ctx)
+    if rfq.door_pickup:
+        options = [o for o in options if o.trucker] or options
+    if not options:
+        events.emit(ctx, "error", "rfq", session_id=rfq.session_id, message_id=message.id,
+                    payload={"error": "requote found no price"})  # fmt: skip
+        return None
+    quote = await _in_language(ctx, _quote(ctx, rfq, options, compose.stored(ctx, rfq.session_id), fallback=False),
+                               deadline.hard_at)  # fmt: skip
+    sent = await outbox.send_quote(ctx, quote, reply_to=message.id)
     quotes.save(ctx, sent)
     return sent
 
