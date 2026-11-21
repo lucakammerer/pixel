@@ -1170,7 +1170,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     sources, text, message = source_inputs()
     cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
 
+    lane: dict[str, str] = {}  # set by `ask`: the request's own origin and destination, which an answer keeps
+
     def rules(guess: bool = False) -> Rfq | None:
+        read = read_rules(guess)
+        return read.model_copy(update=lane) if read else None
+
+    def read_rules(guess: bool) -> Rfq | None:
         if not files:
             return by_rules(mail, deadline, guess=True) if guess else by_rules(mail, deadline)
         # Prefer the customer's routing and instructions; consult the documents if those are missing.
@@ -1193,6 +1199,10 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         mail = mail.model_copy(update={"body": f"{_body(mail)}\n\n{own_words(said)}"})
         sources, text, message = source_inputs()
         cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
+        # The answer fills what we asked for: an airport it names in passing ("our sister company ships from X",
+        # "from X to Y later") never moves the lane the request gave. Unasked, a door request's origin stays empty,
+        # so its pickup zone decides.
+        lane.update({k: getattr(read, k) for k in ("origin", "destination") if k not in facts})
         again = rules()
         if (
             again is None

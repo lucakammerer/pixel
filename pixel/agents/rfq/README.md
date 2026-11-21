@@ -166,6 +166,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the fastest option to JFK" names no origin: in `_destination_only` a code both labels reach belongs to the nearer
   one (round 69, where it dropped the customer's answer and no quote went out), so "our truck goes to departure
   airport FRA" stays an origin and never becomes the destination.
+- The customer's answer to our one question can name another airport in passing: "our sister company ships from
+  X", "from X to Y might come later". Read again, that airport became the origin of every door request (40 of 280
+  generated answers). `read_request` `ask` keeps the request's origin and destination unless we asked for them
+  (`lane`), also in the rules' guess when the gateway fails; an unasked door origin stays the zone's airport.
+  Benchmark section 15 answers every captured request this way.
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
