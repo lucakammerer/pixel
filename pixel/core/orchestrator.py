@@ -12,6 +12,7 @@ from pixel.core.events import emit
 from pixel.core.timing import now
 
 EXPIRES_AFTER = timedelta(minutes=6)
+TAKE_OVER_AFTER = timedelta(seconds=150)
 FALLBACK_POLL_S = 2.0
 
 
@@ -21,6 +22,10 @@ class Deadline:
     target_at: datetime  # send by here for full time points
     hard_at: datetime  # the fallback sends whatever we have
     expires_at: datetime
+
+    @property
+    def recovery_at(self) -> datetime:
+        return min(self.received_at + TAKE_OVER_AFTER, self.hard_at)
 
 
 def deadline_for(received_at: datetime, settings: Settings) -> Deadline:
@@ -89,9 +94,7 @@ def _open_session(ctx: Context, message: Message, deadline: Deadline) -> None:
 
 
 async def quote_with_deadline(ctx: Context, message: Message) -> None:
-    """Runs rfq.agent.handle as a task. If no quote is sent by `hard_at`, sends rfq.agent.fallback's quote and
-    cancels the task; if that has no price either, it keeps looking until `hard_at`, then emits `quote.missed`.
-    The deadline runs from the mail's stored time, not from when we polled it (R1)."""
+    """Hand an unanswered request to recovery when the RFQ task ends or the recovery timer fires."""
     from pixel.agents.rfq import agent as rfq
 
     deadline = deadline_for(message.sent_at, ctx.settings)
@@ -103,20 +106,25 @@ async def quote_with_deadline(ctx: Context, message: Message) -> None:
         _missed(ctx, session_id, "expired")
         return
     task = asyncio.create_task(rfq.handle(ctx, message, deadline))
+    reason = "handler_finished"
     try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=max(0.0, (deadline.hard_at - now()).total_seconds()))
+        timeout = max(0.0, (deadline.recovery_at - now()).total_seconds())
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+        if done:
+            task.result()
+        else:
+            reason = "timeout"
     except asyncio.CancelledError:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         raise
-    except TimeoutError:
-        pass
     except outbox.NotSent:
         pass
     except Exception as e:  # noqa: BLE001
+        reason = "handler_error"
         _error(ctx, "rfq", e, message)
     if outbox.quoted(ctx, session_id):
-        # A POST can still be in flight at hard_at. Keep reading its receipt until expiry.
+        # A POST can still be in flight at handoff. Keep reading its receipt until expiry.
         if not task.done():
             try:
                 await asyncio.wait_for(task, max(0.0, (deadline.expires_at - now()).total_seconds()))
@@ -126,6 +134,8 @@ async def quote_with_deadline(ctx: Context, message: Message) -> None:
             return
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+    if not outbox.taken_over(ctx, session_id) and now() < deadline.hard_at:
+        emit(ctx, "quote.recovery", "orchestrator", session_id=session_id, payload={"reason": reason})
     await _fallback(ctx, message, deadline)
 
 
@@ -164,6 +174,8 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     early leaves minutes on the clock in which a late bid, a rate desk answer or a person can still price the
     request: a miss is final, a late quote only costs time points (R1, R29)."""
     from pixel.agents.rfq import agent as rfq
+    from pixel.core import quote_recovery
+    from pixel.core.poller import spawn
 
     loop = asyncio.get_running_loop()
     # A dry run holds outgoing bids. Replays report whether a later captured reply can still arrive.
@@ -171,28 +183,34 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     wait = (deadline.hard_at - now()).total_seconds() if late else 0.0
     until = loop.time() + max(0.0, wait)
     failed = waiting = False
-    while True:
-        if outbox.quoted(ctx, message.session_id):
-            return None
-        at_deadline = loop.time() >= until
-        quote = None
-        try:
-            if at_deadline:
-                quote = await rfq.fallback(ctx, message.session_id, allow_partial=True)
-            elif not outbox.taken_over(ctx, message.session_id):
-                quote = await rfq.fallback(ctx, message.session_id)
-        except Exception as e:  # noqa: BLE001
-            if not failed:
-                _error(ctx, "fallback", e, message)
-            failed, quote = True, None
-        if quote is not None or at_deadline:
-            return quote
-        if not waiting:
-            waiting = True
-            emit(ctx, "quote.waiting", "orchestrator", session_id=message.session_id,
-                 payload={"reason": "human" if outbox.taken_over(ctx, message.session_id) else "no_complete_price",
-                          "until": deadline.hard_at.isoformat()})  # fmt: skip
-        await asyncio.sleep(min(FALLBACK_POLL_S, until - loop.time()))
+    sourcing = None
+    try:
+        while True:
+            if outbox.quoted(ctx, message.session_id):
+                return None
+            at_deadline = loop.time() >= until
+            human = outbox.taken_over(ctx, message.session_id)
+            quote = None
+            try:
+                if at_deadline or not human:
+                    quote = await rfq.fallback(ctx, message.session_id, allow_partial=at_deadline)
+            except Exception as e:  # noqa: BLE001
+                if not failed:
+                    _error(ctx, "fallback", e, message)
+                failed = True
+            if quote is not None or at_deadline:
+                return quote
+            if not waiting:
+                waiting = True
+                emit(ctx, "quote.waiting", "orchestrator", session_id=message.session_id,
+                     payload={"reason": "human" if human else "no_complete_price",
+                              "until": deadline.hard_at.isoformat()})  # fmt: skip
+            if sourcing is None and not human:
+                sourcing = spawn(ctx, quote_recovery.source(ctx, message, deadline))
+            await asyncio.sleep(min(FALLBACK_POLL_S, until - loop.time()))
+    finally:
+        if sourcing is not None:
+            sourcing.cancel()
 
 
 def _missed(ctx: Context, session_id: int, reason: str) -> None:

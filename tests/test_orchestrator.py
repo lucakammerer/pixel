@@ -4,13 +4,72 @@ from datetime import timedelta
 import pytest
 
 from pixel.agents.rfq import agent as rfq_agent
-from pixel.core import orchestrator, outbox
+from pixel.core import events, orchestrator, outbox, quote_recovery
 from tests.test_outbox import ingest_rfq, kinds, make_ctx, make_quote
 
 
 def fake_clock(monkeypatch, rfq, ctx, before_hard_s=0.05):
     hard_at = orchestrator.deadline_for(rfq.sent_at, ctx.settings).hard_at
     monkeypatch.setattr(orchestrator, "now", lambda: hard_at - timedelta(seconds=before_hard_s))
+
+
+async def test_recovery_takes_over_at_two_minutes_thirty_from_receipt(conn, monkeypatch):
+    ctx = make_ctx(conn)
+    message = ingest_rfq(ctx)
+    clock = message.sent_at + timedelta(seconds=150)
+    monkeypatch.setattr(orchestrator, "now", lambda: clock)
+    monkeypatch.setattr(quote_recovery.timing, "now", lambda: clock)
+    monkeypatch.setattr(orchestrator, "FALLBACK_POLL_S", 0.01)
+    quote = make_quote(message)
+    primary_stopped = asyncio.Event()
+
+    async def handle(*args):
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=message.id, payload=quote.rfq.model_dump(mode="json"))
+        try:
+            await asyncio.Future()
+        finally:
+            primary_stopped.set()
+
+    async def portal(ctx, rfq, deadline):
+        assert primary_stopped.is_set()
+        assert deadline.target_at <= deadline.hard_at
+        events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
+                    payload={"option": quote.option.model_dump(mode="json")})  # fmt: skip
+
+    monkeypatch.setattr(rfq_agent, "handle", handle)
+    monkeypatch.setattr(quote_recovery.portal_rates, "options", portal)
+    await asyncio.wait_for(orchestrator.quote_with_deadline(ctx, message), timeout=1)
+    history = events.for_session(ctx, message.id)
+    assert [ev.payload["reason"] for ev in history if ev.kind == "quote.recovery"] == ["timeout"]
+    assert ctx.mailbox.sent == [message.sender]
+    assert kinds(ctx)[-2:] == ["quote.sent", "quote.fallback"]
+
+
+async def test_stalled_recovery_cannot_delay_the_hard_deadline(conn, monkeypatch):
+    ctx = make_ctx(conn)
+    message = ingest_rfq(ctx)
+    fake_clock(monkeypatch, message, ctx)
+    started, stopped = asyncio.Event(), asyncio.Event()
+
+    async def recovery(*args):
+        started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            stopped.set()
+
+    async def handle(*args):
+        return None
+
+    async def fallback(ctx, session_id, *, allow_partial=False):
+        return make_quote(message) if allow_partial else None
+
+    monkeypatch.setattr(rfq_agent, "handle", handle)
+    monkeypatch.setattr(rfq_agent, "fallback", fallback)
+    monkeypatch.setattr(quote_recovery, "source", recovery)
+    await asyncio.wait_for(orchestrator.quote_with_deadline(ctx, message), timeout=1)
+    assert started.is_set() and stopped.is_set()
+    assert ctx.mailbox.sent == [message.sender]
 
 
 async def test_fallback_sends_at_hard_at_when_the_agent_hangs(conn, monkeypatch):
