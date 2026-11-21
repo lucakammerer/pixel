@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -318,6 +319,60 @@ def _preference(text: str) -> Preference:
     if CHEAPEST.search(text) or not HURRY.search(text):
         return Preference.CHEAPEST
     return Preference.FASTEST
+
+
+# A customer ruling an airline out (round 42: "Please do not offer <airline> (<code>) for this shipment or for any of
+# our future inquiries", quoted anyway and rejected as excluded_airline).
+RULED_OUT = re.compile(
+    r"\b(?:not|never|exclud\w*|avoid\w*|without|except|other than"
+    r"|nicht|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)\w*)\b",
+    re.IGNORECASE,
+)
+LASTING = re.compile(
+    r"\b(?:future|from now on|always|again|any of our|all of our|all our"
+    r"|künftig|zukünftig|ab sofort|generell|grundsätzlich|immer)\b",
+    re.IGNORECASE,
+)
+AIRLINE_WORD = re.compile(r"\s+(?:air\s+cargo|air\s+freight|airways|airlines?|air|cargo)$", re.IGNORECASE)
+CODE_IN_BRACKETS = re.compile(r"\(([A-Z0-9]{2})\)")
+
+
+def _calls(name: str) -> set[str]:
+    """How a customer may write an airline: in full, or without its trailing "Air", "Cargo" or "Airways"."""
+    short = AIRLINE_WORD.sub("", name)
+    return {name.casefold()} | ({short.casefold()} if len(short) >= 4 else set())
+
+
+def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], bool]:
+    """The airlines a sentence with a negation names, from `airlines`, plus a two-letter code in brackets in it; and
+    whether the customer means later requests too. A negation that names no known airline rules nothing out."""
+    found, lasting = set(), False
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n+", text):
+        if not RULED_OUT.search(sentence):
+            continue
+        lowered = sentence.casefold()
+        names = {a for a in airlines if any(re.search(rf"(?<!\w){re.escape(c)}(?!\w)", lowered) for c in _calls(a))}
+        if names:
+            found |= names | set(CODE_IN_BRACKETS.findall(sentence))
+            lasting = lasting or bool(LASTING.search(sentence))
+    return tuple(sorted(found)), lasting
+
+
+def _ruled_out(ctx: Context, rfq: Rfq, text: str) -> Rfq:
+    """The request with the airlines this mail rules out and those the customer ruled out for good before. A lasting
+    exclusion is kept as a `customer.excludes` event."""
+    if ctx is None:  # the offline benchmark reads without a store
+        return rfq
+    names, lasting = excluded_airlines(text, store.airline_names(ctx))
+    rows = ctx.db.execute(
+        "SELECT payload FROM events WHERE kind = 'customer.excludes' AND lower(json_extract(payload, '$.customer')) = ?",
+        (rfq.customer.lower(),),
+    ).fetchall()
+    earlier = {c for row in rows for c in json.loads(row["payload"])["carriers"]}
+    if lasting:
+        events.emit(ctx, "customer.excludes", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
+                    payload={"customer": rfq.customer, "carriers": list(names)})  # fmt: skip
+    return rfq.model_copy(update={"excluded_carriers": tuple(sorted(set(names) | earlier))})
 
 
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
@@ -936,6 +991,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         excluded = [name for name, content in documents if (name, content) not in sources]
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload={"sources": evidence, "attachment_route_conflicts": excluded})  # fmt: skip
+    rfq = _ruled_out(ctx, rfq, _text(mail))
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
