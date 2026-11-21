@@ -65,6 +65,11 @@ Three lines per scenario: what we tried, what changed, what is next.
   the comparison done; changed: wording only, the model's opening was dropped in every live quote since round 12 so
   the stock line stays the default; next: the `human` column after the first accepted round with it live, then the
   model's opening line (the extraction's prompt asks for two sentences, `clean` drops them).
+- 21.11. 18:10 CET: tried naming the goods as the customer does (`compose.goods_of`, by rule from their words: all
+  17 live requests and 17 of 19 fixtures give one) in the opening line, and answering "the earliest departure" when
+  asked (rounds 3 and 7 asked, we gave the arrival only); changed: wording only, the model's opening still wins
+  when it passes `clean`; next: the `human` column, then the booking mails in the same kind (#71 covers the quote
+  only) and a German request to read the German wording against.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 

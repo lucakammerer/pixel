@@ -32,6 +32,12 @@ TEXT = {
             "Thank you for getting in touch.",
             "Many thanks for your request.",
         ),
+        "intro_goods": (
+            "Thanks for your request, happy to help with the {goods}.",
+            "Thanks for the enquiry about the {goods}.",
+            "Thank you for getting in touch about the {goods}.",
+            "Many thanks for your request for the {goods}.",
+        ),
         "core": {
             "cheapest": (
                 (
@@ -110,6 +116,7 @@ TEXT = {
         "days": "days",
         "arrival": "With the cargo ready on {ready}, the earliest arrival {where} would be {arrive}.",
         "arrival_pickup": "With pickup on {ready}, the earliest arrival {where} would be {arrive}.",
+        "departure": "That is with a departure from {origin} on {depart}.",
         "one_awb": "All lots travel together as one consignment under a single air waybill, as you asked.",
         "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
         "as soon as I have it.",
@@ -208,6 +215,7 @@ TEXT = {
         "days": "Tage",
         "arrival": "Ist die Ware am {ready} bereit, wäre sie frühestens am {arrive} {where}.",
         "arrival_pickup": "Mit Abholung am {ready} wäre die Ware frühestens am {arrive} {where}.",
+        "departure": "Der Abflug ab {origin} wäre dann am {depart}.",
         "one_awb": "Alle Positionen reisen wie gewünscht zusammen als eine Sendung unter einem Luftfrachtbrief.",
         "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
         "weiter, sobald ich ihn habe.",
@@ -294,6 +302,18 @@ OWN_BYE = re.compile(r"^\s*(cheers|viele gr(?:ü|ue)(?:ß|ss)e)\b", re.IGNORECAS
 SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
+DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
+# The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
+GOODS = re.compile(
+    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from )"
+    r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
+    r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
+    r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
+    r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
+    r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
+)
+NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
+             "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
@@ -363,7 +383,7 @@ def _day(d: date, t: dict) -> str:
 
 def answers(rfq: Rfq, option: RateOption, request: str) -> str:
     """What the request asked beyond the price, answered by code: the earliest arrival (ready date, a day for a
-    pickup to reach the airport, the transit), one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
+    pickup to reach the airport, the transit), the departure that goes with it, one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
     try:
         t = TEXT[language_of(rfq)]
         said = []
@@ -374,6 +394,9 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
             where = t["in_city" if city else "at_airport"].format(place=city or option.destination)
             said.append(t["arrival_pickup" if option.trucker else "arrival"].format(
                 ready=_day(ready, t), arrive=_day(arrive, t), where=where))  # fmt: skip
+            if DEPARTURE.search(request):
+                depart = arrive - timedelta(days=option.transit_days)
+                said.append(t["departure"].format(origin=option.origin, depart=_day(depart, t)))
         if ONE_AWB.search(request):
             said.append(t["one_awb"])
         if CUTOFF.search(request):
@@ -381,6 +404,16 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
         return " ".join(said)
     except Exception:  # noqa: BLE001  an extra answer must never cost the quote
         return ""
+
+
+def goods_of(request: str) -> str | None:
+    """What is shipped, as the customer calls it ("precision instruments"); None when the mail names only "the
+    shipment" or words it another way."""
+    for found in GOODS.finditer(request):
+        goods = next(g for g in found.groups() if g).strip(" -")
+        if not set(goods.split()) & NOT_GOODS:
+            return goods
+    return None
 
 
 def city_of(request: str, airport: str) -> str | None:
@@ -436,8 +469,13 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         origin=option.origin, destination=option.destination, carrier=option.carrier,
         total=money(option.total), currency=option.currency, transit=_transit(option, t),
     )  # fmt: skip
+    goods = goods_of(request) if "intro_goods" in t else None
     offer = [
-        _sentence(prose.intro) if prose.intro else pick(t["intro"]),
+        _sentence(prose.intro)
+        if prose.intro
+        else pick(t["intro_goods"]).format(goods=goods)
+        if goods
+        else pick(t["intro"]),
         core,
         pick(t["basis_pickup"]).format(trucker=option.trucker) if option.trucker else pick(t["basis"]),
     ]

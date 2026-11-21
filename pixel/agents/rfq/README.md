@@ -38,7 +38,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose the way a
   clerk would: greeting in the customer's register (`register`: formal "Dear", neutral "Hello", casual "Hi") with
   the first name they signed with (the model's slot, else `signed_name` by rule), one paragraph that opens with a
-  short line and gives the all-in total and its currency, carrier, transit, what is included and the chargeable
+  short line (the model's, else a thank-you naming the goods in the customer's own words, `goods_of`) and gives the all-in total and its currency, carrier, transit, what is included and the chargeable
   weight only when it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with
   the booking sentence, and a person's signature (`PIXEL_SIGNER`). `in_kind` answers the customer's own closing:
   a wish for the day is returned, and the sign-off goes to the town they greet from, or reads "Cheers" or "Viele
@@ -48,7 +48,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   transit; on failure the mail is rendered without the model's slots (R9, P1).
 - `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
   own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
-  transit; in the city the customer wrote behind the airport's code, `city_of`), one air
+  transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
+  when they ask for the earliest departure, one air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
   `closing`, on `PIXEL_MODEL_PROSE` when set. The intro is one short sentence; `clean` drops it when it repeats the mail back ("I've noted", "the details you
