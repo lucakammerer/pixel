@@ -1,6 +1,8 @@
 import asyncio
 import json
 import re
+import unicodedata
+from collections import Counter
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -130,7 +132,21 @@ ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "reg
            "you", "your", "shipment", "thanks"}  # fmt: skip
 FRENCH = {"le", "la", "les", "des", "du", "et", "pour", "nous", "vous", "votre", "un", "une", "est", "avec", "merci",
           "bonjour", "poids", "envoi", "colis", "que", "pouvez", "cordialement", "devis", "dans", "aux"}  # fmt: skip
-LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH}
+# Words only that language uses among these, so a mail in one never counts for another ("por favor" is es and pt).
+SPANISH = {"el", "los", "las", "gracias", "hola", "saludos", "necesitamos", "envío", "nuestra", "nuestro", "y",
+           "cotización", "muchas", "estimado", "estimada", "buenos", "días", "precio", "recogida", "mercancía",
+           "usted", "cajas"}  # fmt: skip
+ITALIAN = {"il", "gli", "della", "delle", "che", "per", "grazie", "buongiorno", "saluti", "cordiali", "vorremmo",
+           "nostro", "nostra", "spedizione", "sono", "preventivo", "ritiro", "merce", "colli", "di"}  # fmt: skip
+PORTUGUESE = {"não", "você", "obrigado", "obrigada", "olá", "nosso", "nossa", "cotação", "envio", "pelo", "pela",
+              "com", "uma", "frete", "atenciosamente", "precisamos", "retirada", "coleta"}  # fmt: skip
+DUTCH = {"het", "een", "voor", "wij", "graag", "zending", "groeten", "bedankt", "onze", "naar", "ophalen",
+         "offerte", "prijs", "alvast", "vriendelijke", "hartelijk", "kunt", "jullie", "ons"}  # fmt: skip
+LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH, "es": SPANISH, "it": ITALIAN, "pt": PORTUGUESE, "nl": DUTCH}
+# A script other than Latin names the language by itself; the model's code can refine it (Cyrillic: uk, not ru).
+SCRIPTS = {"CJK": "zh", "HIRAGANA": "ja", "KATAKANA": "ja", "HANGUL": "ko", "CYRILLIC": "ru", "GREEK": "el",
+           "ARABIC": "ar", "HEBREW": "he", "THAI": "th", "DEVANAGARI": "hi"}  # fmt: skip
+UNSPACED = {"CJK", "HIRAGANA", "KATAKANA", "THAI"}  # every letter counts as a word
 
 SYSTEM = (
     "You read an air freight customer's request for a quote and return its facts as JSON. "
@@ -327,10 +343,35 @@ def words_of(text: str, extra: dict[str, set[str]] | None = None) -> dict[str, i
     }
 
 
-def _language(text: str) -> str:
-    """The language with the most common words; English on a tie (round 70 was French, answered in English)."""
+def _script(text: str) -> str | None:
+    """The script most of the text is written in, None for Latin: a word counts once, a letter of a script without
+    spaces once each. Round 72 was Chinese signed "Thanks a lot and have a lovely day!", answered in English."""
+    units: Counter[str] = Counter()
+    for word in re.findall(r"[^\W\d_]+", text):
+        scripts = Counter(unicodedata.name(c, "?").split()[0] for c in word)
+        for script, n in scripts.items():
+            units[script] += n if script in UNSPACED else 1
+    if not units:
+        return None
+    best = max(units, key=units.get)
+    if best == "CJK" and (units["HIRAGANA"] or units["KATAKANA"]):
+        return "ja"
+    return SCRIPTS.get(best)
+
+
+def _language(text: str, said: object = None) -> str:
+    """The script's language, else the language with the most common words, English on a tie (round 70 was French,
+    answered in English). The model's ISO code (`said`) counts only for a language our word lists do not know:
+    it once answered "de" for an English mail full of German place names."""
+    said = said.strip().lower() if isinstance(said, str) and re.fullmatch(r"\s*[A-Za-z]{2}\s*", said) else None
+    own = said if said not in LANGUAGES else None
+    if script := _script(text):
+        return own or script
     counts = words_of(text)
-    return max(counts, key=lambda lang: (counts[lang], lang == "en"))
+    best = max(counts, key=lambda lang: (counts[lang], lang == "en"))
+    if own and counts[best] * 5 < len(re.findall(r"[^\W\d_]+", text)):
+        return own
+    return best
 
 
 def _preference(text: str) -> Preference:
@@ -565,7 +606,7 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
         pickup_postcode=postcode,
         pickup_zone=zone_of(postcode) if postcode else None,
         currency=currency if currency and re.fullmatch(r"[A-Z]{3}", currency) else None,
-        language=_language(text),  # the model answered "de" for an English mail with German place names
+        language=_language(text, data.get("language")),
         received_at=deadline.received_at,
         deadline_at=deadline.expires_at,
         extracted_by="model",
@@ -1101,7 +1142,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             rfq = apply_pickup(await ask(rfq))
             prose = {k: result.data.get(k) for k in PROSE}
     if files:
-        rfq = rfq.model_copy(update={"language": _language(_text(mail))})
+        rfq = rfq.model_copy(update={"language": _language(_text(mail), rfq.language)})
         for key in ("origin", "destination"):
             if named := [name for name, content in sources if names_code(content, getattr(rfq, key))]:
                 evidence[key] = named

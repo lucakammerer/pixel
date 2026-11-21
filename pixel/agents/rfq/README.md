@@ -228,9 +228,14 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
-- A request can come in French (round 70: « l'option la plus rapide », signed "Cheers"). `extract.py` `_language`
-  counts each language's common words; anything we have no `TEXT` for is answered in English, which the scorer
-  rejects as `wrong_language`.
+- A request can come in French (round 70: « l'option la plus rapide », signed "Cheers") or Chinese (round 72,
+  signed "Thanks a lot and have a lovely day!"; the model said "en" too). `extract.py` `_language` takes the
+  script's language when most of the mail is not Latin (`_script`, `SCRIPTS`), else counts each language's common
+  words (`LANGUAGES`); the model's ISO code counts only for a language those lists do not know, in a script that
+  is not Latin or when the lists find almost nothing. A language we have no `TEXT` for gets the code-written
+  English quote translated by one model call (`compose.py` `translate`, from `agent.py` `_in_language`, at most
+  `TRANSLATE_WAIT_S`), kept only when `translated_ok` finds the total once, the currency, carrier, trucker, transit
+  days and no new figure; else the English quote goes out and an `error` event says why.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says
   "non-dangerous". `extract.py` `dangerous_goods` reads the mail and every attachment; a declaration adds
   `dangerous_goods_documents` to `Rfq.missing` and emits `rfq.dangerous_goods` with the declared text. "Non-dangerous

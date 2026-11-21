@@ -2,6 +2,7 @@
 customer's first name and one short opening line (the closing slot is no longer rendered). Slots that fail a check are
 dropped, never the quote (P1, R9)."""
 
+import asyncio
 import json
 import random
 import re
@@ -520,6 +521,63 @@ def weight(kg: Decimal, language: str) -> str:
 def language_of(rfq: Rfq) -> str:
     """The language the mail is rendered in: the customer's when we have a text for it, else English."""
     return rfq.language if rfq.language in TEXT else "en"
+
+
+TRANSLATE_SYSTEM = (
+    "You translate an air freight forwarder's quote mail into the language with ISO code {language}, the "
+    "language the customer wrote in. Write it as a natural, polite business mail in that language, keeping its "
+    "lines and paragraphs. Copy every number, price, currency code, airport code, time, airline and company and "
+    "person name exactly as written, digits unchanged. Add or drop nothing. "
+    'Answer as JSON {{"body": ...}}.'
+)
+TRANSLATE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"body": {"type": "string"}},
+    "required": ["body"],
+}
+NUMBER = re.compile(r"\d+(?:[.,:]\d+)*")
+
+
+def translated_ok(english: str, translated: str, option: RateOption) -> bool:
+    """The translation keeps the total exactly once, its currency, the carrier and trucker, the transit days, and
+    writes no figure the English mail does not hold (a short one, a month or a day, may be added)."""
+    if translated.count(money(option.total)) != 1 or not re.search(rf"(?<!\d){option.transit_days}(?!\d)", translated):
+        return False
+    if any(name not in translated for name in (option.currency, option.carrier, option.trucker) if name):
+        return False
+    figures = set(NUMBER.findall(english))
+    return all(n in figures for n in NUMBER.findall(translated) if len(n) > 2)
+
+
+async def translate(ctx: Context, rfq: Rfq, option: RateOption, body: str, wait: float) -> str:
+    """The quote in the customer's language when we have no `TEXT` for it (round 72 was Chinese, answered in
+    English and rejected as wrong_language): the code-written English mail, translated by the model and checked by
+    `translated_ok`. The English mail on any failure or after `wait` seconds; never blocks the quote."""
+    if language_of(rfq) == rfq.language or wait <= 0:
+        return body
+    try:
+        result = await asyncio.wait_for(
+            llm.ask_json(
+                ctx,
+                purpose="quote.translate",
+                system=TRANSLATE_SYSTEM.format(language=rfq.language),
+                user=body,
+                schema=TRANSLATE_SCHEMA,
+                session_id=rfq.session_id,
+                max_output_tokens=600,
+            ),
+            wait,
+        )
+        text = result.data.get("body")
+        if isinstance(text, str) and translated_ok(body, text.strip(), option):
+            return text.strip()
+        error = "translation dropped a figure or name"
+    except Exception as exc:  # noqa: BLE001  the English quote still goes out
+        error = type(exc).__name__
+    events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                payload={"where": "quote.translate", "language": rfq.language, "error": error})  # fmt: skip
+    return body
 
 
 def reply_subject(subject: str | None) -> str | None:

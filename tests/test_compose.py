@@ -387,3 +387,25 @@ def test_a_french_request_is_answered_in_french_with_its_fastest_option():
 )
 def test_the_goods_are_named_as_the_customer_calls_them(request_text, goods):
     assert compose.goods_of(request_text) == goods
+
+
+async def test_a_chinese_request_is_answered_in_chinese_or_in_checked_english(ctx, monkeypatch):
+    """Round 72: a Chinese mail signed "Thanks a lot and have a lovely day!" was read as English (the model said
+    "en" too) and the English quote was rejected as wrong_language. The script decides, and a language we have no
+    text for gets the English mail translated, kept only when every figure and name survives."""
+    mail = captured("rfq-chinese-door.json")
+    assert extract._language(extract._text(mail), "en") == "zh"
+    assert extract._language("Привет, нужна ставка на 500 кг до LIM, спасибо", "uk") == "uk"
+    assert extract._language("Please quote 500 kg from Lueneburg, Germany to LIM. Thanks, regards", "de") == "en"
+    request = rfq("zh")
+    _, english = compose.render(request, OPTION)
+    answers = iter([english.replace("Hello,", "您好，"), english.replace("1234.57", "1234,57")])
+
+    async def fake_ask(ctx, **kw):
+        assert kw["purpose"] == "quote.translate" and "zh" in kw["system"]
+        return LlmResult(data={"body": next(answers)}, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask)
+    assert (await compose.translate(ctx, request, OPTION, english, 5)).startswith("您好，")
+    assert await compose.translate(ctx, request, OPTION, english, 5) == english
+    assert await compose.translate(ctx, rfq("fr"), OPTION, english, 5) == english  # our own text, no call
