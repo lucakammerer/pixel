@@ -35,6 +35,12 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - Spreadsheet changes need no files: `tools/benchmark_generalization.py` `XLSX_CHANGES` edits every kit `.xlsx` in
   memory and requires the original's tariffs or a refusal. Known gaps for them go in
   `tariffs/variants/xlsx_known_gaps.json`, keyed `change:file`.
+- `rfqs/simulate-sources.json`: for every way `tools/simulate.py` relates a mail to its attachment (agrees,
+  contradicts, silent, an explicit correction in four wordings, another shipment's document, a document that
+  contradicts itself), which source a right reading takes for weight and volume, and the round or pull request that
+  says so. The generator computes each case's answer from its own figures and this table, never from the code.
+  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
+  `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 
