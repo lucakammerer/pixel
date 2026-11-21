@@ -2,13 +2,14 @@
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import httpx
 
 from pixel.api.client import ApiError
 from pixel.contracts import RateOption, Source
+from pixel.core import timing
 from pixel.pricing.calc import to_eur
 
 
@@ -71,7 +72,7 @@ def _detail(response: httpx.Response) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return timing.now()
 
 
 class Portal:

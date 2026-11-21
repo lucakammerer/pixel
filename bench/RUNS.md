@@ -56,6 +56,35 @@ Three lines per scenario: what we tried, what changed, what is next.
   by rule when the model gives none, one short opening (an echo of the mail is dropped), validity as "17:22 today",
   chargeable weight only when above gross, no closing line, 3 to 4 phrasings per sentence; changed: wording only,
   same total, carrier, timing and one model call; next: the `human` column for the first round it is live.
+- 21.11. 17:35 CET: board after round 16: human awards START Milan 4, AEIOU 4, MAKEANOTHERMD 1, Austrian Power 1,
+  TALOS 1, PIXEL 0. Our accepted quotes of rounds 12 to 14 went out in the clerk's voice and won none; rounds 15
+  and 16 were rejected (`too_low`, `too_high`), so no mail of ours was read.
+- 21.11. 17:40 CET: tried answering the customer's own closing in kind (`compose.in_kind`: "have a lovely day"
+  returned, "Best regards to <their town>", "Cheers" and "Viele Grüße" mirrored, the arrival "in <the city they
+  wrote>"), the opening line joined to the offer and the validity to the booking sentence, one phrasing that shows
+  the comparison done; changed: wording only, the model's opening was dropped in every live quote since round 12 so
+  the stock line stays the default; next: the `human` column after the first accepted round with it live, then the
+  model's opening line (the extraction's prompt asks for two sentences, `clean` drops them).
+- 21.11. 17:43 CET: tried naming the goods as the customer does (`compose.goods_of`, by rule from their words: all
+  17 live requests and 17 of 19 fixtures give one) in the opening line, and answering "the earliest departure" when
+  asked (rounds 3 and 7 asked, we gave the arrival only); changed: wording only, the model's opening still wins
+  when it passes `clean`; next: the `human` column, then the booking mails in the same kind (#71 covers the quote
+  only) and a German request to read the German wording against.
+- 21.11. 17:46 CET: rounds 15 to 17 rejected (`too_low`, `too_high`, `too_low`: the pickup from "our warehouse"),
+  so no mail of ours stood before the jury; board unchanged for us. Tried the booking mails greeted and signed as
+  the quote (`booking._tell_customer`: register, the name by rule when the model gave none, the sign-off to their
+  town or as "Cheers"); changed: wording only, no wish returned a second time in one thread; next: the first
+  accepted round with #71 and #72 live.
+- 21.11. 17:50 CET: round 18 rejected too (`too_high`, again a pickup from "our warehouse"): four rounds without a
+  mail of ours before the jury, board unchanged for us. Tried the customer's word for the place ("your warehouse"
+  when they write warehouse, else "your site"); changed: one word; next: unchanged, the first accepted round with
+  #71 to #73 live.
+- 21.11. 17:55 CET: round 19 accepted (60 points), our first quote in the new wording: the goods named, "your
+  warehouse", the arrival "in Dallas", "Viele Grüße" back to Deniz. Board after it: human START Milan 4, AEIOU 4,
+  MAKEANOTHERMD 1, Austrian Power 1, TALOS 1, PIXEL 0; the human award for round 19 was not out yet. Its booking
+  mail said "booked at 5819.38 EUR all-in" after a quote of 6175.48 (the portal prices the flight without our
+  pickup, as in 8 of 16 bookings today); main's `booking._notify_booked` now states the quoted total. Next: the
+  human column once round 19's award is out, then the German wording on a German request.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
@@ -85,3 +114,14 @@ What follows:
 - A question comes about 11 minutes after the request of a booked round. None comes for a round that was rejected
   or not booked (9, 10, and 11 where the customer still owes the dangerous-goods documents): that is the main loop's
   and the generalization loop's ground, not wording.
+- 21.11. 18:45, round 14 missed: a "RE: FW:" request quoted an old one (ZRH-MEL, 3,459 kg) below it; the model read
+  it and guessed CGN for a Wuppertal pickup (zone DUS). #55: quoted history and a reply's subject are not read, and
+  the zone's airport wins unless the mail names the origin. #48: a refused model gives a guess, not a miss. Open for
+  others: `rfq.currency` is read but used nowhere (a USD request gets an EUR quote); booking `intent` books "we will
+  not go ahead". Next: replay every live request of the day offline after each round.
+- 21.11. 18:50, "pickup from our warehouse" with no place (rounds 15-18, all lost): #69 takes the site the customer
+  named in an earlier request, which turned two misses into quotes, but 15 and 17 went out without a pickup (too
+  low) and 16 and 18 with one (too high: the scorer's best lies below every option at the history zone we saw).
+  Which pickup the scorer means is unproven; evidence is with the main loop. Next: switch the reading as soon as
+  a verdict or the feedback analysis shows what fits.
+

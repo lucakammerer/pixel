@@ -19,6 +19,20 @@ def chargeable_kg(weight_kg: Decimal, volume_cbm: Decimal) -> Decimal:
     return max(weight_kg, volume_cbm * CBM_KG)
 
 
+def bid_charge(amount: Decimal, per_kg: bool, rfq: Rfq) -> Decimal:
+    """A carrier's quoted flat charge or rate per chargeable kilogram, before final rounding."""
+    return amount * chargeable_kg(rfq.weight_kg, rfq.volume_cbm) if per_kg else amount
+
+
+def bid_total(charges: list[tuple[Decimal, bool]], rfq: Rfq) -> Decimal:
+    return sum((bid_charge(amount, per_kg, rfq) for amount, per_kg in charges), Decimal(0))
+
+
+def transit_days(value: int, hours: bool) -> int:
+    """Whole days on the quote, rounded up so an hourly bid never promises an earlier arrival."""
+    return (value + 23) // 24 if hours else value
+
+
 def rate_for(breaks: tuple[tuple[Decimal, Decimal], ...], kg: Decimal) -> Decimal:
     """The rate of the bracket `kg` falls in: the last break at or below it."""
     rate = breaks[0][1]
@@ -59,6 +73,11 @@ def price_tariff(tariff: LaneTariff, rfq: Rfq) -> RateOption:
         transit_days=tariff.transit_days,
         dataset_version=tariff.version,
     )
+
+
+def air_price(option: RateOption) -> Decimal:
+    """Purchase price of the airline part, in the currency of the accepted quote."""
+    return option.total - option.pickup
 
 
 def with_pickup(option: RateOption, pickup: Decimal, trucker: str) -> RateOption:

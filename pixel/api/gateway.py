@@ -9,7 +9,7 @@ from pixel.api.client import ApiError
 
 def _checked(response: httpx.Response) -> dict[str, Any]:
     if response.status_code >= 300:
-        raise ApiError(response.status_code, response.text[:300])
+        raise ApiError(response.status_code, "gateway request failed")
     return response.json()
 
 

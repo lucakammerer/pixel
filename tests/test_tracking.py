@@ -57,6 +57,24 @@ def shipped(ctx, session_id, customer, origin, destination, kg, postcode=None):
     return s
 
 
+def test_described_shipment_matches_rounded_weight(pipe):
+    ours = shipped(pipe.ctx, 1, "buyer@acme.example", "CGN", "ORD", "676.4")
+    shipped(pipe.ctx, 2, "buyer@acme.example", "CGN", "ORD", 900)
+    assert agent.described(pipe.ctx, "CGN to ORD, 676 kg") == [ours]
+
+
+def test_described_shipment_rejects_wrong_weight(pipe):
+    shipped(pipe.ctx, 1, "buyer@acme.example", "CGN", "ORD", 676)
+    found, _ = agent.match(pipe.ctx, "CGN to ORD, 999 kg", "tracking@hackloop.mail")
+    assert found == []
+
+
+def test_described_shipment_rejects_wrong_postcode(pipe):
+    shipped(pipe.ctx, 1, "buyer@acme.example", "CGN", "ORD", 676, postcode="51447")
+    found, _ = agent.match(pipe.ctx, "61018 to ORD, 676 kg for buyer@acme.example", "tracking@hackloop.mail")
+    assert found == []
+
+
 async def test_the_desk_describes_a_door_shipment_by_pickup_postcode_weight_and_company(pipe):
     ours = shipped(pipe.ctx, 1, "lindqvist-medtech@hackloop.mail", "CGN", "ORD", 676, postcode="51447")
     same_destination = shipped(pipe.ctx, 2, "someone-else@hackloop.mail", "FRA", "ORD", 676)
@@ -84,3 +102,16 @@ async def test_a_described_shipment_we_do_not_hold_is_not_guessed(pipe):
     await agent.handle(pipe.ctx, mail(44, 44, sender="tracking@hackloop.mail",
                                       body="Nordwind GmbH | 20095 to ORD | 410 kg. Where is it now?"))  # fmt: skip
     assert "no shipment" in pipe.sent[0]["body"]
+
+
+def test_exact_weight_and_exact_pickup_win_and_ambiguous_descriptions_disclose_no_records(pipe):
+    ctx = pipe.ctx
+    a = shipped(ctx, 1, "buyer@example.invalid", "AAA", "BBB", 676, postcode="51447")
+    b = shipped(ctx, 2, "buyer@example.invalid", "AAA", "BBB", 680, postcode="51447")
+    assert agent.described(ctx, "AAA to BBB, 676 kg") == [a]
+    assert agent.described(ctx, "AAA to BBB, 678 kg") == []
+    shipped(ctx, 3, "buyer@example.invalid", "AAA", "BBB", 676)
+    assert agent.described(ctx, "51447 to BBB, 676 kg") == [a]
+    assert agent.described(ctx, "AAA to BBB, 676 kg") == []
+    assert agent.match(ctx, "Other ref BK-UNKNOWN, AAA to BBB, 680 kg", "desk@example.invalid")[0] == []
+    assert b not in agent.described(ctx, "AAA to BBB, 680 kg for stranger@example.invalid")

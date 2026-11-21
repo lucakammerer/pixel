@@ -4,11 +4,13 @@ import asyncio
 import re
 from collections.abc import Awaitable, Callable
 
+from pixel.agents.rfq.booking import CONFIRMED
 from pixel.api.mailbox import RATEDESK, mapping_gaps
 from pixel.contracts import Message
 from pixel.core import db
 from pixel.core.context import Context
 from pixel.core.events import emit
+from pixel.crm import bookings
 
 SINCE_KEY = "poller.since_id"
 NAMES_OUR_MAIL = re.compile(r'your mail "(.+?)"')
@@ -34,6 +36,9 @@ def session_of(ctx: Context, message: Message) -> int:
         ).fetchone()
         if row:
             return row["session_id"]
+    match = CONFIRMED.search(message.subject) or CONFIRMED.search(message.body)
+    if match and (booking := bookings.by_reference(ctx, match.group(1).rstrip(".,:;"))):
+        return booking.session_id
     return message.id
 
 
@@ -51,26 +56,28 @@ def store(ctx: Context, message: Message) -> bool:
 def ingest(ctx: Context, message: Message) -> Message | None:
     """Session, store, `mail.in`. None for a mail we already hold."""
     message = message.model_copy(update={"session_id": session_of(ctx, message)})
-    if not store(ctx, message):
-        return None
-    if gaps := mapping_gaps(message.raw):
-        error = f"mail without {gaps}: check api/mailbox.py to_message"
-        emit(ctx, "error", "poller", session_id=message.session_id, message_id=message.id,
-             payload={"where": "mapping", "error": error})  # fmt: skip
-    emit(
-        ctx,
-        "mail.in",
-        "poller",
-        session_id=message.session_id,
-        message_id=message.id,
-        payload={
-            "from": message.sender,
-            "subject": message.subject,
-            "in_reply_to": message.in_reply_to,
-            "attachments": [a.filename for a in message.attachments],
-            "sent_at": message.sent_at.isoformat(),
-        },
-    )
+    with db.atomic(ctx.db):
+        if not store(ctx, message):
+            return None
+        ctx.db.execute("INSERT INTO mail_work(message_id) VALUES (?)", (message.id,))
+        if gaps := mapping_gaps(message.raw):
+            error = f"mail without {gaps}: check api/mailbox.py to_message"
+            emit(ctx, "error", "poller", session_id=message.session_id, message_id=message.id,
+                 payload={"where": "mapping", "error": error})  # fmt: skip
+        emit(
+            ctx,
+            "mail.in",
+            "poller",
+            session_id=message.session_id,
+            message_id=message.id,
+            payload={
+                "from": message.sender,
+                "subject": message.subject,
+                "in_reply_to": message.in_reply_to,
+                "attachments": [a.filename for a in message.attachments],
+                "sent_at": message.sent_at.isoformat(),
+            },
+        )
     return message
 
 
@@ -81,15 +88,16 @@ def spawn(ctx: Context, coro: Awaitable[None]) -> asyncio.Task:
     return task
 
 
-def accept(ctx: Context, message: Message, on_message: Callable[[Message], Awaitable[None]]) -> None:
+def accept(ctx: Context, message: Message, on_message: Callable[[Message], Awaitable[None]]) -> bool:
     """One mail from a poll or a push: ingest, then dispatch without blocking the caller."""
     try:
         stored = ingest(ctx, message)
     except Exception as e:  # noqa: BLE001  one bad mail must not stop the mailbox
         emit(ctx, "error", "poller", message_id=message.id, payload={"where": "ingest", "error": repr(e)})
-        return
+        return False
     if stored:
         spawn(ctx, on_message(stored))
+    return True
 
 
 async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) -> None:
@@ -108,10 +116,15 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
             await asyncio.sleep(ctx.settings.poll_seconds)
             continue
         for message in messages:
-            accept(ctx, message, on_message)
-            db.put(ctx.db, SINCE_KEY, str(message.id))
-        if next_since_id > since_id:
-            since_id = next_since_id
+            if not accept(ctx, message, on_message):
+                # Preserve the last durable cursor so a transient storage failure cannot lose this mail.
+                await asyncio.sleep(ctx.settings.poll_seconds)
+                break
+            since_id = message.id
             db.put(ctx.db, SINCE_KEY, str(since_id))
+        else:
+            if next_since_id > since_id:
+                since_id = next_since_id
+                db.put(ctx.db, SINCE_KEY, str(since_id))
         if len(messages) < 200:
             await asyncio.sleep(ctx.settings.poll_seconds)

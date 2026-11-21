@@ -16,5 +16,5 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     truckers = store.carriers(ctx, "trucker", rfq.pickup_zone)
     if not truckers:
         return []
-    await bids.request(ctx, rfq, truckers, pickup=True)
-    return await bids.collect(ctx, rfq.session_id, deadline, len(truckers), pickup=True)
+    mailed = await bids.request(ctx, rfq, truckers, pickup=True)
+    return await bids.collect(ctx, rfq.session_id, deadline, mailed, pickup=True)

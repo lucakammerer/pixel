@@ -98,7 +98,7 @@ uv run python -m tools.bench_models             # candidate models on request ma
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
-tools/deploy.sh                                 # the checked-out commit to the live host, restarts the service
+tools/deploy.sh --after-quote                   # main to the live host in the next safe window (tools/window.py); the deploy job on Luca's Mac calls it
 ```
 
 Only one process may run with `PIXEL_DRY_RUN=0` against the real mailbox: the `pixel` service on the live host
@@ -123,9 +123,10 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
 3. Update with `main` once, right before the local run. No second rebase unless GitHub reports a conflict.
 4. **Reviews happen after the merge** and never hold a pull request. A finding becomes a follow-up pull request
    under the same rule.
-5. **One thread deploys:** the main thread deploys `main` with `tools/deploy.sh` once per round, after that round's
-   quote has gone out, whenever `main` has new commits. A fix for a round we just lost may go live from its branch
-   first; it is merged right after.
+5. **A job deploys, not a model:** a launchd job on Luca's Mac (`~/.pixel-deploy/deploy-once.sh`, every 30 s, log
+   `~/.pixel-deploy/deploy.log`) deploys `origin/main` when it is ahead of the host and `uv run pytest -q` is green
+   on that commit, with `tools/deploy.sh --after-quote`, and rolls back to the previous commit if the service does
+   not start. A fix for a round we just lost may go live from its branch first; it is merged right after.
 
 `tools/kpi_pr.sh` measures a branch against `main` on the live host with the real portal and gateway.
 

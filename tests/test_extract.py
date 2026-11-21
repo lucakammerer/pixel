@@ -320,7 +320,7 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
         return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
     monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
-    rfq = await extract.extract(None, mail("goods as listed"), DEADLINE)
+    rfq = await extract.extract(None, mail("goods as listed, 676 kg in total"), DEADLINE)
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.missing) == (
         Decimal(expected[0]), Decimal(expected[1]), expected[2], ()
     )  # fmt: skip
@@ -358,13 +358,13 @@ async def test_a_pickup_named_by_its_town_takes_that_zone_and_its_airport(conn, 
     assert (rfq.origin, rfq.pickup_zone, rfq.pickup_postcode, rfq.missing) == ("AAA", "81", None, ())
 
 
-async def test_a_pickup_town_beside_another_zone_town_is_not_guessed(conn, emitted):
+async def test_the_pickup_lines_town_wins_over_the_signatures(conn, emitted):
     message = captured("rfq-door-import-two-towns.json")  # "at our site in 24983 (Kiel)", "greetings from Regensburg"
     ctx = Context(settings(), conn, None, None, None, None)
     store.save_zones(ctx, [{"zone": "24", "area": "Kiel", "airport": "AAA"},
                            {"zone": "93", "area": "Regensburg", "airport": "CCC"}])  # fmt: skip
     rfq = extract.by_rules(message.model_copy(update={"body": message.body.replace("24983 ", "")}), DEADLINE)
-    assert extract._town_zone(ctx, rfq, extract._text(message)).pickup_zone is None
+    assert extract._town_zone(ctx, rfq, extract._text(message)).pickup_zone == "24"  # the pickup line's town
     assert (await extract.extract(ctx, message, DEADLINE)).origin == "AAA"
 
 
@@ -416,3 +416,74 @@ def test_an_older_mail_quoted_below_the_request_is_not_read():
     assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode) == (
         "", "PEK", Decimal(1081), Decimal("8.03"), "42401"
     )  # fmt: skip
+
+
+async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures" / "mails" / "synthetic-rfq-facts-in-attachment.json").read_text()
+    )
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    store.save_zones(ctx, [{"zone": zone_of("61391"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("AAA", "GRU", Decimal(715), Decimal("2.65"))
+    assert extract.DG_DOCUMENTS in rfq.missing
+    assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
+        (kind, kw["payload"]) for kind, kw in emitted
+    ]
+
+
+@pytest.mark.parametrize(
+    "body, model_kg, model_cbm, pieces, expected",
+    [
+        ("Hi, 1 pallet 480 lbs, 120x80x100 cm, AAA area to BBB.", "217.7", "0.96", 1, (480 * extract.LB, "0.96")),
+        ("Two cartons of 60 x 40 x 50 cm, 95 kg together, to BBB.", "95", "0.25", 2, ("95", "0.240")),
+    ],
+)
+async def test_a_number_the_mail_does_not_write_is_computed_by_code(monkeypatch, emitted, body, model_kg, model_cbm,
+                                                                    pieces, expected):  # fmt: skip
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": model_kg, "volume_cbm": model_cbm,
+                "pieces": pieces, "lots": [], "preference": "cheapest", "door_pickup": False,
+                "pickup_postcode": None, "currency": None, "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    rfq = await extract.extract(None, mail(body), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm) == (Decimal(expected[0]), Decimal(expected[1]))
+
+
+async def test_a_pickup_with_no_place_takes_the_site_this_customer_named_before(conn, monkeypatch):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "36", "area": "Fulda", "airport": "AAA"}])
+    earlier = captured("rfq-door-three-lots.json")  # round 9: "Pickup is at our site in 36627 (Fulda)"
+    await extract.extract(ctx, earlier, DEADLINE)
+    body = (
+        "Could you quote the fastest air freight option to PVG, including truck pickup from our warehouse to the "
+        "airport? 11 pieces, 349 kg gross, 2.40 cbm."
+    )  # fmt: skip  round 16, same customer
+    later = mail(body).model_copy(update={"id": 3937, "session_id": 3937, "sender": earlier.sender})
+    rfq = await extract.extract(ctx, later, DEADLINE)
+    assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("AAA", "36627", "36", "rules")
+
+
+async def test_of_several_earlier_sites_the_latest_counts(conn, monkeypatch):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "51", "area": "Bergisch Gladbach", "airport": "CCC"},
+                           {"zone": "21", "area": "Lueneburg", "airport": "AAA"}])  # fmt: skip
+    for name in ("rfq-door-no-origin.json", "rfq-dg-instruction-bullets.json"):  # Lindqvist: 51447, then 21663
+        await extract.extract(ctx, captured(name).model_copy(update={"attachments": []}), DEADLINE)
+    rfq = await extract.extract(ctx, captured("rfq-door-warehouse-earlier-sites.json"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.pickup_postcode, rfq.extracted_by) == ("AAA", "EZE", "21663", "rules")
