@@ -89,9 +89,9 @@ TEXT = {
             "The price includes the air freight and the fuel and security surcharges.",
         ),
         "basis_pickup": (
-            "That covers pickup at your site by {trucker}, air freight, fuel and security surcharges.",
+            "That covers pickup at your {site} by {trucker}, air freight, fuel and security surcharges.",
             (
-                "The price includes collection from your site by {trucker}, the air freight and the fuel and security "
+                "The price includes collection from your {site} by {trucker}, the air freight and the fuel and security "
                 "surcharges."
             ),
         ),
@@ -302,6 +302,7 @@ OWN_BYE = re.compile(r"^\s*(cheers|viele gr(?:ü|ue)(?:ß|ss)e)\b", re.IGNORECAS
 SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
+WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
 # The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
 GOODS = re.compile(
@@ -477,7 +478,12 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         if goods
         else pick(t["intro"]),
         core,
-        pick(t["basis_pickup"]).format(trucker=option.trucker) if option.trucker else pick(t["basis"]),
+        # their word for the place: "our warehouse" is answered with "your warehouse"
+        pick(t["basis_pickup"]).format(
+            trucker=option.trucker, site="warehouse" if WAREHOUSE.search(request) else "site"
+        )
+        if option.trucker
+        else pick(t["basis"]),
     ]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
