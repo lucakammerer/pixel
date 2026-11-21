@@ -40,6 +40,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   line and a person's signature (`PIXEL_SIGNER`). Code formats every number and name; two phrasings per language
   alternate by session. `check` proves the finished mail holds the total exactly once with its currency, carrier
   and transit; on failure the mail is rendered without the model's slots (R9, P1).
+- `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
+  own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the transit), one air
+  waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
   `closing`, on `PIXEL_MODEL_PROSE` when set. `clean` drops each slot that holds a digit, a three-letter code, a
   currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German
@@ -65,6 +68,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg).
+- A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
+  30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
+- A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0
+  under-prices a light, bulky shipment.
+- "Not urgent" and "no rush" contain the urgency words: they mean cheapest.
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.
 - The prose slots must not contain a price or a code: the scorer reads the one total we write.

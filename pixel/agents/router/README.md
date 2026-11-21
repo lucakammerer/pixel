@@ -34,6 +34,9 @@ call fails, a new thread becomes `customer_rfq` (a missed request costs the whol
 
 ## Pitfalls
 
+- A customer's request can carry an attachment (a packing specification as xlsx). A file alone does not make a
+  tariff mail: only from a carrier of the carrier list, or when a mail that asks for nothing brings a file named
+  like a tariff. Routing such a request to the tariff agent lost it.
 - The carrier list lives in the `carriers` table that `pricing/store.py` fills; until the start kit is ingested,
   rule 5 still catches tariff mails by their attachment.
 - The fixtures in `tests/fixtures/mails/` are synthetic until the first real mails are captured.
