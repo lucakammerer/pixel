@@ -134,3 +134,16 @@ async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch)
     emit(ctx, "quote.missed", "orchestrator", session_id=7, payload={"reason": "no_price"})
     monkeypatch.setattr(feedback, "STARTED", "2026-01-01T00:00:00")
     assert await feedback.alert(ctx) == 3  # the new code missed one too: reported again, with what else is open
+
+
+def test_one_misread_round_does_not_change_the_pickup_rule(conn):
+    ctx = Context(settings(), conn, None, None, None, None)
+    for session_id in (1, 2, 3):
+        for name, eur, hours in (("A", "100", 8), ("B", "100", 12), ("C", "120", 4)):
+            bid = option(name, eur, 0, trucker=name, hours=hours)
+            conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES ('t', ?, 'option.found', 'p', ?)",
+                         (session_id, json.dumps({"option": bid.model_dump(mode="json")}, default=str)))  # fmt: skip
+    for session_id in (1, 2):  # the scorer took A, which only min-max picks
+        conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES ('t', ?, 'feedback', 'b', ?)",
+                     (session_id, json.dumps({"trucker": "A"})))  # fmt: skip
+        assert feedback.pickup_rule(ctx) == ("share_of_best" if session_id == 1 else "min_max")
