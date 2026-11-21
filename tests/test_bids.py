@@ -170,5 +170,7 @@ def test_rules_read_the_captured_airline_bid_and_pickup_bid():
     """The airline writes its total ungrouped; both mails carry a validity time with a time zone after a number."""
     airline = bids.parse(captured("bid-airline-priced.json"), rfq())
     assert (airline.total, airline.currency, airline.transit_days) == (D("1195.90"), "EUR", 3)
+    labelled = bids.parse(captured("bid-airline-priced-labelled.json"), rfq())
+    assert (labelled.total, labelled.currency, labelled.transit_days) == (D("586.80"), "EUR", 6)
     pickup = bids.parse(captured("bid-pickup-priced.json"), rfq(), needs_transit=False)
     assert (pickup.total, pickup.currency) == (D("182.62"), "EUR")

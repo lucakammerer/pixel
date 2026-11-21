@@ -17,4 +17,6 @@ Captured carrier answers, each to a request in the wording of `pixel/pricing/bid
   flies.
 - `bid-airline-priced.json`: an airline's all-in total (written without a thousands separator), transit days, a
   validity time and a reference to quote when booking.
+- `bid-airline-priced-labelled.json`: the same from an airline that is neither in a sheet nor on the portal, with
+  transit and validity on labelled lines of their own. The carriers' wording differs from mail to mail.
 - `bid-pickup-priced.json`: a trucker's pickup price, a pickup time in hours, a validity time and a quote reference.
