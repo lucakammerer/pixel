@@ -27,8 +27,9 @@ CURRENCY = (
     "IDR|PHP|VND|ZAR|EGP|KES|NGN|BRL|MXN|ARS|CLP|COP|PEN"
 )
 SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP", "euro": "EUR", "euros": "EUR"}
+# "3 euro pallets" and "4 Euro-Paletten" count pallets, never a price.
 PRICED = re.compile(
-    rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£]|[Ee]uros?)(?![A-Za-z])"
+    rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£]|[Ee]uros?(?!\s*-?\s*[Pp]all?ett?(?:e|en|s)?\b))(?![A-Za-z])"
 )
 # A pdf wraps "for 256.85" and "EUR." onto two lines: amount and currency are joined again, only when the next line
 # holds the currency alone ("Rate per kg: 2.80" over "EUR 300.00 all-in" stays two prices).

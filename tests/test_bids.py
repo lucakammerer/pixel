@@ -552,3 +552,16 @@ async def test_the_model_cross_checks_a_bid_the_rules_read_and_its_total_wins(ct
     monkeypatch.setattr(llm, "ask_json", down)
     await bids.record(ctx, mail("b@truck", "Pickup EUR 90.00"))
     assert [o["option"]["pickup"] for o in kinds(ctx, "option.found")] == ["181.96", "90.00"]
+
+
+@pytest.mark.parametrize(
+    ("body", "total"),
+    [
+        ("We can collect your shipment (total 3 euro pallets) in 50978: 165.00 EUR, pickup within 4 hours.", "165.00"),
+        ("Pickup of 4 Euro pallets from 50978 to FRA: 210.00 EUR, collection within 5 hours.", "210.00"),
+        ("Our price for the 2 Euro-Paletten is 145.00 EUR, pickup in 3 hours.", "145.00"),
+    ],
+)
+def test_euro_pallets_are_no_price(body, total):
+    option = bids.parse(mail("t@x", body), rfq(), needs_transit=False)
+    assert option is not None and (option.total, option.currency) == (D(total), "EUR")
