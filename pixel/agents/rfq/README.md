@@ -226,8 +226,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   can use a space for thousands ("1 250 kg"). `tests/fixtures/rfqs/rewrites.jsonl` holds such phrasings; a row with
   `known_gap` is one the rules read wrong today.
 - A carrier's answer can name the offer's validity in days next to the transit time ("valid for 7 days, transit 3
-  days"); the first number of days is not always the transit. `tests/fixtures/mails/bid_probes.jsonl` holds such
-  answers.
+  days"); the first number of days is not always the transit. `pricing/bids.py` `_days` takes the number after
+  "transit", "Laufzeit" or "T/T", else the first one no "valid", "gültig" or "good" stands before.
+  `tests/fixtures/mails/bid_probes.jsonl` holds such answers.
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

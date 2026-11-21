@@ -87,7 +87,7 @@ What the repo shows:
 | R13 Portal /rates | rate_id or a field missing → e5 N [M4] | price, fx, transit Y | e5 renamed field, GBP fx key, transit_hours N/P [M4] | e9 rates only on the page or desk N [M4] | e8 portal ≠ sheet Y | extra fields Y | e4 shorter validity Y; **n29** slow responses P | e1 429, e2 503, 5xx/timeouts Y |
 | R14 Portal /bookings | ?? | price ≠ quote (r19) Y | **n31** response field renamed: KeyError in `book` is uncaught, so no booking and no notice N [M4] | ?? | ?? | ?? | e4 410 Y | e3 503 Y; **n30** 404/409 → failed, no recovery P [M4] |
 | R15 Rate desk mail | e9 never asked N [M4] | e9 N | e9 rigid `parse_desk` N [M4] | own thread Y | NA | NA | ?? | NA |
-| R16 Airline bid | no transit / no currency P (model) | f2 non-EUR without fx N [M9]; f5 conditional P | f1 Y; f3 validity before transit N [M7]; f4 two levels P; hours Y | f7 new thread N [M4]; f8 PDF attachment N [M4] | f4 two prices P | weight restated, references Y | f13 late Y | NA |
+| R16 Airline bid | no transit / no currency P (model) | f2 non-EUR without fx N [M9]; f5 conditional P | f1 Y; f3 validity before transit Y; f4 two levels P; hours Y | f7 new thread N [M4]; f8 PDF attachment N [M4] | f4 two prices P | weight restated, references Y | f13 late Y | NA |
 | R17 Trucker bid | f9 no pickup hours P [M7] | f11 extra fees P | f9 "tomorrow 08:00" P [M7]; "10.5 h" Y | f7 new thread N [M4] | f11 P | clock times Y | late Y | f10 asks for a postcode Y |
 | R18 Booking confirmation | h2 no reference P [M4] | **n32** confirmed price or flight ≠ ours U | h1 Y | own thread / our thread Y (6adaf83) | n32 U | h1 refusal Y | h3 early or duplicate P | NA |
 | R19 Tracking question | h4 no weight / postcode P [M7] | unknown shipment → "none" Y | h4 city names, lbs; h5 AWB N/P [M7] | c8 from the customer thread N [M3] | desk postcode vs ours Y (r19) | another customer's name Y | question before confirmation P | NA |
@@ -393,7 +393,7 @@ Columns: **Ex.** = the one-factor mutation · **Live** = round · **Code** · **
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | f1 | Per kg vs total, labels, German | – | 14:xx | YES `bids._price` | bench 7 | M | 60 |
 | f2 | Bid in USD/CHF **without an fx line** | "USD 900, 3 days" | – | NO: rules and model both drop it (`currency != EUR and fx is None`) | test_bids | M | 60 |
-| f3 | Validity before transit | "valid 7 days, transit 3 days" | – | NO (GAP `TRANSIT` first match) | bench 7 GAP | M | 60 |
+| f3 | Validity before transit | "valid 7 days, transit 3 days" | – | YES `bids._days`: the number after transit/Laufzeit/T/T, never a validity | bench 7 | M | – |
 | f4 | Two service levels | "Express 1200/1d, Economy 800/4d" | – | PARTIAL: rules refuse, the model returns one | bench 7 | M | 60 |
 | f5 | Conditional price | "subject to space", "+EUR 50 if…" | – | PARTIAL (read as price) | none | L | 60 |
 | f6 | Declines, soft declines | – | 14:13 | YES | bench 7 | M | – |
