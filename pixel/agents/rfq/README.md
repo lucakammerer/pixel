@@ -64,7 +64,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   when it names one destination and a pickup postcode; the origin is the zone's airport.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
-- A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg).
+- A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
+  code cannot read leaves the whole list to the model: a sum without it would be short again.
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
 - A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0

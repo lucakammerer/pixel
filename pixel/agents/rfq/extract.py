@@ -34,6 +34,7 @@ VOLUME = (
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\b", re.IGNORECASE
 )
+LOT_LINE = r"(?im)^\s*(?:[-*•]\s*(?=\d)|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])"
 LOT = re.compile(
     r"(?im)^\s*(?:[-*•]|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])\s*(\d+)\s+"
     r"(?!(?:kgs?|kilos?|lbs?|cbm|cm|mm|m3|m)\b)[^\W\d](.+)$"
@@ -199,6 +200,8 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     48 kg gross, each 110 x 110 x 52 cm"). A figure is per piece with "each", else for the whole lot ("9 pieces,
     345 kg gross" was 345 kg to the scorer); code adds them up. None unless there are several lots, each certain."""
     lots = LOT.findall(text)
+    if len(lots) != len(re.findall(LOT_LINE, text)):  # a lot we cannot read would be left out of the sum
+        return None
     weight, volume, pieces = Decimal(0), Decimal(0), 0
     for count, rest in lots:
         n = int(count)
