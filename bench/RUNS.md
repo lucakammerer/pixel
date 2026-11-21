@@ -40,4 +40,8 @@ Three lines per scenario: what we tried, what changed, what is next.
   dangerous goods; round 10 was rejected (`dg_docs_missing`). `extract.py` now finds the declaration in the mail or
   any attachment and marks the request; naming it in the quote is compose's. Next: labelled-bullet requests by rules,
   and the language read by code, not the model.
+- 21.11. 18:00, model path: on the three-lot mail without its labels gpt-4.1-mini wrote 1094 kg, but copied each group
+  right (4 gateway calls on the host). The model now copies the groups and code adds them up, pounds included; the
+  labelled-bullet request (round 11) and "no pickup needed" are read by rules. Next: wishes ("speed matters more
+  than price"), a currency other than EUR, a postcode outside the zones.
 

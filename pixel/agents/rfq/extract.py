@@ -98,7 +98,10 @@ SYSTEM = (
     "pieces: integer or null. preference: fastest only when the customer asks for speed, else cheapest. "
     "door_pickup: true when the goods must be collected from the customer's address. pickup_postcode: that "
     "address's postcode or null. currency: only when the customer asks for one, else null. language: ISO 639-1 "
-    "code of the mail. Never calculate or guess. "
+    "code of the mail. lots: only when the mail lists two or more piece groups, one entry per group exactly as "
+    "written: pieces, weight and its unit, weight_per_piece true when that weight is for one piece of the group, "
+    'volume_cbm, volume_per_piece likewise, dimensions of one piece as written ("120 x 80 x 100 cm") or null; '
+    "net weights are never wanted; else an empty list. Never calculate or guess. "
     "Also write three short pieces for our reply, in the mail's language and tone (German: formal Sie): first_name, "
     "the customer's first name only if they signed with it, else null; intro, one or two warm sentences that show "
     "you read their mail (the goods, urgency, timing or a question they asked, in words); closing, one short "
@@ -106,6 +109,21 @@ SYSTEM = (
     "airlines, airports or places, and never greet or sign."
 )
 NULLABLE_STR = {"type": ["string", "null"]}
+LOT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "pieces": {"type": ["integer", "null"]},
+        "weight": NULLABLE_STR,
+        "weight_unit": {"type": "string", "enum": ["kg", "lb"]},
+        "weight_per_piece": {"type": "boolean"},
+        "volume_cbm": NULLABLE_STR,
+        "volume_per_piece": {"type": "boolean"},
+        "dimensions": NULLABLE_STR,
+    },
+    "required": ["pieces", "weight", "weight_unit", "weight_per_piece", "volume_cbm", "volume_per_piece", "dimensions"],
+}
+LB = Decimal("0.45359237")
 PROSE = ("first_name", "intro", "closing")
 SCHEMA = {
     "type": "object",
@@ -116,6 +134,7 @@ SCHEMA = {
         "weight_kg": NULLABLE_STR,
         "volume_cbm": NULLABLE_STR,
         "pieces": {"type": ["integer", "null"]},
+        "lots": {"type": "array", "items": LOT_SCHEMA},
         "preference": {"type": "string", "enum": ["cheapest", "fastest"]},
         "door_pickup": {"type": "boolean"},
         "pickup_postcode": NULLABLE_STR,
@@ -125,7 +144,7 @@ SCHEMA = {
         "intro": NULLABLE_STR,
         "closing": NULLABLE_STR,
     },
-    "required": ["origin", "destination", "weight_kg", "volume_cbm", "pieces", "preference", "door_pickup",
+    "required": ["origin", "destination", "weight_kg", "volume_cbm", "pieces", "lots", "preference", "door_pickup",
                  "pickup_postcode", "currency", "language", "first_name", "intro", "closing"],
 }  # fmt: skip
 
@@ -299,6 +318,35 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
     )
 
 
+def _dims_volume(text: str) -> Decimal | None:
+    dims = DIMS.findall(text)
+    if len(dims) != 1:
+        return None
+    *sides, unit = dims[0]
+    volume = Decimal(1)
+    for side in sides:
+        volume *= number(side, thousands=False) / {"mm": Decimal(1000), "m": Decimal(1)}.get(unit.lower(), Decimal(100))
+    return volume
+
+
+def _model_lots(raw: list[dict]) -> tuple[Decimal, Decimal, int | None] | None:
+    """The piece groups as the model copied them, added up here; None unless every one has a weight and a volume."""
+    weight, volume, pieces = Decimal(0), Decimal(0), 0
+    for lot in raw:
+        n = lot.get("pieces") if isinstance(lot.get("pieces"), int) and lot["pieces"] > 0 else None
+        kg = number(str(lot.get("weight") or ""))
+        cbm = number(str(lot.get("volume_cbm") or ""), thousands=False)
+        one = _dims_volume(str(lot.get("dimensions") or ""))
+        if kg is None or kg <= 0 or (cbm is None and one is None):
+            return None
+        if (lot.get("weight_per_piece") or cbm is None or lot.get("volume_per_piece")) and n is None:
+            return None
+        weight += kg * (LB if lot.get("weight_unit") == "lb" else 1) * (n if lot.get("weight_per_piece") else 1)
+        volume += one * n if cbm is None else cbm * (n if lot.get("volume_per_piece") else 1)
+        pieces = pieces + n if pieces is not None and n else None
+    return (weight, volume, pieces) if raw else None
+
+
 def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     text = _text(message)
     missing = []
@@ -319,8 +367,11 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     volume = number(data.get("volume_cbm") or "", thousands=False)
     if volume is None or volume < 0:
         volume = _volume(text, pieces) or Decimal(0)
-    if lots := _lots(text):  # the sums of a lot list are arithmetic: code's, not the model's
-        weight, volume, pieces = lots
+    # The sums of a lot list are arithmetic: code's, not the model's (its own total was 1094 kg for 1952 kg of lots).
+    # One copied group counts only without a total in kg: a weight in pounds.
+    groups = data.get("lots") or []
+    if lots := _lots(text) or ((len(groups) > 1 or "weight_kg" in missing) and _model_lots(groups)):
+        weight, volume, pieces = lots[0], lots[1], lots[2] or pieces
         missing = [m for m in missing if m != "weight_kg"]
     door = bool(data.get("door_pickup"))
     postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
@@ -398,7 +449,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             user=_text(message),
             schema=SCHEMA,
             session_id=message.session_id,
-            max_output_tokens=350,
+            max_output_tokens=500,
         )
         rfq = _zone_origin(ctx, _from_model(result.data, message, deadline))
         prose = {k: result.data.get(k) for k in PROSE}
