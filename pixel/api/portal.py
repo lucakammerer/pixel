@@ -1,4 +1,4 @@
-"""GET /v1/portal/ports, /brackets, /rates and POST /v1/portal/bookings."""
+"""GET /v1/portal/ports, /brackets, /rates, POST and DELETE /v1/portal/bookings."""
 
 import asyncio
 from dataclasses import dataclass
@@ -179,6 +179,12 @@ class Portal:
         if response.status_code == 503:
             raise BookingUnavailable(_detail(response))
         raise ApiError(response.status_code, _detail(response))
+
+    async def cancel(self, booking_reference: str) -> None:
+        """200, also when repeated; 404 for an unknown booking. Works for a booking made by mail too."""
+        response = await self.client.delete(f"/v1/portal/bookings/{booking_reference}")
+        if response.status_code != 200:
+            raise ApiError(response.status_code, _detail(response))
 
 
 def _option(rate: dict) -> RateOption:

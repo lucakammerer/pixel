@@ -125,11 +125,8 @@ async def handle_reply(ctx: Context, message: Message) -> None:
             payload={"note": "Customer reply needs a person", "intent": said, "has_quote": quote is not None},
         )  # fmt: skip
         return
-    if said == "decline" and quote.status == QuoteStatus.ACCEPTED:  # booked already: a person cancels, not a rule
-        events.emit(
-            ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
-            payload={"note": "Customer reply after the booking reads as a decline", "intent": said},
-        )  # fmt: skip
+    if said == "decline" and quote.status == QuoteStatus.ACCEPTED:
+        await cancel(ctx, quote, message)
         return
     if said == "decline":
         quotes.set_status(ctx, quote.id, QuoteStatus.DECLINED)
@@ -219,6 +216,36 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
     return booking
 
 
+async def cancel(ctx: Context, quote: Quote, message: Message) -> None:
+    """The customer withdrew after the booking (round 88: "please cancel booking BK-…"): the portal cancels it, the
+    CRM marks booking and shipment cancelled, the customer hears so once. Never a second quote."""
+    booking = bookings.for_session(ctx, quote.session_id)
+    if booking is None or not booking.booking_reference:
+        events.emit(
+            ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
+            payload={"note": "Customer cancels a booking without an airline reference", "intent": "decline"},
+        )  # fmt: skip
+        return
+    if booking.status != BookingStatus.CANCELLED:
+        try:
+            if not ctx.settings.dry_run:
+                await ctx.portal.cancel(booking.booking_reference)
+        except (ApiError, httpx.HTTPError) as e:
+            events.emit(
+                ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
+                payload={"note": "Customer cancels; the portal refused", "error": repr(e)},
+            )  # fmt: skip
+            return
+        booking = booking.model_copy(update={"status": BookingStatus.CANCELLED})
+        _save(ctx, booking, "cancelled")
+        events.emit(
+            ctx, "booking.cancelled", "crm", session_id=quote.session_id, message_id=message.id,
+            payload={"booking_reference": booking.booking_reference, "shipment": booking.team_reference},
+        )  # fmt: skip
+    await _tell_customer(ctx, quote, message.id, "cancelled", airline=booking.carrier,
+                         reference=booking.team_reference, airline_reference=booking.booking_reference)  # fmt: skip
+
+
 async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to: int | None) -> None:
     await _tell_customer(ctx, quote, reply_to, "booked", airline=booking.carrier,
                          price=compose.money(quote.total), currency=quote.currency,
@@ -248,6 +275,8 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
             ctx, "error", "crm", session_id=message.session_id, message_id=message.id,
             payload={"error": "confirmation for an unknown booking", "booking_reference": reference},
         )  # fmt: skip
+        return
+    if booking.status == BookingStatus.CANCELLED:  # the airline's late confirmation of a booking the customer withdrew
         return
     if booking.status != BookingStatus.CONFIRMED:
         booking = booking.model_copy(
@@ -352,6 +381,8 @@ CUSTOMER = {
         "confirmed": "Good news: {airline} has confirmed your booking {airline_reference} from {origin} to "
                      "{destination} ({weight} kg).\n\nYour reference with us stays {reference}. If you'd like "
                      "to know where your shipment is, just ask.",
+        "cancelled": "As requested, we have cancelled your booking {airline_reference} with {airline} from {origin} "
+                     "to {destination} ({weight} kg). Your reference {reference} is closed.",
     },
     "de": {
         "booked": "Danke für Ihre Zusage. Ihre Sendung von {origin} nach {destination} ({weight} kg) ist jetzt bei "
@@ -360,6 +391,8 @@ CUSTOMER = {
         "confirmed": "Gute Nachricht: {airline} hat Ihre Buchung {airline_reference} von {origin} nach "
                      "{destination} ({weight} kg) bestätigt.\n\nIhre Referenz bei uns bleibt {reference}. Wenn "
                      "Sie wissen möchten, wo Ihre Sendung gerade ist, fragen Sie einfach.",
+        "cancelled": "Wie gewünscht haben wir Ihre Buchung {airline_reference} bei {airline} von {origin} nach "
+                     "{destination} ({weight} kg) storniert. Ihre Referenz {reference} ist geschlossen.",
     },
     "fr": {
         "booked": "Merci pour votre accord. Votre envoi de {origin} à {destination} ({weight} kg) est maintenant "
@@ -369,6 +402,8 @@ CUSTOMER = {
         "confirmed": "Bonne nouvelle : {airline} a confirmé votre réservation {airline_reference} de {origin} à "
                      "{destination} ({weight} kg).\n\nVotre référence chez nous reste {reference}. Si vous souhaitez "
                      "savoir où se trouve votre envoi, il suffit de demander.",
+        "cancelled": "Comme demandé, nous avons annulé votre réservation {airline_reference} avec {airline} de "
+                     "{origin} à {destination} ({weight} kg). Votre référence {reference} est clôturée.",
     },
 }  # fmt: skip
 # The quote's voice carries on into its booking mail: a thank-you a person adds, once per thread.
