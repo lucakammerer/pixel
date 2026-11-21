@@ -206,3 +206,7 @@ What follows:
   the 416.16 sheet beat it, and the scorer's best was at most 396.34: among airlines the wish decides, not R15.
   #130 holds the round as a fixture; the selection fix and the feedback read of an unclosed row (round 27 logged as
   0 points, scored 54.32) went to the main loop. Next: the verdict of the first quote after its fix.
+- 21.11. 19:00, open gaps in the reading: #142 takes a booking confirmation only from an airline on the carrier list
+  or with our team reference, in either word order (a customer's "Booking request ..., confirmed" stays a request);
+  #144 reads "1 250 kg" as 1250 kg and "Service: express" as fastest. All 29 live requests read as before, offline
+  KPI unchanged. The portal API is back since round 30. Next: two requests in one mail, an unusual acceptance.
