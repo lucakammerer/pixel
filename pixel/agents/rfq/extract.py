@@ -1,6 +1,8 @@
 import asyncio
 import json
 import re
+import unicodedata
+from collections import Counter
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -85,11 +87,15 @@ PIECES = re.compile(
 NOT_URGENT = re.compile(
     r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
     r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger"
-    r"|(?:not|nicht)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+)?(?:fastest|quickest|schnellst\w*))\b",
+    r"|pas\s+(?:urgent|press[ée]\w*)"
+    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*"
+    r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*)\b", re.IGNORECASE)
-CHEAPEST = re.compile(r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*)\b", re.IGNORECASE)
+FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide)\b", re.IGNORECASE)
+CHEAPEST = re.compile(
+    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix)\b", re.IGNORECASE
+)
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
     r"as possible|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
@@ -99,7 +105,10 @@ HURRY = re.compile(
 DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus"
-    r"|collect (?:the )?(?:goods|cargo|shipment|freight)|arrange (?:the|a) truck",  # a voice message's own words
+    # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
+    # ourselves" is no door pickup.
+    r"|(?:please|kindly|could you|can you|would you)\s+(?:also\s+)?"
+    r"(?:collect (?:the )?(?:goods|cargo|shipment|freight)|arrange (?:the|a) truck)",
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
@@ -124,6 +133,43 @@ GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wi
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
            "you", "your", "shipment", "thanks"}  # fmt: skip
+FRENCH = {"le", "la", "les", "des", "du", "et", "pour", "nous", "vous", "votre", "un", "une", "est", "avec", "merci",
+          "bonjour", "poids", "envoi", "colis", "que", "pouvez", "cordialement", "devis", "dans", "aux"}  # fmt: skip
+# Words only that language uses among these, so a mail in one never counts for another ("por favor" is es and pt).
+SPANISH = {"el", "los", "las", "gracias", "hola", "saludos", "necesitamos", "envío", "nuestra", "nuestro", "y",
+           "cotización", "muchas", "estimado", "estimada", "buenos", "días", "precio", "recogida", "mercancía",
+           "usted", "cajas"}  # fmt: skip
+ITALIAN = {"il", "gli", "della", "delle", "che", "per", "grazie", "buongiorno", "saluti", "cordiali", "vorremmo",
+           "nostro", "nostra", "spedizione", "sono", "preventivo", "ritiro", "merce", "colli", "di"}  # fmt: skip
+PORTUGUESE = {"não", "você", "obrigado", "obrigada", "olá", "nosso", "nossa", "cotação", "envio", "pelo", "pela",
+              "com", "uma", "frete", "atenciosamente", "precisamos", "retirada", "coleta"}  # fmt: skip
+DUTCH = {"het", "een", "voor", "wij", "graag", "zending", "groeten", "bedankt", "onze", "naar", "ophalen",
+         "offerte", "prijs", "alvast", "vriendelijke", "hartelijk", "kunt", "jullie", "ons"}  # fmt: skip
+POLISH = {"dzień", "dobry", "prosimy", "proszę", "wycenę", "wycena", "wysyłki", "przesyłki", "przesyłka", "dziękuję",
+          "dziękujemy", "pozdrawiam", "pozdrowienia", "jest", "się", "nie", "oraz", "dla", "towar", "waga", "naszej"}  # fmt: skip
+TURKISH = {"merhaba", "ve", "bir", "için", "ile", "teşekkürler", "teşekkür", "ederiz", "lütfen", "fiyat", "teklifi",
+           "teklif", "rica", "ediyoruz", "gönderi", "ağırlık", "brüt", "saygılarımla", "koli", "seçeneği"}  # fmt: skip
+SWEDISH = {"och", "att", "för", "är", "som", "tack", "hej", "hälsningar", "offert", "frakt", "vikt", "vår", "våra",
+           "behöver", "sändning", "billigaste", "på", "från", "förhand"}  # fmt: skip
+CZECH = {"dobrý", "prosím", "děkuji", "děkujeme", "nabídku", "nabídka", "přepravy", "přeprava", "hmotnost", "jedná",
+         "jsou", "kusy", "pozdravem", "zásilka", "zásilku", "cenovou"}  # fmt: skip
+LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH, "es": SPANISH, "it": ITALIAN, "pt": PORTUGUESE, "nl": DUTCH,
+             "pl": POLISH, "tr": TURKISH, "sv": SWEDISH, "cs": CZECH}  # fmt: skip
+# One of their words alone turns up in an English mail ("per kg", a "Saludos" sign-off): two are needed, else the
+# quote is translated for a customer who wrote English.
+TWO_WORDS = set(LANGUAGES) - {"en", "de", "fr"}
+# The persona's own sign-off stays English or German whatever language the mail is in (rounds 70 and 72): a short
+# line from it to the end, with only the name and company below, is no evidence of the mail's language.
+SIGN_OFF = re.compile(
+    r"^[ \t]*(?:thanks?\b|thank you|many thanks|cheers|best\b|kind regards|best regards|regards|warm regards|"
+    r"greetings|many greetings|sincerely|yours|(?:viele|beste|liebe|freundliche) gr(?:ü|ue)(?:ß|ss)e|"
+    r"mit freundlichen gr(?:ü|ue)(?:ß|ss)en|mfg\b|lg\b)[^\n]{0,60}$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# A script other than Latin names the language by itself; the model's code can refine it (Cyrillic: uk, not ru).
+SCRIPTS = {"CJK": "zh", "HIRAGANA": "ja", "KATAKANA": "ja", "HANGUL": "ko", "CYRILLIC": "ru", "GREEK": "el",
+           "ARABIC": "ar", "HEBREW": "he", "THAI": "th", "DEVANAGARI": "hi"}  # fmt: skip
+UNSPACED = {"CJK", "HIRAGANA", "KATAKANA", "THAI"}  # every letter counts as a word
 
 SYSTEM = (
     "You read an air freight customer's request for a quote and return its facts as JSON. "
@@ -221,11 +267,22 @@ def _lane(text: str) -> tuple[str, str] | None:
     return None
 
 
+def _label_reach(pattern: re.Pattern, text: str) -> dict[str, int]:
+    """Each airport code a label reaches, with the shortest reach of any label to it."""
+    reach: dict[str, int] = {}
+    for m in pattern.finditer(text):
+        if _airport(code := m.groups()[-1]):
+            reach[code] = min(reach.get(code, m.end() - m.start()), m.end() - m.start())
+    return reach
+
+
 def _destination_only(text: str) -> str | None:
-    """The one destination of a mail that names no origin airport (door-to-port). "Select the departure airport for
-    the fastest option to JFK" labels the destination, not an origin (round 69)."""
-    found = {c for c in DEST_LABEL.findall(text) if _airport(c)}
-    if {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - found:
+    """The one destination of a mail that names no origin airport (door-to-port). A code both labels reach belongs to
+    the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
+    "our truck goes to departure airport FRA" the origin."""
+    to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
+    found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
+    if set(origin) - found:
         return None
     return found.pop() if len(found) == 1 else None
 
@@ -312,9 +369,56 @@ def _currency(text: str) -> str | None:
     return asked.pop() if len(asked) == 1 else None
 
 
-def _language(text: str) -> str:
-    words = re.findall(r"[a-zäöüß]+", text.lower())
-    return "de" if sum(w in GERMAN for w in words) > sum(w in ENGLISH for w in words) else "en"
+def words_of(text: str, extra: dict[str, set[str]] | None = None) -> dict[str, int]:
+    """How many of each language's common words the text holds."""
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    return {
+        lang: sum(w in known or w in (extra or {}).get(lang, ()) for w in words) for lang, known in LANGUAGES.items()
+    }
+
+
+def _script(text: str) -> str | None:
+    """The script most of the text is written in, None for Latin: a word counts once, a letter of a script without
+    spaces once each. Round 72 was Chinese signed "Thanks a lot and have a lovely day!", answered in English."""
+    units: Counter[str] = Counter()
+    for word in re.findall(r"[^\W\d_]+", text):
+        scripts = Counter(unicodedata.name(c, "?").split()[0] for c in word)
+        for script, n in scripts.items():
+            units[script] += n if script in UNSPACED else 1
+    if not units:
+        return None
+    best = max(units, key=units.get)
+    if best == "CJK" and (units["HIRAGANA"] or units["KATAKANA"]):
+        return "ja"
+    return SCRIPTS.get(best)
+
+
+def _unsigned(text: str) -> str:
+    """The text above the persona's sign-off (`SIGN_OFF`) when only a name and a company follow it."""
+    for mark in reversed(list(SIGN_OFF.finditer(text))):
+        if len([line for line in text[mark.end() :].splitlines() if line.strip()]) <= 4:
+            return text[: mark.start()]
+    return text
+
+
+def _language(text: str, said: object = None, attached: str = "") -> str:
+    """The script's language, else the language with the most common words, English on a tie (round 70 was French,
+    answered in English). The mail's words above its sign-off decide first (a Polish line signed "Thanks and
+    regards" is Polish), then an attachment or voice message (`attached`) when the mail says nothing else, the
+    sign-off last. The model's ISO code (`said`) counts only for a language our word lists do not know: it once
+    answered "de" for an English mail full of German place names."""
+    said = said.strip().lower() if isinstance(said, str) and re.fullmatch(r"\s*[A-Za-z]{2}\s*", said) else None
+    own = said if said not in LANGUAGES else None
+    for part in (_unsigned(text), attached, text):
+        if script := _script(part):
+            return own or script
+        counts = {lang: n for lang, n in words_of(part).items() if n >= 2 or lang not in TWO_WORDS}
+        best = max(counts, key=lambda lang: (counts[lang], lang == "en"))
+        if own and counts[best] * 5 < len(re.findall(r"[^\W\d_]+", part)):
+            return own
+        if counts[best]:
+            return best
+    return own or "en"
 
 
 def _preference(text: str) -> Preference:
@@ -383,8 +487,14 @@ def _ruled_out(ctx: Context, rfq: Rfq, text: str) -> Rfq:
 
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
 HISTORY = re.compile(
-    r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht)"
-    r"|(?:from|von):.*@|on .{0,80} wrote:\s*$|am .{0,80} schrieb|>)",
+    r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht"
+    r"|mensaje original|mensaje reenviado|message d'origine|message transféré|messaggio originale"
+    r"|messaggio inoltrato|mensagem original|oorspronkelijk bericht|doorgestuurd bericht|originalmeddelande"
+    r"|wiadomość oryginalna|исходное сообщение|原始邮件|原始郵件|转发邮件|元のメッセージ|원본 메시지)"
+    r"|(?:from|von|de|da|van|od|från|от|kimden|发件人|寄件者|差出人|보낸 사람)\s*[:：].*@"
+    r"|on .{0,80} wrote:\s*$|am .{0,80} schrieb"
+    r"|.{0,120}\b(?:escribió|a écrit|ha scritto|escreveu|schreef|skrev|napisał\w*|написал\w*|yazdı)\s*:\s*$"
+    r"|.{0,120}(?:写道|寫道)[:：]\s*$|>)",
     re.IGNORECASE | re.MULTILINE,
 )
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
@@ -549,7 +659,7 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
         pickup_postcode=postcode,
         pickup_zone=zone_of(postcode) if postcode else None,
         currency=currency if currency and re.fullmatch(r"[A-Z]{3}", currency) else None,
-        language=_language(text),  # the model answered "de" for an English mail with German place names
+        language=_language(text, data.get("language")),
         received_at=deadline.received_at,
         deadline_at=deadline.expires_at,
         extracted_by="model",
@@ -601,6 +711,7 @@ def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
 
 
 ASK_WAIT_S = 60  # customers answered within about 10 s, truckers about 31 s later: the quote stays inside 120 s
+ASK_TRANSLATE_S = 5
 FACTS = {
     "pickup": ("the postcode we should collect the goods from", "die Postleitzahl, unter der wir die Ware abholen"),
     "origin": ("the airport the goods leave from", "den Abflughafen"),
@@ -637,10 +748,18 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
     names = [FACTS[f][de] for f in facts]
     joined = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {'und' if de else 'and'} {names[-1]}"
     subject = message.subject if REPLY_SUBJECT.match(message.subject) else f"Re: {message.subject}"
+    body = ASK["de" if de else "en"].format(facts=joined, signer=ctx.settings.signer)
+    if rfq.language not in ASK:
+        from pixel.agents.rfq import compose  # compose reads this module's word lists
+
+        english = body
+        body = await compose.localize(ctx, rfq.language, message.session_id, body, ASK_TRANSLATE_S,
+                                      lambda text: compose.kept(english, text, (ctx.settings.signer,)),
+                                      "question.translate")  # fmt: skip
     try:
         question = await outbox.send(
             ctx, to=message.sender, subject=subject, session_id=message.session_id, in_reply_to=message.id,
-            body=ASK["de" if de else "en"].format(facts=joined, signer=ctx.settings.signer), purpose="question",
+            body=body, purpose="question",
         )  # fmt: skip
     except Exception:  # noqa: BLE001 - held (dry run, takeover) or failed: the guess takes over
         return None
@@ -672,17 +791,14 @@ def _declared(lines: list[str]) -> str | None:
 
 
 async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[str]]]:
-    """The text lines of every attachment code can read (packing list, letter of instruction)."""
-    from pixel.agents.tariffs.agent import _lines
+    """The text lines of every attachment code can read (packing list, letter of instruction, a voice message). Facts
+    only in a file code cannot read (a video, a scan) count as missing: the one question asks for them."""
+    from pixel.agents.tariffs.agent import attachment_lines
 
     files = []
     for attachment in message.attachments:
-        try:
-            content = await ctx.mailbox.attachment(message.id, attachment.id)
-            files.append((attachment.filename, await asyncio.to_thread(_lines, attachment.filename, content)))
-        except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
-            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+        if (lines := await attachment_lines(ctx, message, attachment, "rfq")) is not None:
+            files.append((attachment.filename, lines))
     return files
 
 
@@ -1088,7 +1204,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             rfq = apply_pickup(await ask(rfq))
             prose = {k: result.data.get(k) for k in PROSE}
     if files:
-        rfq = rfq.model_copy(update={"language": _language(_text(mail))})
+        attached = "\n".join(content for _, content in documents)
+        rfq = rfq.model_copy(update={"language": _language(_text(mail), rfq.language, attached)})
         for key in ("origin", "destination"):
             if named := [name for name, content in sources if names_code(content, getattr(rfq, key))]:
                 evidence[key] = named

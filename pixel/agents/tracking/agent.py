@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
+from pixel.agents.rfq import compose, extract
 from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, TEXT, in_kind, ready_date
 from pixel.agents.rfq.extract import number
 from pixel.contracts import Message, Shipment
@@ -16,8 +17,9 @@ from pixel.pricing.pickup import zone_of
 REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 LANE = re.compile(r"\b([A-Z]{3})\s*(?:-|–|→|->|to|nach)\s*([A-Z]{3})\b")
-DESCRIBED = re.compile(r"\b(?:([A-Z]{3})|(\d{5}))\s+(?:to|nach)\s+([A-Z]{3})\b")
-WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
+DESCRIBED = re.compile(r"\b(?:([A-Z]{3})|(\d{5}))(?:\s+(?:to|nach)\s+|\s*(?:-|–|→|->|/)\s*)([A-Z]{3})\b")
+# "1795 kg", "1 795 kg", "1,795 kilos"
+WEIGHT = re.compile(r"(\d{1,3}(?:[ \u00a0]\d{3})+|\d[\d.,']*)\s*(?:kgs?|kilos?|kilograms?)\b", re.IGNORECASE)
 
 # Which tracking answer goes out. Going back is this one line (bench/RUNS.md, "Tracking variants"):
 # "scored": prose, then the record block with the customer's address; scored +10 on every right first answer.
@@ -25,6 +27,7 @@ WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
 # "b": as "a", the record block's facts in the prose and no block.
 # "c": "b" without the filler ("It has not left yet:", "in case you need it"), every fact kept.
 VARIANT = "c"
+TRANSLATE_WAIT_S = 15
 
 STATUS = {
     "booking": "is with {carrier} for booking, and I am waiting for their reply",
@@ -239,12 +242,25 @@ def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Det
     return out
 
 
+async def question(ctx: Context, message: Message) -> str:
+    """Subject, body and the text of every attachment: the reference may stand only in an attached enquiry."""
+    attached = await extract._attachments(ctx, message) if message.attachments else []
+    return "\n".join([message.subject, message.body, *(line for _, lines in attached for line in lines)])
+
+
 async def handle(ctx: Context, message: Message) -> None:
     """Finds the shipment the question means (a reference, or its description: origin or pickup postcode,
     destination, weight, company) in the CRM and
     answers in the thread from the CRM alone. Says so plainly when we hold no such shipment."""
-    found, reference = match(ctx, f"{message.subject}\n{message.body}", message.sender)
+    found, reference = match(ctx, await question(ctx, message), message.sender)
     body = answer(found, reference, message.body, details(ctx, found, message.body), signer=ctx.settings.signer)
+    if (language := extract._language(extract._text(message))) != "en":  # answered in the asker's language
+        english = body
+        names = tuple(
+            n for s in found[:5] for n in (s.id, s.carrier, s.booking_reference, s.origin, s.destination) if n
+        )
+        body = await compose.localize(ctx, language, message.session_id, body, TRANSLATE_WAIT_S,
+                                      lambda text: compose.kept(english, text, names), "tracking.translate")  # fmt: skip
     events.emit(
         ctx, "tracking.answered", "tracking", session_id=message.session_id, message_id=message.id,
         payload={"reference": reference, "shipments": [s.id for s in found],

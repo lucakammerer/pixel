@@ -272,6 +272,34 @@ async def test_a_pickup_price_in_an_attached_offer_is_read(ctx, monkeypatch):
     assert (found["pickup"], found["trucker"], found["pickup_hours"]) == ("165.70", "Truck A", 29)
 
 
+async def test_a_trucker_who_answers_only_in_a_file_no_code_reads_is_answered_unpriced_without_an_error(
+    ctx, monkeypatch
+):
+    """A photographed offer: no code reads an image outside a tariff mail. The file is an `attachment.unreadable`,
+    the trucker counts as answered, and no model call copies a price from a mail that holds none."""
+
+    class NoDownload:
+        async def attachment(self, message_id, attachment_id):
+            raise AssertionError("a type without a reader is never downloaded")
+
+    async def no_model(ctx, **kw):
+        raise AssertionError("the mail holds no price to copy")
+
+    monkeypatch.setattr(llm, "ask_json", no_model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
+    photo = Attachment(id=1, filename="offer-TRK-6203.jpg", content_type="image/jpeg", size=10)
+    message = mail("a@truck", "Our offer TRK-6203 is in the attached photo.").model_copy(
+        update={"attachments": (photo,)}
+    )
+    await bids.record(replace(ctx, mailbox=NoDownload()), message)
+    assert kinds(ctx, "attachment.unreadable") == [
+        {"file": "offer-TRK-6203.jpg", "type": "image/jpeg", "reason": "no code parser for .jpg"}
+    ]
+    [received] = kinds(ctx, "bid.received")
+    assert (received["priced"], received["unread"]) == (False, ["offer-TRK-6203.jpg"])
+    assert kinds(ctx, "error") == kinds(ctx, "option.found") == []
+
+
 async def test_the_captured_rate_desk_answer_gives_one_option_per_priced_airline_without_a_model(ctx, monkeypatch):
     async def no_model(ctx, **kw):
         raise AssertionError("the rules must read the desk's answer")
@@ -423,3 +451,77 @@ async def test_an_airline_bid_keeps_its_mail_price_beside_an_unrelated_attachmen
     await bids.record(replace(ctx, mailbox=Files()), message)
     found = [(o["option"]["total"], o["option"]["transit_days"]) for o in kinds(ctx, "option.found")]
     assert found == [("900.00", 3)]
+
+
+OFFER_UNITS = [
+    # airline bid with an attached per-kg breakdown: "All-in 2.80" read as a flat 2.80 EUR total
+    (
+        "airline_per_kg_table",
+        True,
+        (
+            "Our rate is EUR 2.80/kg, transit 3 days, breakdown attached.\n"
+            "Charges per kg (EUR)\nFreight 2.50\nFuel 0.20\nSecurity 0.10\nAll-in 2.80"
+        ),
+        D("280.00"),
+    ),
+    # trucker: a weight line under a table that names (EUR) elsewhere becomes 1410 EUR
+    (
+        "header_currency_on_weight",
+        False,
+        "Chargeable weight (kg)\nTotal: 1410\nPickup and delivery to CGN 165.70 EUR\nAll amounts (EUR) incl. fuel.",
+        D("165.70"),
+    ),
+    # trucker: a waiting-time rate per hour labelled by PRICE_IS becomes the pickup price
+    (
+        "waiting_per_hour",
+        False,
+        (
+            "Pickup at 51252 and delivery to CGN: 165.70 EUR.\n"
+            "Waiting time after the first 30 minutes: our price is 45.00 EUR for every hour."
+        ),
+        None,
+    ),
+    # trucker: a per-pallet rate labelled by PRICE_IS hides the labelled total -> None -> model call
+    ("per_pallet", False, "Our price is 60.00 EUR for every pallet. 3 pallets, total 180.00 EUR.", D("180.00")),
+]
+
+
+@pytest.mark.parametrize(("name", "airline", "body", "expected"), OFFER_UNITS, ids=[c[0] for c in OFFER_UNITS])
+def test_a_rate_per_unit_or_a_weight_is_never_the_offer_total(name, airline, body, expected):
+    found = bids.parse(mail("t@x", body), rfq(), needs_transit=airline)
+    assert (found.total if found else None) == expected
+
+
+@pytest.mark.parametrize(
+    "text, price",
+    [
+        ("Our all-in rate is CHF 2'748.45, including fuel.", (D("2748.45"), "CHF")),  # read as CHF 2
+        ("and deliver it to DUS airport for 256.85\nEUR.\nNote: the other postcode would be 28.22 EUR.",
+         (D("256.85"), "EUR")),  # a pdf line wrap left the note's price alone
+        ("Amount (€)\nBase charge  47.55\nTotal  124.65\nNote: the other postcode would be 74.98 €.",
+         (D("124.65"), "EUR")),  # the header's sign is the total row's currency
+    ],
+)  # fmt: skip
+def test_generated_bids_never_take_another_amount_for_the_price(text, price):
+    """tools/simulate.py, family bid: each of these took a wrong figure as the offer's price."""
+    assert bids._price(text, rfq()) == price
+
+
+def test_two_labelled_transit_times_are_no_transit():
+    text = "Note: our rate to CAI last week was EUR 900.00, with a transit time of 5 days.\nTransit time: 2 days"
+    assert bids._days(text) is None  # the first one, another lane's, was quoted
+
+
+@pytest.mark.parametrize(
+    "text, wrong",
+    [
+        ("We can offer 350.00 EUR for this shipment, transit 2 days. The fuel rate is EUR 120.00, already included.",
+         D("120.00")),
+        ("Freight 350.00 EUR, transit 2 days.\nOur security rate is 15.00 EUR per shipment.", D("15.00")),
+        ("Pickup at 51252 for 165.70 EUR.\nThe waiting rate is 45.00 EUR.", D("45.00")),
+        ("Rate per kg: 2.80\nEUR 300.00 all-in, transit 2 days", D("280.00")),  # the stated all-in is 300.00
+    ],
+)  # fmt: skip
+def test_a_surcharge_or_a_per_kg_rate_is_never_the_offer_price(text, wrong):
+    price = bids._price(text, rfq())
+    assert price is None or price[0] != wrong

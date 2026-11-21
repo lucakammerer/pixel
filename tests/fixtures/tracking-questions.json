@@ -1,0 +1,669 @@
+{
+ "note": "The live CRM's booked shipments of 21.11.2026 and every tracking question the desk sent about one of them, with the shipment a person matches from the desk's facts (company, origin or pickup postcode, destination, weight), not from agents/tracking.",
+ "shipments": [
+  {
+   "id": "PX-252909",
+   "session": 272,
+   "customer": "lindqvist-medtech@hackloop.mail",
+   "origin": "CGN",
+   "destination": "ORD",
+   "weight_kg": "676",
+   "pickup_postcode": "51447"
+  },
+  {
+   "id": "PX-5E3C4F",
+   "session": 428,
+   "customer": "sonnberg-roesterei@hackloop.mail",
+   "origin": "FRA",
+   "destination": "JFK",
+   "weight_kg": "1233",
+   "pickup_postcode": "61018"
+  },
+  {
+   "id": "PX-86AF61",
+   "session": 738,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "DUS",
+   "destination": "JFK",
+   "weight_kg": "1540",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-4019B1",
+   "session": 944,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "CGN",
+   "destination": "ORD",
+   "weight_kg": "679",
+   "pickup_postcode": "51896"
+  },
+  {
+   "id": "PX-F39813",
+   "session": 1230,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "STR",
+   "destination": "EZE",
+   "weight_kg": "1228",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-E8DD9F",
+   "session": 1467,
+   "customer": "kessler-feinmechanik@hackloop.mail",
+   "origin": "DUS",
+   "destination": "KUL",
+   "weight_kg": "1549",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-F96591",
+   "session": 1635,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "MUC",
+   "destination": "LAX",
+   "weight_kg": "998",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-6DEFE5",
+   "session": 1841,
+   "customer": "nordlicht-audio@hackloop.mail",
+   "origin": "MUC",
+   "destination": "CAI",
+   "weight_kg": "486",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-B17D36",
+   "session": 1974,
+   "customer": "nordlicht-audio@hackloop.mail",
+   "origin": "FRA",
+   "destination": "LOS",
+   "weight_kg": "1750",
+   "pickup_postcode": "36627"
+  },
+  {
+   "id": "PX-70C61B",
+   "session": 2264,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "FRA",
+   "destination": "GRU",
+   "weight_kg": "715",
+   "pickup_postcode": "61391"
+  },
+  {
+   "id": "PX-9E3AF2",
+   "session": 2826,
+   "customer": "hofmann-textilwerk@hackloop.mail",
+   "origin": "FRA",
+   "destination": "DOH",
+   "weight_kg": "102",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-8827BE",
+   "session": 2974,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "HAM",
+   "destination": "DEL",
+   "weight_kg": "1619",
+   "pickup_postcode": "24983"
+  },
+  {
+   "id": "PX-FEC161",
+   "session": 3324,
+   "customer": "hofmann-textilwerk@hackloop.mail",
+   "origin": "DUS",
+   "destination": "PEK",
+   "weight_kg": "1081",
+   "pickup_postcode": "42401"
+  },
+  {
+   "id": "PX-0611EB",
+   "session": 3634,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "MUC",
+   "destination": "SGN",
+   "weight_kg": "572",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-6E369E",
+   "session": 3937,
+   "customer": "nordlicht-audio@hackloop.mail",
+   "origin": "FRA",
+   "destination": "PVG",
+   "weight_kg": "349",
+   "pickup_postcode": "36627"
+  },
+  {
+   "id": "PX-87AED8",
+   "session": 4646,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "CGN",
+   "destination": "DFW",
+   "weight_kg": "1795",
+   "pickup_postcode": "51896"
+  },
+  {
+   "id": "PX-425376",
+   "session": 5250,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "HAM",
+   "destination": "EZE",
+   "weight_kg": "676",
+   "pickup_postcode": "28261"
+  },
+  {
+   "id": "PX-7FD974",
+   "session": 5530,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "CGN",
+   "destination": "SGN",
+   "weight_kg": "1403",
+   "pickup_postcode": "53088"
+  },
+  {
+   "id": "PX-BC6CB0",
+   "session": 5851,
+   "customer": "lindqvist-medtech@hackloop.mail",
+   "origin": "FRA",
+   "destination": "DEL",
+   "weight_kg": "736",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-EBD159",
+   "session": 6062,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "DUS",
+   "destination": "ATL",
+   "weight_kg": "1754",
+   "pickup_postcode": "41007"
+  },
+  {
+   "id": "PX-8DB2D5",
+   "session": 6329,
+   "customer": "kessler-feinmechanik@hackloop.mail",
+   "origin": "STR",
+   "destination": "EZE",
+   "weight_kg": "544",
+   "pickup_postcode": "70498"
+  },
+  {
+   "id": "PX-1B0228",
+   "session": 6636,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "MUC",
+   "destination": "BKK",
+   "weight_kg": "1708",
+   "pickup_postcode": "81617"
+  },
+  {
+   "id": "PX-E5F36E",
+   "session": 6889,
+   "customer": "kessler-feinmechanik@hackloop.mail",
+   "origin": "HAM",
+   "destination": "EZE",
+   "weight_kg": "859",
+   "pickup_postcode": "24489"
+  },
+  {
+   "id": "PX-889221",
+   "session": 7455,
+   "customer": "sonnberg-roesterei@hackloop.mail",
+   "origin": "FRA",
+   "destination": "PVG",
+   "weight_kg": "1225",
+   "pickup_postcode": "63198"
+  },
+  {
+   "id": "PX-9F1C39",
+   "session": 7703,
+   "customer": "hofmann-textilwerk@hackloop.mail",
+   "origin": "MUC",
+   "destination": "PVG",
+   "weight_kg": "134",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-820D8B",
+   "session": 7892,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "STR",
+   "destination": "BOM",
+   "weight_kg": "100",
+   "pickup_postcode": "72379"
+  },
+  {
+   "id": "PX-CFFEB2",
+   "session": 8182,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "STR",
+   "destination": "MNL",
+   "weight_kg": "352",
+   "pickup_postcode": "73523"
+  },
+  {
+   "id": "PX-81C051",
+   "session": 9111,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "HAM",
+   "destination": "SGN",
+   "weight_kg": "1082",
+   "pickup_postcode": "24646"
+  },
+  {
+   "id": "PX-7AD074",
+   "session": 9512,
+   "customer": "nordlicht-audio@hackloop.mail",
+   "origin": "STR",
+   "destination": "MEL",
+   "weight_kg": "1615",
+   "pickup_postcode": "73488"
+  },
+  {
+   "id": "PX-6E147C",
+   "session": 9873,
+   "customer": "sonnberg-roesterei@hackloop.mail",
+   "origin": "MUC",
+   "destination": "PVG",
+   "weight_kg": "540",
+   "pickup_postcode": "93721"
+  },
+  {
+   "id": "PX-AF1678",
+   "session": 11079,
+   "customer": "hofmann-textilwerk@hackloop.mail",
+   "origin": "HAM",
+   "destination": "DEL",
+   "weight_kg": "1666",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-862BDE",
+   "session": 11303,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "MUC",
+   "destination": "PEK",
+   "weight_kg": "1378",
+   "pickup_postcode": "86458"
+  },
+  {
+   "id": "PX-C285B0",
+   "session": 11699,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "FRA",
+   "destination": "MEL",
+   "weight_kg": "1431",
+   "pickup_postcode": "60504"
+  },
+  {
+   "id": "PX-4D0E5C",
+   "session": 12083,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "DUS",
+   "destination": "NRT",
+   "weight_kg": "324",
+   "pickup_postcode": "45715"
+  },
+  {
+   "id": "PX-3458E5",
+   "session": 12467,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "STR",
+   "destination": "EZE",
+   "weight_kg": "485",
+   "pickup_postcode": "71445"
+  },
+  {
+   "id": "PX-B1528D",
+   "session": 12874,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "DUS",
+   "destination": "BOM",
+   "weight_kg": "1676",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-8B53F4",
+   "session": 13103,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "MUC",
+   "destination": "ORD",
+   "weight_kg": "1445",
+   "pickup_postcode": "85791"
+  },
+  {
+   "id": "PX-5468AA",
+   "session": 13475,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "MUC",
+   "destination": "ORD",
+   "weight_kg": "196",
+   "pickup_postcode": "81311"
+  },
+  {
+   "id": "PX-B1DFBF",
+   "session": 13807,
+   "customer": "kessler-feinmechanik@hackloop.mail",
+   "origin": "MUC",
+   "destination": "BKK",
+   "weight_kg": "923",
+   "pickup_postcode": "80186"
+  },
+  {
+   "id": "PX-415586",
+   "session": 14117,
+   "customer": "hofmann-textilwerk@hackloop.mail",
+   "origin": "FRA",
+   "destination": "LOS",
+   "weight_kg": "1075",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-616913",
+   "session": 14302,
+   "customer": "hofmann-textilwerk@hackloop.mail",
+   "origin": "MUC",
+   "destination": "ORD",
+   "weight_kg": "1012",
+   "pickup_postcode": "93938"
+  },
+  {
+   "id": "PX-220206",
+   "session": 15351,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "STR",
+   "destination": "EZE",
+   "weight_kg": "1729",
+   "pickup_postcode": "73825"
+  },
+  {
+   "id": "PX-380613",
+   "session": 15699,
+   "customer": "auer-maschinenbau@hackloop.mail",
+   "origin": "MUC",
+   "destination": "SIN",
+   "weight_kg": "1001",
+   "pickup_postcode": "80075"
+  },
+  {
+   "id": "PX-A44713",
+   "session": 16047,
+   "customer": "sonnberg-roesterei@hackloop.mail",
+   "origin": "DUS",
+   "destination": "RUH",
+   "weight_kg": "508",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-5EFEDF",
+   "session": 14954,
+   "customer": "nordlicht-audio@hackloop.mail",
+   "origin": "CGN",
+   "destination": "SGN",
+   "weight_kg": "765",
+   "pickup_postcode": "51149"
+  },
+  {
+   "id": "PX-AA1CC5",
+   "session": 16868,
+   "customer": "weidner-spielwaren@hackloop.mail",
+   "origin": "CGN",
+   "destination": "SCL",
+   "weight_kg": "1122",
+   "pickup_postcode": "53521"
+  },
+  {
+   "id": "PX-6B368D",
+   "session": 14666,
+   "customer": "hofmann-textilwerk@hackloop.mail",
+   "origin": "HAM",
+   "destination": "DEL",
+   "weight_kg": "808",
+   "pickup_postcode": "22842"
+  },
+  {
+   "id": "PX-C24E2D",
+   "session": 15236,
+   "customer": "sonnberg-roesterei@hackloop.mail",
+   "origin": "FRA",
+   "destination": "LOS",
+   "weight_kg": "1288",
+   "pickup_postcode": null
+  },
+  {
+   "id": "PX-676E07",
+   "session": 18357,
+   "customer": "rheintal-elektronik@hackloop.mail",
+   "origin": "DUS",
+   "destination": "PEK",
+   "weight_kg": "1494",
+   "pickup_postcode": "45299"
+  }
+ ],
+ "questions": [
+  {
+   "subject": "Status of our shipment 51447 to ORD, 676 kg",
+   "body": "Hi,\n\nCould you confirm where this shipment is now and what its current status is?\n\nLindqvist Medtech GmbH | 51447 to ORD | 676 kg | Ready date: 2026-11-25\n\nThanks.\n\nSara\nLindqvist Medtech",
+   "shipment": "PX-252909"
+  },
+  {
+   "subject": "Status of our shipment 61018 to JFK, 1233 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Sonnberg Kaffeeroesterei GmbH, 61018 to JFK, 1233 kg, ready on 2026-11-25? Where is it now?\n\nKind regards\nAnna Sonnberg\nHead of Purchasing and Logistics\nSonnberg Kaffeeroesterei GmbH",
+   "shipment": "PX-5E3C4F"
+  },
+  {
+   "subject": "Status of our shipment DUS to JFK, 1540 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, DUS to JFK, 1540 kg, ready on 2026-11-27? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-86AF61"
+  },
+  {
+   "subject": "Status of our shipment 51896 to ORD, 679 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, 51896 to ORD, 679 kg, ready on 2026-11-28? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-4019B1"
+  },
+  {
+   "subject": "Status of our shipment STR to EZE, 1228 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Weidner Spielwaren GmbH, STR to EZE, 1228 kg, ready on 2026-11-26? Where is it now?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "shipment": "PX-F39813"
+  },
+  {
+   "subject": "Status of our shipment DUS to KUL, 1549 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Kessler Feinmechanik GmbH, DUS to KUL, 1549 kg, ready on 2026-11-26? Where is it now?\n\nMit freundlichen Gruessen / Kind regards\nJonas Kessler\nLogistics Coordinator\nKessler Feinmechanik GmbH, Ulm",
+   "shipment": "PX-E8DD9F"
+  },
+  {
+   "subject": "Status of our shipment MUC to LAX, 998 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, MUC to LAX, 998 kg, ready on 2026-11-29? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-F96591"
+  },
+  {
+   "subject": "Status of our shipment MUC to CAI, 486 kg",
+   "body": "Hi,\n\nCould you confirm where our shipment is now and what its current status is?\n\nNordlicht Audio GmbH | MUC to CAI | 486 kg | Ready date: 2026-11-24\n\nThanks.\n\nMira Petersen\nNordlicht Audio",
+   "shipment": "PX-6DEFE5"
+  },
+  {
+   "subject": "Status of our shipment FRA to DOH, 102 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Hofmann Textilwerk KG, FRA to DOH, 102 kg, ready on 2026-11-28? Where is it now?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "shipment": "PX-9E3AF2"
+  },
+  {
+   "subject": "Status of our shipment 24983 to DEL, 1619 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, 24983 to DEL, 1619 kg, ready on 2026-11-28? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-8827BE"
+  },
+  {
+   "subject": "Status of our shipment 42401 to PEK, 1081 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Hofmann Textilwerk KG, 42401 to PEK, 1081 kg, ready on 2026-11-27? Where is it now?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "shipment": "PX-FEC161"
+  },
+  {
+   "subject": "Status of our shipment 28261 to EZE, 676 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, 28261 to EZE, 676 kg, ready on 2026-11-26? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-425376"
+  },
+  {
+   "subject": "Status of our shipment 53088 to SGN, 1403 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, 53088 to SGN, 1403 kg, ready on 2026-11-28? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-7FD974"
+  },
+  {
+   "subject": "Status of our shipment FRA to DEL, 736 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Lindqvist Medtech GmbH, FRA to DEL, 736 kg, ready on 2026-11-24? Where is it now?\n\nSara\nLindqvist Medtech",
+   "shipment": "PX-BC6CB0"
+  },
+  {
+   "subject": "Status of our shipment 41007 to ATL, 1754 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Weidner Spielwaren GmbH, 41007 to ATL, 1754 kg, ready on 2026-11-25? Where is it now?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "shipment": "PX-EBD159"
+  },
+  {
+   "subject": "Status of our shipment 70498 to EZE, 544 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Kessler Feinmechanik GmbH, 70498 to EZE, 544 kg, ready on 2026-11-28? Where is it now?\n\nMit freundlichen Gruessen / Kind regards\nJonas Kessler\nLogistics Coordinator\nKessler Feinmechanik GmbH, Ulm",
+   "shipment": "PX-8DB2D5"
+  },
+  {
+   "subject": "Status of our shipment 81617 to BKK, 1708 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, 81617 to BKK, 1708 kg, ready on 2026-11-28? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-1B0228"
+  },
+  {
+   "subject": "Status of our shipment 24489 to EZE, 859 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Kessler Feinmechanik GmbH, 24489 to EZE, 859 kg, ready on 2026-11-26? Where is it now?\n\nMit freundlichen Gruessen / Kind regards\nJonas Kessler\nLogistics Coordinator\nKessler Feinmechanik GmbH, Ulm",
+   "shipment": "PX-E5F36E"
+  },
+  {
+   "subject": "Status of our shipment 63198 to PVG, 1225 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Sonnberg Kaffeeroesterei GmbH, 63198 to PVG, 1225 kg, ready on 2026-11-25? Where is it now?\n\nKind regards\nAnna Sonnberg\nHead of Purchasing and Logistics\nSonnberg Kaffeeroesterei GmbH",
+   "shipment": "PX-889221"
+  },
+  {
+   "subject": "Status of our shipment MUC to PVG, 134 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Hofmann Textilwerk KG, MUC to PVG, 134 kg, ready on 2026-11-28? Where is it now?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "shipment": "PX-9F1C39"
+  },
+  {
+   "subject": "Status of our shipment 72379 to BOM, 100 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Weidner Spielwaren GmbH, 72379 to BOM, 100 kg, ready on 2026-11-24? Where is it now?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "shipment": "PX-820D8B"
+  },
+  {
+   "subject": "Status of our shipment 73523 to MNL, 352 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, 73523 to MNL, 352 kg, ready on 2026-11-27? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-CFFEB2"
+  },
+  {
+   "subject": "Status of our shipment 24646 to SGN, 1082 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Weidner Spielwaren GmbH, 24646 to SGN, 1082 kg, ready on 2026-11-23? Where is it now?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "shipment": "PX-81C051"
+  },
+  {
+   "subject": "Status of our shipment 73488 to MEL, 1615 kg",
+   "body": "Hi,\n\nCould you let me know where our shipment is now and what its current status is?\n\nNordlicht Audio GmbH | 73488 to MEL | 1615 kg gross | Ready date: 2026-11-24\n\nThanks.\n\nMira Petersen\nNordlicht Audio",
+   "shipment": "PX-7AD074"
+  },
+  {
+   "subject": "Status of our shipment 93721 to PVG, 540 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Sonnberg Kaffeeroesterei GmbH, 93721 to PVG, 540 kg, ready on 2026-11-26? Where is it now?\n\nKind regards\nAnna Sonnberg\nHead of Purchasing and Logistics\nSonnberg Kaffeeroesterei GmbH",
+   "shipment": "PX-6E147C"
+  },
+  {
+   "subject": "Status of our shipment HAM to DEL, 1666 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Hofmann Textilwerk KG, HAM to DEL, 1666 kg, ready on 2026-11-26? Where is it now?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "shipment": "PX-AF1678"
+  },
+  {
+   "subject": "Status of our shipment 86458 to PEK, 1378 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Weidner Spielwaren GmbH, 86458 to PEK, 1378 kg, ready on 2026-11-25? Where is it now?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "shipment": "PX-862BDE"
+  },
+  {
+   "subject": "Status of our shipment 60504 to MEL, 1431 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Weidner Spielwaren GmbH, 60504 to MEL, 1431 kg, ready on 2026-11-24? Where is it now?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "shipment": "PX-C285B0"
+  },
+  {
+   "subject": "Status of our shipment 45715 to NRT, 324 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, 45715 to NRT, 324 kg, ready on 2026-11-27? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-4D0E5C"
+  },
+  {
+   "subject": "Status of our shipment 71445 to EZE, 485 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, 71445 to EZE, 485 kg, ready on 2026-11-26? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-3458E5"
+  },
+  {
+   "subject": "Status of our shipment DUS to BOM, 1676 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, DUS to BOM, 1676 kg, ready on 2026-11-23? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-B1528D"
+  },
+  {
+   "subject": "Status of our shipment 85791 to ORD, 1445 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, 85791 to ORD, 1445 kg, ready on 2026-11-28? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-8B53F4"
+  },
+  {
+   "subject": "Status of our shipment 81311 to ORD, 196 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, 81311 to ORD, 196 kg, ready on 2026-11-28? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-5468AA"
+  },
+  {
+   "subject": "Status of our shipment 80186 to BKK, 923 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Kessler Feinmechanik GmbH, 80186 to BKK, 923 kg, ready on 2026-11-23? Where is it now?\n\nMit freundlichen Gruessen / Kind regards\nJonas Kessler\nLogistics Coordinator\nKessler Feinmechanik GmbH, Ulm",
+   "shipment": "PX-B1DFBF"
+  },
+  {
+   "subject": "Status of our shipment FRA to LOS, 1075 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Hofmann Textilwerk KG, FRA to LOS, 1075 kg, ready on 2026-11-27? Where is it now?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "shipment": "PX-415586"
+  },
+  {
+   "subject": "Status of our shipment 93938 to ORD, 1012 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Hofmann Textilwerk KG, 93938 to ORD, 1012 kg, ready on 2026-11-25? Where is it now?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "shipment": "PX-616913"
+  },
+  {
+   "subject": "Status of our shipment 73825 to EZE, 1729 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, 73825 to EZE, 1729 kg, ready on 2026-11-23? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-220206"
+  },
+  {
+   "subject": "Status of our shipment 80075 to SIN, 1001 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Auer Maschinenbau GmbH, 80075 to SIN, 1001 kg, ready on 2026-11-26? Where is it now?\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH",
+   "shipment": "PX-380613"
+  },
+  {
+   "subject": "Status of our shipment DUS to RUH, 508 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Sonnberg Kaffeeroesterei GmbH, DUS to RUH, 508 kg, ready on 2026-11-28? Where is it now?\n\nKind regards\nAnna Sonnberg\nHead of Purchasing and Logistics\nSonnberg Kaffeeroesterei GmbH",
+   "shipment": "PX-A44713"
+  },
+  {
+   "subject": "Status of our shipment 51149 to SGN, 765 kg",
+   "body": "Hi,\n\nCould you confirm the current location and status of our shipment?\n\nNordlicht Audio GmbH | 51149 to SGN | 765 kg gross | Ready date: 2026-11-24\n\nThanks.\n\nMira Petersen\nNordlicht Audio",
+   "shipment": "PX-5EFEDF"
+  },
+  {
+   "subject": "Status of our shipment 53521 to SCL, 1122 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Weidner Spielwaren GmbH, 53521 to SCL, 1122 kg, ready on 2026-11-25? Where is it now?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "shipment": "PX-AA1CC5"
+  },
+  {
+   "subject": "Status of our shipment 22842 to DEL, 808 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Hofmann Textilwerk KG, 22842 to DEL, 808 kg, ready on 2026-11-28? Where is it now?\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "shipment": "PX-6B368D"
+  },
+  {
+   "subject": "Status of our shipment FRA to LOS, 1288 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Sonnberg Kaffeeroesterei GmbH, FRA to LOS, 1288 kg, ready on 2026-11-23? Where is it now?\n\nKind regards\nAnna Sonnberg\nHead of Purchasing and Logistics\nSonnberg Kaffeeroesterei GmbH",
+   "shipment": "PX-C24E2D"
+  },
+  {
+   "subject": "Status of our shipment 51804 to DFW, 1795 kg",
+   "body": "Hello,\n\ncould you please tell me the current status of our shipment: Rheintal Elektronik GmbH, 51804 to DFW, 1795 kg, ready on 2026-11-29? Where is it now?\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "shipment": "PX-87AED8",
+   "note": "the desk names 51804, our quote holds the customer's earlier site 51896 (same zone)"
+  }
+ ]
+}

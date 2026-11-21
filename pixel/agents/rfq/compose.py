@@ -2,6 +2,7 @@
 customer's first name and one short opening line (the closing slot is no longer rendered). Slots that fail a check are
 dropped, never the quote (P1, R9)."""
 
+import asyncio
 import json
 import random
 import re
@@ -11,7 +12,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from pixel import llm
-from pixel.agents.rfq.extract import ENGLISH, GERMAN, own_words
+from pixel.agents.rfq.extract import own_words, words_of
 from pixel.contracts import Message, Preference, RateOption, Rfq
 from pixel.core import events
 from pixel.core.context import Context
@@ -274,23 +275,130 @@ TEXT = {
         "weekdays": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"),
         "date": "{weekday}, den {day}. {month}",
     },
+    "fr": {
+        "subject": "Devis {origin} – {destination}, {weight} kg",
+        "hello_name": {"formal": "Bonjour {name},", "neutral": "Bonjour {name},", "casual": "Bonjour {name},"},
+        "hello": "Bonjour,",
+        "well_back": ("Tout va bien de notre côté, merci !", "Tout va bien ici, merci de demander !"),
+        "core": {
+            "cheapest": (
+                (
+                    "Nous pouvons acheminer votre envoi de {origin} à {destination} avec {carrier} pour {total} "
+                    "{currency} tout compris, avec un transit de {transit}."
+                ),
+                (
+                    "De {origin} à {destination}, je peux vous proposer {total} {currency} tout compris avec "
+                    "{carrier}, pour un transit de {transit}."
+                ),
+                (
+                    "Mon meilleur prix de {origin} à {destination} est de {total} {currency} tout compris avec "
+                    "{carrier}, avec un transit de {transit}."
+                ),
+            ),
+            "fastest": (
+                (
+                    "Nous pouvons acheminer votre envoi de {origin} à {destination} avec {carrier} pour {total} "
+                    "{currency} tout compris, avec un transit de {transit}."
+                ),
+                (
+                    "L'option la plus rapide de {origin} à {destination} est {carrier} : {transit} de transit, pour "
+                    "{total} {currency} tout compris."
+                ),
+                (
+                    "J'ai comparé les compagnies de {origin} à {destination} : {carrier} est la plus rapide, avec "
+                    "{transit} de transit, pour {total} {currency} tout compris."
+                ),
+            ),
+        },
+        "air_only": (
+            "Le prix d'aéroport à aéroport de {origin} à {destination} avec {carrier} est de {total} {currency}, "
+            "avec un transit de {transit}. L'enlèvement n'est pas inclus."
+        ),
+        "basis": (
+            "Ce prix comprend le fret aérien et les surcharges carburant et sûreté.",
+            "Le prix inclut le fret aérien ainsi que les surcharges carburant et sûreté.",
+        ),
+        "basis_pickup": (
+            (
+                "Ce prix comprend l'enlèvement chez vous par {trucker}, le fret aérien et les surcharges carburant et "
+                "sûreté."
+            ),
+        ),
+        "basis_zone_pickup": (
+            "Ce prix comprend le fret aérien, les surcharges carburant et sûreté, ainsi que l'enlèvement par "
+            "{trucker} au tarif de votre zone."
+        ),
+        "pickup_address": (
+            "Merci de m'envoyer l'adresse d'enlèvement complète, avec le code postal, afin que je vérifie le tarif "
+            "d'enlèvement."
+        ),
+        "book_air_only": "Si vous souhaitez réserver uniquement le transport aérien, il vous suffit de répondre à ce mail.",
+        "bulky": (
+            (
+                "La marchandise étant volumineuse pour son poids, la compagnie la taxe sur {chargeable} kg de poids "
+                "volumétrique."
+            ),
+            "En raison du volume, le fret est calculé sur un poids taxable de {chargeable} kg.",
+        ),
+        "valid": ("Je peux maintenir ce tarif jusqu'à {until}.", "Le tarif est valable jusqu'à {until}."),
+        "until_today": "{time} aujourd'hui",
+        "until": "{day}, {time}",
+        "book": (
+            "Si cela vous convient, répondez simplement et je réserve tout de suite.",
+            "Il vous suffit de répondre à ce mail pour confirmer, et je m'occupe de la réservation.",
+        ),
+        "bye": {"formal": "Cordialement,", "neutral": "Bien cordialement,", "casual": "Bien à vous,"},
+        "bye_town": "Mes salutations à {town},",
+        "wish_back": "À vous aussi, {wish} !",
+        "in_city": "à {place}",
+        "at_airport": "à {place}",
+        "day": "jour",
+        "days": "jours",
+        "arrival": "Avec une marchandise prête le {ready}, l'arrivée la plus tôt {where} serait le {arrive}.",
+        "arrival_pickup": "Avec un enlèvement le {ready}, l'arrivée la plus tôt {where} serait le {arrive}.",
+        "pickup_first": "Nous pouvons enlever la marchandise le {ready}, dès qu'elle est prête, et l'arrivée la plus "
+        "tôt {where} serait le {arrive}.",
+        "arrival_air_only": (
+            "Si vous livrez la marchandise à {origin} le {ready}, l'arrivée la plus tôt {where} serait le {arrive}."
+        ),
+        "departure": "Le départ de {origin} serait alors le {depart}.",
+        "one_awb": "Comme demandé, tous les lots voyagent ensemble en une seule expédition, sous une seule lettre de "
+        "transport aérien.",
+        "cutoff": "L'heure limite exacte de dépôt à {origin} vient avec la réservation de la compagnie ; je vous la "
+        "transmets dès que je l'ai.",
+        "months": (
+            "janvier",
+            "février",
+            "mars",
+            "avril",
+            "mai",
+            "juin",
+            "juillet",
+            "août",
+            "septembre",
+            "octobre",
+            "novembre",
+            "décembre",
+        ),
+        "weekdays": ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"),
+        "date": "{weekday} {day} {month}",
+    },
 }
 
 PROSE_SYSTEM = (
     "You are an air export clerk at a freight forwarder, answering a customer's mail that asks for an air freight "
     "quote. Code writes the greeting, the answer to 'hope you are well', the price, routing, dates, what the price "
     "covers, the booking line and the sign-off. You write four fields in the language with ISO code {language}, "
-    "in the customer's tone (German: always formal Sie). "
+    "in the customer's tone (German: always formal Sie; French: always vous). "
     "first_name: the customer's first name only if they signed the mail with it, else null. "
     "hook: copied word for word from the customer's mail, the one phrase a person would react to before giving "
-    "the price: a friendly remark of theirs (thanks for checking, thanks for your help, something they attached, a "
-    "word about their buyer or their own business) or the reason they give for the request (it is urgent, it is "
+    "the price: a friendly remark of theirs (thanks for checking, thanks for your help, a word about their buyer or "
+    "their own business) or the reason they give for the request (it is urgent, it is "
     "an import for their buyer). Never 'hope your week is going well', a formal thank-you line, their sign-off or "
-    "their wish for the day, and never a plain fact such as goods, weight, pieces, route or a date. null when the "
+    "their wish for the day, and never a plain fact such as goods, weight, pieces, route, a date or a file they sent. null when the "
     "mail has none, which is common. "
     "intro: null when hook is null; else one short sentence, at most ten plain words, reacting to the hook the way "
-    "a colleague would, for example: thanks for checking -> no trouble at all; an attachment -> it helped; their "
-    "buyer is importing -> glad to help them get it there. Write your own words, never the hook's. Never announce "
+    "a colleague would, for example: thanks for checking -> no trouble at all; their buyer is importing -> glad to help them get it there. Write your own words, never the hook's. Never announce "
     "the offer, never thank them for the request, inquiry, mail or details, never say you noted, read, received or "
     "understood anything, and never begin the way one of the openings under Our notes begins. "
     "closing: always null. "
@@ -316,8 +424,8 @@ CALENDAR = re.compile(
     r"februar|märz|juni|juli|oktober|dezember)\b",
     re.IGNORECASE,
 )
-FRAME = re.compile(r"^\s*(hello|hi|dear|hallo|guten tag|sehr geehrte)\b|\b(best regards|kind regards|viele grüße|"
-                   r"freundliche grüße|mit freundlichen)\b", re.IGNORECASE)  # fmt: skip
+FRAME = re.compile(r"^\s*(hello|hi|dear|hallo|guten tag|sehr geehrte|bonjour)\b|\b(best regards|kind regards|"
+                   r"viele grüße|freundliche grüße|mit freundlichen|cordialement)\b", re.IGNORECASE)  # fmt: skip
 INFORMAL_DE = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer|eure\w*)\b", re.IGNORECASE)
 NAME = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]{1,19}")
 LIMITS = {"intro": 100, "closing": 140}
@@ -331,7 +439,9 @@ ECHO = re.compile(
     r"e-?mail|message|note|interest)|many thanks|cheapest|fastest|all-in|weight|volume|pick-?up|truck\w*|"
     r"deliver\w*|following|as requested|here is|here's|please find|as follows|previous|offer\w*|provide|options?|"
     r"rates?|prices?|quote|quotation|anfrage|bezüglich|sorgfältig|zur kenntnis|behilflich|günstigst\w*|"
-    r"schnellst\w*|abholung|gewicht|volumen|anbei|wie gewünscht|angebot)\b|[.!?]\s+\S",
+    r"schnellst\w*|abholung|gewicht|volumen|anbei|wie gewünscht|angebot|"
+    # we never say how we read their file: "The voice message was clear" went out unheard (round 65)
+    r"attach\w*|voice|record\w*|anhang|sprachnachricht|aufnahme|devis|tarifs?|prix|demande|rapide)\b|[.!?]\s+\S",
     re.IGNORECASE,
 )
 CAPITAL = re.compile(r"\b[A-ZÄÖÜ][\wäöüß-]+")
@@ -346,7 +456,8 @@ NOT_SIGNED = re.compile(
 # "Hope your week's going well!": a clerk answers it before the business.
 WELL = re.compile(
     r"\bhope (?:your (?:week|day)\S* (?:is |going )|you(?:['’]re| are) (?:doing )?|all is |this finds you )\w*\s*well"
-    r"|\bhoffe,? (?:es geht Ihnen gut|Ihre Woche läuft gut)",
+    r"|\bhoffe,? (?:es geht Ihnen gut|Ihre Woche läuft gut)"
+    r"|\bj['’]esp[èe]re que (?:tout va bien|vous allez bien)",
     re.IGNORECASE,
 )
 WISH = {
@@ -357,6 +468,7 @@ WISH = {
     "de": re.compile(
         r"\b(einen sch(?:ö|oe)nen (?:Tag|Abend|Feierabend)|ein sch(?:ö|oe)nes Wochenende)\b", re.IGNORECASE
     ),
+    "fr": re.compile(r"\b(bonne (?:journée|soirée|semaine|fin de semaine)|bon week-end)\b", re.IGNORECASE),
 }
 FROM_TOWN = re.compile(
     r"\b(?i:greetings|regards|wishes|gr(?:ü|ue)(?:ß|ss)e)[ \t]+(?i:from|aus)[ \t]+"
@@ -365,10 +477,12 @@ FROM_TOWN = re.compile(
 OWN_BYE = re.compile(r"^\s*(cheers|viele gr(?:ü|ue)(?:ß|ss)e)\b", re.IGNORECASE | re.MULTILINE)
 SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
-READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
-WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
+READY = re.compile(
+    r"\b(?:ready|bereit|available|verfügbar|prête?s?)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE
+)
+WAREHOUSE = re.compile(r"\b(warehouse|factory|plant|facility)\b", re.IGNORECASE)
 PICKUP_ASK = re.compile(r"earliest (?:\w+ )?pick-?up|frühest\w* Abholung", re.IGNORECASE)
-DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
+DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug|premier départ", re.IGNORECASE)
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
@@ -377,6 +491,8 @@ MORE_EN = {"i", "it", "this", "that", "will", "be", "are", "in", "on", "have", "
 MORE_DE = {"ihnen", "ihre", "ihren", "ihrer", "gerne", "gern", "tag", "schönen", "einen", "noch", "vielen", "dank",
            "uns", "auf", "den", "dem", "bei", "es", "wird", "sind", "haben", "gute", "guten", "freue", "auch", "so",
            "hier", "ihrem", "ihres", "darum", "kümmere", "melde"}  # fmt: skip
+MORE_FR = {"je", "ce", "cette", "sera", "bien", "très", "plaisir", "aussi", "bonne", "journée", "ravi", "ravie",
+           "avec", "sans", "souci", "aider", "en"}  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -395,13 +511,94 @@ def money(amount: Decimal) -> str:
 
 
 def weight(kg: Decimal, language: str) -> str:
-    text = f"{kg.quantize(CENT, rounding=ROUND_HALF_UP).normalize():,f}"
+    kg = kg.quantize(CENT, rounding=ROUND_HALF_UP).normalize()
+    if language == "fr":  # no thousands separator: a French space would split the number in two
+        return f"{kg:f}".replace(".", ",")
+    text = f"{kg:,f}"
     return text.translate(str.maketrans(",.", ".,")) if language == "de" else text
 
 
 def language_of(rfq: Rfq) -> str:
     """The language the mail is rendered in: the customer's when we have a text for it, else English."""
     return rfq.language if rfq.language in TEXT else "en"
+
+
+TRANSLATE_SYSTEM = (
+    "You translate an air freight forwarder's mail to its customer into the language with ISO code {language}, "
+    "the language the customer wrote in. Write it as a natural, polite business mail in that language, keeping its "
+    "lines and paragraphs. Copy every number, price, currency code, airport code, time, reference, airline and "
+    "company and person name exactly as written, digits unchanged. Add or drop nothing. "
+    'Answer as JSON {{"body": ...}}.'
+)
+TRANSLATE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"body": {"type": "string"}},
+    "required": ["body"],
+}
+NUMBER = re.compile(r"\d+(?:[.,:]\d+)*")
+
+
+def translated_ok(english: str, translated: str, option: RateOption) -> bool:
+    """The translation keeps the total exactly once, its currency, the carrier and trucker, the transit days, and
+    writes no figure the English mail does not hold (a short one, a month or a day, may be added)."""
+    if translated.count(money(option.total)) != 1 or not re.search(rf"(?<!\d){option.transit_days}(?!\d)", translated):
+        return False
+    if any(name not in translated for name in (option.currency, option.carrier, option.trucker) if name):
+        return False
+    figures = set(NUMBER.findall(english))
+    return all(n in figures for n in NUMBER.findall(translated) if len(n) > 2)
+
+
+def kept(english: str, translated: str, names: tuple[str, ...]) -> bool:
+    """A follow-up's translation keeps every name and reference in `names` and every figure of the English mail, and
+    adds no figure (a short one, a month or a day, may differ)."""
+    figures = {n for n in NUMBER.findall(english) if len(n) > 2}
+    return all(name in translated for name in names if len(name or "") > 1) and figures == {
+        n for n in NUMBER.findall(translated) if len(n) > 2
+    }
+
+
+async def translate(ctx: Context, rfq: Rfq, option: RateOption, body: str, wait: float) -> str:
+    """The quote in the customer's language when we have no `TEXT` for it (round 72 was Chinese, answered in
+    English and rejected as wrong_language): the code-written English mail, translated by the model and checked by
+    `translated_ok`. The English mail on any failure or after `wait` seconds; never blocks the quote."""
+    if language_of(rfq) == rfq.language:
+        return body
+    return await localize(ctx, rfq.language, rfq.session_id, body, wait,
+                          lambda text: translated_ok(body, text, option), "quote.translate")  # fmt: skip
+
+
+async def localize(
+    ctx: Context, language: str, session_id: int | None, body: str, wait: float, ok, purpose: str
+) -> str:
+    """`body` translated into `language` by the model when `ok` accepts the translation; else `body` unchanged, after
+    `wait` seconds at most. Every mail to a customer after the quote follows the thread's language this way when we
+    have no text of our own for it (booking notices, the question for a missing fact, a tracking answer)."""
+    if wait <= 0:
+        return body
+    try:
+        result = await asyncio.wait_for(
+            llm.ask_json(
+                ctx,
+                purpose=purpose,
+                system=TRANSLATE_SYSTEM.format(language=language),
+                user=body,
+                schema=TRANSLATE_SCHEMA,
+                session_id=session_id,
+                max_output_tokens=600,
+            ),
+            wait,
+        )
+        text = result.data.get("body")
+        if isinstance(text, str) and ok(text.strip()):
+            return text.strip()
+        error = "translation dropped a figure or name"
+    except Exception as exc:  # noqa: BLE001  the English mail still goes out
+        error = type(exc).__name__
+    events.emit(ctx, "error", "rfq", session_id=session_id,
+                payload={"where": purpose, "language": language, "error": error})  # fmt: skip
+    return body
 
 
 def reply_subject(subject: str | None) -> str | None:
@@ -413,17 +610,22 @@ def reply_subject(subject: str | None) -> str | None:
 
 # The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
 GOODS = re.compile(
-    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
-    r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
+    r"\b(?:pallets?|cartons?|boxes?|crates?|pkgs?|colli|pieces?) of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
+    r"|\b(?:Commodity|Cargo):\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n]|$)"
     r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
-    r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
-    r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
+    r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?:some |our )?(?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to | going )"
+    r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to | going )"
     r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
     r"|\b(?:cargo|goods|shipment) (?:is|are|consists? of) (?P<g>[a-z][a-z -]{2,40}?)(?=, packed|,? in \d| packed)"
     r"|\b[Ww]e(?:['’]re| are) (?:shipping|sending) (?P<h>[a-z][a-z -]{2,40}?)(?=[:,.]| with )"
 )
-NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
-             "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
+NOT_GOODS = {
+    "shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
+    "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both",
+    "pallets", "pallet", "cartons", "carton", "boxes", "box", "crates", "crate", "packages", "package", "pkgs", "colli",
+    "me", "rate", "rates", "offer",
+    "firma", "company", "industries", "gmbh", "ag", "ltd", "inc", "corp", "corporation",
+}
 
 
 def goods_of(request: str) -> str | None:
@@ -431,8 +633,15 @@ def goods_of(request: str) -> str | None:
     words it another way."""
     for found in GOODS.finditer(request):
         goods = next(g for g in found.groups() if g).strip(" -")
-        if not set(goods.split()) & NOT_GOODS:
-            return goods
+        words = goods.split()
+        if any(len(w) == 3 and w.isupper() for w in words):
+            continue
+        lower_words = {w.lower() for w in words}
+        if lower_words & NOT_GOODS:
+            continue
+        if len(goods) < 3:
+            continue
+        return goods.lower()
     return None
 
 
@@ -578,7 +787,7 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     offer = [_sentence(prose.intro)] if prose.intro and not air_only else []
     if WELL.search(request):
         offer.insert(0, pick(t["well_back"]))
-    site = "warehouse" if WAREHOUSE.search(request) else "site"
+    site = match.group(1).lower() if (match := WAREHOUSE.search(request)) else "site"
     offer += [price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
@@ -642,9 +851,8 @@ def render(
     return title, _body(rfq, option, Prose(), signer, said, request)
 
 
-def _words_lang(text: str) -> tuple[int, int]:
-    words = re.findall(r"[a-zäöüß]+", text.lower())
-    return sum(w in GERMAN or w in MORE_DE for w in words), sum(w in ENGLISH or w in MORE_EN for w in words)
+def _words_lang(text: str) -> dict[str, int]:
+    return words_of(text, {"en": MORE_EN, "de": MORE_DE, "fr": MORE_FR})
 
 
 def _sentence_ok(text: str, slot: str, lang: str, banned: set[str]) -> bool:
@@ -658,8 +866,8 @@ def _sentence_ok(text: str, slot: str, lang: str, banned: set[str]) -> bool:
     lowered = text.casefold()
     if any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowered) for name in banned):
         return False
-    german, english = _words_lang(text)
-    if (lang == "de" and german <= english) or (lang == "en" and english <= german):
+    counts = _words_lang(text)
+    if any(counts[lang] <= n for other, n in counts.items() if other != lang):
         return False
     return not (lang == "de" and INFORMAL_DE.search(text))
 

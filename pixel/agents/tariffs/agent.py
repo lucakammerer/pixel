@@ -1,20 +1,24 @@
 import asyncio
 import csv
+import email
+import email.policy
 import hashlib
 import io
 import itertools
 import re
 import threading
+import zipfile
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from html.parser import HTMLParser
 from pathlib import Path
 
 import httpx
 
 from pixel import llm
 from pixel.api.client import ApiError
-from pixel.contracts import LaneTariff, Message
+from pixel.contracts import Attachment, LaneTariff, Message
 from pixel.core import events
 from pixel.core.context import Context
 from pixel.pricing import bids, store
@@ -30,13 +34,54 @@ LEAD_COLUMN = re.compile(
 )
 IMAGES = {".jpg", ".jpeg", ".png"}
 AUDIO = {".mp3", ".wav", ".m4a", ".ogg"}
+TEXTS = {".txt", ".csv", ".tsv", ".md", ".json", ".xml"}
+READABLE = {".xlsx", ".xls", ".docx", ".pdf", ".html", ".htm", ".eml", ".zip", *TEXTS, *AUDIO}
+# A file inside a zip larger than this is skipped: no archive may stall a request's handler.
+ZIP_MEMBER_BYTES = 20_000_000
 SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
 # Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
 SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
 SPOKEN_EUR = re.compile(r"(\d[\d,.]*)\s*euros?\b", re.IGNORECASE)
 # Whisper writes small numbers as words: "four hours", "twelve pieces", "vier Stunden" become digits for the rules.
-ONES = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
-ONES_DE = ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn"]
+ONES = [
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+]
+ONES_DE = [
+    "eins",
+    "zwei",
+    "drei",
+    "vier",
+    "fünf",
+    "sechs",
+    "sieben",
+    "acht",
+    "neun",
+    "zehn",
+    "elf",
+    "zwölf",
+    "dreizehn",
+    "vierzehn",
+    "fünfzehn",
+    "sechzehn",
+]
 ONES_DE += ["siebzehn", "achtzehn", "neunzehn"]
 TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
 TENS_DE = ["zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
@@ -55,6 +100,110 @@ _speech_lock = threading.Lock()
 VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
 RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
+
+
+class Unreadable(ValueError):
+    """A file code holds no text reader for: video, an image, an unknown type, a scan without text."""
+
+
+class _HtmlText(HTMLParser):
+    """An html page as lines: a block element or a table row starts a line, cells are two spaces apart."""
+
+    BLOCKS = frozenset(
+        {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6", "table", "section", "article"}
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lines, self.skip = [""], 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        self.skip += tag in ("script", "style")
+        if tag in self.BLOCKS:
+            self.lines.append("")
+        elif tag in ("td", "th") and self.lines[-1].strip():
+            self.lines[-1] += "  "
+
+    def handle_endtag(self, tag: str) -> None:
+        self.skip -= tag in ("script", "style") and self.skip > 0
+
+    def handle_data(self, data: str) -> None:
+        if not self.skip:
+            self.lines[-1] += " ".join(data.split()) if data.strip() else ""
+
+
+def _decoded(content: bytes) -> str:
+    if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return content.decode("utf-16")
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return content.decode("latin-1")
+
+
+def _kind(filename: str, content: bytes) -> str:
+    """The file's type by its suffix, else by its first bytes: a forwarded or renamed file often loses its name."""
+    suffix = Path(filename).suffix.lower()
+    if suffix in READABLE or suffix in IMAGES:
+        return suffix
+    if content.startswith(b"%PDF"):
+        return ".pdf"
+    if content.startswith(b"\xd0\xcf\x11\xe0"):  # an old Office file: only a sheet has a reader
+        return ".xls"
+    if content.startswith(b"PK"):
+        try:
+            names = set(zipfile.ZipFile(io.BytesIO(content)).namelist())
+        except zipfile.BadZipFile:
+            return suffix
+        return ".docx" if "word/document.xml" in names else ".xlsx" if "xl/workbook.xml" in names else ".zip"
+    if content.startswith((b"ID3", b"\xff\xfb", b"\xff\xf3", b"OggS")):
+        return ".mp3"
+    if content.startswith(b"RIFF"):
+        return ".wav"
+    head = _decoded(content[:2048])
+    if "\x00" in head or sum(not c.isprintable() and c not in "\r\n\t" for c in head) > len(head) // 20:
+        return suffix
+    if re.match(r"\s*<(?:!doctype html|html)\b", head, re.IGNORECASE):
+        return ".html"
+    if re.match(r"(?:[\w-]+:[^\n]*\r?\n)+", head) and re.search(r"^(?:From|Subject|MIME-Version):", head, re.MULTILINE):
+        return ".eml"
+    return ".txt"
+
+
+def _mail_lines(content: bytes) -> list[str]:
+    """A forwarded mail: its subject, its text and every attachment code can read."""
+    mail = email.message_from_bytes(content, policy=email.policy.default)
+    body = mail.get_body(preferencelist=("plain", "html"))
+    text = body.get_content() if body else ""
+    lines = [f"Subject: {mail['subject'] or ''}", *(_lines("body.html", text.encode()) if body and
+             body.get_content_type() == "text/html" else text.splitlines())]  # fmt: skip
+    for part in mail.iter_attachments():
+        inner = part.get_content()
+        data = inner.as_bytes() if part.get_content_type() == "message/rfc822" else part.get_payload(decode=True)
+        name = part.get_filename() or ("forwarded.eml" if part.get_content_type() == "message/rfc822" else "")
+        try:
+            lines += _lines(name, data or b"")
+        except Unreadable:
+            continue
+    return lines
+
+
+def _zip_lines(content: bytes) -> list[str]:
+    """Every file of an archive code can read, one after another; an archive inside one is not opened."""
+    lines, read = [], False
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        for member in archive.infolist():
+            name = Path(member.filename).name
+            if member.is_dir() or member.file_size > ZIP_MEMBER_BYTES or name.lower().endswith(".zip"):
+                continue
+            try:
+                lines += _lines(name, archive.read(member))
+                read = True
+            except Unreadable:
+                continue
+    if not read:
+        raise Unreadable("zip without a file code can read")
+    return lines
 
 
 @dataclass
@@ -111,8 +260,32 @@ def _cell(value: object) -> str:
     return str(value).strip()
 
 
+def _xls_lines(content: bytes) -> list[str]:
+    """An Excel 97 sheet, as `.xlsx` rows read: xlrd gives every number as a float and a date as a day count."""
+    import xlrd
+
+    try:
+        book = xlrd.open_workbook(file_contents=content)
+    except xlrd.XLRDError as e:
+        raise Unreadable(f"no sheet in this office file: {e}") from e
+
+    def value(cell) -> object:
+        if cell.ctype == xlrd.XL_CELL_DATE:
+            return xlrd.xldate_as_datetime(cell.value, book.datemode)
+        if cell.ctype == xlrd.XL_CELL_NUMBER:
+            number = Decimal(repr(cell.value))
+            return int(number) if number == number.to_integral_value() else number
+        return cell.value
+
+    return [
+        "  ".join(_cell(v) for c in sheet.row(r) if (v := value(c)) is not None and str(v).strip())
+        for sheet in book.sheets()
+        for r in range(sheet.nrows)
+    ]
+
+
 def _lines(filename: str, content: bytes) -> list[str]:
-    suffix = Path(filename).suffix.lower()
+    suffix = _kind(filename, content)
     if suffix == ".xlsx":
         import openpyxl
 
@@ -122,6 +295,8 @@ def _lines(filename: str, content: bytes) -> list[str]:
             for sheet in book.worksheets
             for row in sheet.iter_rows(values_only=True)
         ]
+    if suffix == ".xls":
+        return _xls_lines(content)
     if suffix == ".docx":
         import docx
         from docx.table import Table
@@ -141,16 +316,46 @@ def _lines(filename: str, content: bytes) -> list[str]:
         with pdfplumber.open(io.BytesIO(content)) as pdf:
             text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         if not text.strip():
-            raise ValueError("pdf without text: scanned")
+            raise Unreadable("pdf without text: scanned")
         return text.splitlines()
-    if suffix in (".txt", ".csv"):
-        try:
-            return content.decode("utf-8").splitlines()
-        except UnicodeDecodeError:
-            return content.decode("latin-1").splitlines()
+    if suffix in TEXTS:
+        text = _decoded(content)
+        if suffix in (".csv", ".tsv"):  # cells as a spreadsheet's line: a quoted "1.586,00" stays one number
+            delimiter = next((d for d in ";\t" if d in text), ",")
+            return [
+                "  ".join(c.strip() for c in row if c.strip())
+                for row in csv.reader(text.splitlines(), delimiter=delimiter)
+            ]
+        return text.splitlines()
+    if suffix in (".html", ".htm"):
+        page = _HtmlText()
+        page.feed(_decoded(content))
+        return [line.strip() for line in page.lines if line.strip()]
+    if suffix == ".eml":
+        return _mail_lines(content)
+    if suffix == ".zip":
+        return _zip_lines(content)
     if suffix in AUDIO:
         return _spoken(_transcribe(content))
-    raise ValueError(f"no code parser for {suffix or filename}")
+    raise Unreadable(f"no code parser for {suffix or filename}")
+
+
+async def attachment_lines(ctx: Context, message: Message, attachment: Attachment, actor: str) -> list[str] | None:
+    """The text lines of a customer's or carrier's attachment. A file code cannot read (a video, a scan) is a
+    deliberate `attachment.unreadable`, never an `error`: the mail goes on as if that file held nothing."""
+    suffix = Path(attachment.filename).suffix.lower()
+    try:
+        if suffix and suffix not in READABLE:  # a type without a reader is never downloaded; no suffix is sniffed
+            raise Unreadable(f"no code parser for {suffix}")
+        content = await ctx.mailbox.attachment(message.id, attachment.id)
+        return await asyncio.to_thread(_lines, attachment.filename, content)  # a voice message takes seconds
+    except Unreadable as e:
+        events.emit(ctx, "attachment.unreadable", actor, session_id=message.session_id, message_id=message.id,
+                    payload={"file": attachment.filename, "type": attachment.content_type, "reason": str(e)})  # fmt: skip
+    except Exception as e:  # noqa: BLE001  a broken file must not lose the mail
+        events.emit(ctx, "error", actor, session_id=message.session_id, message_id=message.id,
+                    payload={"where": f"{actor}_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+    return None
 
 
 def speech_model():
@@ -180,7 +385,13 @@ def _transcribe(content: bytes) -> list[str]:
     return re.split(r"(?<=[.!?])\s+", text)
 
 
+# "one hundred and twenty boxes": the words before the last one are part of the number, so none of it is converted.
+LARGER = re.compile(r"\b(?:hundred|thousand|hundert|tausend)(?:\s+(?:and|und))?[\s-]*$", re.IGNORECASE)
+
+
 def _number(m: re.Match) -> str:
+    if LARGER.search(m.string[: m.start()]):
+        return m[0]
     if m["one_de"]:
         return str(NUMBER_WORDS[m["ten_de"].lower()] + NUMBER_WORDS[m["one_de"].lower()])
     if m["ten"]:

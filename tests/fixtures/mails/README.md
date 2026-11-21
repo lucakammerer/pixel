@@ -9,7 +9,9 @@ real mail has arrived of yet: a tariff mail, a tracking question, a request the 
 with a captured mail of the same kind as soon as one arrives, then delete the synthetic one. `tests/test_router.py`
 stores our own mails the captured ones answer (the bid request, the quote, a request to the rate desk) first.
 
-A fixture may carry `content_base64` on an attachment; `tools/replay.py` serves it instead of downloading.
+A fixture may carry `content_base64` on an attachment; `tools/replay.py` serves it instead of downloading. The
+benchmark's `CONTAINERS` (section 13) wraps each embedded file as html, a forwarded mail, a zip, without a suffix or
+as other text, and reads it again against the same hand-read answers.
 
 `tools/kpi.py` replays each `rfq-*` and `synthetic-rfq-*` fixture, plus any names listed in
 `tests/fixtures/kpi-expectations.json`. A misrouted request stays in the denominator. An answer requires a
@@ -36,6 +38,12 @@ Captured mails of a request, from the request to the confirmed booking:
 
 - `rfq-door-no-origin.json`: the first scored request. Door-to-port, fastest, a currency asked for; it names the
   destination and the pickup postcode but no origin airport.
+- `rfq-door-offer-as-pdf.json`: round 76. Door-to-port, fastest; the customer asks for the offer as a PDF
+  attachment and declined our quote without one (`no_pdf_offer`).
+- `rfq-dg-packing-list-as-xls.json`: `rfq-dg-packing-list.json` with its packing list saved as Excel 97 (`.xls`, the
+  mailbox allows it, R6), cell for cell; written once with xlwt, which the project does not depend on.
+- `rfq-door-request-in-txt.json`: round 66. The mail only points to `quotation-request.txt` (embedded), which
+  holds the whole request: destination, weight, volume, pieces, pickup postcode, the wish. Read by rules live.
 - `rfq-sli-volume-differs-from-mail.json`: round 33, MUC-CAI, cheapest. The mail says 2.78 cbm; the attached packing
   spec (embedded) says 1.92 cbm and its table bears that out. The scorer priced 1.92 and rejected our quote on
   2.78 as too high.

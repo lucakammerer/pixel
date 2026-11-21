@@ -2,7 +2,7 @@
 
 Usage:
     uv run python -m tools.benchmark_generalization          # every check, exit 1 on a failure
-    uv run python -m tools.benchmark_generalization --gaps   # only the open known gaps, grouped by owner
+    uv run python -m tools.benchmark_generalization --gaps   # the channel matrix, then the open known gaps by owner
     uv run python -m tools.benchmark_generalization --stub   # an empty rfqs/live.jsonl row per new captured request
 
 Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `data/start-kit/`:
@@ -14,15 +14,25 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 4. Partial cases: the rows of `rfqs/partial_cases.jsonl` that have an invariant to check.
 5. Changed layouts: every sheet in `tariffs/variants/` is parsed right or refused, never parsed into wrong values.
 6. Routing: the router's rules on `mails/routing_probes.jsonl`.
-7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`.
+7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`, and on every captured pickup offer
+   (`pickup-offer-layouts.json`) with one change each (`PICKUP_CHANGES`): its total, currency and pickup hours.
 8. Spreadsheet changes: layout-only edits of every kit xlsx parse to the original's tariffs or are refused.
-9. Captured requests: every `mails/rfq-*.json` read by the rules against the fields a person read from the mail
-   (`rfqs/live.jsonl`), with the score per field.
+9. Captured requests: every `mails/rfq-*.json` with its embedded attachments read by the rules against the
+   fields a person read from the mail (`rfqs/live.jsonl`), with the score per field.
 10. The same requests changed in ways seen live (an old request quoted below, a reply's subject, pounds): each
    read right or left to the model.
 11. Mail against its attached document (rounds 33 to 35): every figure the document states, changed in the mail,
    in every column order, file format and document layout (`tools/document_conflicts.py`); the document's figure
    is the right reading.
+12. Channel matrix: every mail kind the router knows (a carrier's bid split into airline and trucker) against where
+   its information sits (body; pdf, scan, docx, xlsx, txt or csv, audio attachment; body and attachment
+   disagreeing). A cell counts the captured mails, kit sheets, pickup offers and `tools/simulate.py` cases that put
+   it there; a cell without one is listed in `channel-gaps.json` with its owner, or the run fails, and so does a
+   listed cell a case covers by now. `--gaps` prints the matrix first.
+13. Attachment containers: every captured attachment as an html page, a forwarded mail, a zip archive, without
+   or with a capitalised suffix, as UTF-16 or markdown text (`CONTAINERS`): read like the original or not at all.
+14. Tracking questions: every live question about a booked shipment (`tracking-questions.json`) with one change
+   each (`TRACKING_CHANGES`) against the live CRM's shipments: the same shipment, or a question back, never another.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -32,13 +42,17 @@ Scanned sheets are read by the real `agents.tariffs.agent.read_with_model`, with
 """
 
 import asyncio
+import base64
 import csv
+import io
 import json
 import re
 import sys
+import zipfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal as D
+from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import patch
 
@@ -46,16 +60,30 @@ from pixel import llm
 from pixel.agents.rfq import extract
 from pixel.agents.router import agent as router
 from pixel.agents.tariffs import agent
+from pixel.agents.tracking import agent as tracking
 from pixel.api.mailbox import to_message
 from pixel.config import settings
-from pixel.contracts import LaneTariff, LlmResult, MailKind, Message, Preference, Rfq
+from pixel.contracts import (
+    LaneTariff,
+    LlmResult,
+    MailKind,
+    Message,
+    Preference,
+    Quote,
+    QuoteStatus,
+    RateOption,
+    Rfq,
+    Source,
+)
 from pixel.core import db, poller
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
+from pixel.crm import quotes, shipments
 from pixel.pricing import bids
 from pixel.pricing.calc import chargeable_kg, price_tariff
-from tools import document_conflicts
+from pixel.pricing.pickup import zone_of
+from tools import document_conflicts, simulate
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -324,6 +352,109 @@ def _live_want(key: str, want):
     return D(want) if key in ("weight_kg", "volume_cbm") and want is not None else want
 
 
+def _readable(filename: str, content: bytes) -> list[str] | None:
+    """`tariffs.agent.attachment_lines` without the mailbox: a file code cannot read holds nothing."""
+    try:
+        return agent._lines(filename, content)
+    except agent.Unreadable:
+        return None
+
+
+def _rules_with_attachments(raw: dict, deadline) -> Rfq | None:
+    """`extract.read_request`'s rules on a captured mail and its embedded attachments, without its question."""
+    message = to_message(raw, "in")
+    files = [(a["filename"], lines) for a in raw.get("attachments", []) if a.get("content_base64")
+             if (lines := _readable(a["filename"], base64.b64decode(a["content_base64"]))) is not None]  # fmt: skip
+    if not files:
+        return extract.by_rules(message, deadline)
+    documents = [(name, extract.own_words("\n".join(lines))) for name, lines in files]
+    sources = extract._shipment_sources([("mail", extract._text(message)), *documents])
+    cargo = extract._cargo_sources(sources)[0]
+    combined = message.model_copy(update={"subject": "", "body": "\n\n".join(content for _, content in sources)})
+    return extract.by_rules(message, deadline, cargo=cargo) or extract.by_rules(combined, deadline, cargo=cargo)
+
+
+def _text(name: str, data: bytes) -> str:
+    return "\n".join(agent._lines(name, data))
+
+
+def _as_html(name: str, data: bytes) -> tuple[str, bytes]:
+    cells = lambda line: "".join(f"<td>{c.strip()}</td>" for c in re.split(r"\s{2,}", line) if c.strip())
+    rows = "".join(f"<tr>{cells(line)}</tr>" if re.search(r"\S\s{2,}\S", line) else f"<p>{line}</p>"
+                   for line in _text(name, data).splitlines())  # fmt: skip
+    return f"{Path(name).stem}.html", f"<html><body><table>{rows}</table></body></html>".encode()
+
+
+def _as_mail(name: str, data: bytes, *, attach: bool) -> tuple[str, bytes]:
+    mail = EmailMessage()
+    mail["From"], mail["Subject"] = "colleague@example.com", f"Fwd: {name}"
+    mail.set_content("Please see the attached file." if attach else _text(name, data))
+    if attach:
+        mail.add_attachment(data, maintype="application", subtype="octet-stream", filename=name)
+    return f"{Path(name).stem}.eml", mail.as_bytes()
+
+
+def _as_zip(name: str, data: bytes) -> tuple[str, bytes]:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(name, data)
+    return f"{Path(name).stem}.zip", buffer.getvalue()
+
+
+# One container change each to a captured attachment; the facts it holds stay the same.
+CONTAINERS = {
+    "html page": _as_html,
+    "forwarded mail, text in its body": lambda n, d: _as_mail(n, d, attach=False),
+    "forwarded mail, file attached": lambda n, d: _as_mail(n, d, attach=True),
+    "zip archive": _as_zip,
+    "no file suffix": lambda n, d: (Path(n).stem, d),
+    "suffix in capitals": lambda n, d: (Path(n).stem + Path(n).suffix.upper(), d),
+    "text in UTF-16": lambda n, d: (f"{Path(n).stem}.txt", _text(n, d).encode("utf-16")),
+    "markdown": lambda n, d: (f"{Path(n).stem}.md", _text(n, d).encode()),
+}
+
+
+@dataclass
+class Container:
+    fixture: str
+    change: str
+    outcome: str  # "right", "unread" (the file held nothing for the code), "model" or "wrong"
+    detail: str = ""
+
+
+def audit_containers() -> list[Container]:
+    """Every captured attachment (requests against `rfqs/live.jsonl`, the trucker's offer against its hand-read
+    total) in another container: read like the original, or at worst unread; never into other figures."""
+    rows = {r["fixture"]: r["expected"] for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
+    deadline, results = _deadline(), []
+    for path in sorted(MAILS.glob("*.json")):
+        raw = json.loads(path.read_text())
+        embedded = [a for a in raw.get("attachments") or [] if a.get("content_base64")]
+        offer = path.name == "bid-pickup-in-attachment.json"
+        if not embedded or not (offer or path.name in rows):
+            continue
+        first = embedded[0]
+        for change, wrap in CONTAINERS.items():
+            name, data = wrap(first["filename"], base64.b64decode(first["content_base64"]))
+            changed = dict(raw, attachments=[first | {"filename": name, "content_base64": base64.b64encode(data).decode()},
+                                             *embedded[1:]])  # fmt: skip
+            unread = _readable(name, data) is None
+            if offer:
+                body = "\n".join([bids._own_text(raw["body"]), *(_readable(name, data) or [])])
+                found = bids.parse(_message("Re: Pickup request", body), Rfq(session_id=1, message_id=1,
+                                   customer="bench", origin="CGN", destination="CGN", weight_kg=D(1410),
+                                   received_at=NOW, deadline_at=NOW, door_pickup=True), needs_transit=False)  # fmt: skip
+                got = None if found is None else (str(found.total), bids._pickup_hours(body))
+                wrong = [] if got == ("165.70", 29) else [f"{got} != ('165.70', 29)"] if got else None
+            else:
+                rfq = _rules_with_attachments(changed, deadline)
+                wrong = None if rfq is None else [f"{k}: {_live_value(rfq, k)} != {v}" for k, v in rows[path.name].items()
+                                                  if k != "origin" and _live_value(rfq, k) != _live_want(k, v)]  # fmt: skip
+            outcome = "wrong" if wrong else "unread" if unread else "right" if wrong == [] else "model"
+            results.append(Container(path.name, change, outcome, "; ".join(wrong or [])))
+    return results
+
+
 def audit_live() -> list[Live]:
     """Every captured customer request (`mails/rfq-*.json`) against `rfqs/live.jsonl`: the fields a person read
     from the mail itself, never from the code's output. A field the row leaves out is not judged (the origin of a
@@ -346,7 +477,7 @@ def audit_live() -> list[Live]:
         if unread := [k for k, v in row["expected"].items() if v == UNREAD]:
             results.append(Live(path.name, True, todo=f"fill in {', '.join(unread)} from the mail"))
             continue
-        rfq = extract.by_rules(to_message(json.loads(path.read_text()), "in"), deadline)
+        rfq = _rules_with_attachments(json.loads(path.read_text()), deadline)
         if rfq is None:
             results.append(Live(path.name, False, judged=list(exp), known_gap=row.get("known_gap")))
             continue
@@ -708,6 +839,219 @@ def audit_bids() -> list[BidRead]:
         want = f"{exp['total']} {exp['currency']} {exp['transit_days']}d" if exp else "refused"
         got = f"{option.total} {option.currency} {option.transit_days}d" if option else "refused"
         results.append(BidRead(row["case_id"], got, want, got == want or got == "refused", row.get("known_gap")))
+    return results + _pickup_reads()
+
+
+def _total_label(label: str):
+    return lambda t: re.sub(r"(?m)^(\s*)Total\b(?:, all-in)?", lambda m: m[1] + label, t)
+
+
+def _hourly(wording: str):
+    return lambda t: re.sub(r"45\.00 EUR for each hour", wording, t)
+
+
+def _lead_time(wording: str):
+    pattern = r"(\d+) hours (?=from order|after your order)|(?<=in )(\d+) hours"
+    return lambda t: re.sub(pattern, lambda m: wording.format(m[1] or m[2]) + (" " if m[1] else ""), t)
+
+
+# One change each to a captured pickup offer; its total and pickup hours stay the figures read by hand.
+PICKUP_CHANGES = {
+    "decimal comma": lambda t: re.sub(r"(\d)\.(\d\d)\b", r"\1,\2", t),
+    "euro sign": lambda t: re.sub(r"(\d+\.\d\d) EUR", r"€\1", t).replace("(EUR)", "(€)"),
+    "currency first": lambda t: re.sub(r"(\d+\.\d\d) EUR", r"EUR \1", t),
+    "euros in words": lambda t: re.sub(r"(\d+\.\d\d) EUR", r"\1 euros", t),
+    "in USD": lambda t: t.replace("EUR", "USD"),
+    "label Grand total": _total_label("Grand total"),
+    "label Sum": _total_label("Sum"),
+    "label Total amount": _total_label("Total amount"),
+    "label Total EUR": _total_label("Total EUR"),
+    "label Gesamt": _total_label("Gesamt"),
+    "label TOTAL:": _total_label("TOTAL:"),
+    "waiting per hour": _hourly("45.00 EUR per hour"),
+    "waiting EUR/h": _hourly("45.00 EUR/h"),
+    "waiting hourly": _hourly("45.00 EUR hourly"),
+    "waiting per started hour": _hourly("45.00 EUR per started hour"),
+    "waiting je Stunde": _hourly("45.00 EUR je Stunde"),
+    "lead time h": _lead_time("{} h"),
+    "lead time hrs": _lead_time("{} hrs"),
+    "lead time Stunden": _lead_time("{} Stunden"),
+}
+
+
+def _pickup_reads() -> list[BidRead]:
+    rfq = Rfq(session_id=1, message_id=1, customer="bench", origin="CGN", destination="LIM", weight_kg=D(1000),
+              volume_cbm=D(1), received_at=NOW, deadline_at=NOW, door_pickup=True)  # fmt: skip
+    results = []
+    for offer in json.loads((FIXTURES / "pickup-offer-layouts.json").read_text())["offers"]:
+        spoken = offer.get("attachment_text") or "\n".join(agent._spoken(offer["transcript"]))
+        text = bids._own_text(offer["body"]) + "\n" + spoken
+        for change, edit in PICKUP_CHANGES.items():
+            if (body := edit(text)) == text:
+                continue
+            option = bids.parse(_message("Re: Pickup request", body), rfq, needs_transit=False)
+            currency = "USD" if change == "in USD" else offer["currency"]
+            want = f"{offer['total']} {currency} {offer['pickup_hours']}h"
+            got = f"{option.total} {option.currency} {bids._pickup_hours(body)}h" if option else "refused"
+            results.append(BidRead(f"pickup {offer['layout']}: {change}", got, want, got in (want, "refused")))
+    return results
+
+
+# Where a mail's information sits. A scan is an image or a pdf without text; conflict: the mail and its attachment
+# state different facts.
+CHANNELS = ("body", "pdf", "scan", "docx", "xlsx", "txt", "audio", "conflict")
+SUFFIXES = {".pdf": "pdf", ".docx": "docx", ".xlsx": "xlsx", ".xls": "xlsx", ".txt": "txt", ".csv": "txt"}
+SUFFIXES |= dict.fromkeys(agent.IMAGES, "scan") | dict.fromkeys(agent.AUDIO, "audio")
+# The router's kinds; a carrier's bid comes from an airline or a trucker and is read apart.
+KINDS = tuple(name for k in MailKind if k is not MailKind.OTHER
+              for name in (("airline_bid", "pickup_bid") if k is MailKind.CARRIER_BID else (k.value,)))  # fmt: skip
+# Captured mails by their name (`mails/README.md`), the first prefix that fits.
+CAPTURED = {"rfq-": "customer_rfq", "synthetic-rfq-": "customer_rfq", "customer-": "customer_reply",
+            "tracking-": "tracking_question", "synthetic-tracking": "tracking_question", "bid-pickup-": "pickup_bid",
+            "bid-": "airline_bid", "ratedesk-": "ratedesk_reply", "booking-": "booking_confirmation",
+            "synthetic-tariff": "tariff"}  # fmt: skip
+CHANNEL_GAPS = FIXTURES / "channel-gaps.json"
+
+
+def channel_coverage() -> dict[tuple[str, str], int]:
+    """Per kind and channel, how many captured mails, kit sheets, pickup offers and generated cases (`tools/simulate.py`)
+    put the information there. A captured attachment counts only with its file embedded; a mail without one, as body."""
+    found: dict[tuple[str, str], int] = {}
+
+    def add(kind: str, channel: str | None) -> None:
+        if channel:
+            found[kind, channel] = found.get((kind, channel), 0) + 1
+
+    for path in sorted([*MAILS.glob("*.json"), *(FIXTURES / "voice").glob("*.json")]):
+        kind = next((k for prefix, k in CAPTURED.items() if path.name.startswith(prefix)), None)
+        attachments = json.loads(path.read_text()).get("attachments") or []
+        for a in attachments if kind else []:
+            add(kind, a.get("content_base64") and SUFFIXES.get(Path(a["filename"]).suffix.lower()))
+        if kind and not attachments:
+            add(kind, "body")
+    for path in START_KIT.iterdir():
+        if path.suffix != ".csv":
+            add("tariff", SUFFIXES.get(path.suffix.lower()))
+    offers = json.loads((FIXTURES / "pickup-offer-layouts.json").read_text())
+    for offer in offers["offers"]:
+        add("pickup_bid", SUFFIXES.get(Path(offer["file"]).suffix.lower()))
+    if offers.get("request_transcript"):
+        add("customer_rfq", "audio")
+    for case in [*simulate.document_cases(step=7), *simulate.mail_cases(), *simulate.bid_cases(step=7)]:
+        for name, _ in case.files:
+            add(case.kind, SUFFIXES.get(Path(name).suffix.lower()))
+        add(case.kind, None if case.files else "body")
+        add(case.kind, "conflict" if case.disagrees else None)
+    return found
+
+
+def channel_gaps() -> dict[str, str]:
+    """`channel-gaps.json`: a cell no case covers yet, keyed "<kind> <channel>", its note ending `Owner: <role>.`"""
+    return json.loads(CHANNEL_GAPS.read_text())
+
+
+def print_matrix(covered: dict[tuple[str, str], int], gaps: dict[str, str]) -> list[str]:
+    """The matrix, each cell the number of cases, `gap` or EMPTY; returns what fails: empty cells and unknown keys."""
+    print(f"    {'':<22}" + "".join(f"{c:>9}" for c in CHANNELS))
+    empty = []
+    for kind in KINDS:
+        cells = []
+        for channel in CHANNELS:
+            n, key = covered.get((kind, channel), 0), f"{kind} {channel}"
+            cells.append(str(n) if n else "gap" if key in gaps else "EMPTY")
+            empty += [] if n or key in gaps else [f"{key}: no case and no known gap"]
+        print(f"    {kind:<22}" + "".join(f"{c:>9}" for c in cells))
+    cells = {f"{k} {c}" for k in KINDS for c in CHANNELS}
+    for key in gaps:
+        if key not in cells:
+            empty.append(f"{key}: not a cell of the matrix")
+        elif covered.get(tuple(key.split(" "))):
+            empty.append(f"{key}: covered now, delete its gap")
+    return empty
+
+
+@dataclass
+class TrackingRead:
+    case_id: str
+    change: str
+    outcome: str  # "right", "asks" (a question back for the reference) or "wrong" (another shipment)
+
+
+def _weight(fmt):
+    return lambda t: re.sub(r"(\d+) kg", lambda m: fmt(m[1]), t, count=1)
+
+
+def _lane(fmt: str):
+    return lambda t: re.sub(r"\b([A-Z]{3}|\d{5}) to ([A-Z]{3})\b", lambda m: fmt.format(o=m[1], d=m[2]), t, count=1)
+
+
+def _grouped(sep: str):
+    return _weight(lambda n: (f"{int(n):,}".replace(",", sep) if len(n) > 3 else n) + " kg")
+
+
+# One change each to a live tracking question; the shipment it names stays the same.
+TRACKING_CHANGES = {
+    "as sent": lambda t: t,
+    "the subject alone": None,
+    "thousands comma": _grouped(","),
+    "thousands dot": _grouped("."),
+    "thousands space": _grouped(" "),
+    "kilos": _weight(lambda n: f"{n} kilos"),
+    "kgs": _weight(lambda n: f"{n} kgs"),
+    "kg unspaced": _weight(lambda n: f"{n}kg"),
+    "KG": _weight(lambda n: f"{n} KG"),
+    "kg with decimals": _weight(lambda n: f"{n}.00 kg"),
+    "from X to Y": _lane("from {o} to {d}"),
+    "X-Y": _lane("{o}-{d}"),
+    "X → Y": _lane("{o} → {d}"),
+    "X / Y": _lane("{o} / {d}"),
+    "X nach Y": _lane("{o} nach {d}"),
+    "DE-postcode": _lane("DE-{o} to {d}"),
+    "company without legal form": lambda t: re.sub(r" (?:GmbH|KG)\b", "", t, count=1),
+    "company in capitals": lambda t: re.sub(
+        r"\b[A-Z][a-z]+ [A-Z][a-z]+ (?:GmbH|KG)\b", lambda m: m[0].upper(), t, count=1
+    ),
+}
+
+
+def _tracking_ctx(rows: list[dict]) -> tuple[Context, dict[str, str]]:
+    """The live CRM's booked shipments in a fresh database; returns our id per live shipment id."""
+    conn = db.connect(":memory:")
+    db.init(conn)
+    ctx = Context(settings(), conn, None, None, None, None)
+    ids = {}
+    for i, row in enumerate(rows, 1):
+        kg, postcode = D(row["weight_kg"]), row["pickup_postcode"]
+        rfq = Rfq(session_id=i, message_id=i, customer=row["customer"], origin=row["origin"],
+                  destination=row["destination"], weight_kg=kg, door_pickup=postcode is not None,
+                  pickup_postcode=postcode, pickup_zone=zone_of(postcode) if postcode else None, received_at=NOW,
+                  deadline_at=NOW)  # fmt: skip
+        option = RateOption(source=Source.PORTAL, carrier="c", origin=row["origin"], destination=row["destination"],
+                            chargeable_kg=kg, billed_kg=kg, freight=D(1), total=D(1), currency="EUR",
+                            total_eur=D(1), transit_days=1)  # fmt: skip
+        quote = Quote(id=f"Q-{i}", session_id=i, rfq=rfq, option=option, total=D(1), currency="EUR", subject="",
+                      body="", status=QuoteStatus.SENT, created_at=NOW, sent_at=NOW, sent_message_id=1000 + i)  # fmt: skip
+        quotes.save(ctx, quote)
+        conn.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (?, ?, 'open', ?)",
+                     (i, row["customer"], NOW.isoformat()))  # fmt: skip
+        shipment = shipments.create(ctx, quote).model_copy(update={"status": "confirmed"})
+        shipments.save(ctx, shipment)
+        ids[row["id"]] = shipment.id
+    return ctx, ids
+
+
+def audit_tracking() -> list[TrackingRead]:
+    data = json.loads((FIXTURES / "tracking-questions.json").read_text())
+    ctx, ids = _tracking_ctx(data["shipments"])
+    results = []
+    for n, question in enumerate(data["questions"]):
+        for change, edit in TRACKING_CHANGES.items():
+            text = question["subject"] if edit is None else edit(question["body"])
+            if change != "as sent" and text == question["body"]:
+                continue
+            found = [s.id for s in tracking.described(ctx, text)]
+            outcome = "right" if found == [ids[question["shipment"]]] else "asks" if not found else "wrong"
+            results.append(TrackingRead(f"{n}: {question['subject']}", change, outcome))
     return results
 
 
@@ -734,6 +1078,9 @@ def open_gaps() -> dict[str, list[str]]:
         if r.right is False and r.known_gap and r.known_gap not in seen_gaps:
             seen_gaps.add(r.known_gap)
             found.append((f"document conflict {key}", r.known_gap))
+    covered = channel_coverage()
+    uncovered = [(f"channel {k}", note) for k, note in channel_gaps().items() if not covered.get(tuple(k.split()))]
+    found += sorted(uncovered, key=lambda gap: gap[1])  # one note's cells together: printed once
     by_owner: dict[str, list[str]] = {}
     for case, note in found:
         owner = m.group(1) if (m := re.search(r"Owner: (\w+)", note)) else "unassigned"
@@ -742,6 +1089,9 @@ def open_gaps() -> dict[str, list[str]]:
 
 
 def print_gaps() -> None:
+    print("Channel matrix: cases per kind and where the information sits\n")
+    print_matrix(channel_coverage(), channel_gaps())
+    print()
     for owner, notes in sorted(open_gaps().items()):
         print(f"## {owner} ({len(notes)})\n")
         seen = set()
@@ -828,7 +1178,14 @@ def main() -> int:
     misread = [b for b in bid_reads if not b.ok and not b.known_gap]
     read = sum(b.got != "refused" for b in bid_reads)
     print(f"\n[7] Carrier bids: {sum(b.ok for b in bid_reads)}/{len(bid_reads)} safe, {read} read by rules")
+    pickups = [b for b in bid_reads if b.case_id.startswith("pickup ")]
+    for change in PICKUP_CHANGES:
+        rows = [b for b in pickups if b.case_id.endswith(f": {change}")]
+        model = sum(b.got == "refused" for b in rows)
+        print(f"    pickup offers, {change:<26} {sum(b.ok for b in rows) - model}/{len(rows)} by rules, {model} model")
     for b in bid_reads:
+        if b in pickups and b.ok:
+            continue
         status = "ok" if b.ok else ("GAP" if b.known_gap else "FAIL")
         print(f"    {status:<4} {b.case_id}: {b.got}" + ("" if b.got == b.expected else f", reference {b.expected}"))
         if b.known_gap and not b.ok:
@@ -902,6 +1259,35 @@ def main() -> int:
     for r in conflicts_wrong[:20]:
         print(f"    FAIL {r.name}: {'; '.join(r.wrong_fields)}")
 
+    print("\n[12] Channel matrix: cases per kind and where the information sits (gap: a known gap, --gaps)")
+    empty = print_matrix(channel_coverage(), channel_gaps())
+    for line in empty:
+        print(f"    FAIL {line}")
+
+    containers = audit_containers()
+    containers_wrong = [c for c in containers if c.outcome == "wrong"]
+    print(f"\n[13] Attachment containers: {sum(c.outcome == 'right' for c in containers)}/{len(containers)} read like "
+          f"the original, {sum(c.outcome == 'unread' for c in containers)} unread")  # fmt: skip
+    for change in CONTAINERS:
+        rows = [c for c in containers if c.change == change]
+        counts = {o: sum(c.outcome == o for c in rows) for o in ("right", "unread", "model", "wrong")}
+        print(f"    {change:<34} {counts['right']}/{len(rows)} right, {counts['unread']} unread, "
+              f"{counts['model']} model, {counts['wrong']} wrong")  # fmt: skip
+    for c in containers_wrong:
+        print(f"    FAIL {c.change}: {c.fixture} ({c.detail})")
+
+    tracked = audit_tracking()
+    # Another customer's shipment is never right; the question as sent must find its shipment.
+    tracked_wrong = [r for r in tracked if r.outcome == "wrong" or (r.change == "as sent" and r.outcome != "right")]
+    print(f"\n[14] Tracking questions: {sum(r.outcome == 'right' for r in tracked)}/{len(tracked)} found the "
+          f"shipment, {sum(r.outcome == 'asks' for r in tracked)} ask for the reference")  # fmt: skip
+    for change in TRACKING_CHANGES:
+        rows = [r for r in tracked if r.change == change]
+        counts = {o: sum(r.outcome == o for r in rows) for o in ("right", "asks", "wrong")}
+        print(f"    {change:<28} {counts['right']}/{len(rows)} right, {counts['asks']} ask, {counts['wrong']} wrong")
+    for r in tracked_wrong:
+        print(f"    FAIL {r.change}: {r.case_id} ({r.outcome})")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -914,6 +1300,9 @@ def main() -> int:
         or live_wrong
         or mutated_wrong
         or conflicts_wrong
+        or empty
+        or containers_wrong
+        or tracked_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")

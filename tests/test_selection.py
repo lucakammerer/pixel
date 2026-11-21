@@ -114,3 +114,13 @@ def test_a_misread_trucker_bid_is_not_quoted():
         return [f.rule for f in check.run(quote, "", options) if f.level == check.BLOCK]
 
     assert "implausible_bid" in blocked(misread) and "implausible_bid" not in blocked(quoted)
+
+
+def test_a_bid_is_not_distrusted_against_an_airline_the_customer_ruled_out():
+    request = rfq(Preference.CHEAPEST).model_copy(update={"excluded_carriers": ("Helix",)})
+    options = [opt("Helix", "4000", 3), opt("Nova", "950", 3, Source.BID)]
+    quoted = select(request, engine.combine(request, options))
+    quote = Quote(id="q", session_id=1, rfq=request, option=quoted, total=quoted.total, currency="EUR",
+                  subject="s", body="b", created_at=NOW)  # fmt: skip
+    assert quoted.carrier == "Nova"
+    assert "implausible_bid" not in [f.rule for f in check.run(quote, "", options) if f.level == check.BLOCK]

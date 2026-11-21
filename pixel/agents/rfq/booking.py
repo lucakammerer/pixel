@@ -16,11 +16,11 @@ from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import calc, portal_rates
 
 ACCEPT = re.compile(
-    r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+that)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
+    r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+(?:that|no|any)\b)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
     r"|(?:offer|quote) accepted|confirm\s+(?:the|this|our)\s+booking|go ahead|book\s+(?:it|this|the\s+shipment|with)\b"
     r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|(?<!as )agreed"
     r"|(?:would|['’]d)\s+like\s+to\s+(?:book|proceed)|arrange\s+the\s+booking"
-    r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag|einverstanden"
+    r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag\b|einverstanden"
     r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen)",
     re.IGNORECASE,
 )
@@ -70,14 +70,23 @@ def intent(text: str) -> str:
     return "other"
 
 
-async def handle_reply(ctx: Context, message: Message) -> None:
-    """The customer answered our quote: acceptance -> book; decline -> quote declined; else a person answers."""
-    quote = quotes.for_session(ctx, message.session_id)
+async def reply_intent(ctx: Context, message: Message) -> str:
+    """The reply's own words decide; only when they say nothing does an attachment (a signed offer, a letter)."""
     # A reply written below the quoted mail keeps its own lines after the quote.
     unquoted = "\n".join(line for line in message.body.splitlines() if not line.lstrip().startswith(">"))
     own = extract.HISTORY.split(unquoted, maxsplit=1)[0].strip()
     subject = "" if extract.REPLY_SUBJECT.match(message.subject) else message.subject
     said = intent(own or subject)
+    # A reply that asks something ("Bleibt der Preis gleich?") wants a person, whatever its attachment says.
+    if said == "other" and message.attachments and "?" not in own:
+        said = intent("\n".join(line for _, lines in await extract._attachments(ctx, message) for line in lines))
+    return said
+
+
+async def handle_reply(ctx: Context, message: Message) -> None:
+    """The customer answered our quote: acceptance -> book; decline -> quote declined; else a person answers."""
+    quote = quotes.for_session(ctx, message.session_id)
+    said = await reply_intent(ctx, message)
     if quote is not None and quote.sent_at is None and quote.status == QuoteStatus.DRAFT:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
@@ -190,17 +199,22 @@ async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to:
                          reference=booking.team_reference, airline_reference=booking.booking_reference or "-")  # fmt: skip
 
 
+async def confirmed_references(ctx: Context, message: Message) -> tuple[str | None, str | None]:
+    """The airline's booking reference and ours, from the subject, the body or an attached confirmation."""
+    attached = await extract._attachments(ctx, message) if message.attachments else []
+    text = "\n".join([message.body, *(line for _, lines in attached for line in lines)])
+    match = CONFIRMED.search(message.subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
+    # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
+    ours = OURS.search(text)
+    return (match.group(1).strip(".,:;") if match else None), (ours.group(1) if ours else None)
+
+
 async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told."""
-    match = (
-        CONFIRMED.search(message.subject) or CONFIRMED.search(message.body) or AIRLINE_REFERENCE.search(message.body)
-    )
-    reference = match.group(1).strip(".,:;") if match else None
-    # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
-    ours = OURS.search(message.body)
+    reference, ours = await confirmed_references(ctx, message)
     booking = (
         (reference and bookings.by_reference(ctx, reference))
-        or (ours and bookings.by_team_reference(ctx, ours.group(1)))
+        or (ours and bookings.by_team_reference(ctx, ours))
         or bookings.for_session(ctx, message.session_id)
     )
     if booking is None:
@@ -321,12 +335,30 @@ CUSTOMER = {
                      "{destination} ({weight} kg) bestätigt.\n\nIhre Referenz bei uns bleibt {reference}. Wenn "
                      "Sie wissen möchten, wo Ihre Sendung gerade ist, fragen Sie einfach.",
     },
+    "fr": {
+        "booked": "Merci pour votre accord. Votre envoi de {origin} à {destination} ({weight} kg) est maintenant "
+                  "réservé avec {airline} à {price} {currency} {scope}.\n\nNotre référence pour vous est "
+                  "{reference}, celle de la compagnie {airline_reference}. Je reviens vers vous dès que {airline} "
+                  "confirme.",
+        "confirmed": "Bonne nouvelle : {airline} a confirmé votre réservation {airline_reference} de {origin} à "
+                     "{destination} ({weight} kg).\n\nVotre référence chez nous reste {reference}. Si vous souhaitez "
+                     "savoir où se trouve votre envoi, il suffit de demander.",
+    },
 }  # fmt: skip
 # The quote's voice carries on into its booking mail: a thank-you a person adds, once per thread.
 THANKS = {
     "en": " Thanks again, great to have you on board! 😊",
     "de": " Nochmals danke, schön, dass Sie mit uns fliegen! 😊",
+    "fr": " Encore merci, ravis de vous compter parmi nos clients ! 😊",
 }
+AIR_ONLY = {
+    "en": "for airport-to-airport transport, excluding pickup",
+    "de": "für den Flughafen-zu-Flughafen-Transport ohne Abholung",
+    "fr": "pour le transport d'aéroport à aéroport, sans enlèvement",
+}
+
+
+TRANSLATE_WAIT_S = 15
 
 
 def _lang(quote: Quote) -> str:
@@ -347,17 +379,17 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
     bye = compose.sign_off(request, lang, name)[1]
     scope = "all-in"
     if quote.rfq.door_pickup and not quote.option.trucker:
-        scope = (
-            "für den Flughafen-zu-Flughafen-Transport ohne Abholung"
-            if lang == "de"
-            else "for airport-to-airport transport, excluding pickup"
-        )
+        scope = AIR_ONLY[lang]
     text = t[what].format(scope=scope, origin=quote.option.origin, destination=quote.option.destination,
                           weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
     if what == "booked" and compose.register(request) != "formal":  # once per thread; a formal mail ends calm
         text += THANKS[lang]
     body = "\n\n".join([compose.greeting(lang, name, request), text,
                         compose.signature(bye, ctx.settings.signer)])  # fmt: skip
+    if lang != quote.rfq.language:  # the thread's language, also when the customer's reply is English
+        english, names = body, (quote.option.origin, quote.option.destination, *facts.values())
+        body = await compose.localize(ctx, quote.rfq.language, quote.session_id, body, TRANSLATE_WAIT_S,
+                                      lambda text: compose.kept(english, text, names), "booking.translate")  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:
         await outbox.send(

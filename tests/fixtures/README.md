@@ -16,6 +16,10 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   keyword rules.
 - `rfqs/partial_cases.jsonl`: incomplete requests that still have a price basis, and ambiguous or contradictory
   ones, with the facts that may be inferred and those that must stay unknown.
+- `voice/`: two captured mails whose content is only a voice message (mp3 embedded, 200 KB and 218 KB): `rfq-voice-message.json`
+  (round 65, every fact of the request spoken) and `bid-pickup-voice-message.json` (round 67, a trucker's
+  pickup offer spoken). Outside `mails/`, so `tools.kpi` and the rules' corpus do not run the local speech model
+  on every gate; `uv run python -m tools.replay tests/fixtures/voice/<file>` replays one with its transcript.
 - `rfqs/live.jsonl`: one row per captured customer request (`mails/rfq-*.json`) with the fields a person read
   from the mail itself: lane, gross weight, volume, pieces, wish, pickup and its postcode, currency, language. A
   field left out is not judged (the origin of a door-to-port request comes from the pickup zone, not the mail);
@@ -33,7 +37,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `mails/bid_probes.jsonl`: carrier answers with the total, currency and transit a right reader takes from them.
   Refusing is always safe: the model reads the answer then.
 - `pickup-offer-layouts.json`: trucker offers sent only as an attachment (letter, table, quotation), with the
-  attachment's text as `tariffs.agent._lines` reads it, the price and the pickup hours a right reader takes.
+  attachment's text as `tariffs.agent._lines` reads it, the price and the pickup hours a right reader takes. The
+  benchmark's `PICKUP_CHANGES` changes each one way (number style, currency notation, total label, waiting charge,
+  lead time) and requires the same figures or a refusal.
 - Spreadsheet changes need no files: `tools/benchmark_generalization.py` `XLSX_CHANGES` edits every kit `.xlsx` in
   memory and requires the original's tariffs or a refusal. Known gaps for them go in
   `tariffs/variants/xlsx_known_gaps.json`, keyed `change:file`.
@@ -41,10 +47,22 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   contradicts, silent, an explicit correction in four wordings, another shipment's document, a document that
   contradicts itself), which source a right reading takes for weight and volume, and the round or pull request that
   says so. The generator computes each case's answer from its own figures and this table, never from the code.
-  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
-  `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right.
+  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`, and
+  for carrier answers (`bid`) also the classes left to the model, which cost a gateway call per bid;
+  `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right. The same
+  family puts each other kind's decisive fact (an acceptance or decline, the tracking desk's reference, a booking
+  confirmation's references, a whole tariff) only in an attachment, in every format.
+- `channel-gaps.json`: the cells of the channel matrix (`tools/benchmark_generalization.py` section 12: every mail
+  kind against where its information sits, body, pdf, scan, docx, xlsx, txt or csv, audio, or body and attachment
+  disagreeing) that no captured mail, kit sheet, pickup offer or generated case covers yet, keyed
+  `"<kind> <channel>"`, each note ending `Owner: <role>.`. A cell with neither fails the benchmark and the tests, and
+  so does a listed cell that a case covers now: its note goes in the same commit.
 - `bid-plausibility.json`: every bid with peers of its kind from the scored rounds of 21.11.2026, read right, and
   round 67's misread trucker bid with the quote a right reading gives (`selection.implausible`).
+- `tracking-questions.json`: the live CRM's booked shipments of 21.11. and the 44 tracking questions the desk sent
+  about one of them, each with the shipment a person matches from the desk's facts. The benchmark's
+  `TRACKING_CHANGES` changes each question one way (weight notation, lane separator, company form); it must find the
+  same shipment or ask for the reference, never name another.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 

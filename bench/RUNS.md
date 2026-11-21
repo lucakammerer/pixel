@@ -243,3 +243,23 @@ What follows:
   from a request. Customer replies, the 136 live ones with our quote quoted below: an Outlook or German header
   without an address let our 'we will book it for you' read as an acceptance (27 replies), and sent requests with
   an old request below to the model; fixed in `extract.HISTORY`. Next: tracking questions and bids by the same grid.
+- 21.11. 23:00, channel matrix (after rounds 63-67, lost to carrier answers in attachments): every kind against
+  where its information sits, as benchmark section 12. New generated cells, read by each handler's own function:
+  a packing list as txt or csv (4860 cases), an acceptance or decline, a tracking reference, a booking
+  confirmation's references and a whole tariff, each only in an attachment of five formats. Found: csv was read as
+  raw text, so a csv packing list lost to the mail's figures (252 of 972) and a csv tariff was refused; replies,
+  tracking questions and confirmations read the body only. All fixed; 31 cells are known gaps with owners (bids
+  and the rate desk in attachments, scans, voice messages other than requests and pickup offers, a tariff in the
+  body, a mail that disagrees with its attachment outside requests). Next: flip the bid and scan cells.
+- 21.11. 23:30, unseen-shape cycles 3 to 6 (live to round 66, mail 18575). Live: rounds 63, 64, 65 lost too low,
+  each a fallback without pickup, all 13 trucker offers only in an attachment (pdf, docx, txt, mp3), fixed by #201
+  and #207; round 65's request as an mp3 (one question), round 66's only in a .txt (read, booked): captured, and
+  section 9 now reads embedded attachments. All 46 live tracking questions replay to their shipment, the 3 unmatched
+  at the time included. Generated, each with hand-read answers: every captured pickup offer in 19 notations
+  (section 7, #235): "(€)", "euros", "Grand total", "Sum", "Total EUR" went to the model, now rules (#236; 119 of
+  1519 generated bids too). Every embedded attachment as html, a forwarded mail, a zip, without a suffix, UTF-16 or
+  markdown (section 13, #238): 48 of 64 unread, now 64 (#239); Excel 97 (.xls, allowed by R6) was unread too (#241).
+  Every live tracking question with 18 changes (section 14, #242): lanes written X-Y, X → Y, X / Y and "1 795 kg"
+  or kilos asked back for the reference in 158 of 732, now none (#244). Wrong in every harness: 0. Open: an offer
+  in USD without a stated rate goes to the model; scans and images (channel matrix, Accuracy). Next: follow-up
+  answers naming other airports and multi-part threads.

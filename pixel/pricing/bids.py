@@ -18,27 +18,46 @@ from pixel.core.orchestrator import Deadline
 from pixel.pricing import calc, session, store
 
 POLL_S = 0.5
-# Grouped thousands only when a separator is there: an ungrouped "1195.90" is one amount, not "119".
-AMOUNT = r"(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d+)*"
+# Grouped thousands only when a separator is there: an ungrouped "1195.90" is one amount, not "119". The Swiss group
+# with an apostrophe: "CHF 2'748.45" is no "CHF 2".
+AMOUNT = r"(?:\d{1,3}(?:[ \u00a0'’]\d{3})+|\d+)(?:[.,]\d+)*"
 # ISO 4217. Any other three capitals after a number is no price: a time zone, an airport, a unit.
 CURRENCY = (
     "EUR|USD|GBP|CHF|JPY|CNY|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|PLN|CZK|HUF|TRY|AED|SAR|QAR|ILS|INR|KRW|TWD|THB|MYR|"
     "IDR|PHP|VND|ZAR|EGP|KES|NGN|BRL|MXN|ARS|CLP|COP|PEN"
 )
-SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
+SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP", "euro": "EUR", "euros": "EUR"}
 PRICED = re.compile(
-    rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£])(?![A-Za-z])"
+    rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£]|[Ee]uros?)(?![A-Za-z])"
+)
+# A pdf wraps "for 256.85" and "EUR." onto two lines: amount and currency are joined again, only when the next line
+# holds the currency alone ("Rate per kg: 2.80" over "EUR 300.00 all-in" stays two prices).
+UNWRAP = re.compile(
+    rf"(?<=[.,]\d\d)[ \t]*\n[ \t]*(?=(?:{CURRENCY}|[€$£])(?![A-Za-z])[ \t]*[.,;:!]?[ \t]*(?:\n|$))"
+    rf"|(?<![A-Za-z])({CURRENCY}|[€$£])[ \t]*\n[ \t]*(?=\d[\d.,]*[.,]\d\d(?!\d))"
 )
 TOTAL_LABEL = r"\b(?:total(?: price)?|all[- ]in|gesamt(?:preis)?|overall)\b"
 TOTAL_BEFORE = re.compile(
     TOTAL_LABEL + r"(?:\s+(?:freight|air|rate|price|cost|charge|is|of|amount))*[\s:=,-]*$", re.IGNORECASE
 )
 TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE)
-# An offer letter: "Our price for this transport is 273.20 EUR. It has a base charge of 104.00 EUR and ..."
-PRICE_IS = re.compile(r"\b(?:our|the|this)\s+price\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)\s*$", re.IGNORECASE)
-# An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none.
-HEADER_CURRENCY = re.compile(rf"\((?P<c>{CURRENCY})\)")
-TOTAL_LINE = re.compile(rf"^\s*{TOTAL_LABEL}[\s:,-]*(?P<n>{AMOUNT})\s*$", re.IGNORECASE)
+# An offer letter: "Our price for this transport is 273.20 EUR. It has a base charge of 104.00 EUR and ...", a mail:
+# "Our all-in air freight rate from FRA to KTM is ...", "... and deliver it to FRA airport for 182.62 EUR"; a fuel,
+# security or waiting rate is a surcharge, never the offer.
+PRICE_IS = re.compile(
+    r"(?:\b(?:our|the|this)\s+(?!(?:[\w-]+\s+){0,3}?(?:fuel|security|waiting|storage|handling|surcharge)\b)"
+    r"(?:[\w-]+\s+){0,3}?(?:price|rate)\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)"
+    r"|\bdeliver\b[^\d\n.]{0,40}?\bfor)\s*$",
+    re.IGNORECASE,
+)
+# An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none. The nearest
+# header above the total counts: "Chargeable weight (kg)" or "per kg (EUR)" over it is no price in that currency.
+HEADER_UNIT = re.compile(rf"\((?P<u>{CURRENCY}|[€$£]|kgs?|lbs?|cbm|m3|pcs)\)", re.IGNORECASE)
+# The total row as offers write it: "Total", "Grand total", "Sum", "Total amount", "Total EUR   104.62".
+TOTAL_LINE = re.compile(
+    rf"^\s*(?:grand\s+)?(?:{TOTAL_LABEL}(?:\s+(?:amount|sum))?|sum|summe)(?:\s+(?P<c>{CURRENCY}))?[\s:,-]*(?P<n>{AMOUNT})\s*$",
+    re.IGNORECASE,
+)
 KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
 KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
@@ -46,7 +65,7 @@ KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
 FLAT = r"(?!(?:shipment|consignment|awb|air\s*waybill|sendung|auftrag)\b)"
 # "45.00 EUR for each hour" of waiting is a surcharge per unit, never the offer's price.
 OTHER_BASIS = re.compile(
-    rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro|je|(?:for\s+)?each|an?)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE
+    rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro|je|(?:for\s+)?(?:each|every)|an?)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE
 )
 TRANSIT = re.compile(
     r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b",
@@ -80,7 +99,7 @@ DECLINE = re.compile(
 def _amount(text: str, *, unit_rate: bool = False) -> Decimal:
     if not (m := re.search(AMOUNT, text)):
         raise ValueError(f"no amount in {text!r}")
-    text = "".join(m.group().split())
+    text = re.sub(r"[\s'’]", "", m.group())
     if "." in text and "," in text:
         decimal = "." if text.rfind(".") > text.rfind(",") else ","
         text = text.replace("," if decimal == "." else ".", "").replace(decimal, ".")
@@ -116,11 +135,18 @@ def _rate(text: str) -> Decimal:
 
 def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
     found, labelled = set(), set()
-    unresolved_unit = False
-    headers = {m.group("c") for m in HEADER_CURRENCY.finditer(text)}
+    unsure = False  # a charge per unit, or a total without its currency: only a labelled price counts
+    header = None  # "": the nearest header names a unit that is no currency
+    text = UNWRAP.sub(lambda m: f"{m.group(1) or ''} ", text)
     for line in FX.sub("", text).splitlines():
-        if len(headers) == 1 and (m := TOTAL_LINE.match(line)):
-            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), next(iter(headers)))
+        if units := {SYMBOLS.get(m.group("u"), m.group("u").upper()) for m in HEADER_UNIT.finditer(line)}:
+            money = units & set(CURRENCY.split("|"))
+            header = money.pop() if len(money) == 1 and not re.search(KG_BASIS, line, re.IGNORECASE) else ""
+        currency = (m.group("c") or "").upper() or header if (m := TOTAL_LINE.match(line)) else ""
+        if m and currency is None:  # no header names its unit
+            unsure = True
+        elif m and currency:
+            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), currency)
             found.add(price)
             labelled.add(price)
         prices = list(PRICED.finditer(line))
@@ -129,16 +155,16 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
             after = line[m.end() : prices[i + 1].start() if i + 1 < len(prices) else len(line)]
             per_kg = bool(PER_KG.match(after) or KG_LABEL.search(before))
             if not per_kg and OTHER_BASIS.match(after):
-                unresolved_unit = True
+                unsure = True
                 continue
             raw = m.group("n1") or m.group("n2")
             amount = _amount(raw, unit_rate=per_kg)
             currency = m.group("c1") or m.group("c2")
-            price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency, currency))
+            price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency.lower(), currency))
             found.add(price)
             if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after) or PRICE_IS.search(before):
                 labelled.add(price)
-    if unresolved_unit and not labelled:
+    if unsure and not labelled:
         return None
     candidates = labelled or found
     return next(iter(candidates)) if len(candidates) == 1 else None
@@ -147,8 +173,9 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
 def _days(text: str) -> int | None:
     if match := TRANSIT_HOURS.search(text):
         return calc.transit_days(int(match[1]), hours=True)
-    if match := LABELLED_TRANSIT.search(text):
-        return calc.transit_days(int(match[1]), hours=False)
+    # Two labelled transit times ("our rate to CAI last week ... transit 5 days"): which is this offer's is unclear.
+    if labelled := {int(m[1]) for m in LABELLED_TRANSIT.finditer(text)}:
+        return calc.transit_days(labelled.pop(), hours=False) if len(labelled) == 1 else None
     for match in TRANSIT.finditer(text):
         if not VALIDITY.search(text[: match.start()]):
             return calc.transit_days(int(match[1]), hours=False)
@@ -391,20 +418,18 @@ def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool
     return None, all(tuple(lane) == current for lane in lanes)
 
 
-async def _with_attachments(ctx: Context, message: Message) -> str:
+async def _with_attachments(ctx: Context, message: Message) -> tuple[str, list[str]]:
     """The carrier's own words and the text of every attachment code can read: truckers send their offer as a pdf
-    or docx and write only "see the attachment" in the mail."""
-    from pixel.agents.tariffs.agent import _lines
+    or docx and write only "see the attachment" in the mail. Also the files code cannot read (a video, a scan)."""
+    from pixel.agents.tariffs.agent import attachment_lines
 
-    parts = [_own_text(message.body)]
+    parts, unread = [_own_text(message.body)], []
     for attachment in message.attachments:
-        try:
-            content = await ctx.mailbox.attachment(message.id, attachment.id)
-            parts += await asyncio.to_thread(_lines, attachment.filename, content)  # a voice message takes seconds
-        except Exception as e:  # noqa: BLE001  an unreadable file (a voice message) must not lose the body
-            events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "bid_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
-    return "\n".join(parts)
+        if (lines := await attachment_lines(ctx, message, attachment, "pricing")) is None:
+            unread.append(attachment.filename)
+        else:
+            parts += lines
+    return "\n".join(parts), unread
 
 
 async def record(ctx: Context, message: Message) -> None:
@@ -431,12 +456,21 @@ async def record(ctx: Context, message: Message) -> None:
     # An attachment counts only when the mail alone holds no price: an airline's terms or a forwarded invoice beside
     # a priced mail must not hide that price.
     listed, option = by_rules(message)
+    unread: list[str] = []
     if message.attachments and not listed and option is None:
-        message = message.model_copy(update={"body": await _with_attachments(ctx, message)})
+        body, unread = await _with_attachments(ctx, message)
+        message = message.model_copy(update={"body": body})
         listed, option = by_rules(message)
     read_by = "rules"
-    # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
-    if not listed and option is None and kind != "ratedesk" and not DECLINE.search(_own_text(message.body)):
+    # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call. An offer
+    # only in a file code cannot read leaves no price in the text for a model to copy either.
+    if (
+        not listed
+        and option is None
+        and kind != "ratedesk"
+        and not DECLINE.search(_own_text(message.body))
+        and not (unread and not PRICED.search(message.body))
+    ):
         read_by = "model"
         try:
             option = await _read_with_model(ctx, message, rfq, needs_transit=not pickup)
@@ -464,7 +498,8 @@ async def record(ctx: Context, message: Message) -> None:
             "request_id": enquiry,
             "origin": rfq.origin,
             "destination": rfq.destination,
-        },
+        }
+        | ({"unread": unread} if unread else {}),
     )
     for option in listed:
         events.emit(ctx, "option.found", "pricing", session_id=message.session_id, message_id=message.id,

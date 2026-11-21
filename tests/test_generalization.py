@@ -97,6 +97,21 @@ def test_carrier_bids_are_read_right_or_refused():
     assert [f"{b.case_id}: {b.got}" for b in reads if not b.ok and not b.known_gap] == []
 
 
+def test_an_attachment_in_another_container_is_read_like_the_original_or_not_at_all():
+    """A captured attachment as html, a forwarded mail, a zip or other text: never read into other figures."""
+    reads = bench.audit_containers()
+    assert reads
+    assert [f"{c.change}: {c.fixture} {c.detail}" for c in reads if c.outcome == "wrong"] == []
+
+
+def test_a_changed_tracking_question_finds_its_shipment_or_asks_never_another():
+    """Every live tracking question finds its shipment as sent; changed one way, it may ask for the reference."""
+    reads = bench.audit_tracking()
+    assert reads
+    assert [f"{r.change}: {r.case_id} {r.outcome}" for r in reads
+            if r.outcome == "wrong" or (r.change == "as sent" and r.outcome != "right")] == []  # fmt: skip
+
+
 def test_spreadsheet_layout_changes_parse_the_same_or_are_refused():
     changes = bench.audit_xlsx_changes()
     assert any(v.outcome == "parsed right" for v in changes)
@@ -166,8 +181,15 @@ def test_a_mail_that_contradicts_its_attached_document_is_read_by_the_document()
 
 
 def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
-    """Every seventh document case and every mail case of `tools/simulate.py`: read right or left to the model, unless
-    `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now must lose its note."""
-    outcomes = asyncio.run(simulate.run([*simulate.document_cases(step=7), *simulate.mail_cases()]))
+    """Every seventh document case, every mail case and every eleventh carrier answer of `tools/simulate.py`: read
+    right or left to the model, unless `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now
+    must lose its note."""
+    cases = [*simulate.document_cases(step=7), *simulate.mail_cases(), *simulate.bid_cases(step=11)]
+    outcomes = asyncio.run(simulate.run(cases))
     assert [f"{o.case.family} {o.case.axes}: {o.wrong}" for o in outcomes if o.verdict == "wrong" and not o.gap] == []
     assert simulate.stale_gaps(outcomes) == []
+
+
+def test_every_kind_and_channel_has_a_case_or_a_known_gap():
+    """Rounds 63 to 67 were lost to carrier answers in attachments, a channel no fixture or generated case had."""
+    assert bench.print_matrix(bench.channel_coverage(), bench.channel_gaps()) == []

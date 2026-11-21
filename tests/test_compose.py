@@ -10,7 +10,7 @@ from test_extract import DEADLINE, captured
 from pixel import llm
 from pixel.agents.rfq import compose, dangerous, extract
 from pixel.config import settings
-from pixel.contracts import LlmResult, Message, RateOption, Rfq, Source
+from pixel.contracts import LlmResult, Message, Preference, RateOption, Rfq, Source
 from pixel.core.context import Context
 
 NOW = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
@@ -355,3 +355,102 @@ def test_the_customers_small_talk_is_answered_before_the_price(opening, answered
     assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
     assert ("thank" in paragraph.lower()) == answered  # the opening no longer thanks: the small-talk answer does
     assert body.count("1234.57 EUR") == 1
+
+
+def test_a_french_request_is_answered_in_french_with_its_fastest_option():
+    """Round 70: a French mail asking for « l'option la plus rapide » was read as English and cheapest, and the
+    English quote was rejected as wrong_language."""
+    mail = captured("rfq-french-fastest.json")
+    request = extract.by_rules(mail, DEADLINE)
+    assert (request.language, request.preference) == ("fr", extract.Preference.FASTEST)
+    option = OPTION.model_copy(update={"origin": "DUS", "destination": "SYD", "chargeable_kg": Decimal("1412.49")})
+    _, body = compose.render(request, option, request=mail.body)
+    assert body.startswith("Bonjour Klaus,") and "tout compris" in body and "3 jours" in body
+    assert "1412,49 kg" in body and "le jeudi 26 novembre" in body and "À vous aussi, bonne journée !" in body
+    assert compose.check(body, request, option) and not re.search(r"\b(?:Hello|Hi|days|transit is|regards)\b", body)
+    note = dangerous.with_note(body, "UN1950", "fr", "mail")
+    assert "marchandises dangereuses" in note
+    counts = compose._words_lang(note)
+    assert counts["fr"] > 2 * max(counts["en"], counts["de"])
+
+
+@pytest.mark.parametrize(
+    ("request_text", "goods"),
+    [
+        (
+            "Could you quote the fastest air freight option for some electronic control units going to SCL?",
+            "electronic control units",
+        ),  # round 62 sent "For your some electronic control units going"
+        ("Could you quote the cheapest option for our machine parts going to JFK?", "machine parts"),
+        ("We have 10 pieces of laboratory glassware ready on Monday.", "laboratory glassware"),
+    ],
+)
+def test_the_goods_are_named_as_the_customer_calls_them(request_text, goods):
+    assert compose.goods_of(request_text) == goods
+
+
+async def test_a_chinese_request_is_answered_in_chinese_or_in_checked_english(ctx, monkeypatch):
+    """Round 72: a Chinese mail signed "Thanks a lot and have a lovely day!" was read as English (the model said
+    "en" too) and the English quote was rejected as wrong_language. The script decides, and a language we have no
+    text for gets the English mail translated, kept only when every figure and name survives."""
+    mail = captured("rfq-chinese-door.json")
+    assert extract._language(extract._text(mail), "en") == "zh"
+    assert extract._language("Привет, нужна ставка на 500 кг до LIM, спасибо", "uk") == "uk"
+    assert extract._language("Please quote 500 kg from Lueneburg, Germany to LIM. Thanks, regards", "de") == "en"
+    request = rfq("zh")
+    _, english = compose.render(request, OPTION)
+    answers = iter([english.replace("Hello,", "您好，"), english.replace("1234.57", "1234,57")])
+
+    async def fake_ask(ctx, **kw):
+        assert kw["purpose"] == "quote.translate" and "zh" in kw["system"]
+        return LlmResult(data={"body": next(answers)}, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask)
+    assert (await compose.translate(ctx, request, OPTION, english, 5)).startswith("您好，")
+    assert await compose.translate(ctx, request, OPTION, english, 5) == english
+    assert await compose.translate(ctx, rfq("fr"), OPTION, english, 5) == english  # our own text, no call
+
+
+@pytest.mark.parametrize(
+    ("request_text", "garbled"),
+    [
+        ("Guten Tag,\nwir versenden nächste Woche Maschinenteile nach BBB.\nGruß", "Ihre nächste Woche"),
+        ("Guten Tag,\nwir versenden eine Palette mit Ersatzteilen nach BBB.\nGruß", "Ihre eine Palette"),
+        ("Guten Tag,\nwir versenden elektronische Bauteile nach BBB.\nGruß", "Ihre elektronische Bauteile"),
+        ("Guten Tag,\nWare: Motor\nVon AAA nach BBB, 1200 kg.", "Ihre Motor"),
+        ("Guten Tag, bitte ein Angebot für unsere Firma, von AAA nach BBB.\nGruß", "Ihre Firma"),
+    ],
+)
+def test_german_goods_sentence_reads_as_german(request_text, garbled):
+    _, body = compose.render(rfq("de"), OPTION, request=request_text)
+    assert garbled not in body
+
+
+def test_german_fastest_goods_sentence_keeps_the_dative():
+    r = rfq("de", 5).model_copy(update={"preference": Preference.FASTEST})
+    _, body = compose.render(r, OPTION, request="Ware: Maschinenteile\nVon AAA nach BBB, so schnell wie möglich.")
+    assert "bei Ihren Maschinenteile " not in body
+
+
+@pytest.mark.parametrize(
+    ("request_text", "expected"),
+    [
+        ("Could you quote me a rate from FRA to ORD for 340 kg?", None),
+        ("Please quote FRA to ORD, 340 kg.", None),
+        ("Please quote for Acme Industries from MUC to JFK.", None),
+        ("Cargo: Pallets\nFrom FRA to ORD", None),
+        ("Please quote for 4 pallets of automotive parts from FRA to ORD.", "automotive parts"),
+        ("We have 3 boxes of medical instruments ready on Friday.", "medical instruments"),
+    ],
+)
+def test_goods_of_non_goods_and_package_types(request_text, expected):
+    assert compose.goods_of(request_text) == expected
+
+
+def test_adaptive_facility_naming():
+    trucker_option = OPTION.model_copy(update={"trucker": "Example Trucking"})
+    _, body = compose.render(rfq("en"), trucker_option, request="Please collect from our factory in Stuttgart.")
+    assert "pickup at your factory by Example Trucking" in body
+    _, body = compose.render(rfq("en"), trucker_option, request="Please pick up from our plant in Munich.")
+    assert "pickup at your plant by Example Trucking" in body
+

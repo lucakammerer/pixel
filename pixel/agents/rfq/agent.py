@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
@@ -14,6 +14,7 @@ from pixel.pricing import calc, engine, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
+TRANSLATE_WAIT_S = 10
 AIRPORTS_WAIT_S = 5.0
 AIRPORTS_SYSTEM = (
     "You check the airports of an air freight request. A code read from the mail is on none of the lanes we "
@@ -143,7 +144,8 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     prose = compose.stored(ctx, rfq.session_id)
     if not options:
         return None
-    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, prose, fallback=False))
+    quote = await _in_language(ctx, _quote(ctx, rfq, options, prose, fallback=False), deadline.hard_at)
+    sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent
 
@@ -221,7 +223,19 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
         options = [o for o in options if o.trucker]
     if not options:
         return None
-    return _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True)
+    return await _in_language(ctx, _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True))
+
+
+async def _in_language(ctx: Context, quote: Quote, by: datetime | None = None) -> Quote:
+    """`compose.translate` for a customer whose language we have no text for, at most TRANSLATE_WAIT_S and never
+    past `by`; the fallback still has the minute between `hard_at` and expiry."""
+    wait = TRANSLATE_WAIT_S if by is None else min(TRANSLATE_WAIT_S, (by - timing.now()).total_seconds())
+    body = await compose.translate(ctx, quote.rfq, quote.option, quote.body, wait)
+    if body == quote.body:
+        return quote
+    quote = quote.model_copy(update={"body": body})
+    quotes.save(ctx, quote)
+    return quote
 
 
 def _raw_prose(ctx: Context, session_id: int) -> dict:

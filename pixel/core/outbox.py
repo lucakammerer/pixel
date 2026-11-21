@@ -9,7 +9,7 @@ from datetime import timedelta
 from pixel.api.client import ApiError
 from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.contracts import Message, Quote, QuoteStatus
-from pixel.core import db, timing
+from pixel.core import db, pdf, timing
 from pixel.core.context import Context
 from pixel.core.events import emit, scrub
 from pixel.crm import quotes
@@ -189,6 +189,8 @@ async def _deliver(
     operator: bool = False,
 ) -> Message:
     to = to.strip().lower()
+    # Every quote carries itself as a PDF: a customer who asked for one rejects the quote without it (round 76).
+    attachments = ((f"offer-{quote.id}.pdf", "application/pdf", pdf.offer(quote)),) if quote else ()
     # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
     key = json.dumps([sid, purpose, to, parent, "" if purpose == "tracking" else body], ensure_ascii=False)
     if quote:
@@ -221,18 +223,24 @@ async def _deliver(
                 (key, sid, purpose, to, subject, body, parent, quote.id if quote else None),
             )
         try:
-            sent = await ctx.mailbox.send(to, subject, body, parent)
+            sent = await ctx.mailbox.send(to, subject, body, parent, attachments)
         except ApiError as e:
             # Rejection, or failure before connecting, definitely produced no mail. A lost POST response is ambiguous,
             # except for a quote: only the first quote counts (R4), so a second one is harmless, a lost one is not.
             if (
                 quote is not None
                 or 400 <= e.status < 500
-                or e.status == 0 and e.detail in {"ConnectError", "ConnectTimeout", "PoolTimeout"}
+                or e.status == 0
+                and e.detail in {"ConnectError", "ConnectTimeout", "PoolTimeout"}
             ):
                 ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))
             if e.status == 429:
                 await asyncio.sleep(e.retry_after or 1.0)
+                continue
+            if attachments and 400 <= e.status < 500:  # refused with its PDF: the quote matters more (R1)
+                emit(ctx, "error", "outbox", session_id=sid,
+                     payload={"where": "attachment", "error": scrub(ctx, str(e))})  # fmt: skip
+                attachments = ()
                 continue
             emit(
                 ctx,

@@ -36,7 +36,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/app.py`: process entry; one process runs poller, push endpoint, handlers and UI
 - `pixel/api/`: the 5U API (`client.py`, `mailbox.py`, `portal.py`, `gateway.py`, `board.py`)
 - `pixel/core/`: `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, fallback),
-  `outbox.py` (all outgoing mail), `events.py` (the log and its live stream), `db.py`, `context.py`;
+  `outbox.py` (all outgoing mail; every quote with itself as a PDF from `pdf.py`), `events.py` (the log and its live stream), `db.py`, `context.py`;
   `feedback.py` (what each request scored, why it lost points, which balanced rule fits the scorer, and the
   call to `PIXEL_ALERT_URL` when something needs repair)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
@@ -94,7 +94,7 @@ uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored ma
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
 uv run python -m tools.kpi                      # accuracy, cost and speed on the replayed request fixtures, as JSON
 uv run python -m tools.benchmark_generalization # fixtures vs code: prices, sheets, wording, routing, bids; exit 1 on a fail
-uv run python -m tools.benchmark_generalization --gaps   # open known gaps, grouped by owner
+uv run python -m tools.benchmark_generalization --gaps   # the channel matrix, then the open known gaps by owner
 uv run python -m tools.simulate                 # generated mails and attachments per axis: right, model, wrong
 tools/kpi_pr.sh <pull request>                  # the same online on the live host, posted as a comment
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
