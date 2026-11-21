@@ -93,7 +93,9 @@ tools/deploy.sh                                 # the checked-out commit to the 
 ```
 
 Only one process may run with `PIXEL_DRY_RUN=0` against the real mailbox: the `pixel` service on the live host
-(`deploy/pixel.service`; its `.env` and database live only there, the UI listens on localhost port 8421).
+(`deploy/pixel.service`; its `.env` and database live only there). A unit drop-in on the host binds the UI to the
+address its reverse proxy reaches, and the proxy asks for a login. A restart waits at most 3 seconds for open
+connections: the UI's live stream would otherwise hold the service in shutdown past a request's deadline.
 Everything else runs dry or on replayed mail.
 
 ## Branches
