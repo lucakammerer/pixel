@@ -103,7 +103,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
   to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.
 - A pickup "from our warehouse" can name no postcode and no town but the signature's (round 15): truckers then answer
-  "To quote we need: the pickup postcode", and a quote without the pickup is too low.
+  "To quote we need: the pickup postcode", and a quote without the pickup is too low. They price by zone: the
+  request names the zone's first postcode (`pricing/bids.py` `_postcode`) when the mail has none.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC

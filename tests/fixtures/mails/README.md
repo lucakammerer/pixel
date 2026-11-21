@@ -84,5 +84,6 @@ in the attached packing specification". Weight and volume stand only in the atta
 
 `rfq-door-warehouse-no-postcode.json`: round 15, rejected too low. "RE: FW:" with an old request quoted below;
 pickup "from our warehouse" with no postcode or town, only the signature "Best greetings from Regensburg". The zone 93
-truckers answered "To quote we need: the pickup postcode", so the quote went out without a pickup.
+truckers answered "To quote we need: the pickup postcode", so the quote went out without a pickup. Asked again by
+hand, one of them priced the zone's first postcode and a postcode of the town alike.
 
