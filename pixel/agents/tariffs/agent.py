@@ -28,6 +28,8 @@ LEAD_COLUMN = re.compile(
     r"\b(?:(?P<transit>transit|laufzeit|t/t)|(?P<minimum>minimum|min\.|mindest\w*))(?!\w)", re.IGNORECASE
 )
 IMAGES = {".jpg", ".jpeg", ".png"}
+VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
+RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
 
 
@@ -62,6 +64,14 @@ def _date(value: object) -> date:
         except ValueError:
             continue
     raise ValueError(f"unknown date: {text!r}")
+
+
+def _span(start: str, end: str) -> tuple[date, date] | None:
+    """Both ends of a validity written on one line, or None when either is not a date."""
+    try:
+        return _date(start), _date(end)
+    except ValueError:
+        return None
 
 
 def _break_kg(match: re.Match) -> Decimal:
@@ -128,6 +138,7 @@ def _read(lines: list[str]) -> Sheet:
     surcharge_columns = False
     block: tuple[str, str] | None = None
     lead = ["transit", "minimum"]
+    per_kg = Decimal(1)
     for raw in lines:
         line = raw.strip()
         lower = line.lower()
@@ -137,8 +148,14 @@ def _read(lines: list[str]) -> Sheet:
             sheet.carrier = line.split("|")[0].strip() if "|" in line else ""
             if sheet.carrier:
                 continue
+        if m := RATE_UNIT.search(line):
+            per_kg = Decimal(m.group(1) or 1)
+            continue
         if m := re.match(r"currency\b[\s:|]*([A-Z]{3})\b", line, re.IGNORECASE):
             sheet.currency = m.group(1).upper()
+            continue
+        if (m := VALIDITY.match(line)) and (span := _span(m.group(1), m.group(2))):
+            sheet.valid_from, sheet.valid_to = span
             continue
         if m := re.match(r"valid\s+from\b[\s:|]*(.+)$", line, re.IGNORECASE):
             sheet.valid_from = _date(m.group(1))
@@ -169,7 +186,7 @@ def _read(lines: list[str]) -> Sheet:
             sheet.surcharges[lane] = (_num(fuel.group(1)), _num(security.group(1)))
             continue
         if block and (m := BREAK_LINE.match(line)):
-            sheet.lanes[block]["breaks"].append((_break_kg(m), _num(m.group(5))))
+            sheet.lanes[block]["breaks"].append((_break_kg(m), _num(m.group(5)) / per_kg))
             continue
         if block and (m := re.match(rf"(transit|minimum|fuel|security)\b\D*?({NUM})", line, re.IGNORECASE)):
             key = m.group(1).lower()
@@ -188,7 +205,9 @@ def _read(lines: list[str]) -> Sheet:
         if not breaks or len(numbers) != expected:
             raise ValueError(f"row with {len(numbers)} numbers, expected {expected}: {line!r}")
         values = [_num(n) for n in numbers]
-        row = dict(zip(lead, values[:2], strict=True)) | {"breaks": list(zip(breaks, values[2:], strict=False))}
+        row = dict(zip(lead, values[:2], strict=True)) | {
+            "breaks": [(b, r / per_kg) for b, r in zip(breaks, values[2:], strict=False)]
+        }
         row["transit"] = int(row["transit"])
         if surcharge_columns:
             row["fuel"], row["security"] = values[-2], values[-1]
