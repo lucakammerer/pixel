@@ -67,7 +67,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 ## Pitfalls
 
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
-  name, register and answers come from the customer's own words only (`compose.py` `own_text`).
+  name, register and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
   ("Dangerous goods: UN…, Class …") while the mail calls the goods non-dangerous. `extract.py`
   `dangerous_goods` reads them and marks the request; `agent.py` `_noted` then names the goods in the quote and asks

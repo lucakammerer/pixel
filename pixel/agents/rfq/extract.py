@@ -314,11 +314,15 @@ HISTORY = re.compile(
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
 
 
+def own_words(body: str) -> str:
+    """The mail without the older mails quoted below it: round 14 quoted an old request with its own lane, weight,
+    greeting and name under the new one. Pricing and the reply both read only this."""
+    cut = HISTORY.search(body)
+    return body[: cut.start()] if cut and body[: cut.start()].strip() else body
+
+
 def _body(message: Message) -> str:
-    """The mail without the older mails quoted below it: round 14 quoted an old request with its own lane and
-    weight under the new one."""
-    cut = HISTORY.search(message.body)
-    return message.body[: cut.start()] if cut and message.body[: cut.start()].strip() else message.body
+    return own_words(message.body)
 
 
 def _text(message: Message) -> str:
