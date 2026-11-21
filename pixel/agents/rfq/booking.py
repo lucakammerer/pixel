@@ -16,17 +16,10 @@ from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import calc, portal_rates
 
 ACCEPT = re.compile(
-    r"(?:^|[,;:])\s*(?:yes\s+)?(?:"
-    r"(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?:\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate)))?"
-    r"|(?:we|i)\s+confirm\s+(?:the|this|our)\s+booking"
-    r"|(?:please\s+)?go ahead(?:\s+and\s+book(?:\s+it)?|\s+with (?:this|the) (?:booking|shipment))?"
-    r"|(?:please\s+)?book\s+(?:it|this(?:\s+shipment)?|the shipment)"
-    r"|please\s+(?:book|proceed)(?:\s+with\s+(?:the|this|our)\s+(?:booking|shipment))?"
-    r"|we['’]ll take (?:it|the offer)|let['’]s (?:book it|proceed)|(?:offer|quote) accepted|accepted"
-    r"|bitte\s+buchen(?:\s+sie\s+(?:die|diese)\s+sendung)?|buchen\s+sie\s+bitte(?:\s+die sendung)?"
-    r"|wir\s+(?:beauftragen\s+sie|nehmen\s+(?:ihr|das)\s+angebot\s+an)|einverstanden|agreed)"
-    r"(?:\s+and\s+(?:pass on|send|share)\s+(?:the|our|your)\s+(?:AWB(?:\s+number)?|booking reference|tracking number))?"
-    r"\s*(?:[,!.]|$)",
+    r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+that)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
+    r"|(?:offer|quote) accepted|confirm\s+(?:the|this|our)\s+booking|go ahead|book\s+(?:it|this|the\s+shipment|with)\b"
+    r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|agreed"
+    r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|auftrag|einverstanden|nehmen\s+(?:ihr|das)\s+angebot\s+an)",
     re.IGNORECASE,
 )
 DECLINE = re.compile(
@@ -38,21 +31,25 @@ DECLINE = re.compile(
     r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
     re.IGNORECASE,
 )
+CONDITION = re.compile(
+    r"\b(?:if|unless|whether|falls|wenn|ob|haven['’]t|hasn['’]t|have not|has not|didn['’]t|did not)\b", re.IGNORECASE
+)
+ASKS_TO_BOOK = re.compile(
+    r"\b(?:can|could|would|will|können|könnten)\s+(?:you|sie)\s+(?:please\s+|bitte\s+)?(?:book|proceed|buchen)",
+    re.IGNORECASE,
+)
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 
 def intent(text: str) -> str:
-    """accept, decline or other, by rules. A decline wins over an accept word ("we cannot accept")."""
+    """accept, decline or other, by rules. A decline wins over an accept word ("we cannot accept"); an acceptance
+    counts in a sentence that is no condition ("if the price holds, book it") and no question, unless the question
+    asks us to book ("Could you book it?")."""
     if DECLINE.search(text):
         return "decline"
     for sentence in re.findall(r"[^.!?\n]+[.!?]?", text):
-        if sentence.rstrip().endswith("?") or re.search(
-            r"\b(?:if|unless|whether|before|once|would|could|can you|should|not|yet|when|"
-            r"falls|wenn|sobald|ob|bevor|nicht|können sie)\b",
-            sentence,
-            re.IGNORECASE,
-        ):
+        if CONDITION.search(sentence) or (sentence.rstrip().endswith("?") and not ASKS_TO_BOOK.search(sentence)):
             continue
         if ACCEPT.search(sentence):
             return "accept"

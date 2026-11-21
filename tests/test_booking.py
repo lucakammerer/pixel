@@ -316,3 +316,21 @@ async def test_reentry_after_interrupted_acceptance_reuses_team_reference(pipe, 
 )
 def test_an_acceptance_that_names_a_decline_word_still_books(text):
     assert booking.intent(text) == "accept"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Bitte buchen Sie.",
+        "Gerne buchen.",
+        "Hiermit erteilen wir Ihnen den Auftrag.",
+        "We accept the quote for the shipment.",
+        "Please book the shipment as quoted.",
+        "Please book it and send us the AWB once available.",
+        "Looks good - please go ahead.",
+        "Please confirm the booking.",
+        "Could you book it, please?",
+    ],
+)
+def test_a_plain_acceptance_books(text):
+    assert booking.intent(text) == "accept"  # since #76 each was "other": no booking, no tracking bonus
