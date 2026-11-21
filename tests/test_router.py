@@ -61,6 +61,21 @@ async def test_rules_place_every_fixture(ctx, name):
     assert await classify(ctx, message) == EXPECTED[name]
 
 
+@pytest.mark.parametrize("case", ["rfq_subject_mentions_booking_confirmed", "booking_confirmation_reworded"])
+async def test_a_booking_confirmation_comes_from_an_airline_never_from_a_customer(ctx, case):
+    probe = next(
+        p
+        for line in (MAILS / "routing_probes.jsonl").read_text().splitlines()
+        if (p := json.loads(line))["case_id"] == case
+    )
+    message = to_message({"id": 990, "sent_at": "2026-11-21T10:00:00Z", **probe["mail"]}, "in")
+    if probe["setup"]["sender_on_carrier_list"]:
+        ctx.db.execute(
+            "INSERT INTO carriers (name, kind, email, serves) VALUES ('a', 'airline', ?, '')", (message.sender,)
+        )
+    assert (await classify(ctx, poller.ingest(ctx, message))).value == probe["expected"]
+
+
 async def test_carrier_answer_joins_the_rfq_session(ctx):
     assert poller.ingest(ctx, mail("bid-airline-priced.json")).session_id == mail(RFQ).id
 
