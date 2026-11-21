@@ -94,6 +94,18 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
   signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`), except to a formal customer.
+- Before booking, `_verify_price` reads the airline's price again: the portal rate (`portal_rates.refresh`) or, for
+  a sheet quote, the newest tariff (`store.lookup`, `calc.price_tariff`). A change of more than a cent
+  (`PRICE_TOLERANCE`, compared in Decimal by `_compare_option`) books nothing: `_request_reconfirm` stores the new
+  price under `booking-reconfirm:<quote id>` in `kv`, emits `option.found` and `human.note`, and asks the customer
+  once (`CUSTOMER` `reconfirm`, new total with the quote's pickup and the quoted one). The fresh rate after a 410 is
+  compared the same way. The answer is read by `reconfirm_intent` (`intent` plus a bare "Yes." or "Nein."): yes
+  reads the price again and books the confirmed rate on the same shipment, and the booking notice states the
+  confirmed total; no declines the quote, fails an unbooked booking and says so (`cancelled`); anything else goes
+  to a person. After `MAX_RECONFIRM_ATTEMPTS` questions a person decides. No answer to the check (429, 503, a lost
+  connection, another lane, a dry run) books as quoted. When the airline books at another price than the approved
+  one, `_actual_booked_total` gives the total it makes, a `human.note` flags it and the notice says so
+  (`booked_changed`). No model call.
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
@@ -116,6 +128,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   available.", "Could you book it, please?"). `booking.py` `intent` takes an acceptance anywhere in a sentence that
   is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes
   goes to a person, nothing is booked and the tracking bonus is lost.
+- The airline's price can rise between the quote and the booking (a new tariff, a fresh rate after 410). Booked
+  without asking, the customer pays more than they accepted and the round is adjusted down. `book` asks first and
+  books only the price the customer confirmed (`_verify_price`, `_request_reconfirm`).
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
   name, sign-off and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
