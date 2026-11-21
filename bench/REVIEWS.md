@@ -5,6 +5,14 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #103 | lucakammerer | review/currency-from-99 | own | currency part of #99; exchange rate only from the request's own options |
+| #102 | lucakammerer | 97217eb | ok | bench notes only |
+| #101 | TripleCF | 8986943 | ok | score rows sorted by round as a number; read-only |
+| #100 | lucakammerer | a43c003 | ok | wording only |
+| #99 | maxihuang123-svg | eb02390 | currency merged (#103), voice needs author | a stale exchange rate from another session; voice reverses the voice thread's choices |
+| #98 | lucakammerer | 7f563e0 | ok (second reviewer's area) | pickup postcode from the customer's answer |
+| #97 | lucakammerer | review/inches-only-as-unit | own | "120x80x150 in total" read as inches: 70.8 cbm instead of 4.32 (#95) |
+| #95 | lucakammerer | c819a1d | fixed (#97) | bare "in" before a word taken as inches |
 | #94 | Konstantin-mody | 49cca71 | ok, merged | pre-send check only observes; BLOCK alerts (offline: air-only door quotes only) |
 | #93 | lucakammerer | a8898f5 | ok | tracking sign-off reuses `compose.in_kind`: one register reading |
 | #92 | lucakammerer | 6ed8188 | ok | wording only |
