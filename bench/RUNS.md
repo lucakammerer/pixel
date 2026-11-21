@@ -56,3 +56,30 @@ Three lines per scenario: what we tried, what changed, what is next.
   by rule when the model gives none, one short opening (an echo of the mail is dropped), validity as "17:22 today",
   chargeable weight only when above gross, no closing line, 3 to 4 phrasings per sentence; changed: wording only,
   same total, carrier, timing and one model call; next: the `human` column for the first round it is live.
+
+### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
+
+Do not start from "tracking scores 0". The board hides points per kind, but our total on `GET /v1/board` against the
+events in the live database shows it:
+
+- 15:34:48 total 324.23, 15:36:32 total 334.23, 6 accepted both times: +10 with no round in between; our tracking
+  answer went out at 15:36:18.
+- 15:45:37 total 464.23, 15:53:32 total 474.23: +10, round 9 in between was rejected; tracking answer at 15:48:36.
+- 15:53:32 total 474.23, 16:02:07 total 484.23: +10, rounds 9 and 10 rejected; tracking answer at 15:55:07.
+- Rounds 12 and 13 were booked (16:08:16, 16:14:51) without a +10: the bonus is not for the booking.
+- The sum fits: rounds 1 to 8 brought 35.57 + 48.04 + 60 + 40.62 + 60 + 60 + 60 + 60 = 424.23, plus 6 x 10 = 484.23,
+  the total at 16:02. Six is the number of tracking questions whose first answer was right (questions 3 to 8).
+  Questions 1 and 2 first got "we hold no shipment matching" and the right answer minutes later: nothing. Only the
+  first answer counts.
+
+What follows:
+
+- The record answer ("Shipment PX-…: AAA → BBB, n kg / Status: confirmed by <airline>, booked and ready to ship /
+  Airline booking reference / Transit time / Customer") earned +10 six times out of six. The prose answer with that
+  record block below it (#20, #27, live since 16:07) is untested: if the +10 does not arrive within three minutes
+  of our answer, put the old answer back (branch `voice/tracking-old-answer`) and have the main thread deploy it.
+- No variants on tracking. Keep the facts and the first-answer-is-right rule; wording only while the +10 keeps
+  arriving.
+- A question comes about 11 minutes after the request of a booked round. None comes for a round that was rejected
+  or not booked (9, 10, and 11 where the customer still owes the dangerous-goods documents): that is the main loop's
+  and the generalization loop's ground, not wording.
