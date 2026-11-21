@@ -192,6 +192,12 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   error each give the plain mail, never an exception on the quote or the fallback path.
 - A reasoning model spends its output tokens on reasoning and can return empty slots: set `PIXEL_MODEL_PROSE` to a
   fast non-reasoning model.
+- The rules' preference and currency are final: no model checks them when the rules read a request.
+  `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
+  separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as
+  strict xfails: speed without a superlative or "urgent" ("next flight out", "shortest transit",
+  "time-sensitive", "AOG", "Express please") reads as cheapest; a currency in words, as a symbol, as "Price:
+  USD" or beside a second currency reads as none and is quoted in EUR.
 
 ## Open
 
