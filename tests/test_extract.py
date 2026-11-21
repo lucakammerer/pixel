@@ -289,7 +289,8 @@ def test_no_pickup_needed_is_no_door_pickup():
 
 
 @pytest.mark.parametrize(
-    "text", ["Pickup from our site in 61391, no pickup before 9:00 please.", "Abholung in 61391, keine Abholung am Freitag."]
+    "text",
+    ["Pickup from our site in 61391, no pickup before 9:00 please.", "Abholung in 61391, keine Abholung am Freitag."],
 )
 def test_a_pickup_time_window_keeps_the_door_pickup(text):
     assert extract._pickup(text) == (True, "61391")
