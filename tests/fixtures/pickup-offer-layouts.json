@@ -1,5 +1,5 @@
 {
-  "note": "Trucker offers of rounds 63 to 65 (21.11.2026), sent only as an attachment: the mail body and the attachment's text as tariffs.agent._lines reads it, or for a voice message the local transcript one sentence per line before _spoken. The waiting time per hour is never the price.",
+  "note": "Trucker offers of rounds 63 to 67 (21.11.2026), sent only as an attachment: the mail body and the attachment's text as tariffs.agent._lines reads it, or for a voice message the local transcript one sentence per line before _spoken. The waiting time per hour is never the price.",
   "offers": [
     {
       "layout": "letter",
@@ -79,6 +79,28 @@
       "total": "431.60",
       "currency": "EUR",
       "pickup_hours": 13
+    },
+    {
+      "layout": "voice_hours_in_words",
+      "file": "voice-message.mp3",
+      "body": "I recorded our offer as a voice message for you. The recording is attached (voice-message.mp3).",
+      "transcript": [
+        "Hi, this is the dispatcher at Domblich Curia Deans.",
+        "I am calling back about your pickup.",
+        "So we collect at Postcode 40527 and bring it to Doesl Dwarf Airport.",
+        "You gave us 1,728 kilos.",
+        "We can do that for 358 euros and 64 cents.",
+        "I say again, 358 euros and 64 cents.",
+        "And that is all in.",
+        "The driver can be there four hours after your order.",
+        "I keep the price until the 21st of November at 2156 UTC time.",
+        "You find the offer number in my mail.",
+        "You do not need to book.",
+        "Okay, bye."
+      ],
+      "total": "358.64",
+      "currency": "EUR",
+      "pickup_hours": 4
     }
   ],
   "request_transcript": [

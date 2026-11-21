@@ -34,6 +34,22 @@ SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per
 # Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
 SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
 SPOKEN_EUR = re.compile(r"(\d[\d,.]*)\s*euros?\b", re.IGNORECASE)
+# Whisper writes small numbers as words: "four hours", "twelve pieces", "vier Stunden" become digits for the rules.
+ONES = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+ONES_DE = ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn"]
+ONES_DE += ["siebzehn", "achtzehn", "neunzehn"]
+TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+TENS_DE = ["zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
+NUMBER_WORDS = {w: i + 1 for words in (ONES, ONES_DE) for i, w in enumerate(words)} | {"ein": 1, "eine": 1, "einen": 1}
+NUMBER_WORDS |= {w: 10 * (i + 2) for words in (TENS, TENS_DE) for i, w in enumerate(words)}
+_ones = "|".join(sorted((w for w, n in NUMBER_WORDS.items() if n < 20), key=len, reverse=True))
+_tens = "|".join(w for w, n in NUMBER_WORDS.items() if n >= 20)
+SPOKEN_NUMBER = re.compile(
+    rf"\b(?:(?P<one_de>{_ones})und(?P<ten_de>{_tens})|(?P<ten>{_tens})(?:[\s-]+(?P<unit>{_ones}))?|(?P<one>{_ones}))"
+    r"(?=\s+(?:working\s+|business\s+)?(?:hours?|hrs?|days?|pieces?|pallets?|boxes|cartons?|crates?|packages?|colli"
+    r"|stunden|tagen?|werktagen?|stück|paletten|kisten|kartons?|packstücke?)\b)",
+    re.IGNORECASE,
+)
 _speech: list = []
 _speech_lock = threading.Lock()
 VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
@@ -137,24 +153,43 @@ def _lines(filename: str, content: bytes) -> list[str]:
     raise ValueError(f"no code parser for {suffix or filename}")
 
 
+def speech_model():
+    """The local speech model, loaded once. The app loads it at start, so no request waits for its download."""
+    from faster_whisper import WhisperModel
+
+    with _speech_lock:
+        if not _speech:
+            _speech.append(WhisperModel(SPEECH_MODEL, device="cpu", compute_type="int8"))
+        return _speech[0]
+
+
 def _transcribe(content: bytes) -> list[str]:
     """A voice message as one line per spoken sentence, by a local model: no gateway spend. Slow: run it in a thread."""
     import av
     import numpy as np
-    from faster_whisper import WhisperModel
 
     with av.open(io.BytesIO(content)) as container:
         resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
         pcm = [f.to_ndarray() for frame in container.decode(audio=0) for f in resampler.resample(frame)]
     audio = np.concatenate(pcm, axis=1).flatten().astype(np.float32) / 32768
+    model = speech_model()
     with _speech_lock:
-        if not _speech:
-            _speech.append(WhisperModel(SPEECH_MODEL, device="cpu", compute_type="int8"))
-        segments, _ = _speech[0].transcribe(audio, beam_size=1)
-        return [segment.text.strip() for segment in segments]
+        segments, _ = model.transcribe(audio, beam_size=1)
+        text = " ".join(segment.text.strip() for segment in segments)
+    # Segments break mid-sentence ("Collection at Postcode" / "51943 ..."): a sentence is one line.
+    return re.split(r"(?<=[.!?])\s+", text)
+
+
+def _number(m: re.Match) -> str:
+    if m["one_de"]:
+        return str(NUMBER_WORDS[m["ten_de"].lower()] + NUMBER_WORDS[m["one_de"].lower()])
+    if m["ten"]:
+        return str(NUMBER_WORDS[m["ten"].lower()] + (NUMBER_WORDS[m["unit"].lower()] if m["unit"] else 0))
+    return str(NUMBER_WORDS[m["one"].lower()])
 
 
 def _spoken(lines: list[str]) -> list[str]:
+    lines = [SPOKEN_NUMBER.sub(_number, line) for line in lines]
     return [
         SPOKEN_EUR.sub(r"\1 EUR", SPOKEN_CENTS.sub(lambda m: f"{m[1]}.{int(m[2]):02d} EUR", line)) for line in lines
     ]

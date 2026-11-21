@@ -129,6 +129,15 @@ class _ReplayLoop(asyncio.SelectorEventLoop):
     def time(self):
         return super().time() + self.replay_selector.elapsed
 
+    def run_in_executor(self, executor, func, *args):
+        """A thread's work would let the skipped timers outrun it; on the replay clock it takes no time."""
+        future = self.create_future()
+        try:
+            future.set_result(func(*args))
+        except Exception as e:  # noqa: BLE001  handed to the awaiting caller, as a thread would
+            future.set_exception(e)
+        return future
+
 
 def _offline_run(raws: list[dict], db: str | None, as_live: bool) -> list[Event]:
     with asyncio.Runner(loop_factory=_ReplayLoop) as runner:
