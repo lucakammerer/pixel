@@ -89,34 +89,60 @@ async def test_rules_path_makes_no_model_call(monkeypatch, emitted):
     assert rfq.extracted_by == "rules"
 
 
-async def test_a_captured_door_request_without_an_origin_takes_the_pickup_zones_airport(conn, monkeypatch, emitted):
-    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-door-no-origin.json").read_text())
-    message = to_message(raw, "in")
-    assert extract.by_rules(message, DEADLINE) is None  # no origin airport in the mail
+def captured(name: str) -> Message:
+    return to_message(json.loads((Path(__file__).parent / "fixtures" / "mails" / name).read_text()), "in")
 
+
+async def test_a_captured_door_request_without_an_origin_takes_the_pickup_zones_airport(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("51447"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, captured("rfq-door-no-origin.json"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.extracted_by, rfq.missing) == ("AAA", "ORD", "rules", ())
+
+
+async def test_a_door_request_whose_zone_has_no_airport_is_left_to_the_model(conn, monkeypatch, emitted):
     async def as_the_model_read_it(ctx, **kw):
-        data = {"origin": None, "destination": "ORD", "weight_kg": "676", "volume_cbm": "5.79", "pieces": 12,
+        data = {"origin": "FRA", "destination": "ORD", "weight_kg": "676", "volume_cbm": "5.79", "pieces": 12,
                 "preference": "fastest", "door_pickup": True, "pickup_postcode": "51447", "currency": "EUR",
                 "language": "en"}  # fmt: skip
         return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
     monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
     ctx = Context(settings(), conn, None, None, None, None)
-    store.save_zones(ctx, [{"zone": zone_of("51447"), "area": "Town", "airport": "AAA"}])
-    rfq = await extract.extract(ctx, message, DEADLINE)
-    assert (rfq.origin, rfq.destination, rfq.door_pickup, rfq.missing) == ("AAA", "ORD", True, ())
+    rfq = await extract.extract(ctx, captured("rfq-door-no-origin.json"), DEADLINE)
+    assert (rfq.origin, rfq.extracted_by) == ("FRA", "model")
 
 
-def test_rules_read_the_captured_port_to_port_request():
-    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-port-to-port.json").read_text())
-    rfq = extract.by_rules(to_message(raw, "in"), DEADLINE)
-    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == (
-        "DUS",
-        "JFK",
-        Decimal(1540),
-        Decimal("5.90"),
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("rfq-port-to-port.json", ("DUS", "JFK", "1540", "5.90", None, False, None)),
+        ("rfq-door-no-origin.json", ("", "ORD", "676", "5.79", 12, True, "51447")),
+        ("rfq-door-trucking.json", ("", "JFK", "1233", "10.78", 6, True, "61018")),
+        ("rfq-door-ready-for-pickup.json", ("", "ORD", "679", "4.19", 6, True, "51896")),
+        # "ready for pickup", but delivered to the airport by the customer
+        ("rfq-lots-two.json", ("MUC", "LAX", "998", "2.39", 2, False, None)),
+        ("rfq-lots-gross-after.json", ("MUC", "CAI", "486", "2.62", 11, False, None)),
+        ("rfq-door-three-lots.json", ("", "LOS", "1952", "4.6768", 13, True, "36627")),
+    ],
+)
+def test_rules_read_every_captured_request(name, expected):
+    rfq = extract.by_rules(captured(name), DEADLINE)
+    actual = (
+        rfq.origin,
+        rfq.destination,
+        rfq.weight_kg,
+        rfq.volume_cbm,
+        rfq.pieces,
+        rfq.door_pickup,
+        rfq.pickup_postcode,
     )
-    assert (rfq.preference, rfq.door_pickup, rfq.currency) == (Preference.FASTEST, False, "EUR")
+    origin, destination, kg, cbm, *rest = expected
+    assert actual == (origin, destination, Decimal(kg), Decimal(cbm), *rest)
 
 
 async def test_a_captured_request_in_lots_is_added_up_by_code_whatever_the_model_summed(conn, monkeypatch, emitted):
@@ -139,6 +165,27 @@ async def test_a_captured_request_in_lots_is_added_up_by_code_whatever_the_model
 
 
 def test_a_lot_whose_figures_are_not_certain_is_left_to_the_model():
-    text = "Lot 1: 4 drums, 730 kg, together 1.68 cbm\nLot 2: 4 cartons, each 48 kg gross, each 110 x 110 x 52 cm"
-    assert extract._lots(text) is None  # 730 kg: each drum or all four?
+    text = "Lot 1: 4 drums, 730 kg, 1.68 cbm\nLot 2: 4 cartons, each 48 kg gross (41 kg net)"
+    assert extract._lots(text) is None  # no volume for lot 2
     assert extract._lots("Lot 1: 2 crates, each 50 kg, each 100 x 100 x 100 cm") is None  # one lot is no lot list
+
+
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        ("AAA to BBB, 4 cartons, each 48 kg, 0.5 cbm each.", ("192", "2.0", Preference.CHEAPEST)),
+        ("AAA to BBB, 3 pallets of 250 kg per pallet, 120x80x100 cm.", ("750", "2.88", Preference.CHEAPEST)),
+        ("AAA-BBB, 500 kg, 2 cbm. Not urgent, no rush, the cheapest please.", ("500", "2", Preference.CHEAPEST)),
+        ("AAA-BBB:\n- 4 cartons, each 48 kg, 110 x 110 x 52 cm\n- 2 pallets, together 400 kg, 2.1 cbm",
+         ("592", "4.6168", Preference.CHEAPEST)),
+        ("AAA nach BBB: 3 Kartons à 30 kg, je 60x40x50 cm. Bitte schnellstmöglich.", ("90", "0.360", Preference.FASTEST)),
+    ],
+)  # fmt: skip
+def test_rules_count_per_piece_figures_and_read_wishes(body, expected):
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.preference) == (Decimal(expected[0]), Decimal(expected[1]), expected[2])
+
+
+def test_a_volume_the_rules_cannot_settle_is_left_to_the_model():
+    body = "AAA-BBB, total 500 kg: 2 pallets 120x80x150 cm and 3 boxes 60x40x40 cm."
+    assert extract.by_rules(mail(body), DEADLINE) is None  # volume 0 would under-price the chargeable weight

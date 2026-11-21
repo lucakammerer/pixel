@@ -29,10 +29,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`pricing/session.py`), combined and selected by code alone, no model call. Returns the quote unsent.
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
   weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly
-  requested currency, `de` or `en`. None unless exactly one lane and one weight are found.
+  requested currency, `de` or `en`. None unless exactly one lane (for a door pickup with a postcode: one destination)
+  and one weight are found.
 - `extract.py` `extract`: `by_rules`, else exactly one `llm.ask_json` (`rfq.extract`); code validates the answer and
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
-  airport of the pickup zone as its origin (R16). Emits `rfq.extracted` with the whole `Rfq`.
+  airport of the pickup zone as its origin (R16); when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose: greeting
   with the customer's first name when they signed with it, an intro, one offer paragraph with the all-in total and
   its currency, carrier, transit, chargeable weight, what is included and the validity, a call to book, a closing
@@ -62,7 +63,16 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
-- A door-to-port request names the destination and the pickup address, not the origin airport.
+- A door-to-port request names the destination and the pickup address, not the origin airport. The rules read it
+  when it names one destination and a pickup postcode; the origin is the zone's airport.
+- "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
+  ourselves"): that is no door pickup.
+- A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg).
+- A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
+  30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
+- A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0
+  under-prices a light, bulky shipment.
+- "Not urgent" and "no rush" contain the urgency words: they mean cheapest.
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.
 - The prose slots must not contain a price or a code: the scorer reads the one total we write.

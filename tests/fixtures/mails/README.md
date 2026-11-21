@@ -43,3 +43,15 @@ shipment described by pickup postcode, destination, weight and company.
 
 `rfq-door-three-lots.json` is a door-to-port request in three lots with mixed per-piece and per-lot figures; our
 first quote for it was rejected as too low.
+
+Every captured request (`rfq-*.json`) is read by `extract.py` `by_rules` without a model; `tests/test_extract.py`
+checks each one:
+
+- `rfq-door-trucking.json`, `rfq-door-ready-for-pickup.json`: door-to-port, the destination only, the pickup site by
+  postcode and "arrange trucking from our site".
+- `rfq-lots-two.json`: two lots of one piece each; "ready for pickup", yet the customer delivers to the airport.
+- `rfq-lots-gross-after.json`: two lots whose weight and volume are for the whole lot, without "each" or
+  "together"; the scorer accepted their sum.
+
+`customer-declines-too-low.json`: the customer's decline of our too-low quote for `rfq-door-three-lots.json`, worded
+"we will not go ahead with it". We booked it anyway: `booking.py` `intent` read "go ahead" as an acceptance.
