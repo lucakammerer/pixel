@@ -85,9 +85,18 @@ async def test_the_desk_describes_a_door_shipment_by_pickup_postcode_weight_and_
     assert ours.id in body and ours.booking_reference in body and same_destination.id not in body
     # The desk signs as the customer and gives the ready date: answer them by name, with the arrival, in sentences.
     assert body.startswith("Hi Sara,") and "Sunday 29 November" in body
-    # Every line the answer carried before stays until a variant scores (R30).
-    assert "Status: confirmed by Kestrel Airways, booked and ready to ship" in body
-    assert "Customer: lindqvist-medtech@hackloop.mail" in body and f"Shipment {ours.id}: CGN → ORD, 676 kg" in body
+    assert "lindqvist-medtech@hackloop.mail" not in body and "51447" not in body
+
+
+@pytest.mark.parametrize("variant", ["scored", "a", "b"])
+def test_every_variant_carries_every_fact_the_scored_answer_carried(pipe, variant):
+    s = shipped(pipe.ctx, 1, "lindqvist-medtech@hackloop.mail", "CGN", "ORD", 676, postcode="51447")
+    body = agent.answer([s], None, details={s.id: agent.Detail(postcode="51447", town="Bergisch Gladbach")},
+                        variant=variant)  # fmt: skip
+    for fact in (s.id, s.booking_reference, "Kestrel Airways", "booked and ready to ship", "3 days", "CGN", "ORD",
+                 "676 kg"):  # fmt: skip
+        assert fact in body
+    assert ("lindqvist-medtech@hackloop.mail" in body) == (variant == "scored")
 
 
 async def test_the_desk_describes_a_port_shipment_by_lane_weight_and_company(pipe):
@@ -128,14 +137,16 @@ def test_a_remembered_site_or_a_replaced_origin_still_finds_the_shipment(pipe):
     assert agent.described(pipe.ctx, "Auer Maschinenbau GmbH, CGN to PEK, 1081 kg") == [zone]
 
 
-async def test_the_answer_names_the_pickup_postcode_the_desk_asked_about(pipe):
+async def test_the_answer_names_the_town_of_the_pickup_the_desk_asked_about(pipe):
     """Round 19: "our warehouse" was filled in as the customer's earlier site 51896; the desk asked for 51804. An
-    answer "from 51896" would contradict the question."""
+    answer "from 51896" would contradict the question; a clerk names the town, not a postcode."""
     ours = shipped(pipe.ctx, 1, "rheintal-elektronik@hackloop.mail", "CGN", "DFW", 1795, postcode="51896")
+    pipe.ctx.db.execute("INSERT INTO pickup_zones VALUES ('51', 'Bergisch Gladbach', 'CGN')")
     await agent.handle(pipe.ctx, mail(45, 45, sender="tracking@hackloop.mail",
                                       body="Rheintal Elektronik GmbH, 51804 to DFW, 1795 kg, ready on 2026-11-29?"))  # fmt: skip
     body = pipe.sent[0]["body"]
-    assert ours.booking_reference in body and "from 51804 via CGN" in body and "from 51896" not in body
+    assert ours.booking_reference in body and "from your site in Bergisch Gladbach, flying CGN to DFW" in body
+    assert "51896" not in body
 
 
 @pytest.mark.parametrize(
