@@ -44,6 +44,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   right (4 gateway calls on the host). The model now copies the groups and code adds them up, pounds included; the
   labelled-bullet request (round 11) and "no pickup needed" are read by rules. Next: wishes ("speed matters more
   than price"), a currency other than EUR, a postcode outside the zones.
+- 21.11. 18:25, wording and mail flow: wishes by wording (#38), pickup by town (#40), pounds and tonnes by code
+  (this one; "gross weight: 480 lbs" was read as 480 kg). A new request sent as a reply in an old thread routes as
+  customer_reply and `outbox.send_quote` sends one quote per session: a finding for the main loop, not yet seen live.
+  Next: setup changes (portal 429/503/410, a new dataset_version) replayed offline.
 
 - 21.11. 17:15 CET: board after round 12: human awards START Milan 3, MAKEANOTHERMD 1, Austrian Power 1, PIXEL 0.
   Round 11 went out in German to an English mail (language by the model, fixed on main since), round 12 to Petra
