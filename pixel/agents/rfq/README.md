@@ -83,6 +83,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0
   under-prices a light, bulky shipment.
 - "Not urgent" and "no rush" contain the urgency words: they mean cheapest.
+- A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
+  airport before its colon.
+- The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says
   "non-dangerous". `extract.py` `dangerous_goods` reads the mail and every attachment; a declaration adds
   `dangerous_goods_documents` to `Rfq.missing` and emits `rfq.dangerous_goods` with the declared text. The quote

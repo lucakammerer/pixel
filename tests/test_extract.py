@@ -128,6 +128,7 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
         return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
     monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    monkeypatch.setattr(extract, "by_rules", lambda message, deadline: None)  # the rules read this mail since
     ctx = Context(settings(), conn, None, None, None, None)
     store.save_zones(ctx, [{"zone": zone_of("21663"), "area": "Town", "airport": "AAA"}])
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
@@ -149,6 +150,8 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
         ("rfq-lots-two.json", ("MUC", "LAX", "998", "2.39", 2, False, None)),
         ("rfq-lots-gross-after.json", ("MUC", "CAI", "486", "2.62", 11, False, None)),
         ("rfq-door-three-lots.json", ("", "LOS", "1952", "4.6768", 13, True, "36627")),
+        # labelled bullets: "- Destination airport: Toronto (YYZ), CA", "- Pickup: from our site at 21663 Lueneburg"
+        ("rfq-dg-instruction-bullets.json", ("", "YYZ", "855", "3.74", 4, True, "21663")),
     ],
 )
 def test_rules_read_every_captured_request(name, expected):
@@ -251,3 +254,15 @@ async def test_a_dangerous_goods_request_lists_the_documents_as_missing(conn, em
     assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
         (kind, kw["payload"]) for kind, kw in emitted
     ]
+
+
+async def test_the_language_is_codes_reading_not_the_models(monkeypatch, emitted):
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": "300", "volume_cbm": None, "pieces": None,
+                "preference": "cheapest", "door_pickup": False, "pickup_postcode": None, "currency": None,
+                "language": "de"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    body = "Hello, please quote the shipment from our site in Lueneburg to Toronto, about three hundred kilos. Thanks"
+    assert (await extract.extract(None, mail(body), DEADLINE)).language == "en"
