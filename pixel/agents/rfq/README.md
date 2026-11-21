@@ -90,6 +90,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the
   fallback. `extract` then takes `by_rules(guess=True)`, the largest gross weight and volume the mail names,
   `extracted_by: guess`, and emits `error`; with no lane at all it still raises.
+- A request can come as a reply or forward with an older request quoted below it ("-----Original Message-----"),
+  and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
+  to the model.
+- A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
+  the pickup zone's airport unless the mail names the origin code itself.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC

@@ -134,9 +134,10 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
     assert (rfq.origin, rfq.destination, rfq.extracted_by, rfq.missing) == ("AAA", "YYZ", "model", ())
 
-    store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])  # an airport a zone trucks to
+    # Round 14: CGN is a zone's airport too, yet not the pickup zone's, and no airline flew CGN-PEK.
+    store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
-    assert rfq.origin == "XFW"
+    assert rfq.origin == "AAA"
 
 
 @pytest.mark.parametrize(
@@ -407,3 +408,11 @@ async def test_a_gateway_that_refuses_the_model_still_gives_a_reading(monkeypatc
     assert "model not allowed" not in str(emitted[0][1]["payload"])  # the gateway's text can quote the OpenAI key
     with pytest.raises(RuntimeError):  # nothing to guess from
         await extract.extract(None, mail("Could you help us with a shipment next week?"), DEADLINE)
+
+
+def test_an_older_mail_quoted_below_the_request_is_not_read():
+    message = captured("rfq-door-quoted-old-request.json")  # "RE: FW: ZURICH AIRPORT - MEL / 87 PLT 3,459 KGS"
+    rfq = extract.by_rules(message, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode) == (
+        "", "PEK", Decimal(1081), Decimal("8.03"), "42401"
+    )  # fmt: skip
