@@ -37,6 +37,9 @@ Captured mails of a request, from the request to the confirmed booking:
 - `rfq-sli-volume-differs-from-mail.json`: round 33, MUC-CAI, cheapest. The mail says 2.78 cbm; the attached packing
   spec (embedded) says 1.92 cbm and its table bears that out. The scorer priced 1.92 and rejected our quote on
   2.78 as too high.
+- `rfq-packing-list-volume-differs-from-mail.json`: round 34, MUC-GRU, fastest, the same kind in another layout: a
+  "Packing List" whose table starts with the length. The mail says 11.69 cbm (140 x 100 x 167 cm), the list 7.49
+  (140 x 100 x 107 cm); quoted on the mail's before #159 was live, rejected as too high.
 - `rfq-port-to-port.json`: a request that names both airports and delivers to the airport itself; the rules read
   it without a model.
 - `rfq-port-cheapest-airline-bids.json`: round 28, port to port and cheapest, sent while the portal's rate API
