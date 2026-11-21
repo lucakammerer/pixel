@@ -11,6 +11,7 @@ from pixel.contracts import Message, Shipment
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.crm import quotes, shipments
+from pixel.pricing.pickup import zone_of
 
 REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
@@ -94,7 +95,7 @@ def described(ctx: Context, text: str) -> list[Shipment]:
                 continue
             if quote.rfq.pickup_postcode == postcode:
                 exact.append(shipment)
-            elif not quote.rfq.pickup_postcode and quote.rfq.pickup_zone == postcode[:2]:
+            elif not quote.rfq.pickup_postcode and quote.rfq.pickup_zone == zone_of(postcode):
                 zone.append(shipment)
         found = exact or zone
     if kg is not None:
