@@ -107,6 +107,8 @@ async def test_the_quote_goes_out_with_itself_as_a_pdf(conn):
     await outbox.send_quote(ctx, quote)
     [(name, kind, content)] = ctx.mailbox.attachments[0]
     assert (name, kind) == ("offer-Q-1.pdf", "application/pdf")
+    # Round 78: a file ending in %EOF instead of %%EOF reads as truncated to a strict reader; the price was lost.
+    assert content.endswith(b"\n%%EOF\n")
     with pdfplumber.open(io.BytesIO(content)) as document:
         assert "100.00 EUR all-in (Grüße)." in document.pages[0].extract_text()
 
