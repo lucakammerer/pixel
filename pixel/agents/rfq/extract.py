@@ -1148,14 +1148,37 @@ CHECKED = ("destination", "weight_kg", "volume_cbm", "pieces", "preference")
 CHECK_WAIT_S = 6  # gpt-4.1 answers in about 1.2 s; a hanging gateway must not hold the bids
 
 
+# A figure behind these words is not the shipment's gross total: a net or tare weight, one piece's, a superseded one.
+NOT_GROSS = re.compile(
+    r"\b(?:net|netto|tare|each|per|je|pro|not|nicht|instead\s+of|statt|previously|was|old|alt|vorher)\b\W*"
+    r"(?:[\w.,]+\W*){0,3}$",
+    re.IGNORECASE,
+)
+
+
+def _gross(sources: list[tuple[str, str]], patterns: tuple[re.Pattern, ...], thousands: bool) -> set[Decimal]:
+    """Every figure code reads as a gross total with its unit, in the customer's own words (nothing forwarded or
+    quoted) and in their documents."""
+    found = set()
+    for name, content in sources:
+        content = own_words(content) if name == "mail" else content
+        for p in patterns:
+            for m in p.finditer(content):
+                line = content[content.rfind("\n", 0, m.start()) + 1 : m.start()]
+                if not NOT_GROSS.search(line) and (v := number(m.group(1), thousands)) is not None:
+                    found.add(v)
+    return found
+
+
 async def _crosscheck(
-    ctx: Context, rfq: Rfq, message: Message, text: str, deadline: Deadline
+    ctx: Context, rfq: Rfq, message: Message, text: str, sources: list[tuple[str, str]], deadline: Deadline
 ) -> tuple[Rfq, dict | None]:
-    """The rules' reading checked by a larger model reading the same text (`PIXEL_MODEL_CHECK`). On a field the price
-    depends on, a value the model reads (its figures settled by code in `_from_model`) wins over the rules': at first
-    sight the rules took the mail's figures over the packing list's (rounds 33 to 35), and the model did not; on all
-    44 accepted requests both read the same. A destination counts only when the text names it. Its prose slots
-    replace the separate prose call. On any failure the rules' reading stands."""
+    """The rules' reading checked by a larger model reading the same text (`PIXEL_MODEL_CHECK`): at first sight the
+    rules took the mail's figures over the packing list's (rounds 33 to 35), and the model did not; on all 44 accepted
+    requests both read the same. The model's weight or volume wins only when code reads that figure as a gross total
+    with its unit (`_gross`): never a net, per-piece, superseded, forwarded or pounds figure. Pieces and the wish win
+    as read; a destination never does, it is only reported. Its prose slots replace the separate prose call. On any
+    failure the rules' reading stands."""
     try:
         result = await asyncio.wait_for(
             llm.ask_json(
@@ -1180,7 +1203,10 @@ async def _crosscheck(
         for f in CHECKED
         if getattr(read, f) not in (None, "", 0) and getattr(read, f) != getattr(rfq, f)
     }
-    taken = {f: getattr(read, f) for f in differs if f != "destination" or names_code(text, read.destination)}
+    gross = {"weight_kg": _gross(sources, WEIGHT, True), "volume_cbm": _gross(sources, VOLUME, False)}
+    taken = {
+        f: getattr(read, f) for f in differs if f in ("pieces", "preference") or getattr(read, f) in gross.get(f, ())
+    }
     events.emit(ctx, "rfq.crosscheck", "rfq", session_id=message.session_id, message_id=message.id,
                 payload={"model": result.model, "differs": differs, "taken": sorted(taken)})  # fmt: skip
     return rfq.model_copy(update=taken), {k: result.data.get(k) for k in PROSE}
@@ -1252,7 +1278,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
     if rfq is not None and ctx.settings.model_check:
-        rfq, prose = await _crosscheck(ctx, rfq, message, text, deadline)
+        rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline)
     if rfq is None:
         try:
             result = await llm.ask_json(

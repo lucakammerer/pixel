@@ -19,9 +19,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 ## Implementation
 
 - `agent.py` `handle`: `extract.extract`; when rules read the request, gpt-4.1 reads the same text too
-  (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s): where both read a value for weight, volume, pieces,
-  preference or a destination the text names and they differ, the model's wins, as an `rfq.crosscheck` event; on
-  any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
+  (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s), as an `rfq.crosscheck` event. Pieces and the wish win as
+  the model reads them; its weight or volume only when code reads that figure as a gross total with its unit in the
+  customer's own words or documents (`_gross`: never net, tare, per piece, superseded, forwarded or in pounds); a
+  destination never, it is only reported. On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
   the prose (`prose.raw`) and `compose.adopt` checks it; only without either, `compose.prose` runs in parallel. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
   failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (bids by
   mail, pickup and airline, are waited for until all are in, or until the later of `target_at` and
@@ -294,8 +295,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   before another unit (`_only_with`) is replaced by code's reading, so the cross-check never takes 95 cbm.
 - The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
   181.96 EUR offer). Every answer the rules price is read by the model too (`pricing/bids.py` `_crosscheck`, the
-  same text, code adds the charges up, at most 6 s); where the totals differ the model's wins, as a `bid.crosscheck`
-  event. `PIXEL_MODEL_CHECK` empty turns it off with the request's second reader.
+  same text, at most 3 s, so no answer misses `collect`'s cutoff); a `bid.crosscheck` event reports a difference. The
+  model's total wins only in the rules' currency and when the text states it as the shipment's amount (`_stated`:
+  not per kg, per hour or another unit). `PIXEL_MODEL_CHECK` empty turns it off with the request's second reader.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
