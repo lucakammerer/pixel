@@ -524,10 +524,10 @@ def language_of(rfq: Rfq) -> str:
 
 
 TRANSLATE_SYSTEM = (
-    "You translate an air freight forwarder's quote mail into the language with ISO code {language}, the "
-    "language the customer wrote in. Write it as a natural, polite business mail in that language, keeping its "
-    "lines and paragraphs. Copy every number, price, currency code, airport code, time, airline and company and "
-    "person name exactly as written, digits unchanged. Add or drop nothing. "
+    "You translate an air freight forwarder's mail to its customer into the language with ISO code {language}, "
+    "the language the customer wrote in. Write it as a natural, polite business mail in that language, keeping its "
+    "lines and paragraphs. Copy every number, price, currency code, airport code, time, reference, airline and "
+    "company and person name exactly as written, digits unchanged. Add or drop nothing. "
     'Answer as JSON {{"body": ...}}.'
 )
 TRANSLATE_SCHEMA = {
@@ -550,33 +550,54 @@ def translated_ok(english: str, translated: str, option: RateOption) -> bool:
     return all(n in figures for n in NUMBER.findall(translated) if len(n) > 2)
 
 
+def kept(english: str, translated: str, names: tuple[str, ...]) -> bool:
+    """A follow-up's translation keeps every name and reference in `names` and every figure of the English mail, and
+    adds no figure (a short one, a month or a day, may differ)."""
+    figures = {n for n in NUMBER.findall(english) if len(n) > 2}
+    return all(name in translated for name in names if len(name or "") > 1) and figures == {
+        n for n in NUMBER.findall(translated) if len(n) > 2
+    }
+
+
 async def translate(ctx: Context, rfq: Rfq, option: RateOption, body: str, wait: float) -> str:
     """The quote in the customer's language when we have no `TEXT` for it (round 72 was Chinese, answered in
     English and rejected as wrong_language): the code-written English mail, translated by the model and checked by
     `translated_ok`. The English mail on any failure or after `wait` seconds; never blocks the quote."""
-    if language_of(rfq) == rfq.language or wait <= 0:
+    if language_of(rfq) == rfq.language:
+        return body
+    return await localize(ctx, rfq.language, rfq.session_id, body, wait,
+                          lambda text: translated_ok(body, text, option), "quote.translate")  # fmt: skip
+
+
+async def localize(
+    ctx: Context, language: str, session_id: int | None, body: str, wait: float, ok, purpose: str
+) -> str:
+    """`body` translated into `language` by the model when `ok` accepts the translation; else `body` unchanged, after
+    `wait` seconds at most. Every mail to a customer after the quote follows the thread's language this way when we
+    have no text of our own for it (booking notices, the question for a missing fact, a tracking answer)."""
+    if wait <= 0:
         return body
     try:
         result = await asyncio.wait_for(
             llm.ask_json(
                 ctx,
-                purpose="quote.translate",
-                system=TRANSLATE_SYSTEM.format(language=rfq.language),
+                purpose=purpose,
+                system=TRANSLATE_SYSTEM.format(language=language),
                 user=body,
                 schema=TRANSLATE_SCHEMA,
-                session_id=rfq.session_id,
+                session_id=session_id,
                 max_output_tokens=600,
             ),
             wait,
         )
         text = result.data.get("body")
-        if isinstance(text, str) and translated_ok(body, text.strip(), option):
+        if isinstance(text, str) and ok(text.strip()):
             return text.strip()
         error = "translation dropped a figure or name"
-    except Exception as exc:  # noqa: BLE001  the English quote still goes out
+    except Exception as exc:  # noqa: BLE001  the English mail still goes out
         error = type(exc).__name__
-    events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
-                payload={"where": "quote.translate", "language": rfq.language, "error": error})  # fmt: skip
+    events.emit(ctx, "error", "rfq", session_id=session_id,
+                payload={"where": purpose, "language": language, "error": error})  # fmt: skip
     return body
 
 

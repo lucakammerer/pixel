@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
-from pixel.agents.rfq import extract
+from pixel.agents.rfq import compose, extract
 from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, TEXT, in_kind, ready_date
 from pixel.agents.rfq.extract import number
 from pixel.contracts import Message, Shipment
@@ -26,6 +26,7 @@ WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
 # "b": as "a", the record block's facts in the prose and no block.
 # "c": "b" without the filler ("It has not left yet:", "in case you need it"), every fact kept.
 VARIANT = "c"
+TRANSLATE_WAIT_S = 15
 
 STATUS = {
     "booking": "is with {carrier} for booking, and I am waiting for their reply",
@@ -252,6 +253,13 @@ async def handle(ctx: Context, message: Message) -> None:
     answers in the thread from the CRM alone. Says so plainly when we hold no such shipment."""
     found, reference = match(ctx, await question(ctx, message), message.sender)
     body = answer(found, reference, message.body, details(ctx, found, message.body), signer=ctx.settings.signer)
+    if (language := extract._language(extract._text(message))) != "en":  # answered in the asker's language
+        english = body
+        names = tuple(
+            n for s in found[:5] for n in (s.id, s.carrier, s.booking_reference, s.origin, s.destination) if n
+        )
+        body = await compose.localize(ctx, language, message.session_id, body, TRANSLATE_WAIT_S,
+                                      lambda text: compose.kept(english, text, names), "tracking.translate")  # fmt: skip
     events.emit(
         ctx, "tracking.answered", "tracking", session_id=message.session_id, message_id=message.id,
         payload={"reference": reference, "shipments": [s.id for s in found],
