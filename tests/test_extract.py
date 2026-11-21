@@ -473,3 +473,17 @@ async def test_a_pickup_with_no_place_takes_the_site_this_customer_named_before(
     later = mail(body).model_copy(update={"id": 3937, "session_id": 3937, "sender": earlier.sender})
     rfq = await extract.extract(ctx, later, DEADLINE)
     assert (rfq.origin, rfq.pickup_postcode, rfq.pickup_zone, rfq.extracted_by) == ("AAA", "36627", "36", "rules")
+
+
+async def test_of_several_earlier_sites_the_latest_counts(conn, monkeypatch):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "51", "area": "Bergisch Gladbach", "airport": "CCC"},
+                           {"zone": "21", "area": "Lueneburg", "airport": "AAA"}])  # fmt: skip
+    for name in ("rfq-door-no-origin.json", "rfq-dg-instruction-bullets.json"):  # Lindqvist: 51447, then 21663
+        await extract.extract(ctx, captured(name).model_copy(update={"attachments": []}), DEADLINE)
+    rfq = await extract.extract(ctx, captured("rfq-door-warehouse-earlier-sites.json"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.pickup_postcode, rfq.extracted_by) == ("AAA", "EZE", "21663", "rules")
