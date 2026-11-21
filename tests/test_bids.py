@@ -342,3 +342,11 @@ async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monk
 )
 def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days):
     assert bids._price(text, rfq()) == (price, "EUR") and bids._days(text) == days
+
+
+@pytest.mark.parametrize(
+    "text, hours",
+    [("Pickup time: 10.5 hours", 11), ("Abholung in 4,5 Stunden", 5), ("Ready at 09:00 h, pickup time 18 hours", 18)],
+)
+def test_pickup_hours_read_a_decimal_and_skip_a_clock_time(text, hours):
+    assert bids._pickup_hours(text) == hours  # 10.5 read as 5 and 09:00 h as 0 pick the wrong trucker
