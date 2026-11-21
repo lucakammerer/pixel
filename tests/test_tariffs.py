@@ -51,6 +51,11 @@ def test_check_flags_rates_rising_with_weight(start_kit):
     assert agent.check([broken])
 
 
+def test_check_flags_a_minimum_that_looks_like_transit_days(start_kit):
+    t = agent.parse("x.txt", (start_kit / "yellowtail-air-freight-tariff-2026-11.txt").read_bytes())[0]
+    assert agent.check([t.model_copy(update={"minimum": D(5)})])  # Minimum and Transit read swapped
+
+
 def test_unknown_layout_is_refused():
     with pytest.raises(ValueError):
         agent.parse("x.txt", b"Some Air | Air export tariff\nCurrency EUR\nFRA-JFK 3 100,00 1,00 2,00\n")
