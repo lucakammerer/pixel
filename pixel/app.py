@@ -1,7 +1,7 @@
 """Process entry: `uv run uvicorn pixel.app:app`. One process runs poller, push endpoint, handlers and UI."""
 
 import asyncio
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -47,15 +47,17 @@ async def lifespan(app: FastAPI):
         ctx.tasks.add(asyncio.create_task(feedback.run(ctx)))
     else:
         emit(ctx, "error", "app", payload={"where": "start", "error": "PIXEL_API_KEY is not set: not polling"})
-    yield
-    for running in (task, *ctx.tasks):
-        if running:
-            running.cancel()
-    if task:
-        with suppress(asyncio.CancelledError):
-            await task
-    await ctx.mailbox.client.aclose()
-    ctx.db.close()
+    try:
+        yield
+    finally:
+        running = set(ctx.tasks)
+        if task:
+            running.add(task)
+        for handler in running:
+            handler.cancel()
+        await asyncio.gather(*running, return_exceptions=True)
+        await ctx.mailbox.client.aclose()
+        ctx.db.close()
 
 
 app = FastAPI(title="PIXEL", lifespan=lifespan)

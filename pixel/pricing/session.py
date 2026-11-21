@@ -20,3 +20,12 @@ def rfq(ctx: Context, session_id: int) -> Rfq | None:
 
 def options(ctx: Context, session_id: int) -> list[RateOption]:
     return [RateOption.model_validate(p["option"]) for p in _payloads(ctx, session_id, "option.found")]
+
+
+def on_lane(option: RateOption, rfq: Rfq) -> bool:
+    return (option.origin, option.destination) == (rfq.origin, rfq.destination)
+
+
+def for_request(ctx: Context, rfq: Rfq) -> list[RateOption]:
+    """A previous extraction in this session can have priced different airports."""
+    return [o for o in options(ctx, rfq.session_id) if on_lane(o, rfq)]

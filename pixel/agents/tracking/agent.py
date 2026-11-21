@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import NamedTuple
 
 from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, ready_date
@@ -64,52 +65,62 @@ def greeting(text: str) -> tuple[str, str]:
 def described(ctx: Context, text: str) -> list[Shipment]:
     """The tracking desk names no reference. It describes the shipment the way the customer asked for it: the origin
     airport, or the pickup postcode of a door-to-port request, "to" the destination, the gross weight and the
-    customer's company name. Each of these narrows the shipments to that destination; one of them must fit."""
+    customer's company name. The origin and weight must agree, and recognized company names narrow the results."""
     lane = DESCRIBED.search(text)
     if not lane:
         return []
     origin, postcode, destination = lane.groups()
     weight = WEIGHT.search(text)
     kg = number(weight.group(1)) if weight else None
-    words = text.lower()
-
-    def from_there(s: Shipment) -> bool:
-        if origin:
-            return s.origin == origin
-        quote = quotes.for_session(ctx, s.session_id)
-        return bool(quote and quote.rfq.pickup_postcode == postcode)
+    words = set(re.findall(r"[a-z0-9]+", text.lower()))
 
     def company(s: Shipment) -> bool:
         tokens = [t for t in re.split(r"[^a-z0-9]+", s.customer.split("@")[0].lower()) if len(t) > 2]
-        return bool(tokens) and all(t in words for t in tokens)
+        return bool(tokens) and words.issuperset(tokens)
 
-    found, fits = shipments.find(ctx, destination=destination), False
-    for check in (from_there, lambda s: kg is not None and s.weight_kg == kg, company):
-        narrowed = [s for s in found if check(s)]
-        if narrowed:
-            found, fits = narrowed, True
-    return found if fits else []
+    addresses = {e.lower() for e in EMAIL.findall(text)}
+    found = shipments.find(ctx, destination=destination)
+    if addresses:
+        found = [s for s in found if s.customer.lower() in addresses]
+    names = [s for s in found if company(s)]
+    found = names or found
+    if origin:
+        found = [s for s in found if s.origin == origin]
+    else:
+        exact, zone = [], []
+        for shipment in found:
+            quote = quotes.for_session(ctx, shipment.session_id)
+            if quote is None or not quote.rfq.door_pickup:
+                continue
+            if quote.rfq.pickup_postcode == postcode:
+                exact.append(shipment)
+            elif not quote.rfq.pickup_postcode and quote.rfq.pickup_zone == postcode[:2]:
+                zone.append(shipment)
+        found = exact or zone
+    if kg is not None:
+        exact_weight = [s for s in found if s.weight_kg == kg]
+        tolerance = max(Decimal(1), kg * Decimal("0.01"))
+        found = exact_weight or [s for s in found if abs(s.weight_kg - kg) <= tolerance]
+    return found if len(found) == 1 else []
 
 
 def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | None]:
-    """Shipments the question means, and the reference it named (if any)."""
-    references = [m.group(0).upper() for m in REFERENCE.finditer(text)]
-    for reference in references:
-        found = shipments.find(ctx, reference=reference)
-        if found:
-            return found, reference
-    found = described(ctx, text)
-    if found:
-        return found, None
-    customers = [e for e in EMAIL.findall(text) if e.lower() != sender.lower()]
+    """Identify one shipment before returning any customer or booking details."""
+    references = list(dict.fromkeys(m.group(0).upper() for m in REFERENCE.finditer(text)))
+    if references:
+        sets = [shipments.find(ctx, reference=r) for r in references]
+        if all(len(matches) == 1 for matches in sets) and len({matches[0].id for matches in sets}) == 1:
+            return sets[0], references[0]
+        return [], references[0]
+    if DESCRIBED.search(text):
+        return described(ctx, text.replace(sender, "")), None
+    customers = {e.lower() for e in EMAIL.findall(text) if e.lower() != sender.lower()}
     lane = LANE.search(text)
     origin, destination = lane.groups() if lane else (None, None)
-    for customer in customers or [None]:
-        if customer or lane:
-            found = shipments.find(ctx, customer=customer, origin=origin, destination=destination)
-            if found:
-                return found, references[0] if references else None
-    return [], references[0] if references else None
+    if len(customers) > 1 or not (customers or lane):
+        return [], None
+    found = shipments.find(ctx, customer=next(iter(customers), None), origin=origin, destination=destination)
+    return (found if len(found) == 1 else []), None
 
 
 def _paragraph(s: Shipment, detail: Detail, today: date) -> str:
@@ -159,7 +170,7 @@ def answer(
     before, verbatim, until a variant is shown to score (R30)."""
     hello, bye = greeting(question)
     if not found:
-        named = f" under {reference}" if reference else " matching your question"
+        named = f" under {reference}" if reference else " I can identify uniquely from those details"
         body = (f"I have checked, but we hold no shipment{named} in our records. Could you send me the airline's "
                 "booking reference (it starts with BK-) or ours (PX-…)? I will answer right away.")  # fmt: skip
     else:

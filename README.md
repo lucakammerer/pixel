@@ -16,7 +16,7 @@ flowchart TD
     R -->|tracking question| TR[tracking agent]
 
     O --> RFQ[RFQ agent<br/>extract: rules, else one model call]
-    RFQ --> ENG[pricing engine]
+    RFQ --> ENG[pricing engine<br/>local sheets first, portal and mail bids]
     T --> ST[(tariff store<br/>version + validity)]
     ST --> ENG
     PORTAL[rate portal] --> ENG
@@ -24,7 +24,7 @@ flowchart TD
     ENG --> SEL[calc + selection<br/>code, Decimal]
     SEL --> Q[quote text]
     Q --> OUT[outbox<br/>first quote only]
-    O -.->|hard deadline: best price so far| OUT
+    O -.->|late bid or hard deadline| OUT
     OUT --> MB
 
     BK -->|book by rate id| PORTAL
@@ -53,9 +53,14 @@ uv run pytest -q
 ## How it scores
 
 Up to 100 points per accepted quote: 45 for price accuracy, 40 for low model cost, 15 for response time. A quote is
-accepted only within 5% of the best price, and only as our first reply within 6 minutes. So: code does all the
-arithmetic, a model is called once per quote at most, and every request has a deadline that always ends in an
-answer.
+accepted only within 5% of the best price, and only as our first reply within 6 minutes. Code calculates the price.
+A request normally uses one small gateway call.
+
+A door-to-port quote includes a trucker price. If only air freight is priced, PIXEL keeps the request open for late
+pickup bids. At the hard deadline it can send the airport-to-airport price with pickup explicitly excluded. If the
+customer omitted the postcode, the quote asks for the pickup address. With no air price at all the round is recorded
+as missed. A customer question about an offer goes to the operator. An affirmative instruction to book a delivered
+offer starts the booking.
 
 ## Team
 
@@ -134,5 +139,5 @@ Shared by all, reviewed by whoever did not write the change: `pixel/crm/`, `pixe
 ## Status
 
 The foundation is built: mail pipeline, pricing, CRM, booking, tracking and the sessions UI, tested offline. Mail
-fixtures are synthetic until the first real mails are captured, and four pricing rules rest on assumptions
-([`docs/calc.md`](docs/calc.md)) until 5U answers the open questions.
+fixtures include captured challenge traffic and synthetic edge cases. Open pricing assumptions are tracked in the plan and
+[`docs/calc.md`](docs/calc.md).

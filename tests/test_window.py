@@ -41,3 +41,15 @@ def test_with_no_request_for_more_than_a_round_the_window_is_open(conn):
     add(conn, 1, "quote.missed", T0 + timedelta(seconds=315), '{"reason": "no_price"}')
     assert not open_now(conn, *at(380))  # the next request may just be late
     assert open_now(conn, *at(425))
+
+
+def test_deploy_margin_uses_stored_request_time_even_when_routing_was_late(conn):
+    conn.execute(
+        "INSERT INTO sessions(id, customer, state, received_at) VALUES (1, 'buyer', 'quoted', ?)", (T0.isoformat(),)
+    )
+    add(conn, 1, "route", T0 + timedelta(seconds=70), '{"kind":"customer_rfq"}')
+    add(conn, 1, "quote.sent", T0 + timedelta(seconds=80))
+    assert not open_now(conn, *at(119))
+    assert open_now(conn, *at(120))
+    assert not open_now(conn, *at(350))
+    assert open_now(conn, *at(420))

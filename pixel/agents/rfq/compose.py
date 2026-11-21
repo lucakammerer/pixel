@@ -84,6 +84,10 @@ TEXT = {
                 ),
             ),
         },
+        "air_only": (
+            "The airport-to-airport price from {origin} to {destination} with {carrier} is {total} {currency}, "
+            "with {transit} in transit. Pickup is excluded."
+        ),
         "basis": (
             "That covers air freight, fuel and security surcharges.",
             "The price includes the air freight and the fuel and security surcharges.",
@@ -95,6 +99,11 @@ TEXT = {
                 "surcharges."
             ),
         ),
+        "basis_zone_pickup": (
+            "That includes air freight, fuel and security surcharges, and pickup by {trucker} at the rate for your area."
+        ),
+        "pickup_address": "Please send the full pickup address, including the postcode, so I can check the pickup rate.",
+        "book_air_only": "If you'd like to book the air leg only, please reply to this email.",
         "bulky": (
             "As the cargo is bulky for its weight, the airline charges it on {chargeable} kg volume weight.",
             "Because of the volume, the freight is calculated on {chargeable} kg chargeable weight.",
@@ -116,6 +125,9 @@ TEXT = {
         "days": "days",
         "arrival": "With the cargo ready on {ready}, the earliest arrival {where} would be {arrive}.",
         "arrival_pickup": "With pickup on {ready}, the earliest arrival {where} would be {arrive}.",
+        "arrival_air_only": (
+            "If you deliver the cargo to {origin} on {ready}, the earliest arrival {where} would be {arrive}."
+        ),
         "departure": "That is with a departure from {origin} on {depart}.",
         "one_awb": "All lots travel together as one consignment under a single air waybill, as you asked.",
         "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
@@ -184,6 +196,10 @@ TEXT = {
                 ),
             ),
         },
+        "air_only": (
+            "Der Preis von Flughafen {origin} bis Flughafen {destination} mit {carrier} beträgt {total} {currency}, "
+            "die Laufzeit {transit}. Die Abholung ist nicht enthalten."
+        ),
         "basis": (
             "Enthalten sind Luftfracht, Treibstoff- und Sicherheitszuschlag.",
             "Der Preis umfasst die Luftfracht sowie Treibstoff- und Sicherheitszuschlag.",
@@ -195,6 +211,14 @@ TEXT = {
                 "Sicherheitszuschlag."
             ),
         ),
+        "basis_zone_pickup": (
+            "Enthalten sind Luftfracht, Treibstoff- und Sicherheitszuschlag sowie die Abholung durch {trucker} "
+            "zum Tarif für Ihre Region."
+        ),
+        "pickup_address": (
+            "Bitte senden Sie mir die vollständige Abholadresse mit Postleitzahl, damit ich den Abholpreis prüfen kann."
+        ),
+        "book_air_only": "Wenn Sie nur die Luftfracht buchen möchten, antworten Sie bitte auf diese E-Mail.",
         "bulky": (
             "Da die Ware für ihr Gewicht viel Platz braucht, rechnet die Airline mit {chargeable} kg Volumengewicht.",
             "Wegen des Volumens wird die Fracht auf {chargeable} kg frachtpflichtiges Gewicht berechnet.",
@@ -215,6 +239,9 @@ TEXT = {
         "days": "Tage",
         "arrival": "Ist die Ware am {ready} bereit, wäre sie frühestens am {arrive} {where}.",
         "arrival_pickup": "Mit Abholung am {ready} wäre die Ware frühestens am {arrive} {where}.",
+        "arrival_air_only": (
+            "Wenn Sie die Ware am {ready} in {origin} anliefern, wäre sie frühestens am {arrive} {where}."
+        ),
         "departure": "Der Abflug ab {origin} wäre dann am {depart}.",
         "one_awb": "Alle Positionen reisen wie gewünscht zusammen als eine Sendung unter einem Luftfrachtbrief.",
         "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
@@ -393,8 +420,10 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
             arrive = ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
             city = city_of(request, option.destination)
             where = t["in_city" if city else "at_airport"].format(place=city or option.destination)
-            said.append(t["arrival_pickup" if option.trucker else "arrival"].format(
-                ready=_day(ready, t), arrive=_day(arrive, t), where=where))  # fmt: skip
+            arrival = "arrival_pickup" if option.trucker else "arrival_air_only" if rfq.door_pickup else "arrival"
+            said.append(
+                t[arrival].format(ready=_day(ready, t), arrive=_day(arrive, t), origin=option.origin, where=where)
+            )
             if DEPARTURE.search(request):
                 depart = arrive - timedelta(days=option.transit_days)
                 said.append(t["departure"].format(origin=option.origin, depart=_day(depart, t)))
@@ -466,29 +495,34 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     t = TEXT[lang]
     pick = random.Random(rfq.session_id).choice  # wording varies by session; one session always reads the same
     tone = register(request)
-    core = pick(t["core"]["fastest" if rfq.preference == Preference.FASTEST else "cheapest"]).format(
+    air_only = rfq.door_pickup and not option.trucker
+    needs_address = rfq.door_pickup and not rfq.pickup_postcode
+    preference = "fastest" if rfq.preference == Preference.FASTEST else "cheapest"
+    core = t["air_only"] if air_only else pick(t["core"][preference])
+    if option.trucker:
+        basis = t["basis_zone_pickup"] if needs_address else pick(t["basis_pickup"])
+    else:
+        basis = pick(t["basis"])
+    price_line = core.format(
         origin=option.origin, destination=option.destination, carrier=option.carrier,
         total=money(option.total), currency=option.currency, transit=_transit(option, t),
     )  # fmt: skip
     goods = goods_of(request) if "intro_goods" in t else None
-    offer = [
-        _sentence(prose.intro)
-        if prose.intro
-        else pick(t["intro_goods"]).format(goods=goods)
-        if goods
-        else pick(t["intro"]),
-        core,
-        # their word for the place: "our warehouse" is answered with "your warehouse"
-        pick(t["basis_pickup"]).format(
-            trucker=option.trucker, site="warehouse" if WAREHOUSE.search(request) else "site"
-        )
-        if option.trucker
-        else pick(t["basis"]),
-    ]
+    if prose.intro and not air_only:
+        intro = _sentence(prose.intro)
+    elif goods:
+        intro = pick(t["intro_goods"]).format(goods=goods)
+    else:
+        intro = pick(t["intro"])
+    site = "warehouse" if WAREHOUSE.search(request) else "site"
+    offer = [intro, price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
     book = [pick(t["valid"]).format(until=_until(rfq, option, t))] if option.valid_until else []
-    book.append(pick(t["book"]))  # the mail ends on the booking sentence: no stock closing line (R31)
+    if needs_address:
+        book.append(t["pickup_address"])
+    else:
+        book.append(t["book_air_only"] if air_only else pick(t["book"]))
     name = prose.first_name or signed_name(request, signer)
     wish, bye = in_kind(request, lang, tone, name)
     lines = [
@@ -524,7 +558,7 @@ def render(
     signer: str = DEFAULT_SIGNER,
     request: str = "",
 ) -> tuple[str, str]:
-    """Subject and body of the quote: one option, one all-in total with its currency and transit time, in the
+    """Subject and body of the quote: one option, one total with its scope, currency and transit time, in the
     customer's language. Numbers are formatted by code from `option`, never by a model. `subject` is the
     customer's, answered with `Re:`. When the finished mail fails `check` or the slots break the rendering, it is
     rendered again without slots."""

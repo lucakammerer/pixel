@@ -2,13 +2,14 @@
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from pixel.config import Settings
 from pixel.contracts import MailKind, Message, Quote
 from pixel.core import outbox
 from pixel.core.context import Context
 from pixel.core.events import emit
+from pixel.core.timing import now
 
 EXPIRES_AFTER = timedelta(minutes=6)
 FALLBACK_POLL_S = 2.0
@@ -31,10 +32,6 @@ def deadline_for(received_at: datetime, settings: Settings) -> Deadline:
     )
 
 
-def now() -> datetime:
-    return datetime.now(UTC)
-
-
 def _error(ctx: Context, where: str, e: BaseException, message: Message) -> None:
     emit(ctx, "error", "orchestrator", session_id=message.session_id, message_id=message.id,
          payload={"where": where, "error": f"{type(e).__name__}: {e}"})  # fmt: skip
@@ -50,12 +47,20 @@ async def dispatch(ctx: Context, message: Message) -> None:
     from pixel.agents.tracking import agent as tracking
     from pixel.pricing import bids
 
-    try:
-        kind = await router.classify(ctx, message)
-    except Exception as e:  # noqa: BLE001
-        _error(ctx, "route", e, message)
-        kind = MailKind.OTHER if message.in_reply_to or message.references else MailKind.CUSTOMER_RFQ
-    ctx.db.execute("UPDATE messages SET kind = ? WHERE id = ?", (kind.value, message.id))
+    done = ctx.db.execute("SELECT completed FROM mail_work WHERE message_id=?", (message.id,)).fetchone()
+    if done and done["completed"]:
+        return
+    message = await outbox.reconcile_reply(ctx, message)
+    stored = ctx.db.execute("SELECT kind FROM messages WHERE id = ?", (message.id,)).fetchone()
+    if stored and stored["kind"]:
+        kind = MailKind(stored["kind"])
+    else:
+        try:
+            kind = await router.classify(ctx, message)
+        except Exception as e:  # noqa: BLE001
+            _error(ctx, "route", e, message)
+            kind = MailKind.OTHER if message.in_reply_to or message.references else MailKind.CUSTOMER_RFQ
+        ctx.db.execute("UPDATE messages SET kind = ? WHERE id = ?", (kind.value, message.id))
     message = message.model_copy(update={"kind": kind})
     handlers = {
         MailKind.CUSTOMER_RFQ: lambda: quote_with_deadline(ctx, message),
@@ -67,12 +72,13 @@ async def dispatch(ctx: Context, message: Message) -> None:
         MailKind.TRACKING_QUESTION: lambda: tracking.handle(ctx, message),
     }
     handler = handlers.get(kind)
-    if handler is None:
-        return
     try:
-        await handler()
+        if handler:
+            await handler()
     except Exception as e:  # noqa: BLE001
         _error(ctx, kind.value, e, message)
+        return
+    ctx.db.execute("UPDATE mail_work SET completed = 1 WHERE message_id = ?", (message.id,))
 
 
 def _open_session(ctx: Context, message: Message, deadline: Deadline) -> None:
@@ -91,9 +97,18 @@ async def quote_with_deadline(ctx: Context, message: Message) -> None:
     deadline = deadline_for(message.sent_at, ctx.settings)
     _open_session(ctx, message, deadline)
     session_id = message.session_id
-    task = asyncio.ensure_future(rfq.handle(ctx, message, deadline))
+    if outbox.quoted(ctx, session_id):
+        return
+    if now() >= deadline.expires_at:
+        _missed(ctx, session_id, "expired")
+        return
+    task = asyncio.create_task(rfq.handle(ctx, message, deadline))
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout=max(0.0, (deadline.hard_at - now()).total_seconds()))
+    except asyncio.CancelledError:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise
     except TimeoutError:
         pass
     except outbox.NotSent:
@@ -101,8 +116,16 @@ async def quote_with_deadline(ctx: Context, message: Message) -> None:
     except Exception as e:  # noqa: BLE001
         _error(ctx, "rfq", e, message)
     if outbox.quoted(ctx, session_id):
-        return
+        # A POST can still be in flight at hard_at. Keep reading its receipt until expiry.
+        if not task.done():
+            try:
+                await asyncio.wait_for(task, max(0.0, (deadline.expires_at - now()).total_seconds()))
+            except Exception as e:  # noqa: BLE001  track any failed delivery
+                _error(ctx, "quote_delivery", e, message)
+        if outbox.quoted(ctx, session_id):
+            return
     task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
     await _fallback(ctx, message, deadline)
 
 
@@ -119,17 +142,21 @@ async def _fallback(ctx: Context, message: Message, deadline: Deadline) -> None:
         return
     quote = quote.model_copy(update={"fallback": True})
     try:
-        await outbox.send_quote(ctx, quote)
+        async with asyncio.timeout(max(0.0, (deadline.expires_at - now()).total_seconds())):
+            await outbox.send_quote(ctx, quote)
     except outbox.NotSent as e:
-        if e.reason != "dry_run" and e.reason != "duplicate_quote":
-            _missed(ctx, session_id, e.reason)
+        if e.reason != "dry_run":
+            if e.reason != "duplicate_quote":
+                _missed(ctx, session_id, e.reason)
             return
     except Exception as e:  # noqa: BLE001
         _error(ctx, "fallback_send", e, message)
-        _missed(ctx, session_id, "send_failed")
+        if not outbox.quoted(ctx, session_id):
+            _missed(ctx, session_id, "send_failed")
         return
     emit(ctx, "quote.fallback", "orchestrator", session_id=session_id,
-         payload={"quote": quote.id, "total": str(quote.total), "currency": quote.currency})  # fmt: skip
+         payload={"quote": quote.id, "total": str(quote.total), "currency": quote.currency,
+                  "complete_service": not quote.rfq.door_pickup or bool(quote.option.trucker)})  # fmt: skip
 
 
 async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Quote | None:
@@ -139,25 +166,32 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     from pixel.agents.rfq import agent as rfq
 
     loop = asyncio.get_running_loop()
-    # A dry run holds its bid requests and a replay gets no mail beyond its captured ones: no late price can reach
-    # either, and waiting would hold every unpriced request of the offline KPI until hard_at.
+    # A dry run holds outgoing bids. Replays report whether a later captured reply can still arrive.
     late = not ctx.settings.dry_run and getattr(ctx.mailbox, "late_mail", True)
     wait = (deadline.hard_at - now()).total_seconds() if late else 0.0
     until = loop.time() + max(0.0, wait)
     failed = waiting = False
     while True:
+        if outbox.quoted(ctx, message.session_id):
+            return None
+        at_deadline = loop.time() >= until
+        quote = None
         try:
-            quote = await rfq.fallback(ctx, message.session_id)
+            if at_deadline:
+                quote = await rfq.fallback(ctx, message.session_id, allow_partial=True)
+            elif not outbox.taken_over(ctx, message.session_id):
+                quote = await rfq.fallback(ctx, message.session_id)
         except Exception as e:  # noqa: BLE001
             if not failed:
                 _error(ctx, "fallback", e, message)
             failed, quote = True, None
-        if quote is not None or loop.time() >= until or outbox.quoted(ctx, message.session_id):
+        if quote is not None or at_deadline:
             return quote
         if not waiting:
             waiting = True
             emit(ctx, "quote.waiting", "orchestrator", session_id=message.session_id,
-                 payload={"reason": "no_price", "until": deadline.hard_at.isoformat()})  # fmt: skip
+                 payload={"reason": "human" if outbox.taken_over(ctx, message.session_id) else "no_complete_price",
+                          "until": deadline.hard_at.isoformat()})  # fmt: skip
         await asyncio.sleep(min(FALLBACK_POLL_S, until - loop.time()))
 
 
@@ -171,16 +205,18 @@ async def recover(ctx: Context) -> None:
     stored mail that was never routed is dispatched again. Returns at once; the work runs as tasks."""
     from pixel.core.poller import spawn
 
+    outbox.repair_receipts(ctx)
     cutoff = (now() - EXPIRES_AFTER).isoformat()
     rows = ctx.db.execute(
-        "SELECT m.data, m.kind FROM messages m LEFT JOIN sessions s ON s.id = m.session_id AND m.kind = ?"
-        " WHERE m.direction = 'in' AND m.sent_at > ? AND (m.kind IS NULL OR (m.kind = ? AND s.state = 'open'))"
-        " ORDER BY m.id",
-        (MailKind.CUSTOMER_RFQ.value, cutoff, MailKind.CUSTOMER_RFQ.value),
+        "SELECT m.data FROM messages m LEFT JOIN mail_work w ON w.message_id=m.id "
+        "LEFT JOIN sessions s ON s.id=m.session_id WHERE m.direction='in' AND (w.completed=0 OR "
+        "(w.message_id IS NULL AND m.sent_at>? AND (m.kind IS NULL OR (m.kind=? AND s.state='open') OR "
+        "(m.kind=? AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.direction='out' AND r.in_reply_to=m.id "
+        "AND r.purpose='tracking') AND NOT EXISTS (SELECT 1 FROM events e WHERE e.session_id=m.session_id "
+        "AND e.kind='mail.held' AND json_extract(e.payload,'$.in_reply_to')=m.id))))) ORDER BY m.id",
+        (cutoff, MailKind.CUSTOMER_RFQ.value, MailKind.TRACKING_QUESTION.value),
     ).fetchall()
     for row in rows:
         message = Message.model_validate_json(row["data"])
-        if row["kind"] is None:
-            spawn(ctx, dispatch(ctx, message))
-        elif not outbox.quoted(ctx, message.session_id):
-            spawn(ctx, quote_with_deadline(ctx, message.model_copy(update={"kind": MailKind.CUSTOMER_RFQ})))
+        ctx.db.execute("INSERT OR IGNORE INTO mail_work(message_id) VALUES (?)", (message.id,))
+        spawn(ctx, dispatch(ctx, message))

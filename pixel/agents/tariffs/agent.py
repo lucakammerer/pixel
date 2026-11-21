@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import hashlib
 import io
@@ -359,9 +360,22 @@ def check(tariffs: list[LaneTariff]) -> list[str]:
             findings.append(f"{lane}: breaks not ascending")
         if any(r <= 0 for r in rates) or any(b > a for a, b in itertools.pairwise(rates)):
             findings.append(f"{lane}: rates must be positive and fall as weight rises")
-        if t.fuel_per_kg < 0 or t.security_per_kg < 0 or t.fuel_per_kg + t.security_per_kg >= rates[0]:
+        if t.fuel_per_kg < 0 or t.security_per_kg < 0 or (rates and t.fuel_per_kg + t.security_per_kg >= rates[0]):
             findings.append(f"{lane}: surcharges {t.fuel_per_kg}/{t.security_per_kg}")
     return findings
+
+
+def _pdf_pages(content: bytes) -> tuple[bytes, ...]:
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(content)) as pdf:
+        pages = []
+        for page in pdf.pages:
+            image = page.to_image(resolution=144).original
+            with io.BytesIO() as stream:
+                image.convert("RGB").save(stream, format="JPEG")
+                pages.append(stream.getvalue())
+        return tuple(pages)
 
 
 async def _ingest(ctx: Context, source: str, files: list[tuple[str, bytes]], session_id: int | None = None) -> None:
@@ -371,6 +385,15 @@ async def _ingest(ctx: Context, source: str, files: list[tuple[str, bytes]], ses
             if store.has_source(ctx, source):
                 return
             tariffs = await read_with_model(ctx, source, tuple(content for _, content in files))
+        elif Path(filename).suffix.lower() == ".pdf":
+            content = files[0][1]
+            try:
+                tariffs = await asyncio.to_thread(parse, source, content)
+            except ValueError:
+                if store.has_source(ctx, source):
+                    return
+                pages = await asyncio.to_thread(_pdf_pages, content)
+                tariffs = await read_with_model(ctx, source, pages)
         else:
             tariffs = parse(source, files[0][1])
         findings = check(tariffs)

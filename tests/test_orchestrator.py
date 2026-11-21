@@ -22,7 +22,7 @@ async def test_fallback_sends_at_hard_at_when_the_agent_hangs(conn, monkeypatch)
     async def handle(ctx, message, deadline):
         await hung.wait()
 
-    async def fallback(ctx, session_id):
+    async def fallback(ctx, session_id, *, allow_partial=False):
         return make_quote(rfq, "Q-fallback")
 
     monkeypatch.setattr(rfq_agent, "handle", handle)
@@ -40,7 +40,7 @@ async def test_missed_when_there_is_no_price(conn, monkeypatch):
     async def handle(ctx, message, deadline):
         raise RuntimeError("no lane")
 
-    async def fallback(ctx, session_id):
+    async def fallback(ctx, session_id, *, allow_partial=False):
         return None
 
     monkeypatch.setattr(rfq_agent, "handle", handle)
@@ -60,7 +60,7 @@ async def test_an_agent_that_gives_up_early_still_quotes_a_price_that_arrives_be
     async def handle(ctx, message, deadline):
         return None  # no price yet: a late bid is still on its way
 
-    async def fallback(ctx, session_id):
+    async def fallback(ctx, session_id, *, allow_partial=False):
         calls.append(session_id)
         return make_quote(rfq, "Q-late") if len(calls) >= 3 else None
 
@@ -96,7 +96,7 @@ async def test_one_quote_when_the_agent_answers_in_time(conn, monkeypatch):
     async def handle(ctx, message, deadline):
         return await outbox.send_quote(ctx, make_quote(rfq))
 
-    async def fallback(ctx, session_id):
+    async def fallback(ctx, session_id, *, allow_partial=False):
         raise AssertionError("no fallback after a sent quote")
 
     monkeypatch.setattr(rfq_agent, "handle", handle)

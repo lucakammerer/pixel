@@ -82,19 +82,19 @@ webhook       POST /hook: the mailbox pushes each new mail, signed          mail
 poller        GET /v1/mailbox/messages?since_id=…  every second, the safety net; a mail is stored once
 router        rules on sender, thread, attachments; model only if unsure   route
 orchestrator  customer_rfq → session row + a task with a deadline (target 100 s, hard 315 s, expiry 360 s)
-  rfq agent     extract (rules, else one model call)                   rfq.extracted
-                pricing.engine.options, all sources at once:
-                  sheets   store.lookup → calc.price_tariff            option.found   (milliseconds)
-                  portal   lanes cached; one rate read per airline     option.found   (seconds)
-                  bids     mail to airlines not priced otherwise       bid.requested → bid.received → option.found
-                  pickup   door-to-port: mail to the zone's truckers   option.found
+  rfq agent     read customer mail and attachment facts                 rfq.extracted
+                pricing.engine.options:
+                  sheets   publish local prices                         option.found
+                  portal   actual weight, then the next break           option.found
+                  bids     mail carriers with outstanding prices        bid.requested → bid.received
+                  pickup   mail truckers for a door-to-port request     option.found
                 selection.select → compose.render → outbox.send_quote  quote.sent
-  fallback      at hard_at without a quote, or at once when the agent fails or returns without one:
-                best stored option, code only                          quote.fallback | quote.missed
-customer_reply      accept → crm shipment → portal booking by rate_id → customer told    booking.booked
+  fallback      watch stored options for a complete price              quote.waiting
+                hard deadline: send available scope or record a miss   quote.fallback | quote.missed
+customer_reply      affirmative booking of a delivered quote → shipment → book by rate id or mail
 booking_confirmation  "Booking … confirmed" → shipment confirmed → customer told         booking.confirmed
-tracking_question   crm.shipments.find → answer in the thread          tracking.answered
-tariff              attachments → parse (code, else model) → check → store   tariff.ingested
+tracking_question   CRM lookup → one identified shipment or a request for its reference   tracking.answered
+tariff              attachments → parse → validate → activate          tariff.ingested | tariff.failed
 feedback            core/feedback.py every 10 s: points per request, the option the scorer's best price was,
                     the balanced rule that fits; what needs repair goes to PIXEL_ALERT_URL        feedback
 ```
@@ -128,13 +128,15 @@ own and names our mail by its subject; `session_of` takes the session of our lat
 subject. Mail without a customer thread (a tariff mail) is a session of its own. Every outgoing mail is stored with its `purpose` (`bid_request`, `quote`,
 `fallback_quote`, `human`, ...); the router reads it to place the answers.
 
-`messages` holds every mail in and out once, by its API id, with the full `Message` as JSON; `sessions` holds one
-row per RFQ (customer, state `open`, `quoted` or `missed`, mode `auto` or `human`). Mail leaves only through
-`core/outbox.py`, which refuses (`NotSent`) before the API is called: an address outside R5 (`recipient`), dry run
-(`dry_run`, emits `mail.held`), a session a person took over (`human`) and a second quote in a session
-(`duplicate_quote`). The quote slot is a row `quote:<session>` in `kv`, inserted before the first `await`, so two
-racing tasks cannot both send; a failed send frees it for the fallback, a dry-run hold keeps it. The mail limit
-(R7) is a one-minute window in the process, and a 429 is waited out, never dropped.
+The poller stores the incoming mail and a pending `mail_work` row together. The router records the kind, and
+`orchestrator.dispatch` marks the work complete after the handler returns. A restart can therefore resume a
+classified tracking question, bid or booking reply whose handler was interrupted.
+
+`core/outbox.py` waits for a mail slot before it durably claims delivery. A confirmed mailbox receipt records the
+outgoing message, event and the sent quote together. A definite rejection releases the claim. If the process loses
+the response after submitting a mail, the claim stays pending to prevent a duplicate. A later reply that names the
+missing parent can confirm delivery through `outbox.reconcile_reply`. Without a matching receipt, delivery remains
+unconfirmed.
 
 Every step appends an `Event` (`core/events.py` `KINDS`). Tables other than `events` hold current state for fast
 queries (`sessions`, `quotes`, `bookings`, `shipments`, `tariffs`); the log is what the UI shows and what
@@ -151,45 +153,40 @@ mail, not from when we polled it:
 | `hard_at` | +315 s | The fallback sends the best stored option, built by code alone (P3) |
 | `expires_at` | +360 s | The request is lost (R1) |
 
-Before `target_at` the RFQ agent sends as soon as waiting cannot change the answer. Past `target_at` it keeps waiting
-only when the request has no price at all yet or when an outstanding bid can still beat the best option, and every
-bid by mail gets `PIXEL_BID_WAIT_S` from our ask even when a late start leaves less before `target_at`; a second
-past `target_at` costs about a sixteenth of a point, a quote outside 5% costs everything. These thresholds are
-settings, tuned from `/v1/board/me`, never constants in code.
+Sheets are priced locally. The portal publishes actual-weight prices before optional higher-break reads. Carrier
+mail can start while portal reads are pending. Bid collection ends when all expected replies arrive or its window
+closes. That window runs until the later of `target_at` and `PIXEL_BID_WAIT_S` after the enquiries, capped at
+`hard_at`. A late start therefore still leaves time for a trucker to price the pickup.
 
-A restart inside a deadline loses nothing: `since_id` is stored after each mail, and `orchestrator.recover`
-restarts the task of every open session younger than 6 minutes without a quote and dispatches every stored mail that
-was never routed. Tests drive the deadlines with a fake clock (`orchestrator.now`).
+If the live agent finishes without a complete price, the fallback checks stored options for the current lane
+until a complete price arrives or `hard_at` is reached. A door request needs a priced trucker before then. At
+`hard_at`, an available airport-to-airport price may be sent with pickup excluded and `complete_service=false`.
+A missing postcode prompts a request for the pickup address in that quote. If air freight itself is still
+unpriced, the orchestrator emits `quote.missed`.
+
+Offline KPI replay advances its clock through bid waits and deadlines. A replay with scheduled replies can still
+receive a captured late bid. A single-request online replay can skip the final wait for incoming mail.
+
+`orchestrator.recover` repairs receipts, resumes unfinished handlers and applies the original expiry to RFQs.
+`tools.window` measures the deployment window from the latest RFQ's stored receipt time when available.
 
 ### 4.5 Model use
 
-`llm.ask_json` is the only call site. Default per quote: one call. Where rules extract the request with certainty,
-the one call is the smallest one that still earns the cost points (R28) and does useful work: checking the
-extraction, or the opening line of the mail. Calls happen only for: an RFQ the rules cannot read, a carrier answer
-the rules cannot read, a tariff layout the code parsers refuse (the scanned sheet), a customer mail the router
-cannot place. Each call has a hard output limit and a per-session budget; a call that would pass the budget raises
-and the code path continues without it. Numbers in a mail are formatted by code from the `RateOption`; a model never
-writes a price.
+All operational model calls pass through `llm.ask_json`. A request read by rules usually gets one call for
+short prose slots. If the model reads the request, the same call supplies those slots. Other calls cover an
+uncertain route, a guessed airport outside the served set, a carrier reply the rules cannot parse, or transcription
+of a tariff image or PDF page. Calls have output limits. Session calls check the recorded session spend before
+starting. Code calculates and formats customer prices. Gateway failures are reported using a safe error category.
 
 ### 4.6 Stepping in
 
-A person can take a session over in the UI (`mode = human`): automatic mail for that session is held as drafts and
-shown for editing. The deadline fallback still sends unless the person has sent a quote: taking over never causes a
-missed request. In `core/outbox.py` mail with purpose `human` (sent by a person from the UI) and the fallback quote
-pass a takeover; every other automatic mail of that session is held.
+During takeover, airline, trucker and rate-desk sourcing can continue. The operator can edit a priced draft and
+send it through `outbox.send_quote(operator=True)` while the session remains in human mode. The send route checks
+the total, currency, carrier and transit. The outbox blocks a free-text first reply to the customer. Other held
+customer mail appears in the session as drafts.
 
-What the sessions UI (`pixel/ui/routes.py`) relies on from the other packages:
-
-- `app.state.ctx` holds the `Context` (set in `pixel/app.py` `lifespan`).
-- `route` events carry `{"kind": <MailKind>}`; `option.found` carries `{"option": <RateOption as JSON>}`;
-  `mail.held` carries `to`, `subject`, `body` and `reason`, so the person can edit and send the draft.
-- The RFQ agent stores its quote with `crm.quotes.save` as a draft and again once sent; the session view and the
-  person's send read it from there. While the quote is a draft, what the person sends is that quote
-  (`outbox.send_quote`), so first-quote-only and the fallback see it.
-- In a session a person took over, the outbox lets `send` with `purpose="human"` through. `send_quote` has no such
-  path, so the send route lifts the session to auto only around that one call (`_send_quote_as_person`); the
-  outbox's quote claim keeps the agent from sending a second quote meanwhile.
-- `mail.held` with reason `human` is shown as a draft; reason `dry_run` is not.
+If the operator leaves the request unanswered, the automatic fallback may send at `hard_at`. Release restores
+automatic handling before then. Both sends use the same session quote claim and the CRM stores the delivered offer.
 
 ---
 

@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, quote_plus
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
+from pixel.agents.rfq import compose
 from pixel.contracts import Event, QuoteStatus
 from pixel.core import events, outbox
 from pixel.core.context import Context
@@ -268,19 +269,6 @@ async def stream(request: Request, session_id: int | None = None, after_id: int 
     return StreamingResponse(frames(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
-async def _send_quote_as_person(ctx: Context, quote):
-    """`outbox.send_quote` holds every quote in a session a person took over. The person's own quote has to pass,
-    so the session is lifted to auto only around the call: the outbox claims the quote before its first await, so
-    the automatic agent can no longer send a second one in that window."""
-    if not outbox.taken_over(ctx, quote.session_id):
-        return await outbox.send_quote(ctx, quote)
-    ctx.db.execute("UPDATE sessions SET mode = 'auto' WHERE id = ?", (quote.session_id,))
-    try:
-        return await outbox.send_quote(ctx, quote)
-    finally:
-        ctx.db.execute("UPDATE sessions SET mode = 'human' WHERE id = ?", (quote.session_id,))
-
-
 def _back(session_id: int, error: str = "") -> RedirectResponse:
     return RedirectResponse(f"/sessions/{session_id}" + (f"?error={quote_plus(error)}" if error else ""), 303)
 
@@ -319,7 +307,11 @@ async def send(request: Request, session_id: int):
             and quote.status == QuoteStatus.DRAFT
             and to.lower() == quote.rfq.customer.lower()
         ):
-            sent = await _send_quote_as_person(ctx, quote.model_copy(update={"subject": subject, "body": body}))
+            if not compose.check(body, quote.rfq, quote.option):
+                return _back(session_id, "Keep the quote total, currency, carrier and transit time in the first reply.")
+            sent = await outbox.send_quote(
+                ctx, quote.model_copy(update={"subject": subject, "body": body}), operator=True
+            )
             quotes.save(ctx, sent)
         else:
             reply_to = ctx.db.execute(

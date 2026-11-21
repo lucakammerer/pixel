@@ -52,3 +52,21 @@ async def test_late_cost_points_update_the_row(pipe, runs):
     assert "| 38 |" in line and "checked by hand" in line
     payloads = pipe.ctx.db.execute("SELECT COUNT(*) FROM events WHERE kind = 'score'").fetchone()[0]
     assert payloads == 2
+
+
+async def test_live_round_number_and_elapsed_time_are_recorded(pipe, runs):
+    pipe.ctx.board = Board(
+        [
+            {
+                "round_no": 7,
+                "sent_at": "2026-11-21T16:00:00Z",
+                "answered_at": "2026-11-21T16:00:45.250Z",
+                "verdict": "accepted",
+                "points": {"accuracy": 0},
+                "booked": None,
+            }
+        ]
+    )
+    assert await board_me.run(pipe.ctx, runs) == 1
+    saved = board_me._stored(pipe.ctx)["7"]
+    assert saved["seconds"] == 45.25 and saved["points"] == {"accuracy": 0} and saved["booked"] is None
