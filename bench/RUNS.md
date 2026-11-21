@@ -131,6 +131,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   needs." was dropped, as it should be). Read rounds 23 to 28 as a clerk: "compared the airlines on HAM to EZE" is
   not English, and round 27 asked for "the earliest available pickup", which we only implied. Changed: "from HAM to
   EZE", and the pickup date said outright when asked; next: round 27's tracking answer, the first in variant b.
+- 21.11. 19:00 CET: tracking variant b (#126, the record's facts in prose, no block) scored: round 26's question
+  (Tobias Auer, 17:43:52 UTC, answered in the same second, after #126 went live at 17:42) brought +10. Changed:
+  nothing; the tracking sign-off keeps no comma, as in every answer that scored. Next: round 27's question (Jonas
+  Kessler, a carrier booked by mail), then the `human` column after #132.
 
 ### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
 
