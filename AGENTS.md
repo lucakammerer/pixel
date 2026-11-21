@@ -86,6 +86,7 @@ uv run uvicorn pixel.app:app --port 8000        # poller + handlers + UI on http
 uv run pytest -q                                # seconds, no network
 uv run ruff check . && uv run ruff format .
 uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored mail through the pipeline
+uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 tools/deploy.sh                                 # the checked-out commit to the live host, restarts the service
