@@ -20,8 +20,11 @@ ACCEPT = re.compile(
     re.IGNORECASE,
 )
 DECLINE = re.compile(
-    r"\b(decline|no thanks|not proceed|not interested|too expensive|went with|another (?:offer|forwarder)|"
-    r"cancel|absage|ablehnen|zu teuer|kein interesse)\b",
+    r"\b(decline|no thanks|too (?:low|high)|not competitive|pass on|not interested|too expensive|went with|"
+    r"another (?:offer|forwarder)|"
+    r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
+    r"(?:go ahead|accept|book|proceed|confirm|take it|move forward|be moving forward)|"
+    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
     re.IGNORECASE,
 )
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
@@ -30,9 +33,7 @@ EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 def intent(text: str) -> str:
     """accept, decline or other, by rules. A decline wins over an accept word ("we cannot accept")."""
-    if DECLINE.search(text) or re.search(
-        r"\b(?:not|cannot|can't|won't)\s+(?:accept|book|proceed)", text, re.IGNORECASE
-    ):
+    if DECLINE.search(text):
         return "decline"
     return "accept" if ACCEPT.search(text) else "other"
 
