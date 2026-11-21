@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pixel import llm
 from pixel.agents.rfq import compose, extract
 from pixel.contracts import Message, Quote, RateOption, Rfq
-from pixel.core import events, outbox
+from pixel.core import events, feedback, outbox
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.crm import quotes
@@ -71,5 +71,5 @@ async def fallback(ctx: Context, session_id: int) -> Quote | None:
     rfq = session.rfq(ctx, session_id)
     if rfq is None:
         return None
-    options = engine.combine(rfq, session.options(ctx, session_id))
+    options = engine.combine(rfq, session.options(ctx, session_id), feedback.pickup_rule(ctx))
     return _quote(ctx, rfq, options, None, fallback=True) if options else None

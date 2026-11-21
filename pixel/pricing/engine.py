@@ -1,7 +1,7 @@
 import asyncio
 
 from pixel.contracts import RateOption, Rfq, Source
-from pixel.core import events
+from pixel.core import events, feedback
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import bids, calc, pickup, portal_rates, selection, store
@@ -26,7 +26,7 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
     return found
 
 
-def combine(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
+def combine(rfq: Rfq, options: list[RateOption], rule: str = "share_of_best") -> list[RateOption]:
     """Airline options, each with the balanced pickup added for door-to-port (Q4: the best price includes it).
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all."""
     airline = [o for o in options if o.trucker is None]
@@ -35,7 +35,7 @@ def combine(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
         return airline
     # Truckers are carrier bids too (R15): the balanced one, by price and pickup time. Without times, the cheapest.
     if all(o.pickup_hours is not None for o in pickups):
-        best = selection.balanced(pickups, speed=lambda o: o.pickup_hours)
+        best = selection.balanced(pickups, lambda o: o.pickup_hours, rule)
     else:
         best = min(pickups, key=lambda o: (o.total_eur, o.carrier))
     return [calc.with_pickup(o, best.total_eur, best.trucker).model_copy(update={"pickup_hours": best.pickup_hours})
@@ -54,4 +54,5 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
     offers = await bids.collect(ctx, rfq.session_id, deadline, len(mailed)) if mailed else []
     pickups = await pickup_task
-    return combine(rfq, sheets + portal + [o for o in offers if o.source in (Source.BID, Source.RATEDESK)] + pickups)
+    found = sheets + portal + [o for o in offers if o.source in (Source.BID, Source.RATEDESK)] + pickups
+    return combine(rfq, found, feedback.pickup_rule(ctx))

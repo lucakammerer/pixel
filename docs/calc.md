@@ -40,6 +40,10 @@ Decimal only; a model never computes, compares or writes a price (P1).
   cheapest (`engine.combine`). Evidence: `tests/fixtures/pickup-bids.json` holds the trucker bids of two scored
   requests and the bid the scorer's best price contained; this formula picks both, min-max scaling and ranks
   pick the wrong one in the first. Only that winner competes with sheets, portal and the rate desk.
+- The rule is not fixed: `core/feedback.py` reads our points after every request, works back to the scorer's best
+  price (accuracy falls linearly to 0 at 10% off the best price, in either direction: fitted on scored requests, not
+  stated by 5U) and finds the option that total belongs to. `pickup_rule` then uses the entry of `selection.RULES`
+  that picks the scorer's trucker most often, so a request that loses points on the rule corrects the next one.
 
 ## Assumptions until 5U answers (plan §0)
 
