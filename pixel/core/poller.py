@@ -1,27 +1,40 @@
 """Polls the mailbox, stores each mail once, hands it to the orchestrator."""
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 
-from pixel.api.mailbox import mapping_gaps
+from pixel.api.mailbox import RATEDESK, mapping_gaps
 from pixel.contracts import Message
 from pixel.core import db
 from pixel.core.context import Context
 from pixel.core.events import emit
 
 SINCE_KEY = "poller.since_id"
+NAMES_OUR_MAIL = re.compile(r'your mail "(.+?)"')
 
 
 def session_of(ctx: Context, message: Message) -> int:
-    """The customer thread a mail belongs to: via `references`, or via the mail of ours it answers
-    (a carrier bid answers a bid request we sent for a session)."""
+    """The customer thread a mail belongs to: via `references`, via the mail of ours it answers (a carrier bid
+    answers a bid request we sent for a session), or, for the rate desk, via the subject of our mail that its answer names."""
     for ref in (message.in_reply_to, *reversed(message.references)):
         if ref is None:
             continue
         row = ctx.db.execute("SELECT session_id FROM messages WHERE id = ?", (ref,)).fetchone()
         if row:
             return row["session_id"]
-    return message.references[0] if message.references else message.id
+    if message.references:
+        return message.references[0]
+    # The rate desk answers in a thread of its own and names our mail by its subject.
+    if message.sender == RATEDESK and (named := NAMES_OUR_MAIL.search(message.body)):
+        row = ctx.db.execute(
+            "SELECT session_id FROM messages WHERE direction = 'out' AND recipient = ? AND subject = ?"
+            " ORDER BY id DESC LIMIT 1",
+            (message.sender, named.group(1)),
+        ).fetchone()
+        if row:
+            return row["session_id"]
+    return message.id
 
 
 def store(ctx: Context, message: Message) -> bool:

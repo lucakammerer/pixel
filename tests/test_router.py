@@ -5,7 +5,7 @@ import pytest
 
 from pixel import llm
 from pixel.agents.router.agent import classify
-from pixel.api.mailbox import to_message
+from pixel.api.mailbox import RATEDESK, to_message
 from pixel.config import settings
 from pixel.contracts import MailKind
 from pixel.core import poller
@@ -21,7 +21,7 @@ EXPECTED = {
     "synthetic-booking-confirmation.json": MailKind.BOOKING_CONFIRMATION,
     "synthetic-tariff.json": MailKind.TARIFF,
     "synthetic-tracking.json": MailKind.TRACKING_QUESTION,
-    "synthetic-ratedesk.json": MailKind.RATEDESK_REPLY,
+    "ratedesk-portal-rates.json": MailKind.RATEDESK_REPLY,
 }
 
 
@@ -41,9 +41,10 @@ def ctx(conn, monkeypatch):
                  (rfq.id, rfq.sender, rfq.sent_at.isoformat()))  # fmt: skip
     bid = mail("bid-airline-priced.json")
     conn.execute("INSERT INTO carriers (name, kind, email, serves) VALUES ('c', 'airline', ?, '')", (bid.sender,))
-    ours = ((bid.in_reply_to, "bid_request", bid.sender), (901, "quote", rfq.sender), (902, "bid_request", ""))
-    for mail_id, purpose, to in ours:
+    for mail_id, purpose, to in ((bid.in_reply_to, "bid_request", bid.sender), (901, "quote", rfq.sender)):
         _store(ctx, rfq.model_copy(update={"id": mail_id, "direction": "out", "to": to}), purpose)
+    desk = {"id": 902, "direction": "out", "to": RATEDESK, "subject": "Rate request FRA-JFK, 340 kg"}
+    _store(ctx, rfq.model_copy(update=desk), "bid_request")
     return ctx
 
 
@@ -55,6 +56,10 @@ async def test_rules_place_every_fixture(ctx, name):
 
 async def test_carrier_answer_joins_the_rfq_session(ctx):
     assert poller.ingest(ctx, mail("bid-airline-priced.json")).session_id == 1001
+
+
+async def test_the_rate_desks_answer_joins_the_session_of_the_request_it_names(ctx):
+    assert poller.ingest(ctx, mail("ratedesk-portal-rates.json")).session_id == 1001
 
 
 async def test_unclear_new_thread_asks_the_model_once(ctx, monkeypatch):

@@ -23,6 +23,8 @@ Decimal only; a model never computes, compares or writes a price (P1).
   `freight = total`.
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
   code adds them up.
+- **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
+  and validity it states.
 - **Pickup** (`calc.with_pickup`): a trucker's price in EUR, added to every airline option, converted into the
   option's currency with its exchange rate when that is not EUR.
 - **EUR** (`calc.to_eur`): amount × the rate's own exchange rate (EUR per unit), rounded to cents.

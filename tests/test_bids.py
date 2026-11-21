@@ -174,3 +174,19 @@ def test_rules_read_the_captured_airline_bid_and_pickup_bid():
     assert (labelled.total, labelled.currency, labelled.transit_days) == (D("586.80"), "EUR", 6)
     pickup = bids.parse(captured("bid-pickup-priced.json"), rfq(), needs_transit=False)
     assert (pickup.total, pickup.currency) == (D("182.62"), "EUR")
+
+
+async def test_the_captured_rate_desk_answer_gives_one_option_per_priced_airline_without_a_model(ctx, monkeypatch):
+    async def no_model(ctx, **kw):
+        raise AssertionError("the rules must read the desk's answer")
+
+    monkeypatch.setattr(llm, "ask_json", no_model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq().model_dump(mode="json"))
+    await bids.record(ctx, captured("ratedesk-portal-rates.json").model_copy(update={"session_id": 1}))
+    found = [o["option"] for o in kinds(ctx, "option.found")]
+    assert [(o["carrier_code"], o["total"], o["transit_days"], o["source"]) for o in found] == [
+        ("PL", "952.00", 4, "ratedesk"),
+        ("SL", "1149.20", 2, "ratedesk"),
+    ]
+    assert found[0]["rate_id"] == "R-C5nfsmcn3aSHlsgp" and found[0]["valid_until"].startswith("2026-11-21T14:38")
+    assert [r["priced"] for r in kinds(ctx, "bid.received")] == [True]
