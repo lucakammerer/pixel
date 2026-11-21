@@ -260,6 +260,6 @@ def test_an_english_request_from_a_german_town_is_answered_in_english_throughout
 def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
     """Round 14: "Hi there, … Petra Hofmann" above an old "-----Original Message----- … Dear team" went out as
     "Hello," with "Kind regards". Only the customer's own words count."""
-    mail = captured("rfq-door-forwarded-old-request.json")
+    mail = captured("rfq-door-quoted-old-request.json")
     _, body = compose.render(rfq("en"), OPTION, request=mail.body)
     assert body.startswith("Hi Petra,") and "Best wishes," in body

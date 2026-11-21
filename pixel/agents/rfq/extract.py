@@ -301,8 +301,26 @@ def _preference(text: str) -> Preference:
     return Preference.FASTEST
 
 
+# Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
+HISTORY = re.compile(
+    r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht)"
+    r"|(?:from|von):.*@|on .{0,80} wrote:\s*$|am .{0,80} schrieb|>)",
+    re.IGNORECASE | re.MULTILINE,
+)
+REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
+
+
+def _body(message: Message) -> str:
+    """The mail without the older mails quoted below it: round 14 quoted an old request with its own lane and
+    weight under the new one."""
+    cut = HISTORY.search(message.body)
+    return message.body[: cut.start()] if cut and message.body[: cut.start()].strip() else message.body
+
+
 def _text(message: Message) -> str:
-    return f"{message.subject}\n\n{message.body}"
+    """Subject and body; a reply's or forward's subject belongs to the older mail it answers."""
+    subject = "" if REPLY_SUBJECT.match(message.subject) else message.subject
+    return f"{subject}\n\n{_body(message)}"
 
 
 def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:
@@ -452,12 +470,13 @@ def _town_zone(ctx: Context, rfq: Rfq, text: str) -> Rfq:
                                                                                if m != "pickup_postcode")})  # fmt: skip
 
 
-def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
-    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16), also
-    when the origin read from the mail is an airport no pickup zone trucks to (a model's guess from the town)."""
+def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
+    """The pickup zone belongs to one airport (R16): a door-to-port request leaves from it unless the mail itself
+    names its origin airport. A model guesses from the town: XFW for Lueneburg (zone HAM), CGN for Wuppertal (zone
+    DUS); no airline flew those lanes and both requests were missed."""
     if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
         return rfq
-    if rfq.origin and not (rfq.door_pickup and rfq.origin not in store.zone_airports(ctx)):
+    if rfq.origin and not (rfq.door_pickup and rfq.origin not in re.findall(CODE, text)):
         return rfq
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 
@@ -472,7 +491,7 @@ async def dangerous_goods(ctx: Context, message: Message) -> tuple[str, str] | N
     and where: also when the mail itself says "non-dangerous"."""
     from pixel.agents.tariffs.agent import _lines
 
-    if declared := _declared(message.body.splitlines()):
+    if declared := _declared(_body(message).splitlines()):
         return declared, "mail"
     for attachment in message.attachments:
         try:
@@ -491,7 +510,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     text = _text(message)
     rfq, prose = by_rules(message, deadline), None
-    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text))).origin:
+    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text), text)).origin:
         rfq = None
     if rfq is None:
         try:
@@ -507,7 +526,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = by_rules(message, deadline, guess=True)
-            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text))).origin:
+            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text), text)).origin:
                 raise
             events.emit(
                 ctx,
@@ -524,7 +543,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             )  # fmt: skip  never the gateway's text: it can quote the OpenAI key
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
-            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text))
+            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text), text)
             prose = {k: result.data.get(k) for k in PROSE}
     if dg := await dangerous_goods(ctx, message):
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).

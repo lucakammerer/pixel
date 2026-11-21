@@ -73,6 +73,8 @@ needed". Quoted like any export from the named airport; accepted.
 
 `rfq-door-import-two-towns.json`: door-to-port from 24983 (Kiel), signed "Best greetings from Regensburg", another
 zone's town. Read by the postcode; without one, a pickup town is taken only when the mail names one zone's town.
-- `rfq-door-forwarded-old-request.json`: round 14. A door-to-port request written above an old forwarded request
-  for another lane, another weight and "Dear team": only the customer's own words give the name, the tone and the
-  ready date of our reply (`pixel/agents/rfq/compose.py` `own_text`).
+`rfq-door-quoted-old-request.json`: round 14. A new door-to-port request (42401 Wuppertal to PEK) as "RE: FW:" of
+an old one, which is quoted below it with its own lane and weight (ZRH to MEL, 3,459 kg). The model read it and
+guessed origin CGN; zone 42 is DUS, no airline flew CGN-PEK, the request was missed.
+Our reply takes the name, the tone and the ready date from the customer's own words only
+(`pixel/agents/rfq/compose.py` `own_text`): the old mail below says "Dear team".
