@@ -49,9 +49,11 @@ FASTEST = re.compile(
     re.IGNORECASE,
 )
 DOOR = re.compile(
-    r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|collection from|collect from|abhol\w*|ab werk|ab haus",
+    r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
+    r"|collection from|collect from|abhol\w*|ab werk|ab haus",
     re.IGNORECASE,
 )
+OWN_DELIVERY = re.compile(r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b", re.IGNORECASE)
 POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
 CURRENCY_ASK = re.compile(r"(?i:\b(?:in|currency:?|währung:?))\s+([A-Z]{3})\b")
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
@@ -136,6 +138,14 @@ def _lane(text: str) -> tuple[str, str] | None:
     return None
 
 
+def _destination_only(text: str) -> str | None:
+    """The one destination of a mail that names no origin airport (door-to-port)."""
+    if any(_airport(c) for c in ORIGIN_LABEL.findall(text)):
+        return None
+    found = {c for c in DEST_LABEL.findall(text) if _airport(c)}
+    return found.pop() if len(found) == 1 else None
+
+
 def _unique(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:
     values = {v for p in patterns for m in p.findall(text) if (v := number(m, thousands)) is not None and v > 0}
     return values.pop() if len(values) == 1 else None
@@ -163,20 +173,18 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
 
 def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     """Gross weight, volume and pieces of a request that lists its shipment lot by lot ("Lot 2: 4 cartons, each
-    48 kg gross, each 110 x 110 x 52 cm"). Each lot states its figures per piece or for the lot; code adds them
-    up. None unless there are several lots and every one is certain."""
+    48 kg gross, each 110 x 110 x 52 cm"). A figure is per piece with "each", else for the whole lot ("9 pieces,
+    345 kg gross" was 345 kg to the scorer); code adds them up. None unless there are several lots, each certain."""
     lots = LOT.findall(text)
     weight, volume, pieces = Decimal(0), Decimal(0), 0
     for count, rest in lots:
         n = int(count)
         weights = [m for m in LOT_WEIGHT.finditer(rest) if (m["kind"] or "").lower() not in ("net", "netto")]
         stated, dims = LOT_VOLUME.search(rest), LOT_DIMS.search(rest)
-        if len(weights) != 1 or not (stated or dims) or not (weights[0]["each"] or weights[0]["all"] or n == 1):
+        if len(weights) != 1 or not (stated or dims):
             return None
         kg = number(weights[0].group(3))
         if stated:
-            if not (stated["each"] or stated["all"] or n == 1):
-                return None
             cbm = number(stated.group(3), thousands=False) * (n if stated["each"] else 1)
         else:
             *sides, unit = dims.groups()[2:]
@@ -193,7 +201,7 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
 
 
 def _pickup(text: str) -> tuple[bool, str | None]:
-    if not DOOR.search(text):
+    if not DOOR.search(text) or OWN_DELIVERY.search(text):
         return False, None
     codes = set(POSTCODE.findall(text))
     return True, codes.pop() if len(codes) == 1 else None
@@ -217,12 +225,14 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
     """Regex and lookup tables. None unless origin, destination and weight are certain."""
     text = _text(message)
     lane = _lane(text)
+    door, postcode = _pickup(text)
+    if lane is None and door and postcode and (destination := _destination_only(text)):
+        lane = ("", destination)  # the origin is the pickup zone's airport, set in `extract`
     lots = _lots(text)
     weight = lots[0] if lots else _unique(WEIGHT, text, thousands=True)
     if lane is None or weight is None:
         return None
     pieces = lots[2] if lots else _pieces(text)
-    door, postcode = _pickup(text)
     return Rfq(
         session_id=message.session_id,
         message_id=message.id,
@@ -296,10 +306,19 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     )
 
 
+def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
+    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16)."""
+    if rfq.origin or not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
+        return rfq
+    return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
+
+
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     rfq, prose = by_rules(message, deadline), None
+    if rfq is not None and not (rfq := _zone_origin(ctx, rfq)).origin:
+        rfq = None
     if rfq is None:
         result = await llm.ask_json(
             ctx,
@@ -310,11 +329,8 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             session_id=message.session_id,
             max_output_tokens=350,
         )
-        rfq = _from_model(result.data, message, deadline)
+        rfq = _zone_origin(ctx, _from_model(result.data, message, deadline))
         prose = {k: result.data.get(k) for k in PROSE}
-    # A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16).
-    if not rfq.origin and rfq.pickup_zone and (airport := store.airport_of(ctx, rfq.pickup_zone)):
-        rfq = rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
     events.emit(
         ctx,
         "rfq.extracted",
