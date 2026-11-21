@@ -859,3 +859,15 @@ async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
 )
 def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
     assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"})[0]) == excluded
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Please quote AAA to BBB, 300 kg, 1 cbm. We will arrange the truck to your warehouse ourselves.",
+        "Please quote AAA to BBB, 300 kg, 1 cbm, airport to airport. The airline will collect the cargo at BBB.",
+        "Please quote AAA to BBB, 300 kg, 1 cbm. Our consignee will collect the goods at the destination airport.",
+    ],
+)
+def test_someone_else_collecting_the_goods_is_no_door_pickup(body):
+    assert extract.by_rules(mail(body), DEADLINE).door_pickup is False
