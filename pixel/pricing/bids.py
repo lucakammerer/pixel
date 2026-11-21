@@ -89,6 +89,24 @@ VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
+# The desk's list as a table: columns found by their header, in this order, so "Rate id" is no price column.
+DESK_COLUMNS = {
+    "rate_id": r"\brate[ _-]?id\b",
+    "valid": r"\bvalid|\bg(?:ü|ue)ltig",
+    "transit": r"\btransit|\blaufzeit",
+    "code": r"\b(?:code|iata)\b",
+    "name": r"\b(?:airline|carrier|fluggesellschaft)\b",
+    "price": r"\b(?:price|rate|total|all[- ]in|amount|preis)\b",
+}
+# A cell of each column in a row whose cells are one space apart (a pdf table): the header gives their order.
+DESK_CELLS = {
+    "rate_id": r"\S+",
+    "valid": r"\d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2}(?: UTC)?",
+    "transit": r"\d{1,2}(?:\s*days?)?",
+    "code": r"[A-Z0-9]{2,3}",
+    "name": r".+?",
+    "price": rf"(?:{CURRENCY}|[€$£])?\s?{AMOUNT}(?:\s?(?:{CURRENCY}|[€$£]))?",
+}
 VALID_UNTIL = re.compile(r"valid until\s+(\d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2}) UTC")
 DECLINE = re.compile(
     r"\b(?:cannot offer|can't offer|unable to|no capacity|not able to|decline|regret|do not serve|don't serve)\b",
@@ -223,11 +241,52 @@ def parse(message: Message, rfq: Rfq, *, needs_transit: bool = True) -> RateOpti
     return _option(rfq, message, total, currency, fx, days or 0)
 
 
+def _desk_rows(text: str) -> str:
+    """A table of the desk's rates (cells two spaces apart, as `tariffs.agent._lines` joins them) written as the
+    desk's own lines, "- Name (CODE): 952.00 EUR, 4 days, rate_id ..., valid until ... UTC". A row whose cells do
+    not line up with the header is left out."""
+    rows, header, needed = [], None, {"name", "code", "price", "transit", "rate_id"}
+    for line in text.splitlines():
+        cells = [c for c in re.split(r"\s{2,}|\t", line.strip()) if c]
+        found = {}
+        for i, cell in enumerate(cells):
+            key = next((k for k, pattern in DESK_COLUMNS.items() if re.search(pattern, cell, re.IGNORECASE)), None)
+            if key and key not in found:
+                found[key] = i
+        spaced = {}  # one space between the cells: each column's first header word, by its place in the line
+        for key, pattern in DESK_COLUMNS.items():
+            taken = [(s, e) for s, e in spaced.values()]
+            if m := next((m for m in re.finditer(pattern, line, re.IGNORECASE)
+                          if not any(s <= m.start() < e for s, e in taken)), None):  # fmt: skip
+                spaced[key] = (m.start(), m.end())
+        if needed <= found.keys() or (len(cells) == 1 and needed <= spaced.keys()):
+            price_header = cells[found["price"]] if needed <= found.keys() else line[spaced["price"][0] :]
+            currency = re.match(rf"[^()\n]*?\((?:({CURRENCY})|([€$£]))\)", price_header)
+            order = sorted(spaced, key=lambda k: spaced[k][0])
+            row = re.compile(r"^\s*" + r"\s+".join(f"(?P<{k}>{DESK_CELLS[k]})" for k in order) + r"\s*$")
+            header = (len(cells), found, currency and (currency[1] or SYMBOLS[currency[2]]), row)
+            continue
+        if header is None:
+            continue
+        if needed <= header[1].keys() and len(cells) == header[0]:
+            cell = {k: cells[i] for k, i in header[1].items()}
+        elif len(cells) == 1 and (m := header[3].match(line)):
+            cell = m.groupdict()
+        else:
+            continue
+        price = cell["price"] if PRICED.search(cell["price"]) or not header[2] else f"{cell['price']} {header[2]}"
+        transit = cell["transit"] if re.search(r"[a-z]", cell["transit"], re.IGNORECASE) else f"{cell['transit']} days"
+        valid = f", valid until {cell['valid'].removesuffix(' UTC')} UTC" if "valid" in cell else ""
+        rows.append(f"- {cell['name']} ({cell['code']}): {price}, {transit}, rate_id {cell['rate_id']}{valid}")
+    return "\n".join(rows)
+
+
 def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
-    """The rate desk lists the portal's rates for a lane, one airline per line, each with its rate id. Lines
-    without a price (an airline that is not on the portal) are skipped."""
+    """The rate desk lists the portal's rates for a lane, one airline per line, each with its rate id, or as a table
+    in an attachment (`_desk_rows`). Lines without a price (an airline that is not on the portal) are skipped."""
     found = []
-    for line in DESK_LINE.finditer(_own_text(message.body)):
+    text = _own_text(message.body)
+    for line in DESK_LINE.finditer(text if DESK_LINE.search(text) else _desk_rows(text)):
         rest = line["rest"]
         price, transit, rate_id = _price(rest, rfq), _days(rest), RATE_ID.search(rest)
         if not (price and transit and rate_id):
@@ -308,6 +367,28 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
     if total <= 0 or (currency != "EUR" and fx is None) or (needs_transit and not transit):
         return None
     return _option(rfq, message, total, currency, fx, transit or 0)
+
+
+CHECK_WAIT_S = 6
+
+
+async def _crosscheck(
+    ctx: Context, message: Message, rfq: Rfq, option: RateOption, *, needs_transit: bool
+) -> tuple[RateOption, str]:
+    """The rules' reading of an answer checked by the model's (`_read_with_model`, code adds the charges up). Where the
+    totals differ the model's wins: in round 67 the rules read a waiting-time line (45.00 EUR) as the offer, the model
+    read 181.96; on 359 answers of rounds 9 to 72 both read the same. On any failure the rules' reading stands."""
+    try:
+        read = await asyncio.wait_for(_read_with_model(ctx, message, rfq, needs_transit), CHECK_WAIT_S)
+    except Exception as exc:  # noqa: BLE001  the rules' reading stands
+        events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
+                    payload={"where": "bid.crosscheck", "error": type(exc).__name__})  # fmt: skip
+        return option, "rules"
+    if read is None or (read.total, read.currency) == (option.total, option.currency):
+        return option, "rules"
+    events.emit(ctx, "bid.crosscheck", "pricing", session_id=message.session_id, message_id=message.id,
+                payload={"rules": f"{option.total} {option.currency}", "model": f"{read.total} {read.currency}"})  # fmt: skip
+    return read, "model"
 
 
 def _postcode(rfq: Rfq) -> str:
@@ -462,6 +543,8 @@ async def record(ctx: Context, message: Message) -> None:
         message = message.model_copy(update={"body": body})
         listed, option = by_rules(message)
     read_by = "rules"
+    if option is not None and ctx.settings.model_check:
+        option, read_by = await _crosscheck(ctx, message, rfq, option, needs_transit=not pickup)
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call. An offer
     # only in a file code cannot read leaves no price in the text for a model to copy either.
     if (

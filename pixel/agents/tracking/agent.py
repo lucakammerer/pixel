@@ -77,15 +77,20 @@ def greeting(text: str) -> tuple[str, str]:
     return (HELLO[register].format(first=first.split()[0], full=first) if first else "Hello,"), bye
 
 
+def _lane(ctx: Context, text: str) -> re.Match | None:
+    """The first lane the desk names whose destination one of our shipments flies to: "ETD/ETA" is no lane."""
+    return next((m for m in DESCRIBED.finditer(text) if shipments.find(ctx, destination=m.group(3))), None)
+
+
 def described(ctx: Context, text: str) -> list[Shipment]:
     """The tracking desk names no reference. It describes the shipment the way the customer asked for it: the origin
     airport, or the pickup postcode of a door-to-port request, "to" the destination, the gross weight and the
     customer's company name. Origin (or the pickup zone) and weight must agree; when our origin differs from the
     desk's, the company and the weight alone may still name the one shipment."""
-    lane = DESCRIBED.search(text)
-    if not lane:
+    named = _lane(ctx, text)
+    if not named:
         return []
-    origin, postcode, destination = lane.groups()
+    origin, postcode, destination = named.groups()
     weight = WEIGHT.search(text)
     kg = number(weight.group(1)) if weight else None
     words = set(re.findall(r"[a-z0-9]+", text.lower()))
@@ -140,7 +145,7 @@ def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | N
         if all(len(matches) == 1 for matches in sets) and len({matches[0].id for matches in sets}) == 1:
             return sets[0], references[0]
         return [], references[0]
-    if DESCRIBED.search(text):
+    if _lane(ctx, text):
         return described(ctx, text.replace(sender, "")), None
     customers = {e.lower() for e in EMAIL.findall(text) if e.lower() != sender.lower()}
     lane = LANE.search(text)
@@ -232,7 +237,7 @@ def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Det
         if ready is None and len(found) == 1:
             ready = ready_date(question)
         postcode = quote.rfq.pickup_postcode if quote and quote.rfq.door_pickup else None
-        named = DESCRIBED.search(question)
+        named = _lane(ctx, question)
         if postcode and len(found) == 1 and named and named.group(2):
             postcode = named.group(2)  # the asker's own postcode, where ours was filled in from an earlier site
         area = (

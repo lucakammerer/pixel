@@ -166,6 +166,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the fastest option to JFK" names no origin: in `_destination_only` a code both labels reach belongs to the nearer
   one (round 69, where it dropped the customer's answer and no quote went out), so "our truck goes to departure
   airport FRA" stays an origin and never becomes the destination.
+- The customer's answer to our one question can name another airport in passing: "our sister company ships from
+  X", "from X to Y might come later". Read again, that airport became the origin of every door request (40 of 280
+  generated answers). `read_request` `ask` keeps the request's origin and destination unless we asked for them
+  (`lane`), also in the rules' guess when the gateway fails; an unasked door origin stays the zone's airport.
+  Benchmark section 15 answers every captured request this way.
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
@@ -252,7 +257,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   days and no new figure; else the English quote goes out and an `error` event says why.
 - The persona's sign-off stays English or German whatever language the mail is in ("Thanks and regards" under a
   Polish line). `_language` reads the words above it first (`_unsigned`, `SIGN_OFF`), then the attachment or voice
-  message when the mail says nothing else, the sign-off last. A quoted older mail is cut in the customer's
+  message only when the mail holds at most two words besides codes (a German packing list once made "new request
+  attached, FRA-JFK" German), the sign-off last. A quoted older mail is cut in the customer's
   language too ("El jue … escribió:", "-----原始邮件-----", "发件人: …@…": `HISTORY`). `tests/fixtures/rfqs/
   languages.jsonl` holds one probe per case.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says
@@ -283,6 +289,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`_with_attachments`, in a thread: a transcript takes seconds); the others still count. A priced mail is never
   read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
   price.
+- The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
+  181.96 EUR offer). Every answer the rules price is read by the model too (`pricing/bids.py` `_crosscheck`, the
+  same text, code adds the charges up, at most 6 s); where the totals differ the model's wins, as a `bid.crosscheck`
+  event. `PIXEL_MODEL_CHECK` empty turns it off with the request's second reader.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the

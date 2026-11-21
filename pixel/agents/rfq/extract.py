@@ -404,12 +404,16 @@ def _unsigned(text: str) -> str:
 def _language(text: str, said: object = None, attached: str = "") -> str:
     """The script's language, else the language with the most common words, English on a tie (round 70 was French,
     answered in English). The mail's words above its sign-off decide first (a Polish line signed "Thanks and
-    regards" is Polish), then an attachment or voice message (`attached`) when the mail says nothing else, the
-    sign-off last. The model's ISO code (`said`) counts only for a language our word lists do not know: it once
-    answered "de" for an English mail full of German place names."""
+    regards" is Polish), then an attachment or voice message (`attached`) only when the mail holds at most two words
+    besides codes (a German packing list made "new request attached, FRA-JFK" German), the sign-off last. The
+    model's ISO code (`said`) counts only for a language our word lists do not know: it once answered "de" for an
+    English mail full of German place names."""
     said = said.strip().lower() if isinstance(said, str) and re.fullmatch(r"\s*[A-Za-z]{2}\s*", said) else None
     own = said if said not in LANGUAGES else None
-    for part in (_unsigned(text), attached, text):
+    unsigned = _unsigned(text)
+    if len([w for w in re.findall(r"[^\W\d_]+", unsigned) if not w.isupper()]) > 2:
+        attached = ""
+    for part in (unsigned, attached, text):
         if script := _script(part):
             return own or script
         counts = {lang: n for lang, n in words_of(part).items() if n >= 2 or lang not in TWO_WORDS}
@@ -1181,7 +1185,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     sources, text, message = source_inputs()
     cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
 
+    lane: dict[str, str] = {}  # set by `ask`: the request's own origin and destination, which an answer keeps
+
     def rules(guess: bool = False) -> Rfq | None:
+        read = read_rules(guess)
+        return read.model_copy(update=lane) if read else None
+
+    def read_rules(guess: bool) -> Rfq | None:
         if not files:
             return by_rules(mail, deadline, guess=True) if guess else by_rules(mail, deadline)
         # Prefer the customer's routing and instructions; consult the documents if those are missing.
@@ -1204,6 +1214,10 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         mail = mail.model_copy(update={"body": f"{_body(mail)}\n\n{own_words(said)}"})
         sources, text, message = source_inputs()
         cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
+        # The answer fills what we asked for: an airport it names in passing ("our sister company ships from X",
+        # "from X to Y later") never moves the lane the request gave. Unasked, a door request's origin stays empty,
+        # so its pickup zone decides.
+        lane.update({k: getattr(read, k) for k in ("origin", "destination") if k not in facts})
         again = rules()
         if (
             again is None

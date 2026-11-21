@@ -2,6 +2,7 @@
 portal is mocked at HTTP level, carriers and the rate desk answer through `bids.record`."""
 
 import asyncio
+from dataclasses import replace
 from decimal import Decimal as D
 
 import httpx
@@ -40,6 +41,7 @@ def offline(ctx, monkeypatch):  # noqa: F811
         raise AssertionError("no model call on this path")
 
     monkeypatch.setattr(llm, "ask_json", no_model)  # bids.record catches it as an `error` event
+    ctx.settings = replace(ctx.settings, model_check="")  # no second reader on this path
     monkeypatch.setattr(engine, "PORTAL_HEAD_START_S", 0.05)
     with respx.mock(base_url=BASE, assert_all_called=False) as portal:
         ctx.portal = Portal(httpx.AsyncClient(base_url=BASE))

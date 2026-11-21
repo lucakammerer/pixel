@@ -12,7 +12,5 @@
     "our question quoted": "The destination is {dest}.\n\n> Which destination airport should we quote?\n> We could also quote {other}.\n\nRegards",
     "a later shipment": "Hello,\n\nfrom {other} to {dest} might come later in the year, but for now please quote this shipment as stated.\n\nThanks"
   },
-  "known_gaps": {
-    "a later shipment:rfq-door-request-in-txt.json": "The request stands only in its .txt attachment; the answer's \"from X to Y might come later\" is the only lane in the mail, and `read_request`'s rules read the mail before the documents, so the request turns port-to-port from X without the pickup. Owner: Cost."
-  }
+  "known_gaps": {}
 }
