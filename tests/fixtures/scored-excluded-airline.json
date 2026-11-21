@@ -1,0 +1,17 @@
+{
+  "note": "Round 42 of 21.11.2026. FRA-ULN door to port, cheapest, 911 kg, 3.27 cbm. The customer wrote 'Please do not offer Zephyr Steppe Cargo (ZS) for this shipment or for any of our future inquiries.' Four airlines answered by mail; we quoted the cheapest, Zephyr Steppe Cargo, and the scorer rejected it as excluded_airline. The customer declined: 'I told you I do not want this airline'.",
+  "request": "mails/rfq-excluded-airline.json",
+  "preference": "cheapest",
+  "airlines": ["Himalaya Bridge Air", "Lagoon Isles Airways", "Pampero Air Cargo", "Zephyr Steppe Cargo"],
+  "options": [
+    {"source": "bid", "carrier": "Lagoon Isles Airways", "total": "3210.00", "days": 3},
+    {"source": "bid", "carrier": "Himalaya Bridge Air", "total": "3220.00", "days": 6},
+    {"source": "bid", "carrier": "Zephyr Steppe Cargo", "total": "2780.00", "days": 5},
+    {"source": "bid", "carrier": "Pampero Air Cargo", "total": "3780.00", "days": 5}
+  ],
+  "excluded": "Zephyr Steppe Cargo",
+  "code": "ZS",
+  "quoted": "3028.54",
+  "verdict": "rejected",
+  "reason": "excluded_airline"
+}

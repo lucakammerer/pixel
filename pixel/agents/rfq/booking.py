@@ -356,7 +356,7 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
                           weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
     if what == "booked":  # once per thread, not again on the confirmation
         text += THANKS[lang]
-    body = "\n\n".join([compose.greeting(lang, name, quote.session_id), text,
+    body = "\n\n".join([compose.greeting(lang, name, request), text,
                         compose.signature(bye, ctx.settings.signer)])  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:

@@ -95,6 +95,7 @@ class Rfq(Model):
     deadline_at: datetime
     extracted_by: str = "rules"  # "rules" | "model"
     missing: tuple[str, ...] = ()
+    excluded_carriers: tuple[str, ...] = ()  # airline names or codes the customer ruled out
 
 
 class LaneTariff(Model):

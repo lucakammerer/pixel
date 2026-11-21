@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import re
 from contextvars import copy_context
 from datetime import timedelta
@@ -377,6 +378,60 @@ def _preference(text: str) -> Preference:
     if CHEAPEST.search(text) or not HURRY.search(text):
         return Preference.CHEAPEST
     return Preference.FASTEST
+
+
+# A customer ruling an airline out (round 42: "Please do not offer <airline> (<code>) for this shipment or for any of
+# our future inquiries", quoted anyway and rejected as excluded_airline).
+RULED_OUT = re.compile(
+    r"\b(?:not|never|exclud\w*|avoid\w*|without|except|other than"
+    r"|nicht|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)\w*)\b",
+    re.IGNORECASE,
+)
+LASTING = re.compile(
+    r"\b(?:future|from now on|always|again|any of our|all of our|all our"
+    r"|künftig|zukünftig|ab sofort|generell|grundsätzlich|immer)\b",
+    re.IGNORECASE,
+)
+AIRLINE_WORD = re.compile(r"\s+(?:air\s+cargo|air\s+freight|airways|airlines?|air|cargo)$", re.IGNORECASE)
+CODE_IN_BRACKETS = re.compile(r"\(([A-Z0-9]{2})\)")
+
+
+def _calls(name: str) -> set[str]:
+    """How a customer may write an airline: in full, or without its trailing "Air", "Cargo" or "Airways"."""
+    short = AIRLINE_WORD.sub("", name)
+    return {name.casefold()} | ({short.casefold()} if len(short) >= 4 else set())
+
+
+def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], bool]:
+    """The airlines a sentence with a negation names, from `airlines`, plus a two-letter code in brackets in it; and
+    whether the customer means later requests too. A negation that names no known airline rules nothing out."""
+    found, lasting = set(), False
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n+", text):
+        if not RULED_OUT.search(sentence):
+            continue
+        lowered = sentence.casefold()
+        names = {a for a in airlines if any(re.search(rf"(?<!\w){re.escape(c)}(?!\w)", lowered) for c in _calls(a))}
+        if names:
+            found |= names | set(CODE_IN_BRACKETS.findall(sentence))
+            lasting = lasting or bool(LASTING.search(sentence))
+    return tuple(sorted(found)), lasting
+
+
+def _ruled_out(ctx: Context, rfq: Rfq, text: str) -> Rfq:
+    """The request with the airlines this mail rules out and those the customer ruled out for good before. A lasting
+    exclusion is kept as a `customer.excludes` event."""
+    if ctx is None:  # the offline benchmark reads without a store
+        return rfq
+    names, lasting = excluded_airlines(text, store.airline_names(ctx))
+    rows = ctx.db.execute(
+        "SELECT payload FROM events WHERE kind = 'customer.excludes' AND lower(json_extract(payload, '$.customer')) = ?",
+        (rfq.customer.lower(),),
+    ).fetchall()
+    earlier = {c for row in rows for c in json.loads(row["payload"])["carriers"]}
+    if lasting:
+        events.emit(ctx, "customer.excludes", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
+                    payload={"customer": rfq.customer, "carriers": list(names)})  # fmt: skip
+    return rfq.model_copy(update={"excluded_carriers": tuple(sorted(set(names) | earlier))})
 
 
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
@@ -874,6 +929,13 @@ DOCUMENT_AIRPORT = re.compile(
 CARGO_CLAUSE = re.compile(r"[\n;]|(?<=[.!?])\s+")
 USE_CARGO = re.compile(r"^(?:please\s+)?(?:use|quote\s+(?:with|using))\s+(.+)", re.IGNORECASE)
 MAIL_CARGO = re.compile(r"^(.+?)\s+(?:in|from)\s+(?:this|my|our|the)\s+(?:e-?mail|message|body)\b", re.IGNORECASE)
+# Also require a correction marker before treating a plain "weight is now ..." as an instruction.
+PREFIXED_MEASUREMENT = re.compile(
+    r"^(?:correction|korrektur)\s*:\s*(?:the\s+|das\s+|die\s+)?"
+    r"(?P<field>(?:gross\s+)?weight|volume|dimensions|bruttogewicht|gewicht|volumen|maße)"
+    r"\s*(?:is\b|are\b|beträgt\b|betragen\b|ist\b|sind\b|:)\s*(?:(?:now|jetzt|nun)\s+)?(?P<value>.+)",
+    re.IGNORECASE,
+)
 NEW_MEASUREMENT = re.compile(
     r"^(?:the\s+)?(?:corrected|revised|updated)\s+(?P<field>(?:gross\s+)?weight|volume|dimensions)"
     r"\s*(?:is\b|are\b|:)\s*(?P<value>.+)",
@@ -881,8 +943,8 @@ NEW_MEASUREMENT = re.compile(
 )
 ORIGIN_FIELDS = {"origin", "departure", "abgangsflughafen"}
 CARGO_FIELDS = {
-    "weight_kg": re.compile(r"\b(?:weight|measurements|figures)\b", re.IGNORECASE),
-    "volume_cbm": re.compile(r"\b(?:volume|dimensions|measurements|figures)\b", re.IGNORECASE),
+    "weight_kg": re.compile(r"\b(?:weight|measurements|figures|bruttogewicht|gewicht)\b", re.IGNORECASE),
+    "volume_cbm": re.compile(r"\b(?:volume|dimensions|measurements|figures|volumen|maße)\b", re.IGNORECASE),
 }
 
 
@@ -913,7 +975,9 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
         if (match := USE_CARGO.match(clause))
     ]
     mail_fields = [match[1] for directive in directives if (match := MAIL_CARGO.match(directive))]
-    corrections = [match for clause in clauses if (match := NEW_MEASUREMENT.match(clause))]
+    corrections = [
+        match for clause in clauses if (match := NEW_MEASUREMENT.match(clause) or PREFIXED_MEASUREMENT.match(clause))
+    ]
     named = [
         (name, text)
         for name, text in sources[1:]
@@ -1117,6 +1181,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         excluded = [name for name, content in documents if (name, content) not in sources]
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload={"sources": evidence, "attachment_route_conflicts": excluded})  # fmt: skip
+    rfq = _ruled_out(ctx, rfq, _text(mail))
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})

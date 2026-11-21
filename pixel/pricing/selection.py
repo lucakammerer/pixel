@@ -54,9 +54,16 @@ def balanced(
     return min(bids, key=lambda b: (score(b), *_cheapest(b)))
 
 
+def allowed(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
+    """The options whose airline the customer did not rule out, by name or code (round 42: excluded_airline)."""
+    out = {c.casefold() for c in rfq.excluded_carriers}
+    return [o for o in options if o.carrier.casefold() not in out and (o.carrier_code or "").casefold() not in out]
+
+
 def select(rfq: Rfq, options: list[RateOption]) -> RateOption:
     """The one option to quote: cheapest or fastest as the customer asked, compared in EUR, all-in. Airline bids
     compete like sheets and portal rates (round 28); only the trucker is chosen balanced (`engine.combine`)."""
     if not options:
         raise ValueError("no option to select from")
+    options = allowed(rfq, options) or options  # with every airline ruled out, an answer still beats none (R1)
     return min(options, key=_fastest if rfq.preference == Preference.FASTEST else _cheapest)
