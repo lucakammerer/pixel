@@ -609,6 +609,7 @@ async def test_a_model_total_the_text_does_not_state_for_the_shipment_never_wins
     assert found["total_eur"] == total_eur
 
 
+@pytest.mark.parametrize(
     ("body", "total"),
     [
         ("We can collect your shipment (total 3 euro pallets) in 50978: 165.00 EUR, pickup within 4 hours.", "165.00"),
