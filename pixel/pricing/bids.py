@@ -44,6 +44,11 @@ TRANSIT = re.compile(
     r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b",
     re.IGNORECASE,
 )
+# "offer valid for 7 days, transit 3 days": the figure after the transit word counts, a validity never does.
+LABELLED_TRANSIT = re.compile(
+    r"\b(?:transit(?:\s*time)?|laufzeit|t/t)\b[^\d\n]{0,24}?" + TRANSIT.pattern, re.IGNORECASE
+)
+VALIDITY = re.compile(r"\b(?:valid(?:ity)?|g(?:ü|ue)ltig\w*|good)\b[^\d\n]{0,20}$", re.IGNORECASE)
 TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
 # "10.5 hours" and "4,5 Stunden" are one figure; "09:00 h" is a clock time, not a duration.
 HOURS = re.compile(r"(?<![\d:.,])(\d+(?:[.,]\d+)?)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
@@ -127,8 +132,11 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
 def _days(text: str) -> int | None:
     if match := TRANSIT_HOURS.search(text):
         return calc.transit_days(int(match[1]), hours=True)
-    if match := TRANSIT.search(text):
+    if match := LABELLED_TRANSIT.search(text):
         return calc.transit_days(int(match[1]), hours=False)
+    for match in TRANSIT.finditer(text):
+        if not VALIDITY.search(text[: match.start()]):
+            return calc.transit_days(int(match[1]), hours=False)
     return None
 
 
