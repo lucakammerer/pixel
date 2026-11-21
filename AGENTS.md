@@ -49,7 +49,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`,
-  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`, `preview.py`; `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`; `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -99,7 +99,8 @@ uv run python -m tools.bench_models             # candidate models on request ma
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
-tools/deploy.sh --after-quote                   # main to the live host in the next safe window (tools/window.py); the deploy job on Luca's Mac calls it
+tools/deploy.sh --after-quote                   # by hand, only when the host's deploy job is paused: this checkout to the live host in the next safe window
+ssh luca-kammerer 'sudo -u pixel python3 /opt/pixel/app/tools/cd_status.py'   # the host's deploy job: live, main, last decision, paused
 ```
 
 Only one process may run with `PIXEL_DRY_RUN=0` against the real mailbox: the `pixel` service on the live host
@@ -124,10 +125,17 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
 3. Update with `main` once, right before the local run. No second rebase unless GitHub reports a conflict.
 4. **Reviews happen after the merge** and never hold a pull request. A finding becomes a follow-up pull request
    under the same rule.
-5. **A job deploys, not a model:** a launchd job on Luca's Mac (`~/.pixel-deploy/deploy-once.sh`, every 30 s, log
-   `~/.pixel-deploy/deploy.log`) deploys `origin/main` when it is ahead of the host and `uv run pytest -q` is green
-   on that commit, with `tools/deploy.sh --after-quote`, and rolls back to the previous commit if the service does
-   not start. A fix for a round we just lost may go live from its branch first; it is merged right after.
+5. **The host deploys itself, no model and no Mac:** `pixel-cd.timer` runs `deploy/cd.sh` every 30 s as root on
+   the live host. It fetches `origin/main` into its own clone `/opt/pixel/cd/repo` (read-only deploy key of the user
+   pixel) and always takes the newest commit. When every changed path is under `docs/`, `bench/`, `tests/`,
+   `.github/`, is a top-level `.md` file or belongs to the deploy job itself, it moves the live checkout without a
+   restart. Otherwise it tests the commit in the clone (`uv sync --locked`, `uv run pytest -q`, `uv run ruff check .`);
+   red is refused for good and sent to `PIXEL_ALERT_URL`. Green waits for `tools/window.py`, at most one restart per
+   round unless the newest merge has `URGENT` in its title, then moves the live checkout, `uv sync --locked --no-dev`,
+   installs `deploy/pixel.service` if it changed, restarts and checks that the UI answers; if not, it goes back to the
+   previous commit and alerts. One line per decision in `/opt/pixel/cd/cd.log`; `touch /opt/pixel/cd/PAUSE` pauses
+   it. A fix for a round we just lost may go live from its branch first (pause the job, `tools/deploy.sh`); it is
+   merged right after.
 
 `tools/kpi_pr.sh` measures a branch against `main` on the live host with the real portal and gateway.
 

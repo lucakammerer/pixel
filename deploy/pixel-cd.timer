@@ -1,0 +1,10 @@
+[Unit]
+Description=PIXEL deploy every 30 s
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

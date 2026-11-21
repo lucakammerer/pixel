@@ -1,0 +1,8 @@
+[Unit]
+Description=PIXEL deploy: origin/main to the live checkout when green, in the safe window
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/pixel/app/deploy/cd.sh
+TimeoutStartSec=15min
