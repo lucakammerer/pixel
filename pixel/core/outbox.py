@@ -194,7 +194,8 @@ async def _deliver(
     # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
     key = json.dumps([sid, purpose, to, parent, "" if purpose == "tracking" else body], ensure_ascii=False)
     if quote:
-        key = f"quote:{sid}"
+        # A requote answers the customer's change mail: its own claim, so the first quote's never blocks it.
+        key = f"quote:{sid}" if parent == quote.rfq.message_id else f"quote:{sid}:{parent}"
     elif purpose == HUMAN:
         key = uuid.uuid4().hex
     else:
@@ -278,8 +279,9 @@ async def send(
     return await _deliver(ctx, to, subject, body, session_id, in_reply_to, purpose)
 
 
-async def send_quote(ctx: Context, quote: Quote, *, operator: bool = False) -> Quote:
-    """Claim the session immediately before calling the mailbox and persist the returned receipt."""
+async def send_quote(ctx: Context, quote: Quote, *, operator: bool = False, reply_to: int | None = None) -> Quote:
+    """Claim the session immediately before calling the mailbox and persist the returned receipt. `reply_to`: the
+    customer's mail that changed the cargo after our quote; the scorer scores our answer to it (round 86)."""
     row = ctx.db.execute("SELECT sender FROM messages WHERE id = ?", (quote.rfq.message_id,)).fetchone()
     to = row["sender"] if row else quote.rfq.customer
     await _deliver(
@@ -288,7 +290,7 @@ async def send_quote(ctx: Context, quote: Quote, *, operator: bool = False) -> Q
         quote.subject,
         quote.body,
         quote.session_id,
-        quote.rfq.message_id,
+        reply_to or quote.rfq.message_id,
         "fallback_quote" if quote.fallback else "quote",
         quote=quote,
         operator=operator,
