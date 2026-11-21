@@ -191,7 +191,7 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
                 subject=_subject(rfq, pickup),
                 body=_body(rfq, pickup),
                 session_id=rfq.session_id,
-                purpose="pickup.request" if pickup else "bid.request",
+                purpose="bid_pickup" if pickup else "bid_request",  # the router places answers by the "bid" prefix
             )
         except outbox.NotSent:
             return None

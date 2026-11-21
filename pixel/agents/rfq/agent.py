@@ -37,6 +37,7 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], opening: str | Non
     events.emit(ctx, "quote.drafted", "rfq", session_id=rfq.session_id,
                 payload={"quote_id": quote.id, "option": option.model_dump(mode="json"), "fallback": fallback,
                          "options": len(options)})  # fmt: skip
+    quotes.save(ctx, quote)  # booking finds the session's quote in the CRM, also when the fallback sends it
     return quote
 
 
@@ -60,7 +61,9 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
             line = None
     if not options:
         return None
-    return await outbox.send_quote(ctx, _quote(ctx, rfq, options, line, fallback=False))
+    sent = await outbox.send_quote(ctx, _quote(ctx, rfq, options, line, fallback=False))
+    quotes.save(ctx, sent)
+    return sent
 
 
 async def fallback(ctx: Context, session_id: int) -> Quote | None:

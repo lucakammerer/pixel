@@ -21,7 +21,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `agent.py` `handle`: `extract.extract`; when rules read the request, `compose.opening` runs in parallel as the
   one gateway call of the quote (R28); `pricing/engine.py` `options`; `selection.select`; `compose.render`;
   `outbox.send_quote`. A request missing origin, destination or weight emits `error` and returns None; the
-  orchestrator's fallback and the UI take over.
+  orchestrator's fallback and the UI take over. Every drafted quote is saved to the CRM (`crm/quotes.py` `save`),
+  the sent one again after `send_quote`, so booking finds it also when the fallback sent it.
 - `agent.py` `fallback`: the RFQ and every `option.found` of the session, read back from the event log
   (`pricing/session.py`), combined and selected by code alone, no model call. Returns the quote unsent.
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
@@ -49,4 +50,3 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 ## Open
 
 - The quote is in the chosen rate's currency even when the customer asked for another (Q7).
-- `handle` does not store the quote in the CRM or emit `quote.sent`; that is the outbox's or orchestrator's job.

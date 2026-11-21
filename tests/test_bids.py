@@ -137,11 +137,11 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
                          cost_usd=D("0.0001"))  # fmt: skip
 
     async def send_quote(ctx, quote):
-        return quote
+        return quote.model_copy(update={"sent_at": datetime.now(UTC), "sent_message_id": 9})
 
     monkeypatch.setattr(llm, "ask_json", model)
     monkeypatch.setattr(outbox, "send_quote", send_quote)
-    monkeypatch.setattr(quotes, "new_id", lambda ctx: "Q-1")
+    monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
     request = mail("c@x", "Please quote AAA-BBB, 100 kg.", session_id=1)
     started = datetime.now(UTC)
 
@@ -149,6 +149,8 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     assert (datetime.now(UTC) - started).total_seconds() < 10
     assert (quote.total, quote.currency, quote.option.source, quote.llm_calls) == (D("260.00"), "EUR", Source.SHEET, 1)
     assert "260.00 EUR" in quote.body and calls == ["quote.opening"]
+
+    assert quotes.for_session(ctx, 1) == quote
 
     backup = await agent.fallback(ctx, 1)
     assert (backup.total, backup.fallback, len(calls)) == (D("260.00"), True, 1)
