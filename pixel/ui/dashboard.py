@@ -42,7 +42,9 @@ def _cost(r: dict[str, Any]) -> str:
     if value is not None:
         return _cell(pts(value))
     if r["cost_estimate"] is not None:
-        return _cell(f"≈ {pts(r['cost_estimate'])}", "Due from the scorer next hour; estimated from our gateway spend")
+        return _cell(
+            _muted(pts(r["cost_estimate"])), "Estimated from our gateway spend: the scorer adds it after the hour"
+        )
     if r.get("cost_pending"):
         return _cell(_muted("next hour"), "The scorer adds cost points once the hour is over")
     return _cell("—")
@@ -51,8 +53,6 @@ def _cost(r: dict[str, Any]) -> str:
 def _quote(r: dict[str, Any]) -> str:
     if r["quote"] is None:
         return _cell("—")
-    if r["cost_estimate"] is not None:
-        return _cell(f"<b>{pts(r['quote'])}</b> {_muted('+ ≈ ' + pts(r['cost_estimate']))}")
     return _cell(f"<b>{pts(r['quote'])}</b>")
 
 
@@ -75,25 +75,29 @@ async def dashboard(request: Request):
 
     p, accepted = s["points"], s["accepted"]
     unreported = s["points_unreported"]
+    estimate = s["cost_estimate"]
     rank = f"rank {s['rank']} · " if s["rank"] else ""
-    quote_note = " + ".join(
-        f"{k} {pts(p[k])}" for k in ("accuracy", "time", "cost", "humanity") if k in p
-    ) + (f" + {pts(unreported)} accuracy and time the rows leave out" if unreported and unreported >= Decimal("0.01")
-         else "")  # fmt: skip
-    after_note = f"tracking {pts(p.get('tracking'))} · booking {pts(p.get('booking'))}"
+    quote_note = " + ".join(f"{k} {pts(p[k])}" for k in ("accuracy", "time", "cost") if k in p) + (
+        f" + {pts(unreported)} accuracy and time the rows leave out" if unreported and unreported >= Decimal("0.01")
+        else "")  # fmt: skip
     cost_note = (
-        f"{s['cost_pending']} rounds due · ≈ {pts(s['cost_estimate'])} from our spend"
+        f"scored · {s['cost_pending']} rounds still due, estimated {pts(estimate)}"
+        if s["cost_pending"] and estimate
+        else f"scored · {s['cost_pending']} rounds still due"
         if s["cost_pending"]
-        else "added by the scorer once an hour"
+        else "added by the scorer hourly"
     )
+    humanity = p.get("humanity", Decimal(0))
     score = stats(
         [
             ("Team total", pts(total) if total is not None else None, f"{rank}from the scorer"),
-            ("Quote points", pts(s["points_quote"]), quote_note),
-            ("Tracking + booking", pts(s["points_after"]), after_note),
-            ("Cost points", pts(p.get("cost", Decimal(0))), cost_note),
-            ("Projected total", pts(s["points_projected"]) if s["cost_estimate"] and total is not None else None,
+            ("Projected total", pts(s["points_projected"]) if estimate and total is not None else None,
              "team total + the cost points still due"),
+            ("Quote points", pts(s["points_quote"]), quote_note),
+            ("Cost points", pts(p.get("cost", Decimal(0))), cost_note),
+            ("Human writing", pts(humanity), "up to 10 per round · none awarded yet" if not humanity
+             else "up to 10 per round"),
+            ("Tracking points", pts(p.get("tracking", Decimal(0))), "10 per correct tracking answer"),
             ("Accepted by scorer", accepted, f'of {s["rounds"]} scored · {s["rejected"]} rejected'
              + (f' · {s["no_answer"]} no answer' if s["no_answer"] else "")),
             ("Spend per accepted quote", f"${spend:.4f}" if spend is not None else None,
@@ -102,9 +106,7 @@ async def dashboard(request: Request):
     )  # fmt: skip
 
     rounds = quotes.scored_rounds(ctx)
-    extra = [k for k in ("humanity", "adjustment") if any(k in r["points"] for r in rounds)]
-    humanity = "humanity" in extra
-    adjustment = "adjustment" in extra
+    adjustment = any("adjustment" in r["points"] for r in rounds)
     score_rows = "".join(
         f"<tr><td class=num>{esc(r.get('round'))}</td><td class=num>{clock(r.get('sent_at'))}</td>"
         f"<td class=n>{esc(round(float(r['seconds']))) if r.get('seconds') is not None else '—'}</td>"
@@ -112,36 +114,37 @@ async def dashboard(request: Request):
         f"<td class=muted>{esc(r.get('reason') or '')}</td>"
         + _accuracy_time(r)
         + _cost(r)
-        + (_cell(pts(r["points"].get("humanity"))) if humanity else "")
         + _quote(r)
+        + _cell(pts(r["points"].get("humanity")))
         + _cell(pts(r["points"].get("tracking")))
-        + _cell(pts(r["points"].get("booking")))
         + (_cell(pts(r["points"].get("adjustment"))) if adjustment else "")
         + _cell(f"<b>{pts(r['earned'])}</b>")
         + "</tr>"
         for r in rounds
     )
-    quote_cols = 4 + humanity
-    after_cols = 2 + adjustment
-    cols = 5 + quote_cols + after_cols + 1
-    gap = total - s["points_rows"] if total is not None else None
+    extra_cols = 2 + adjustment
+    cols = 5 + 4 + extra_cols + 1
+    projected = total + estimate if total is not None else None
+    gap = projected - s["points_rows"] if projected is not None else None
+    if gap is not None and gap.copy_abs() >= Decimal("0.01"):
+        note = (f" · the other {s['rounds_unknown']} rounds, accuracy + time still hidden: {pts(gap)}"
+                if s["rounds_unknown"] else f" · {pts(gap)} of the team total not in any row")  # fmt: skip
+    elif total is not None:
+        note = f" = team total {pts(total)}" + (f" + cost still due {pts(estimate)}" if estimate else "")
+    else:
+        note = ""
     foot = (
-        f"<tfoot><tr><td colspan={cols - 1} class=muted>Sum of the rows with a known total"
-        + ((f" · the other {s['rounds_unknown']} rounds, accuracy + time still hidden: {pts(gap)}"
-            if s["rounds_unknown"] else f" · {pts(gap)} of the team total not in any row")
-           if gap is not None and gap.copy_abs() >= Decimal("0.01") else "")
-        + f"</td><td class=n><b>{pts(s['points_rows'])}</b></td></tr></tfoot>"
+        f"<tfoot><tr><td colspan={cols - 1} class=muted>Sum of the rows{note}</td>"
+        f"<td class=n><b>{pts(s['points_rows'])}</b></td></tr></tfoot>"
         if rounds
         else ""
-    )  # fmt: skip
+    )
     head = (
-        "<tr><th colspan=5></th>"
-        f"<th class=n colspan={quote_cols}>The quote</th>"
-        f"<th class=n colspan={after_cols}>After the quote</th><th></th></tr>"
+        "<tr><th colspan=5></th><th class=n colspan=4>The quote</th>"
+        f"<th class=n colspan={extra_cols}>On top</th><th></th></tr>"
         "<tr><th>Round</th><th>Sent</th><th class=n>Seconds</th><th>Verdict</th><th>Reason</th>"
-        "<th class=n>Accuracy</th><th class=n>Time</th><th class=n>Cost</th>"
-        + ("<th class=n>Humanity</th>" if humanity else "")
-        + "<th class=n>Quote</th><th class=n>Tracking</th><th class=n>Booking</th>"
+        "<th class=n>Accuracy</th><th class=n>Time</th><th class=n>Cost</th><th class=n>Quote</th>"
+        "<th class=n>Humanity</th><th class=n>Tracking</th>"
         + ("<th class=n>Adjustment</th>" if adjustment else "")
         + "<th class=n>Total</th></tr>"
     )
