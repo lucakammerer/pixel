@@ -565,7 +565,16 @@ def _bid_case(i: int, axes: dict[str, str], seed: int) -> Case:
     want = {"total": total, "currency": currency, "fx_eur": fx, "transit_days" if kind == "airline" else
             "pickup_hours": time}  # fmt: skip
     subject = f"Re: Rate request {o}-{d}" if kind == "airline" else f"Re: Pickup request {f['pc']} to {o}"
-    return Case("bid", axes, subject, body, files, want, request={"origin": o, "destination": d, "weight_kg": D(kg)})
+    return Case(
+        "bid",
+        axes,
+        subject,
+        body,
+        files,
+        want,
+        kind=f"{'airline' if kind == 'airline' else 'pickup'}_bid",
+        request={"origin": o, "destination": d, "weight_kg": D(kg)},
+    )
 
 
 def bid_cases(seed: int = 13, step: int = 1) -> list[Case]:

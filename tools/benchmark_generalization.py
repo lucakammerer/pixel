@@ -26,8 +26,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 12. Channel matrix: every mail kind the router knows (a carrier's bid split into airline and trucker) against where
    its information sits (body; pdf, scan, docx, xlsx, txt or csv, audio attachment; body and attachment
    disagreeing). A cell counts the captured mails, kit sheets, pickup offers and `tools/simulate.py` cases that put
-   it there; a cell without one is listed in `channel-gaps.json` with its owner, or the run fails. `--gaps` prints
-   the matrix first.
+   it there; a cell without one is listed in `channel-gaps.json` with its owner, or the run fails, and so does a
+   listed cell a case covers by now. `--gaps` prints the matrix first.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -756,7 +756,7 @@ def channel_coverage() -> dict[tuple[str, str], int]:
         add("pickup_bid", SUFFIXES.get(Path(offer["file"]).suffix.lower()))
     if offers.get("request_transcript"):
         add("customer_rfq", "audio")
-    for case in [*simulate.document_cases(step=7), *simulate.mail_cases()]:
+    for case in [*simulate.document_cases(step=7), *simulate.mail_cases(), *simulate.bid_cases(step=7)]:
         for name, _ in case.files:
             add(case.kind, SUFFIXES.get(Path(name).suffix.lower()))
         add(case.kind, None if case.files else "body")
@@ -785,7 +785,7 @@ def print_matrix(covered: dict[tuple[str, str], int], gaps: dict[str, str]) -> l
         if key not in cells:
             empty.append(f"{key}: not a cell of the matrix")
         elif covered.get(tuple(key.split(" "))):
-            print(f"    ok   {key}: covered now, delete its gap")
+            empty.append(f"{key}: covered now, delete its gap")
     return empty
 
 
