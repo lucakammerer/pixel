@@ -85,7 +85,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - "Not urgent" and "no rush" contain the urgency words: they mean cheapest.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says
   "non-dangerous". `extract.py` `dangerous_goods` reads the mail and every attachment; a declaration adds
-  `dangerous_goods_documents` to `Rfq.missing` and emits `rfq.dangerous_goods` with the declared text. The quote
+  `dangerous_goods_documents` to `Rfq.missing` and emits `rfq.dangerous_goods` with the declared text. "Non-dangerous
+  goods" and "no dangerous goods" are no declaration. The quote
   must name the goods and ask for the DGD and the MSDS (round 11 was accepted that way, at the normal price).
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.

@@ -251,3 +251,17 @@ async def test_a_dangerous_goods_request_lists_the_documents_as_missing(conn, em
     assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
         (kind, kw["payload"]) for kind, kw in emitted
     ]
+
+
+@pytest.mark.parametrize(
+    "line, declared",
+    [
+        ("Please quote 300 kg of non-dangerous goods, AAA to BBB.", None),
+        ("General cargo, no dangerous goods.", None),
+        ("Keine Gefahrgut-Sendung, bitte AAA nach BBB.", None),
+        ("Dangerous goods: UN1133, Class 3", "UN1133, Class 3"),
+        ("Dangerous goods | Adhesives, Class 3", "Adhesives, Class 3"),
+    ],
+)
+def test_only_a_declaration_is_dangerous_goods(line, declared):
+    assert extract._declared([line]) == declared

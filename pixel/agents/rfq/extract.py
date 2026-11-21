@@ -71,8 +71,9 @@ OWN_DELIVERY = re.compile(r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:oursel
 POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
 # "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
 DANGEROUS = re.compile(
-    r"\b(?:dangerous goods|hazardous goods|dgr|gefahrgut)\b\s*:?\s*"
-    r"(?!no\b|none\b|n/?a\b|nein\b|kein\w*|non\b|not\b|-|$)(.+)|(.*\bUN\s?\d{4}\b.*)",
+    r"(?<!non-)(?<!non )(?<!no )(?<!not )(?<!kein )(?<!keine )(?<!kein)"
+    r"\b(?:dangerous goods|hazardous goods|dgr|gefahrgut)\b\s*[:|]?\s*"
+    r"(?!no\b|none\b|n/?a\b|nein\b|kein\w*|non\b|not\b|-|$)(\w.*)|(.*\bUN\s?\d{4}\b.*)",
     re.IGNORECASE,
 )
 DG_DOCUMENTS = "dangerous_goods_documents"
