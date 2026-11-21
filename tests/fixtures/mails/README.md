@@ -42,6 +42,8 @@ Captured mails of a request, from the request to the confirmed booking:
   attachment and declined our quote without one (`no_pdf_offer`).
 - `rfq-dg-packing-list-as-xls.json`: `rfq-dg-packing-list.json` with its packing list saved as Excel 97 (`.xls`, the
   mailbox allows it, R6), cell for cell; written once with xlwt, which the project does not depend on.
+- `rfq-door-request-in-pdf.json`, `rfq-door-request-in-docx.json`, `rfq-door-request-in-pdf-fastest.json`: rounds 67,
+  68 and 75. The mail only points to `quotation-request.pdf` or `.docx` (embedded), which holds the whole request.
 - `rfq-door-request-in-txt.json`: round 66. The mail only points to `quotation-request.txt` (embedded), which
   holds the whole request: destination, weight, volume, pieces, pickup postcode, the wish. Read by rules live.
 - `rfq-sli-volume-differs-from-mail.json`: round 33, MUC-CAI, cheapest. The mail says 2.78 cbm; the attached packing

@@ -168,9 +168,12 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport FRA" stays an origin and never becomes the destination.
 - The customer's answer to our one question can name another airport in passing: "our sister company ships from
   X", "from X to Y might come later". Read again, that airport became the origin of every door request (40 of 280
-  generated answers). `read_request` `ask` keeps the request's origin and destination unless we asked for them
-  (`lane`), also in the rules' guess when the gateway fails; an unasked door origin stays the zone's airport.
-  Benchmark section 15 answers every captured request this way.
+  generated answers), and for a request that stands in its attachment the answer's lane hid the document's
+  "fastest" (round 75's capture). `read_request` `ask` takes from the answer only the facts we asked for
+  (`ANSWERED`) and those the request left at their default (`_stated`); origin and destination only when asked
+  (`kept`), also in the rules' guess when the gateway fails. Benchmark section 15 answers every captured request.
+- A request in French, Spanish or Italian counts "colis", "palettes", "bultos", "piezas" or "pezzi" as pieces and
+  "tout compris en EUR" as the currency asked for (round 70's capture).
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.

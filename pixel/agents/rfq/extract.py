@@ -91,7 +91,7 @@ LOT_VOLUME = re.compile(rf"{MODE}{NUM}\s*(?:cbm\b|m3\b|m³)", re.IGNORECASE)
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
-    r"|paletten|kartons|kisten)\b",
+    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse)\b",
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
@@ -138,7 +138,7 @@ DANGEROUS = re.compile(
     re.IGNORECASE,
 )
 DG_DOCUMENTS = "dangerous_goods_documents"
-CURRENCY_ASK = re.compile(r"(?i:\b(?:in|currency:?|währung:?))\s+([A-Z]{3})\b")
+CURRENCY_ASK = re.compile(r"(?i:\b(?:in|en|currency:?|währung:?|devise:?|moneda:?))\s+([A-Z]{3})\b")
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
@@ -746,6 +746,18 @@ ASK = {
 }
 
 
+# The fields each fact of `_unknown` fills, and every fact of a request an answer could change.
+ANSWERED = {"pickup": ("door_pickup", "pickup_postcode", "pickup_zone"), "origin": ("origin",),
+            "destination": ("destination",), "weight": ("weight_kg", "pieces"), "volume": ("volume_cbm",)}  # fmt: skip
+REQUEST_FACTS = ("origin", "destination", "weight_kg", "volume_cbm", "pieces", "preference", "door_pickup",
+                 "pickup_postcode", "pickup_zone", "currency", "excluded_carriers")  # fmt: skip
+
+
+def _stated(value: object) -> bool:
+    """A request's fact the reading found, not its default: no pickup, cheapest, no figure, no currency."""
+    return value not in (None, "", ()) and value != 0 and value != Preference.CHEAPEST
+
+
 def _unknown(rfq: Rfq) -> list[str]:
     """The facts a price still needs that the request did not give."""
     facts = ["pickup"] if rfq.door_pickup and not rfq.pickup_zone else ["origin"] if not rfq.origin else []
@@ -1227,11 +1239,11 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     sources, text, message = source_inputs()
     cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
 
-    lane: dict[str, str] = {}  # set by `ask`: the request's own origin and destination, which an answer keeps
+    kept: dict[str, object] = {}  # set by `ask`: the request's own facts we did not ask for, which an answer keeps
 
     def rules(guess: bool = False) -> Rfq | None:
         read = read_rules(guess)
-        return read.model_copy(update=lane) if read else None
+        return read.model_copy(update=kept) if read else None
 
     def read_rules(guess: bool) -> Rfq | None:
         if not files:
@@ -1256,10 +1268,15 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         mail = mail.model_copy(update={"body": f"{_body(mail)}\n\n{own_words(said)}"})
         sources, text, message = source_inputs()
         cargo, evidence, document_weight = _cargo_sources(sources) if files else ({}, {}, None)
-        # The answer fills what we asked for: an airport it names in passing ("our sister company ships from X",
-        # "from X to Y later") never moves the lane the request gave. Unasked, a door request's origin stays empty,
-        # so its pickup zone decides.
-        lane.update({k: getattr(read, k) for k in ("origin", "destination") if k not in facts})
+        # The answer fills what we asked for and adds what the request left at its default: an airport it names in
+        # passing ("our sister company ships from X", "from X to Y later") never moves the lane, nor does its lane
+        # hide what only the document said (round 75's "fastest"). Unasked, a door request's origin stays empty, so
+        # its pickup zone decides.
+        asked = {f for fact in facts for f in ANSWERED[fact]}
+        for field in REQUEST_FACTS:
+            value = getattr(read, field)
+            if field not in asked and (field in ("origin", "destination") or _stated(value)):
+                kept[field] = value
         again = rules()
         if (
             again is None
