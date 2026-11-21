@@ -8,6 +8,7 @@ from pixel.core.events import emit
 TARIFF_FILES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "jpeg", "docx")
 TARIFF_NAME = re.compile(r"tariff|tarif|rate|preis|price")
 BOOKING_CONFIRMED = re.compile(r"\bbooking\b.+\bconfirmed\b", re.IGNORECASE)
+BOOKED = re.compile(r"\bstatus:?\s*booked\b|\bconfirmed\b|\bbooking reference\b", re.IGNORECASE)
 WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³|lbs?|pounds?|t|tons?|tonnes?|tonnen)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
 
@@ -61,6 +62,9 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
     purposes = _answers(ctx, message)
     if any(p.startswith("bid") for p in purposes):
         return MailKind.CARRIER_BID, "thread:bid_request"
+    # Round 27: the airline's answer to our booking by mail ("Booking reference: BK-…, Status: booked") read as a bid.
+    if purposes[:1] == ["booking"] and sender != customer and BOOKED.search(message.body):
+        return MailKind.BOOKING_CONFIRMATION, "thread:booking_request"
     carrier = _carrier_kind(ctx, sender)
     files = [a.filename.lower() for a in message.attachments if a.filename.rsplit(".", 1)[-1].lower() in TARIFF_FILES]
     text = f"{message.subject}\n{message.body}"

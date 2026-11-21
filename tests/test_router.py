@@ -89,6 +89,16 @@ async def test_a_request_in_tonnes_between_cities_is_a_request_by_rules(ctx):
     assert await classify(ctx, poller.ingest(ctx, to_message(raw, "in"))) == MailKind.CUSTOMER_RFQ
 
 
+async def test_the_airlines_answer_to_our_booking_by_mail_is_a_confirmation(ctx):
+    # Round 27: Meridian's "Status: booked" reply to our booking request was read as a bid.
+    rfq, airline = mail(RFQ), mail("bid-airline-priced.json").sender
+    _store(ctx, rfq.model_copy(update={"id": 4800, "direction": "out", "to": airline}), "booking")
+    raw = {"id": 4801, "from": airline, "to": "pixel@hackloop.mail", "subject": "Re: Booking request PX-E5F36E",
+           "body": "Booking reference: BK-43VLF40X\nStatus: booked", "in_reply_to": 4800, "references": [4800],
+           "received_at": "2026-11-21T17:40:00+00:00", "attachments": []}  # fmt: skip
+    assert await classify(ctx, poller.ingest(ctx, to_message(raw, "in"))) == MailKind.BOOKING_CONFIRMATION
+
+
 async def test_the_customers_answer_to_our_question_is_left_to_the_waiting_request(ctx):
     rfq = mail(RFQ)  # Lindqvist; her answer quotes our question 4723 in the thread
     _store(ctx, rfq.model_copy(update={"id": 4723, "direction": "out", "to": rfq.sender}), "question")

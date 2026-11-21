@@ -23,7 +23,8 @@ kind, `by` (`rules` or `model`) and the rule that decided.
    our question for a missing fact (`messages.purpose` `question`): `other`, the request's handler reads it.
 3. Subject `Booking <reference> confirmed` from anyone else: `booking_confirmation`.
 4. It answers one of our mails sent with purpose `bid_request` (`messages.purpose`, set by `core/outbox.py` `send`):
-   `carrier_bid`.
+   `carrier_bid`. It answers our booking request (purpose `booking`), not from the customer, and says "Status:
+   booked", "confirmed" or "Booking reference": `booking_confirmation` (round 27 read it as a bid).
 5. It has an attachment of a tariff file type and comes from a carrier of the carrier list or starts a thread:
    `tariff`. From a carrier without one: `carrier_bid`.
 6. It answers our quote: `customer_reply`.

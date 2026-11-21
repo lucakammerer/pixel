@@ -124,6 +124,16 @@ async def test_confirmation_of_a_booking_by_mail_found_by_our_reference(pipe, ac
     assert len(pipe.sent) == 1 and "BK-43VLF40X" in pipe.sent[0]["body"]
 
 
+async def test_the_airlines_reply_to_our_booking_by_mail_stores_its_reference(pipe, accepted):
+    # Round 27: the reply in our thread names the airline's reference only as "Booking reference:".
+    pipe.ctx.portal = Portal(BookingUnavailable("Booking is down. Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    body = f"Booking reference: BK-43VLF40X\nYour reference: {b.team_reference}\nStatus: booked\n"
+    reply = mail(31, 1, sender="bookings@kestrel.example", subject=f"Re: Booking request {b.team_reference}", body=body)
+    await booking.handle_confirmation(pipe.ctx, reply)
+    assert bookings.get(pipe.ctx, b.id).booking_reference == "BK-43VLF40X"
+
+
 @pytest.mark.parametrize(
     ("text", "said"),
     [
