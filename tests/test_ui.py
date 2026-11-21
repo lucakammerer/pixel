@@ -140,7 +140,7 @@ def test_dashboard_renders(client, pipe):
     page = client.get("/dashboard").text
     assert "Spend / accepted" in page and "Median response" in page
     assert "136.53" in page and "#6" in page and "41.77" in page and "96.53" in page
-    assert "next hour" in page and "being scored" in page and "together" not in page  # round 2: answered only
+    assert "next window" in page and "being scored" in page and "together" not in page  # round 2: answered only
 
 
 def test_dashboard_orders_rounds_by_number_after_score_updates(client, pipe):
@@ -184,9 +184,10 @@ def test_dashboard_keeps_tracking_apart_from_the_quote_and_estimates_cost_still_
     pipe.emit(pipe.ctx, "score", "board", payload={
         "round": 19, "verdict": "accepted", "sent_at": "2026-11-21T16:50:00+00:00",
         "points": {"accuracy": 45.0, "time": 15.0, "cost": 39.47, "tracking": 0.0}, "total": 99.47})  # fmt: skip
-    pipe.ctx.db.execute(  # 0.004 USD for two accepted quotes in the 03:00 hour: 40 × (1 − 0.002 / 0.10) = 39.20
-        "INSERT INTO events (ts, kind, actor, payload, cost_usd) VALUES (?, 'llm.call', 'llm', '{}', '0.004')",
-        (f"{hour}05:00+00:00",),
+    # 0.004 USD for two accepted quotes in the window from 03:00: 40 × (1 − 0.002 / 0.10) = 39.20; 03:18 is the next
+    pipe.ctx.db.executemany(
+        "INSERT INTO events (ts, kind, actor, payload, cost_usd) VALUES (?, 'llm.call', 'llm', '{}', ?)",
+        [(f"{hour}05:00+00:00", "0.004"), (f"{hour}18:00+00:00", "0.05")],
     )
     rounds = {r["round"]: r for r in quotes.scored_rounds(pipe.ctx)}
     # the cost still due counts in the round's quote and total; tracking stays apart; booking never scores

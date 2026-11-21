@@ -10,7 +10,8 @@ answers as we do live and they arrive as long after the request as they did. The
 out, because an acceptance books at the portal. Price and time are those of the quote that goes out.
 
 Offline there are sheet prices only and every model call fails: a request that needs the model is missed, cost and
-speed are not measured. `--online` reads the real portal and spends through the real gateway (R28), mail stays dry.
+speed are not measured. `--online` reads the real portal and spends through the real gateway, mail stays dry: the
+scorer counts that spend in the 18-minute window it happens in, 400 cost points per USD (R28).
 `.github/workflows/ci.yml` posts the offline comparison into every pull request, `tools/kpi_pr.sh` the online one.
 """
 

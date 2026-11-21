@@ -3,7 +3,8 @@
     uv run python -m tools.bench_models                      # every model in pixel.llm.PRICES
     uv run python -m tools.bench_models gpt-4.1-mini gpt-4o-mini
 
-It spends through the gateway, and that spend counts in the hour it runs in (R28): about 0.02 USD for all models.
+It spends through the gateway, and that spend counts in the 18-minute window it runs in (R28): about 0.02 USD for
+all models, which is 8 cost points taken from the quotes accepted in that window.
 The mails are written for this tool; the expected values are what the request asks for.
 """
 
