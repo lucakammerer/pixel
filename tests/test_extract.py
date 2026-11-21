@@ -83,7 +83,8 @@ async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
 
 
 async def test_the_model_cross_checks_the_rules_and_its_wish_wins(conn, monkeypatch, emitted):
-    """Rounds 33 to 35: the rules took the mail's figure over the packing list's; gpt-4.1 read the list's."""
+    """Rounds 33 to 35: the rules took the mail's figure over the attached packing list's; gpt-4.1 read the list's.
+    Without an attachment it reads nothing: on every request it cost about 0.0025 USD (rounds 81 to 83)."""
     ctx = Context(settings(), conn, None, None, None, None)
     said = {"origin": "AAA", "destination": "CCC", "weight_kg": "480", "volume_cbm": None, "pieces": None,
             "lots": [], "preference": "fastest", "door_pickup": False, "pickup_postcode": None, "currency": None,
@@ -93,16 +94,27 @@ async def test_the_model_cross_checks_the_rules_and_its_wish_wins(conn, monkeypa
         assert kw["purpose"] == "rfq.crosscheck"
         return LlmResult(data=said, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
+    async def attachments(ctx, message):
+        return [("packing.pdf", ["Packing list", "The packing list says 480."])]
+
     monkeypatch.setattr(llm, "ask_json", model)
-    rfq = await extract.extract(ctx, mail("AAA → BBB, 500 kg, 2 cbm. The packing list says 480."), DEADLINE)
+    monkeypatch.setattr(extract, "_attachments", attachments)
+    packing = Attachment(id=1, filename="packing.pdf", content_type="application/pdf", size=1)
+    packed = mail("AAA → BBB, 500 kg, 2 cbm.").model_copy(update={"attachments": (packing,)})
+    rfq = await extract.extract(ctx, packed, DEADLINE)
     assert (rfq.extracted_by, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("rules", "BBB", 500, 2)
     assert rfq.preference == Preference.FASTEST  # the wish wins as read; 480 stands without its unit
 
+    calls = []
+
     async def boom(ctx, **kw):
+        calls.append(kw["purpose"])
         raise RuntimeError("gateway down")
 
     monkeypatch.setattr(llm, "ask_json", boom)
+    assert (await extract.extract(ctx, packed, DEADLINE)).weight_kg == 500
     assert (await extract.extract(ctx, mail("AAA → BBB, 500 kg"), DEADLINE)).weight_kg == 500
+    assert calls == ["rfq.crosscheck"]
 
 
 def captured(name: str) -> Message:

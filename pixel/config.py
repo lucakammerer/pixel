@@ -19,7 +19,7 @@ class Settings:
     alert_url: str
     bid_wait_s: int = 45  # how long a bid may take from our ask, also past target_at
     model_prose: str = ""  # the mail's prose slots; empty: `model`
-    model_check: str = ""  # reads every request the rules read too (`extract._crosscheck`); empty: off
+    model_check: str = ""  # reads every request with attachments the rules read too (`extract._crosscheck`); empty: off
     signer: str = "Lena Berger"  # the person who signs our mails (R31)
     precheck: str = "on"  # agents/rfq/check.py: on (every quote is checked, findings alert a person) or off
 

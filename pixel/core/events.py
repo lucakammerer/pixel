@@ -15,7 +15,7 @@ KINDS = (
     "mail.in", "mail.out", "mail.held",  # held: dry run, or a session a person took over
     "route",
     "rfq.extracted", "rfq.evidence", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received", "bid.skipped",
-    "quote.drafted", "quote.sent", "quote.fallback", "quote.recovery", "quote.waiting", "quote.missed", "quote.prose", "rfq.crosscheck", "bid.crosscheck", "prose.raw",
+    "quote.drafted", "quote.sent", "quote.fallback", "quote.recovery", "quote.waiting", "quote.missed", "quote.prose", "rfq.crosscheck", "prose.raw",
     "quote.stuck",  # core/watchdog.py: open past its STUCK_AFTER, alerted once
     "quote.checked",  # agents/rfq/check.py: what the last check before sending found
     "customer.accepted", "customer.declined", "customer.excludes",
