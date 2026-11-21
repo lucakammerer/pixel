@@ -21,8 +21,11 @@ def client(pipe):
     app.state.ctx = pipe.ctx
     db = pipe.ctx.db
     for sid, customer in ((1, "buyer@acme.example"), (2, "ops@globex.example")):
-        db.execute("INSERT INTO messages VALUES (?, ?, 'in', 'customer_rfq', ?, 'us', ?, 'body', NULL, ?, '{}')",
-                   (sid, sid, customer, f"Air freight request {sid}", T0.isoformat()))  # fmt: skip
+        db.execute(
+            "INSERT INTO messages (id, session_id, direction, kind, sender, recipient, subject, body, sent_at, data)"
+            " VALUES (?, ?, 'in', 'customer_rfq', ?, 'us', ?, 'body', ?, '{}')",
+            (sid, sid, customer, f"Air freight request {sid}", T0.isoformat()),
+        )
         db.execute("INSERT INTO sessions (id, customer, state, received_at, deadline_at) VALUES (?, ?, 'open', ?, ?)",
                    (sid, customer, T0.isoformat(), T0.isoformat()))  # fmt: skip
         pipe.emit(pipe.ctx, "mail.in", "poller", session_id=sid, message_id=sid)
@@ -80,6 +83,7 @@ def test_takeover_edit_send_release(client, pipe):
     assert quotes.for_session(pipe.ctx, 2).status == QuoteStatus.SENT
     assert "Draft text" not in client.get("/sessions/2").text
 
+    assert pipe.ctx.db.execute("SELECT mode FROM sessions WHERE id = 2").fetchone()[0] == "human"
     client.post("/sessions/2/release")
     assert pipe.ctx.db.execute("SELECT mode FROM sessions WHERE id = 2").fetchone()[0] == "auto"
     kinds = [r[0] for r in pipe.ctx.db.execute("SELECT kind FROM events WHERE session_id = 2 AND kind LIKE 'human.%'")]

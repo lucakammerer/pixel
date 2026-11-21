@@ -1,14 +1,13 @@
-"""CRM tables and queries. The fakes here stand in for package A (event log, outbox) until it lands; the other
-package C tests import them."""
+"""CRM tables and queries. The `pipe` fixture (a fake outbox on the real event log) is shared by the other package C
+tests."""
 
-import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from pixel.config import settings
-from pixel.contracts import Event, Message, Quote, QuoteStatus, RateOption, Rfq, Source
+from pixel.contracts import Message, Quote, QuoteStatus, RateOption, Rfq, Source
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
@@ -17,31 +16,16 @@ T0 = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
 
 
 class Pipeline:
-    """Fake `core.events` and `core.outbox`: events go into the real table, mail into `sent`."""
+    """Fake `core.outbox` (mail goes into `sent`) on the real event log."""
 
     def __init__(self, ctx: Context):
         self.ctx, self.sent, self.held = ctx, [], False
 
-    def emit(self, ctx, kind, actor, *, session_id=None, message_id=None, payload=None, **metrics):
-        cur = ctx.db.execute(
-            "INSERT INTO events (ts, session_id, kind, actor, message_id, payload, tokens_in, tokens_out, cost_usd,"
-            " duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                metrics.get("ts", datetime.now(UTC)).isoformat(), session_id, kind, actor, message_id,
-                json.dumps(payload or {}), metrics.get("tokens_in", 0), metrics.get("tokens_out", 0),
-                str(metrics.get("cost_usd", 0)), 0,
-            ),
-        )  # fmt: skip
-        return Event(id=cur.lastrowid, ts=datetime.now(UTC), session_id=session_id, kind=kind, actor=actor,
-                     message_id=message_id, payload=payload or {})  # fmt: skip
-
-    def for_session(self, ctx, session_id, after_id=0):
-        rows = ctx.db.execute(
-            "SELECT id FROM events WHERE session_id = ? AND id > ? ORDER BY id", (session_id, after_id)
-        )
-        from pixel.ui.routes import _event
-
-        return [_event(ctx, r["id"]) for r in rows.fetchall()]
+    def emit(self, ctx, kind, actor, *, ts=None, **kwargs):
+        event = events.emit(ctx, kind, actor, **kwargs)
+        if ts:
+            ctx.db.execute("UPDATE events SET ts = ? WHERE id = ?", (ts.isoformat(), event.id))
+        return event
 
     async def send(self, ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
         if self.held:
@@ -61,8 +45,6 @@ class Pipeline:
 def pipe(conn, monkeypatch):
     ctx = Context(settings=settings(), db=conn, mailbox=None, portal=None, gateway=None, board=None)
     p = Pipeline(ctx)
-    monkeypatch.setattr(events, "emit", p.emit)
-    monkeypatch.setattr(events, "for_session", p.for_session)
     monkeypatch.setattr(outbox, "send", p.send)
     monkeypatch.setattr(outbox, "send_quote", p.send_quote)
     return p

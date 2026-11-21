@@ -1,5 +1,6 @@
 """Sessions UI: find a session, watch it live, step in. Reads the event log only."""
 
+import asyncio
 import json
 from urllib.parse import parse_qs, quote_plus
 
@@ -121,11 +122,11 @@ def render_events(ctx: Context, evs: list[Event], *, new: bool = False) -> list[
 
 
 def held_drafts(evs: list[Event]) -> list[Event]:
-    """Mail the outbox held for this session and nobody has sent since."""
+    """Mail the outbox held because a person took over (not dry run), and nobody has sent since."""
     sent_after = max(
         (e.id or 0 for e in evs if e.kind == "human.note" and e.payload.get("action") == "sent"), default=0
     )
-    return [e for e in evs if e.kind == "mail.held" and (e.id or 0) > sent_after]
+    return [e for e in evs if e.kind == "mail.held" and e.payload.get("reason") == "human" and (e.id or 0) > sent_after]
 
 
 @router.get("/sessions/{session_id}", response_class=HTMLResponse)
@@ -214,6 +215,8 @@ async def session(request: Request, session_id: int, error: str = ""):
 def _draft_form(session_id: int, held: Event | None, quote, to: str = "") -> str:
     p = held.payload if held else {}
     is_quote = quote is not None and quote.sent_at is None and quote.status == QuoteStatus.DRAFT
+    if is_quote and (not held or "quote" in p):  # a held quote names only its id; the text is in the CRM
+        to = quote.rfq.customer
     subject = p.get("subject") or (quote.subject if is_quote else "")
     text = p.get("body") or (quote.body if is_quote else "")
     note = "Sending this is the quote: the first one in the thread counts." if is_quote else ""
@@ -241,26 +244,41 @@ async def stream(request: Request, session_id: int | None = None, after_id: int 
     async def frames():
         nonlocal last
         live = events.subscribe(session_id)
-        where, args = ("session_id = ? AND id > ?", (session_id, last)) if session_id else ("id > ?", (last,))
-        for row in ctx.db.execute(f"SELECT id FROM events WHERE {where} ORDER BY id", args).fetchall():
-            ev = _event(ctx, row["id"])
-            last = ev.id
-            yield _frame(ctx, ev)
-        async for ev in live:
-            if (ev.id or 0) > last:
-                last = ev.id or last
+        # Subscribe before reading the backlog, so nothing emitted in between is lost; duplicates are skipped by id.
+        first = asyncio.ensure_future(anext(live))
+        await asyncio.sleep(0)
+        try:
+            backlog = events.for_session(ctx, session_id, last) if session_id else events.since(ctx, last)
+            for ev in backlog:
+                last = ev.id
                 yield _frame(ctx, ev)
+            pending = [await first]
+            while True:
+                for ev in pending:
+                    if (ev.id or 0) > last:
+                        last = ev.id or last
+                        yield _frame(ctx, ev)
+                pending = [await anext(live)]
+        except StopAsyncIteration:
+            return
+        finally:
+            first.cancel()
+            await live.aclose()
 
     return StreamingResponse(frames(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
-def _event(ctx: Context, event_id: int) -> Event:
-    r = ctx.db.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
-    return Event(
-        id=r["id"], ts=r["ts"], session_id=r["session_id"], kind=r["kind"], actor=r["actor"],
-        message_id=r["message_id"], payload=json.loads(r["payload"]), tokens_in=r["tokens_in"],
-        tokens_out=r["tokens_out"], cost_usd=r["cost_usd"], duration_ms=r["duration_ms"],
-    )  # fmt: skip
+async def _send_quote_as_person(ctx: Context, quote):
+    """`outbox.send_quote` holds every quote in a session a person took over. The person's own quote has to pass,
+    so the session is lifted to auto only around the call: the outbox claims the quote before its first await, so
+    the automatic agent can no longer send a second one in that window."""
+    if not outbox.taken_over(ctx, quote.session_id):
+        return await outbox.send_quote(ctx, quote)
+    ctx.db.execute("UPDATE sessions SET mode = 'auto' WHERE id = ?", (quote.session_id,))
+    try:
+        return await outbox.send_quote(ctx, quote)
+    finally:
+        ctx.db.execute("UPDATE sessions SET mode = 'human' WHERE id = ?", (quote.session_id,))
 
 
 def _back(session_id: int, error: str = "") -> RedirectResponse:
@@ -295,8 +313,13 @@ async def send(request: Request, session_id: int):
         return _back(session_id, "to, subject and text are all needed")
     quote = quotes.for_session(ctx, session_id)
     try:
-        if quote and quote.sent_at is None and quote.status == QuoteStatus.DRAFT and to == quote.rfq.customer:
-            sent = await outbox.send_quote(ctx, quote.model_copy(update={"subject": subject, "body": body}))
+        if (
+            quote
+            and quote.sent_at is None
+            and quote.status == QuoteStatus.DRAFT
+            and to.lower() == quote.rfq.customer.lower()
+        ):
+            sent = await _send_quote_as_person(ctx, quote.model_copy(update={"subject": subject, "body": body}))
             quotes.save(ctx, sent)
         else:
             reply_to = ctx.db.execute(

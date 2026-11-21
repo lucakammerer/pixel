@@ -183,8 +183,10 @@ What the sessions UI (`pixel/ui/routes.py`) relies on from the other packages:
 - The RFQ agent stores its quote with `crm.quotes.save` as a draft and again once sent; the session view and the
   person's send read it from there. While the quote is a draft, what the person sends is that quote
   (`outbox.send_quote`), so first-quote-only and the fallback see it.
-- In a session a person took over, the outbox lets through what the person sends: `send` with `purpose="human"`
-  and `send_quote` called from the send route.
+- In a session a person took over, the outbox lets `send` with `purpose="human"` through. `send_quote` has no such
+  path, so the send route lifts the session to auto only around that one call (`_send_quote_as_person`); the
+  outbox's quote claim keeps the agent from sending a second quote meanwhile.
+- `mail.held` with reason `human` is shown as a draft; reason `dry_run` is not.
 
 ---
 
