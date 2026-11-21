@@ -360,19 +360,20 @@ def live_by_field(results: list[Live]) -> dict[str, tuple[int, int]]:
 
 
 # A wrong reading seen live becomes a change applied to every captured request, with an answer known in advance.
-OLD_REQUEST = (
-    "\n\n-----Original Message-----\nSent: 2026-10-03\nSubject: ZURICH AIRPORT - MEL / 87 PLT 3,459 KGS\n\n"
-    "Dear team,\n\npls quote air freight ex ZURICH AIRPORT to MEL:\n87 PLT / 3,459 KGS / 14.5 CBM, spare parts\n\nThanks\n"
-)
+LIVE_MUTATIONS = RFQ_FIXTURES / "live-mutations.json"  # the old request and the reply subject, as seen live
 LB = D("0.45359237")
 
 
 def _mutations(raw: dict, exp: dict) -> dict[str, tuple[dict, dict]]:
     """The changed mails of one request and what a right reading gives for each: an older request quoted below
     (round 14), a reply's subject naming another lane, the weight written in pounds (21.11. 18:25)."""
+    seen = json.loads(LIVE_MUTATIONS.read_text())
     found = {
-        "quoted_old_request": (raw | {"body": raw["body"] + OLD_REQUEST, "subject": "RE: " + raw["subject"]}, exp),
-        "reply_subject": (raw | {"subject": "RE: FW: AMSTERDAM SCHIPHOL - HKG / 128 PCS 165 KGS"}, exp),
+        "quoted_old_request": (
+            raw | {"body": raw["body"] + seen["quoted_old_request"], "subject": "RE: " + raw["subject"]},
+            exp,
+        ),
+        "reply_subject": (raw | {"subject": seen["reply_subject"]}, exp),
     }
     weight = exp.get("weight_kg")
     if weight and len(re.findall(rf"(?<![\d.,]){re.escape(weight)} kg", raw["body"])) == 1:

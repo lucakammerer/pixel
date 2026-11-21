@@ -21,7 +21,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   field left out is not judged (the origin of a door-to-port request comes from the pickup zone, not the mail);
   `null` means the mail does not state it. The benchmark scores the rules on every row per field, and on the same
   mails changed as seen live (an old request quoted below, a reply's subject naming another lane, pounds), whose
-  answers follow from the row. A new captured request: store it with `tools.replay --capture`, then
+  answers follow from the row; the old request and the reply subject they add, as seen live, are in
+  `rfqs/live-mutations.json`. A new captured request: store it with `tools.replay --capture`, then
   `tools.benchmark_generalization --stub` prints its row with every field `"?"`; read each from the mail, never
   copy what the code read, or the row repeats today's misread. CI fails while a `"?"` is left.
 - `mails/routing_probes.jsonl`: mails as the API delivers them, each with a setup (a reply to our quote or bid
