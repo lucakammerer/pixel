@@ -76,6 +76,20 @@ async def test_a_booking_confirmation_comes_from_an_airline_never_from_a_custome
     assert (await classify(ctx, poller.ingest(ctx, message))).value == probe["expected"]
 
 
+@pytest.mark.parametrize(
+    "body",
+    ["Unfortunately the booking could not be confirmed: no space on this flight.",
+     "Booking reference: -\nStatus: rejected, the flight is full."],
+)  # fmt: skip
+async def test_an_airline_refusing_our_booking_by_mail_is_no_confirmation(ctx, body):
+    rfq, airline = mail(RFQ), mail("bid-airline-priced.json").sender
+    _store(ctx, rfq.model_copy(update={"id": 4800, "direction": "out", "to": airline}), "booking")
+    raw = {"id": 4801, "from": airline, "to": "pixel@hackloop.mail", "subject": "Re: Booking request PX-E5F36E",
+           "body": body, "in_reply_to": 4800, "references": [4800], "received_at": "2026-11-21T17:40:00+00:00",
+           "attachments": []}  # fmt: skip
+    assert await classify(ctx, poller.ingest(ctx, to_message(raw, "in"))) != MailKind.BOOKING_CONFIRMATION
+
+
 async def test_carrier_answer_joins_the_rfq_session(ctx):
     assert poller.ingest(ctx, mail("bid-airline-priced.json")).session_id == mail(RFQ).id
 
