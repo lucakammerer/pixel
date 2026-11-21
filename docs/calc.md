@@ -37,13 +37,14 @@ Decimal only; a model never computes, compares or writes a price (P1).
 ## Choosing (`selection.select`)
 
 - Cheapest: lowest total in EUR; fastest: fewest transit days. Ties: cheaper, then faster, then carrier name.
-- Carrier bids first pick one winner by `selection.balanced` (R15): each bid's price and speed are taken as
+- Truckers are picked by `selection.balanced` (R15): each bid's price and speed are taken as
   multiples of the best price and the best speed among the bids (own / best), equal weights, lowest sum wins. Speed
   is transit days for an airline and pickup hours for a trucker (a decimal such as "10.5 hours" rounded half up; a clock time such as "09:00 h" is no duration). A door-to-port quote adds the balanced trucker's
   price, not the cheapest, whatever the customer asked for (`engine.combine`). Evidence: the table below;
   `tests/fixtures/pickup-bids.json` holds the trucker bids of those rounds and the bid the scorer's best price
-  contained. Best / own summed, own / worst summed and min-max scaling each miss at least one. Only the winner
-  competes with sheets, portal and the rate desk.
+  contained. Best / own summed, own / worst summed and min-max scaling each miss at least one. Airline bids are
+  not balanced: they compete by the customer's wish with sheets, portal and the rate desk (round 28, session 7244:
+  the scorer's best for cheapest was the cheaper 4-day bid, not the balanced 1-day bid).
 - The rule is not fixed: `core/feedback.py` reads our points after every request, works back to the scorer's best
   price (accuracy falls linearly to 0 at 10% off the best price, in either direction: fitted on scored requests, not
   stated by 5U) and finds the option that total belongs to. `pickup_rule` then uses the entry of `selection.RULES`
@@ -86,6 +87,6 @@ Each lives in one place; change it there.
 | Q | Assumption | Where |
 | --- | --- | --- |
 | Q4 | The best price is the all-in total of the option the customer asked for, pickup included | `engine.combine` |
-| Q6 | Balanced = price as a multiple of the best price plus speed as a multiple of the best speed, equal weights, among bids only (fits six scored door-to-port rounds; not confirmed by 5U); the winner then competes by the customer's wish | `selection.balanced`, `selection.select` |
+| Q6 | Balanced = price as a multiple of the best price plus speed as a multiple of the best speed, equal weights, for truckers only (fits six scored door-to-port rounds; not confirmed by 5U); airline bids compete by the customer's wish (round 28) | `selection.balanced`, `engine.combine` |
 | Q7 | We quote in the currency the customer asked for, converted by `calc.in_currency` with an exchange rate one of the request's own options carries (else in the rate's own currency), and compare in EUR with the rate's exchange rate | `selection.select`, `agent._quote`, `compose.render` |
 | Q13 | The pickup zone is the first two digits of the postcode | `pickup.zone_of` |

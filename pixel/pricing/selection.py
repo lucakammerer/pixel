@@ -6,7 +6,7 @@ Ties: cheaper (in EUR) first, then faster, then the carrier name, so the same op
 from collections.abc import Callable
 from decimal import Decimal
 
-from pixel.contracts import Preference, RateOption, Rfq, Source
+from pixel.contracts import Preference, RateOption, Rfq
 
 HALF = Decimal("0.5")
 
@@ -55,11 +55,8 @@ def balanced(
 
 
 def select(rfq: Rfq, options: list[RateOption]) -> RateOption:
-    """The one option to quote: cheapest or fastest as the customer asked, compared in EUR, all-in.
-    Q6 assumption: carrier bids first pick their balanced winner, which then competes with sheets and portal."""
+    """The one option to quote: cheapest or fastest as the customer asked, compared in EUR, all-in. Airline bids
+    compete like sheets and portal rates (round 28); only the trucker is chosen balanced (`engine.combine`)."""
     if not options:
         raise ValueError("no option to select from")
-    bids = [o for o in options if o.source == Source.BID]
-    candidates = [o for o in options if o.source != Source.BID] + ([balanced(bids)] if bids else [])
-    key = _fastest if rfq.preference == Preference.FASTEST else _cheapest
-    return min(candidates, key=key)
+    return min(options, key=_fastest if rfq.preference == Preference.FASTEST else _cheapest)
