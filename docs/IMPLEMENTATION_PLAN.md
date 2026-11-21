@@ -81,7 +81,7 @@ Deviations from this list need a reason written here.
 ```
 poller        GET /v1/mailbox/messages?since_id=…  every second, store once  mail.in
 router        rules on sender, thread, attachments; model only if unsure   route
-orchestrator  customer_rfq → a task with a deadline (target 100 s, hard 315 s, expiry 360 s)
+orchestrator  customer_rfq → session row + a task with a deadline (target 100 s, hard 315 s, expiry 360 s)
   rfq agent     extract (rules, else one model call)                   rfq.extracted
                 pricing.engine.options, all sources at once:
                   sheets   store.lookup → calc.price_tariff            option.found   (milliseconds)
@@ -143,8 +143,9 @@ only when the request has no price at all yet or when an outstanding bid can sti
 past `target_at` costs about a sixteenth of a point, a quote outside 5% costs everything. These thresholds are
 settings, tuned from `/v1/board/me`, never constants in code.
 
-A restart inside a deadline loses nothing: `since_id` is stored after the mail, and `orchestrator.recover` restarts
-the task of every open session.
+A restart inside a deadline loses nothing: `since_id` is stored after each mail, and `orchestrator.recover`
+restarts the task of every open session younger than 6 minutes without a quote and dispatches every stored mail that
+was never routed. Tests drive the deadlines with a fake clock (`orchestrator.now`).
 
 ### 4.5 Model use
 
