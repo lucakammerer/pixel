@@ -134,9 +134,10 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
     assert (rfq.origin, rfq.destination, rfq.extracted_by, rfq.missing) == ("AAA", "YYZ", "model", ())
 
-    store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])  # an airport a zone trucks to
+    # Round 14: CGN is a zone's airport too, yet not the pickup zone's, and no airline flew CGN-PEK.
+    store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
-    assert rfq.origin == "XFW"
+    assert rfq.origin == "AAA"
 
 
 @pytest.mark.parametrize(
@@ -319,7 +320,7 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
         return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
     monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
-    rfq = await extract.extract(None, mail("goods as listed"), DEADLINE)
+    rfq = await extract.extract(None, mail("goods as listed, 676 kg in total"), DEADLINE)
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.missing) == (
         Decimal(expected[0]), Decimal(expected[1]), expected[2], ()
     )  # fmt: skip
@@ -404,5 +405,53 @@ async def test_a_gateway_that_refuses_the_model_still_gives_a_reading(monkeypatc
     rfq = await extract.extract(None, mail(body), DEADLINE)
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.extracted_by) == (Decimal(100), Decimal("0.5"), "guess")
     assert emitted[0][1]["payload"]["where"] == "rfq_extract_model"
+    assert "model not allowed" not in str(emitted[0][1]["payload"])  # the gateway's text can quote the OpenAI key
     with pytest.raises(RuntimeError):  # nothing to guess from
         await extract.extract(None, mail("Could you help us with a shipment next week?"), DEADLINE)
+
+
+def test_an_older_mail_quoted_below_the_request_is_not_read():
+    message = captured("rfq-door-quoted-old-request.json")  # "RE: FW: ZURICH AIRPORT - MEL / 87 PLT 3,459 KGS"
+    rfq = extract.by_rules(message, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode) == (
+        "", "PEK", Decimal(1081), Decimal("8.03"), "42401"
+    )  # fmt: skip
+
+
+async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures" / "mails" / "synthetic-rfq-facts-in-attachment.json").read_text()
+    )
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    store.save_zones(ctx, [{"zone": zone_of("61391"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("AAA", "GRU", Decimal(715), Decimal("2.65"))
+    assert extract.DG_DOCUMENTS in rfq.missing
+    assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
+        (kind, kw["payload"]) for kind, kw in emitted
+    ]
+
+
+@pytest.mark.parametrize(
+    "body, model_kg, model_cbm, pieces, expected",
+    [
+        ("Hi, 1 pallet 480 lbs, 120x80x100 cm, AAA area to BBB.", "217.7", "0.96", 1, (480 * extract.LB, "0.96")),
+        ("Two cartons of 60 x 40 x 50 cm, 95 kg together, to BBB.", "95", "0.25", 2, ("95", "0.240")),
+    ],
+)
+async def test_a_number_the_mail_does_not_write_is_computed_by_code(monkeypatch, emitted, body, model_kg, model_cbm,
+                                                                    pieces, expected):  # fmt: skip
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": model_kg, "volume_cbm": model_cbm,
+                "pieces": pieces, "lots": [], "preference": "cheapest", "door_pickup": False,
+                "pickup_postcode": None, "currency": None, "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    rfq = await extract.extract(None, mail(body), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm) == (Decimal(expected[0]), Decimal(expected[1]))

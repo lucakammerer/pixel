@@ -29,13 +29,15 @@ NUM = r"(\d[\d.,']*)"
 OTHER_UNIT = r"\s*(?i:lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
 WEIGHT = (
     re.compile(rf"{NUM}\s*(?i:kgs?|kilos?|kilograms?|kilogramm)\b"),
-    re.compile(rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht))\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"),
+    re.compile(
+        rf"(?i:\b(?:gross weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?)\s*:?\s*{NUM}(?![\d.,']|{OTHER_UNIT}\b)"
+    ),
 )
 POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
-    re.compile(rf"(?i:\b(?:cbm|volume|volumen))\s*:?\s*{NUM}"),
+    re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
 )
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\b", re.IGNORECASE
@@ -85,7 +87,9 @@ OWN_DELIVERY = re.compile(
     r"|\bkeine\s+abholung\s+(?:nötig|notwendig|erforderlich)\b",
     re.IGNORECASE,
 )
-POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
+POSTCODE = re.compile(
+    r"(?<![\d.,])(?<!No\. )(?<!Nr\. )(?<!#)(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE
+)
 # "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
 DANGEROUS = re.compile(
     r"(?<!non-)(?<!non )(?<!no )(?<!not )(?<!kein )(?<!keine )(?<!kein)"
@@ -301,8 +305,30 @@ def _preference(text: str) -> Preference:
     return Preference.FASTEST
 
 
+# Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
+HISTORY = re.compile(
+    r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht)"
+    r"|(?:from|von):.*@|on .{0,80} wrote:\s*$|am .{0,80} schrieb|>)",
+    re.IGNORECASE | re.MULTILINE,
+)
+REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
+
+
+def own_words(body: str) -> str:
+    """The mail without the older mails quoted below it: round 14 quoted an old request with its own lane, weight,
+    greeting and name under the new one. Pricing and the reply both read only this."""
+    cut = HISTORY.search(body)
+    return body[: cut.start()] if cut and body[: cut.start()].strip() else body
+
+
+def _body(message: Message) -> str:
+    return own_words(message.body)
+
+
 def _text(message: Message) -> str:
-    return f"{message.subject}\n\n{message.body}"
+    """Subject and body; a reply's or forward's subject belongs to the older mail it answers."""
+    subject = "" if REPLY_SUBJECT.match(message.subject) else message.subject
+    return f"{subject}\n\n{_body(message)}"
 
 
 def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:
@@ -362,6 +388,12 @@ def _dims_volume(text: str) -> Decimal | None:
     return volume
 
 
+def _written(text: str) -> set[Decimal]:
+    """Every number the mail writes, read with and without thousands separators."""
+    found = re.findall(NUM, text)
+    return {v for m in found for t in (True, False) if (v := number(m, t)) is not None}
+
+
 def _model_lots(raw: list[dict]) -> tuple[Decimal, Decimal, int | None] | None:
     """The piece groups as the model copied them, added up here; None unless every one has a weight and a volume."""
     weight, volume, pieces = Decimal(0), Decimal(0), 0
@@ -406,6 +438,14 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     if lots := _lots(text) or ((len(groups) > 1 or "weight_kg" in missing) and _model_lots(groups)):
         weight, volume, pieces = lots[0], lots[1], lots[2] or pieces
         missing = [m for m in missing if m != "weight_kg"]
+    else:
+        # A figure the mail does not write is the model's arithmetic ("480 lbs" to kg, dimensions to cbm): code's
+        # own reading of the parts replaces it.
+        written = _written(text)
+        if weight not in written and (own := _weight(text, pieces) or (_model_lots(groups) or (None,))[0]):
+            weight = own
+        if volume not in written and (own := _volume(text, pieces) or (_model_lots(groups) or (0, None))[1]):
+            volume = own
     door = bool(data.get("door_pickup"))
     postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
     postcode = postcode if len(postcode) == 5 else None
@@ -452,12 +492,13 @@ def _town_zone(ctx: Context, rfq: Rfq, text: str) -> Rfq:
                                                                                if m != "pickup_postcode")})  # fmt: skip
 
 
-def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
-    """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16), also
-    when the origin read from the mail is an airport no pickup zone trucks to (a model's guess from the town)."""
+def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
+    """The pickup zone belongs to one airport (R16): a door-to-port request leaves from it unless the mail itself
+    names its origin airport. A model guesses from the town: XFW for Lueneburg (zone HAM), CGN for Wuppertal (zone
+    DUS); no airline flew those lanes and both requests were missed."""
     if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
         return rfq
-    if rfq.origin and not (rfq.door_pickup and rfq.origin not in store.zone_airports(ctx)):
+    if rfq.origin and not (rfq.door_pickup and rfq.origin not in re.findall(CODE, text)):
         return rfq
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 
@@ -467,31 +508,46 @@ def _declared(lines: list[str]) -> str | None:
     return next((" ".join((m[1] or m[2]).split()) for m in found), None)
 
 
-async def dangerous_goods(ctx: Context, message: Message) -> tuple[str, str] | None:
-    """What the mail or one of its attachments (packing list, letter of instruction) declares as dangerous goods,
-    and where: also when the mail itself says "non-dangerous"."""
+async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[str]]]:
+    """The text lines of every attachment code can read (packing list, letter of instruction)."""
     from pixel.agents.tariffs.agent import _lines
 
-    if declared := _declared(message.body.splitlines()):
-        return declared, "mail"
+    files = []
     for attachment in message.attachments:
         try:
-            lines = _lines(attachment.filename, await ctx.mailbox.attachment(message.id, attachment.id))
+            files.append((attachment.filename, _lines(attachment.filename,
+                                                      await ctx.mailbox.attachment(message.id, attachment.id))))  # fmt: skip
         except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
             events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
                         payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
-            continue
+    return files
+
+
+async def dangerous_goods(
+    ctx: Context, message: Message, files: list[tuple[str, list[str]]] | None = None
+) -> tuple[str, str] | None:
+    """What the mail or one of its attachments (packing list, letter of instruction) declares as dangerous goods,
+    and where: also when the mail itself says "non-dangerous"."""
+    if declared := _declared(_body(message).splitlines()):
+        return declared, "mail"
+    for filename, lines in files if files is not None else await _attachments(ctx, message):
         if declared := _declared(lines):
-            return declared, attachment.filename
+            return declared, filename
     return None
 
 
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
+    files = await _attachments(ctx, message) if message.attachments else []
+    mail = message
+    if files and not any(p.search(_body(message)) for p in WEIGHT):
+        # "Please see the attached packing list": the weight stands only in the attachment, so it is read too.
+        attached = "\n".join(line for _, lines in files for line in lines)
+        message = message.model_copy(update={"body": f"{_body(message)}\n\n{attached}"})
     text = _text(message)
     rfq, prose = by_rules(message, deadline), None
-    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text))).origin:
+    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text), text)).origin:
         rfq = None
     if rfq is None:
         try:
@@ -507,15 +563,26 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = by_rules(message, deadline, guess=True)
-            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text))).origin:
+            if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text), text)).origin:
                 raise
-            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "rfq_extract_model", "error": f"{type(e).__name__}: {e}", "default": "guess"})  # fmt: skip
+            events.emit(
+                ctx,
+                "error",
+                "rfq",
+                session_id=message.session_id,
+                message_id=message.id,
+                payload={
+                    "where": "rfq_extract_model",
+                    "error": type(e).__name__,
+                    "status": getattr(e, "status", None),
+                    "default": "guess",
+                },
+            )  # fmt: skip  never the gateway's text: it can quote the OpenAI key
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
-            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text))
+            rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text), text)
             prose = {k: result.data.get(k) for k in PROSE}
-    if dg := await dangerous_goods(ctx, message):
+    if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
         events.emit(ctx, "rfq.dangerous_goods", "rfq", session_id=message.session_id, message_id=message.id,

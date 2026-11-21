@@ -207,9 +207,15 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
     return _option(rfq, message, total, currency, fx, int(transit.group()) if transit else 0)
 
 
+def _postcode(rfq: Rfq) -> str:
+    """Truckers price by zone but quote only with a five-digit postcode ("To quote we need: the pickup postcode"):
+    a pickup known by its town alone is asked with the zone's first one."""
+    return rfq.pickup_postcode or (rfq.pickup_zone or "").ljust(5, "0")
+
+
 def _subject(rfq: Rfq, pickup: bool) -> str:
     if pickup:
-        return f"Pickup request {rfq.pickup_postcode or rfq.pickup_zone} to {rfq.origin}"
+        return f"Pickup request {_postcode(rfq)} to {rfq.origin}"
     return f"Rate request {rfq.origin}-{rfq.destination}, {rfq.weight_kg} kg"
 
 
@@ -219,7 +225,7 @@ def _body(rfq: Rfq, pickup: bool) -> str:
     if pickup:
         return (
             "Hello,\n\nplease quote a pickup for an air export shipment:\n"
-            f"From: postcode {rfq.pickup_postcode or '-'} (zone {rfq.pickup_zone})\nTo: {rfq.origin} airport\n"
+            f"From: postcode {_postcode(rfq)} (zone {rfq.pickup_zone})\nTo: {rfq.origin} airport\n"
             f"Shipment: {shipment}\n\nPlease reply with your price and currency.\n\nThank you,\nPIXEL Air Freight"
         )
     return (

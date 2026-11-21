@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from itertools import count
@@ -8,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from pixel import llm
-from pixel.agents.rfq import agent
+from pixel.agents.rfq import agent, extract
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import LaneTariff, LlmResult, Message, RateOption, Rfq, Source
@@ -153,6 +154,23 @@ async def test_unpriced_destination_is_mailed_and_door_to_port_adds_the_cheapest
     assert (by_carrier["Air One"].total, by_carrier["Air One"].trucker) == (D("775.00"), "Truck B")
     assert by_carrier["Air Two"].total == D("655.00")
     assert [r["read_by"] for r in kinds(ctx, "bid.received")].count("model") == 1
+
+
+async def test_a_pickup_known_by_its_town_alone_is_asked_with_a_postcode_of_its_zone(ctx, monkeypatch):
+    # Round 15: every trucker answered "postcode - (zone 93)" with "To quote we need: the pickup postcode".
+    asked = []
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        asked.append(f"{subject}\n{body}")
+        return mail("us@x", body, session_id)
+
+    monkeypatch.setattr(outbox, "send", send)
+    store.save_zones(ctx, [{"zone": "93", "area": "Regensburg", "airport": "AAA"}])
+    path = Path(__file__).parent / "fixtures" / "mails" / "rfq-door-warehouse-no-postcode.json"
+    request = await extract.extract(ctx, to_message(json.loads(path.read_text()), "in"), deadline())
+    await bids.request(ctx, request, [("Truck A", "a@truck")], pickup=True)
+    assert (request.pickup_zone, request.pickup_postcode) == ("93", None)
+    assert asked and all(len(re.findall(r"\b93\d{3}\b", text)) == 2 for text in asked)
 
 
 async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without_one(ctx, monkeypatch):

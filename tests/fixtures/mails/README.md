@@ -73,4 +73,17 @@ needed". Quoted like any export from the named airport; accepted.
 
 `rfq-door-import-two-towns.json`: door-to-port from 24983 (Kiel), signed "Best greetings from Regensburg", another
 zone's town. Read by the postcode; without one, a pickup town is taken only when the mail names one zone's town.
+`rfq-door-quoted-old-request.json`: round 14. A new door-to-port request (42401 Wuppertal to PEK) as "RE: FW:" of
+an old one, which is quoted below it with its own lane and weight (ZRH to MEL, 3,459 kg). The model read it and
+guessed origin CGN; zone 42 is DUS, no airline flew CGN-PEK, the request was missed.
+Our reply takes the name, the tone and the ready date from the customer's own words only
+(`pixel/agents/rfq/extract.py` `own_words`): the old mail below says "Dear team".
+
+`synthetic-rfq-facts-in-attachment.json`: round 10's request with its weight sentence replaced by "All details are
+in the attached packing specification". Weight and volume stand only in the attachment.
+
+`rfq-door-warehouse-no-postcode.json`: round 15, rejected too low. "RE: FW:" with an old request quoted below;
+pickup "from our warehouse" with no postcode or town, only the signature "Best greetings from Regensburg". The zone 93
+truckers answered "To quote we need: the pickup postcode", so the quote went out without a pickup. Asked again by
+hand, one of them priced the zone's first postcode and a postcode of the town alike.
 

@@ -66,6 +66,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
+  name, register and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
   ("Dangerous goods: UN…, Class …") while the mail calls the goods non-dangerous. `extract.py`
   `dangerous_goods` reads them and marks the request; `agent.py` `_noted` then names the goods in the quote and asks
@@ -90,6 +92,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the
   fallback. `extract` then takes `by_rules(guess=True)`, the largest gross weight and volume the mail names,
   `extracted_by: guess`, and emits `error`; with no lane at all it still raises.
+- A request can come as a reply or forward with an older request quoted below it ("-----Original Message-----"),
+  and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
+  to the model.
+- A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
+  the pickup zone's airport unless the mail names the origin code itself.
+- A request can leave its weight to the attached packing list ("Total gross weight (kg): 715"): when the mail names
+  no weight, `extract` reads the attachments' text with it, for the rules and the model. A document number ("No.
+  53839") is no postcode.
+- A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
+  to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.
+- A pickup "from our warehouse" can name no postcode and no town but the signature's (round 15): truckers then answer
+  "To quote we need: the pickup postcode", and a quote without the pickup is too low. They price by zone: the
+  request names the zone's first postcode (`pricing/bids.py` `_postcode`) when the mail has none.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC

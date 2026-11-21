@@ -85,3 +85,9 @@ What follows:
 - A question comes about 11 minutes after the request of a booked round. None comes for a round that was rejected
   or not booked (9, 10, and 11 where the customer still owes the dangerous-goods documents): that is the main loop's
   and the generalization loop's ground, not wording.
+- 21.11. 18:45, round 14 missed: a "RE: FW:" request quoted an old one (ZRH-MEL, 3,459 kg) below it; the model read
+  it and guessed CGN for a Wuppertal pickup (zone DUS). #55: quoted history and a reply's subject are not read, and
+  the zone's airport wins unless the mail names the origin. #48: a refused model gives a guess, not a miss. Open for
+  others: `rfq.currency` is read but used nowhere (a USD request gets an EUR quote); booking `intent` books "we will
+  not go ahead". Next: replay every live request of the day offline after each round.
+

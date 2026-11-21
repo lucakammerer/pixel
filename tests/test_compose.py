@@ -255,3 +255,11 @@ def test_an_english_request_from_a_german_town_is_answered_in_english_throughout
     assert not re.search(r"Guten Tag|Laufzeit|Grüße|Angebot|Gefahrgut", body)
     german = dangerous.with_note(compose.render(rfq("de"), OPTION)[1], "UN1950", "de", "x.pdf")
     assert "Gefahrgut" in german and "One point before we book" not in german and "bei 3 Tage" not in german
+
+
+def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
+    """Round 14: "Hi there, … Petra Hofmann" above an old "-----Original Message----- … Dear team" went out as
+    "Hello," with "Kind regards". Only the customer's own words count."""
+    mail = captured("rfq-door-quoted-old-request.json")
+    _, body = compose.render(rfq("en"), OPTION, request=mail.body)
+    assert body.startswith("Hi Petra,") and "Best wishes," in body
