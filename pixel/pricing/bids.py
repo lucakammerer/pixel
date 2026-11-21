@@ -55,7 +55,12 @@ VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
-VALID_UNTIL = re.compile(r"valid until\s+(\d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2}) UTC")
+# An airline's mail during a rate outage: "Please quote reference R-... when booking." books it on the portal.
+BID_RATE_ID = re.compile(r"(?i:\b(?:rate[_ ]?id|reference|ref\.?))\s*:?\s*(R-[A-Za-z0-9_-]+)")
+VALID_UNTIL = re.compile(r"valid until:?\s+(\d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2})\s*UTC", re.IGNORECASE)
+# A decline that lists the lanes the airline flies: "We do not serve this lane/zone: AAA-BBB. We fly CCC-DDD, ...".
+SERVED = re.compile(r"\bwe (?:only )?(?:fly|serve|operate)\b(?P<lanes>.*?)(?:\n\s*\n|$)", re.IGNORECASE | re.DOTALL)
+LANE = re.compile(r"\b([A-Z]{3})\s?[-\u2013]\s?([A-Z]{3})\b")
 DECLINE = re.compile(
     r"\b(?:cannot offer|can't offer|unable to|no capacity|not able to|decline|regret|do not serve|don't serve)\b",
     re.IGNORECASE,
@@ -140,6 +145,36 @@ def _fx(text: str, currency: str) -> Decimal | None:
     return None
 
 
+def _known_fx(fx: dict[str, Decimal] | None, text: str, currency: str) -> Decimal | None:
+    """The mail's own exchange rate, else one an option of the same request already carries for that currency."""
+    return _fx(text, currency) or (fx or {}).get(currency)
+
+
+def session_fx(ctx: Context, rfq: Rfq) -> dict[str, Decimal]:
+    """EUR per unit by currency from this request's options, newest last: never another session's rate."""
+    return {o.currency: o.fx_eur for o in session.for_request(ctx, rfq) if o.currency != "EUR" and o.fx_eur}
+
+
+def _valid_until(text: str) -> datetime | None:
+    until = VALID_UNTIL.search(text)
+    return until and datetime.strptime(until.group(1), "%d %b %Y %H:%M").replace(tzinfo=UTC)
+
+
+def _with_reference(option: RateOption, text: str) -> RateOption:
+    """The portal rate id an airline quotes by mail, so the booking goes through /bookings with it."""
+    if not (rate_id := BID_RATE_ID.search(text)):
+        return option
+    return option.model_copy(update={"rate_id": rate_id.group(1), "valid_until": _valid_until(text)})
+
+
+def served_lanes(body: str) -> list[str]:
+    """`ORIGIN-DESTINATION` of every lane a declining airline says it flies; empty when it names none."""
+    text = _own_text(body)
+    if not DECLINE.search(text) or not (served := SERVED.search(text)):
+        return []
+    return list(dict.fromkeys(f"{a}-{b}" for a, b in LANE.findall(served["lanes"])))
+
+
 def _option(rfq: Rfq, message: Message, total: Decimal, currency: str, fx: Decimal | None, days: int) -> RateOption:
     chargeable = calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
     total = calc.money(total)
@@ -160,20 +195,24 @@ def _option(rfq: Rfq, message: Message, total: Decimal, currency: str, fx: Decim
     )
 
 
-def parse(message: Message, rfq: Rfq, *, needs_transit: bool = True) -> RateOption | None:
-    """Price, currency and transit time from a carrier's answer, by rules. None when the rules cannot read it."""
+def parse(
+    message: Message, rfq: Rfq, *, needs_transit: bool = True, fx: dict[str, Decimal] | None = None
+) -> RateOption | None:
+    """Price, currency and transit time from a carrier's answer, by rules. None when the rules cannot read it.
+    A currency without its exchange rate in the mail takes the rate in `fx` (`session_fx`), if any."""
     text = _own_text(message.body)
-    if DECLINE.search(text) or not (price := _price(text, rfq)):
+    figures = BID_RATE_ID.sub("", text)  # a rate id such as "R-a5d" holds no price and no transit time
+    if DECLINE.search(text) or not (price := _price(figures, rfq)):
         return None
     total, currency = price
-    fx = None if currency == "EUR" else _fx(text, currency)
-    days = _days(text)
-    if total <= 0 or (currency != "EUR" and (fx is None or fx <= 0)) or (needs_transit and days is None):
+    rate = None if currency == "EUR" else _known_fx(fx, figures, currency)
+    days = _days(figures)
+    if total <= 0 or (currency != "EUR" and (rate is None or rate <= 0)) or (needs_transit and days is None):
         return None
-    return _option(rfq, message, total, currency, fx, days or 0)
+    return _with_reference(_option(rfq, message, total, currency, rate, days or 0), text)
 
 
-def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
+def parse_desk(message: Message, rfq: Rfq, fx: dict[str, Decimal] | None = None) -> list[RateOption]:
     """The rate desk lists the portal's rates for a lane, one airline per line, each with its rate id. Lines
     without a price (an airline that is not on the portal) are skipped."""
     found = []
@@ -183,11 +222,10 @@ def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
         if not (price and transit and rate_id):
             continue
         total, currency = price
-        fx = None if currency == "EUR" else _fx(rest, currency)
-        if currency != "EUR" and fx is None:
+        rate = None if currency == "EUR" else _known_fx(fx, rest, currency)
+        if currency != "EUR" and rate is None:
             continue
-        until = VALID_UNTIL.search(rest)
-        option = _option(rfq, message, total, currency, fx, transit)
+        option = _option(rfq, message, total, currency, rate, transit)
         found.append(
             option.model_copy(
                 update={
@@ -195,7 +233,7 @@ def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
                     "carrier": line["name"],
                     "carrier_code": line["code"],
                     "rate_id": rate_id.group(1),
-                    "valid_until": until and datetime.strptime(until.group(1), "%d %b %Y %H:%M").replace(tzinfo=UTC),
+                    "valid_until": _valid_until(rest),
                 }
             )
         )
@@ -224,7 +262,9 @@ ANSWER_PROMPT = (
 )
 
 
-async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_transit: bool) -> RateOption | None:
+async def _read_with_model(
+    ctx: Context, message: Message, rfq: Rfq, needs_transit: bool, known: dict[str, Decimal] | None = None
+) -> RateOption | None:
     result = await llm.ask_json(
         ctx,
         purpose="bid.read",
@@ -252,12 +292,12 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
         parts.append((amount, per_kg))
     total = calc.bid_total(parts, rfq)
     currency = SYMBOLS.get(data["currency"].strip(), data["currency"].strip().upper())
-    fx = _amount(data["eur_per_unit"], unit_rate=True) if data["eur_per_unit"] else None
+    fx = _amount(data["eur_per_unit"], unit_rate=True) if data["eur_per_unit"] else (known or {}).get(currency)
     duration = data["transit_days"] or ""
     transit = _days(f"Transit {duration}") or (int(duration) if duration.isdigit() else None)
     if total <= 0 or (currency != "EUR" and fx is None) or (needs_transit and not transit):
         return None
-    return _option(rfq, message, total, currency, fx, transit or 0)
+    return _with_reference(_option(rfq, message, total, currency, fx, transit or 0), _own_text(message.body))
 
 
 def _postcode(rfq: Rfq) -> str:
@@ -289,17 +329,31 @@ def _body(rfq: Rfq, pickup: bool) -> str:
     )
 
 
-async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pickup: bool = False) -> list[int]:
+def _at_weight(rfq: Rfq, kg: Decimal) -> Rfq:
+    """The request as a carrier prices it at a weight break: that weight, no volume (R13)."""
+    return rfq.model_copy(update={"weight_kg": kg, "volume_cbm": Decimal(0)})
+
+
+async def request(
+    ctx: Context,
+    rfq: Rfq,
+    carriers: list[tuple[str, str]],
+    *,
+    pickup: bool = False,
+    requested_kg: Decimal | None = None,
+) -> list[int]:
     """One bid request per carrier (airline, trucker or the rate desk). Returns the sent mail ids; the poller
-    maps the answers back to the session through them."""
+    maps the answers back to the session through them. `requested_kg` asks the price billed at that weight break
+    instead of the shipment's chargeable weight; `record` keeps the answer's billed weight at it."""
+    asked = rfq if requested_kg is None else _at_weight(rfq, requested_kg)
 
     async def one(name: str, email: str) -> int | None:
         try:
             sent = await outbox.send(
                 ctx,
                 to=email,
-                subject=_subject(rfq, pickup),
-                body=_body(rfq, pickup),
+                subject=_subject(asked, pickup),
+                body=_body(asked, pickup),
                 session_id=rfq.session_id,
                 purpose="bid_pickup" if pickup else "bid_request",  # the router places answers by the "bid" prefix
             )
@@ -321,6 +375,7 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
                 "pickup": pickup,
                 "origin": rfq.origin,
                 "destination": rfq.destination,
+                **({} if requested_kg is None else {"requested_kg": str(requested_kg)}),
             },
         )
         return sent.id
@@ -331,7 +386,8 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
 
 def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool]:
     """Identify the enquiry being answered before pricing the reply with the current RFQ.
-    Older request events can recover their lane from the extraction preceding that enquiry."""
+    Older request events can recover their lane from the extraction preceding that enquiry. An enquiry at a weight
+    break is matched only by reference or subject: a reply known by its sender alone is priced at the actual weight."""
     rows = ctx.db.execute(
         "SELECT e.message_id, e.payload, m.subject, "
         "(SELECT r.payload FROM events r WHERE r.session_id=e.session_id AND r.kind='rfq.extracted' "
@@ -348,7 +404,8 @@ def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool
         item = (row["message_id"], (facts.get("origin"), facts.get("destination")))
         by_ref[item[0]] = item
         if data.get("email", "").casefold() == message.sender.casefold():
-            by_sender.append(item)
+            if "requested_kg" not in data:
+                by_sender.append(item)
             subject = (row["subject"] or "").casefold()
             if subject and subject in f"{message.subject}\n{message.body}".casefold():
                 by_subject.append(item)
@@ -368,6 +425,52 @@ def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool
     return None, all(tuple(lane) == current for lane in lanes)
 
 
+def _requested_kg(ctx: Context, session_id: int, enquiry: int | None) -> Decimal | None:
+    if enquiry is None:
+        return None
+    row = ctx.db.execute(
+        "SELECT json_extract(payload,'$.requested_kg') FROM events WHERE session_id=? AND kind='bid.requested' "
+        "AND message_id=? ORDER BY id DESC LIMIT 1",
+        (session_id, enquiry),
+    ).fetchone()
+    return Decimal(row[0]) if row and row[0] else None
+
+
+def _dataset(ctx: Context) -> tuple[str | None, str]:
+    """What a decline's lane list holds for: the portal's newest dataset version and the stored tariffs. Either
+    changes with the hourly setup, and the list then no longer counts outside its own session."""
+    version = ctx.db.execute(
+        "SELECT json_extract(payload,'$.option.dataset_version') FROM events WHERE kind='option.found' "
+        "AND json_extract(payload,'$.option.source')='portal' "
+        "AND json_extract(payload,'$.option.dataset_version') IS NOT NULL ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    tariffs = ctx.db.execute("SELECT count(*), max(ingested_at) FROM tariffs").fetchone()
+    return (version[0] if version else None), f"{tariffs[0]}:{tariffs[1]}"
+
+
+def not_serving(ctx: Context, rfq: Rfq) -> set[str]:
+    """Airlines (casefolded) whose last decline lists the lanes they fly without this one: from this session, or
+    from another one on the same portal dataset and tariffs. A later price on this lane overrules a decline."""
+    version, tariffs = _dataset(ctx)
+    lane = f"{rfq.origin}-{rfq.destination}"
+    rows = ctx.db.execute(
+        "SELECT session_id, payload FROM events WHERE kind='bid.received' AND json_extract(payload,'$.pickup')=0 "
+        "AND (json_extract(payload,'$.served_lanes') IS NOT NULL OR json_extract(payload,'$.priced')=1) ORDER BY id"
+    ).fetchall()
+    served: dict[str, bool] = {}
+    for row in rows:
+        data = json.loads(row["payload"])
+        carrier = data["carrier"].casefold()
+        if data.get("priced"):
+            if (data.get("origin"), data.get("destination")) == (rfq.origin, rfq.destination):
+                served[carrier] = True
+            continue
+        current = version is not None and (data.get("dataset_version"), data.get("tariffs")) == (version, tariffs)
+        if row["session_id"] == rfq.session_id or current:
+            served[carrier] = lane in data["served_lanes"]
+    return {carrier for carrier, flies in served.items() if not flies}
+
+
 async def record(ctx: Context, message: Message) -> None:
     """Called by the orchestrator for every bid or desk answer: parse (model only if `parse` gives None),
     emit `bid.received` and `option.found`."""
@@ -384,13 +487,17 @@ async def record(ctx: Context, message: Message) -> None:
                     payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
                              "ignored": "different or ambiguous lane"})  # fmt: skip
         return
-    listed = parse_desk(message, rfq) if kind == "ratedesk" else []
-    option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
+    # An answer to a request at a weight break is priced at that weight and billed at it (R13).
+    requested = _requested_kg(ctx, rfq.session_id, enquiry)
+    asked = rfq if requested is None else _at_weight(rfq, requested)
+    fx = session_fx(ctx, rfq)
+    listed = parse_desk(message, asked, fx) if kind == "ratedesk" else []
+    option, read_by = None if listed else parse(message, asked, needs_transit=not pickup, fx=fx), "rules"
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
     if not listed and option is None and kind != "ratedesk" and not DECLINE.search(_own_text(message.body)):
         read_by = "model"
         try:
-            option = await _read_with_model(ctx, message, rfq, needs_transit=not pickup)
+            option = await _read_with_model(ctx, message, asked, needs_transit=not pickup, known=fx)
         except Exception as exc:  # noqa: BLE001  one unreadable answer must not stop the others
             events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
                         payload={"where": "bid.read", "error": type(exc).__name__})  # fmt: skip
@@ -401,6 +508,11 @@ async def record(ctx: Context, message: Message) -> None:
         elif kind == "ratedesk":
             option = option.model_copy(update={"source": Source.RATEDESK})
         listed = [option.model_copy(update={"carrier": name})]
+    if requested is not None:
+        chargeable = calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
+        listed = [o.model_copy(update={"chargeable_kg": chargeable, "billed_kg": requested}) for o in listed]
+    served = [] if pickup or kind == "ratedesk" or listed else served_lanes(message.body)
+    version, tariffs = _dataset(ctx) if served else (None, None)
     events.emit(
         ctx,
         "bid.received",
@@ -415,6 +527,8 @@ async def record(ctx: Context, message: Message) -> None:
             "request_id": enquiry,
             "origin": rfq.origin,
             "destination": rfq.destination,
+            **({"served_lanes": served, "dataset_version": version, "tariffs": tariffs} if served else {}),
+            **({"requested_kg": str(requested)} if requested is not None else {}),
         },
     )
     for option in listed:

@@ -352,3 +352,68 @@ def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days
 )
 def test_pickup_hours_read_a_decimal_and_skip_a_clock_time(text, hours):
     assert bids._pickup_hours(text) == hours  # 10.5 read as 5 and 09:00 h as 0 pick the wrong trucker
+
+
+OUTAGE_BID = (
+    "Dear PIXEL,\n\nall-in EUR 1,234.50 for AAA-BBB, transit 2 days.\n"
+    "Please quote reference R-m1BHkSbRJA2aJypL when booking.\nRate valid until: 21 Nov 2026 17:53 UTC\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("body", "rate_id", "until", "days"),
+    [
+        (
+            OUTAGE_BID,
+            "R-m1BHkSbRJA2aJypL",
+            datetime(2026, 11, 21, 17, 53, tzinfo=UTC),
+            2,
+        ),
+        ("Ref. R-x5d-1, all-in EUR 1234.50, transit 3 days", "R-x5d-1", None, 3),  # "5d" in the id is no transit
+        (
+            "rate_id: R-abc_9 valid until 1 Dec 2026 09:00 UTC\nAll-in EUR 1234.50, 4 days",
+            "R-abc_9",
+            datetime(2026, 12, 1, 9, 0, tzinfo=UTC),
+            4,
+        ),
+        ("All-in EUR 1234.50, transit 2 days. Our reference: Q-123", None, None, 2),
+    ],
+)
+def test_a_bid_keeps_the_portal_rate_id_it_quotes_for_booking(body, rate_id, until, days):
+    option = bids.parse(mail("one@air", body), rfq())
+    assert (option.total, option.rate_id, option.valid_until, option.transit_days) == (D("1234.50"), rate_id, until,
+                                                                                         days)  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("body", "lanes"),
+    [
+        (
+            "We do not serve this lane/zone: AAA-BBB. We fly AAA-CCC, DDD-EEE, FFF-GGG.",
+            ["AAA-CCC", "DDD-EEE", "FFF-GGG"],
+        ),
+        (
+            "Sorry, we cannot offer AAA-BBB.\nWe only fly:\n- AAA-CCC\n- DDD-EEE\n\nRegards\nXYZ-ABC desk",
+            ["AAA-CCC", "DDD-EEE"],
+        ),
+        ("Sorry, we cannot offer this lane.", []),
+        ("All-in EUR 500.00, transit 2 days. We fly AAA-CCC too.", []),  # no decline: a price, not a lane list
+        ("We do not serve this lane/zone: AAA-BBB.\n> We fly AAA-CCC", []),  # our quoted request is not theirs
+    ],
+)
+def test_a_decline_lists_the_lanes_the_airline_flies(body, lanes):
+    assert bids.served_lanes(body) == lanes
+
+
+@pytest.mark.parametrize(
+    ("body", "fx", "eur"),
+    [
+        ("All-in USD 1000.00, transit 3 days", {"USD": D("0.9150")}, "915.00"),
+        ("All-in USD 1000.00 (1 USD = 0.92 EUR), transit 3 days", {"USD": D("0.9150")}, "920.00"),  # the mail's own
+        ("All-in USD 1000.00, transit 3 days", {"GBP": D("1.15")}, None),
+        ("All-in USD 1000.00, transit 3 days", None, None),
+    ],
+)
+def test_a_bid_without_its_exchange_rate_takes_the_requests_own(body, fx, eur):
+    option = bids.parse(mail("one@air", body), rfq(), fx=fx)
+    assert (option and option.total_eur) == (D(eur) if eur else None)

@@ -25,9 +25,23 @@ Decimal only; a model never computes, compares or writes a price (P1).
   is lower (R13); the option then carries the break as billed weight and that read's rate id.
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
   code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
-  business days alike, and a range ("2-3 days") its first figure.
+  business days alike, and a range ("2-3 days") its first figure. A portal rate id the airline quotes ("Please
+  quote reference R-... when booking") and its "valid until" go onto the option (`bids.BID_RATE_ID`), so the
+  booking goes through `/bookings`. A currency without its exchange rate in the mail takes the rate an option of
+  the same request carries for it (`bids.session_fx`), never one from another session.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
   and validity it states. Asked only when a rate read answered 503 (`engine._ask_desk`), together with the airlines.
+- **Next break during a rate outage** (`engine._break_asks`, R13): `/brackets` is free and stays up while `/rates`
+  answers 503 (`portal_rates.next_break_for`, else the breaks of the airline's last rate read). Each airline on the
+  lane whose read answered 503, and the rate desk, get one more request at the next break when the chargeable weight
+  is at least `engine.BREAK_ASK_SHARE` of it (859 kg asks 1000 kg). The answer is priced at that weight and keeps
+  it as billed weight, the chargeable weight stays the shipment's (`bids.record`); selection takes it when it is
+  cheaper. Once per session and lane, never after the target time.
+- **Who is not mailed** (`engine._skip`): an airline the portal lists only on other lanes, and an airline whose
+  decline listed the lanes it flies without this one ("We fly ...", `bids.served_lanes`, `bids.not_serving`): from
+  this session, or another one on the same portal dataset version and tariffs; a later price on this lane undoes
+  it. Never an airline on the portal for this lane whose read answered 503, and nobody while no airline has priced
+  the request yet.
 - **Pickup** (`calc.with_pickup`): a trucker's price in EUR, added to every airline option, converted into the
   option's currency with its exchange rate when that is not EUR. Truckers price by zone and quote only with a
   five-digit postcode: a pickup known by its town alone is asked with the zone's first one (`bids._postcode`; two

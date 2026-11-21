@@ -25,6 +25,13 @@ async def lanes(ctx: Context, *, refresh: bool = False) -> list[Lane]:
     return _lanes[2]
 
 
+def cached_lanes(ctx: Context) -> list[Lane] | None:
+    """The ports `lanes` read last for this portal, without a read of its own; None when there is none."""
+    if _lanes is None or _lanes[0] is not ctx.portal:
+        return None
+    return _lanes[2]
+
+
 async def _at_next_break(ctx: Context, rfq: Rfq, deadline: Deadline, code: str, option: RateOption) -> RateOption:
     """R13 on the portal: the airline's next weight break, billed in full, can cost less than the actual weight in
     its own bracket, and the best price we are scored against bills it. Breaks are free to read; the rate at the
@@ -49,6 +56,20 @@ async def _at_next_break(ctx: Context, rfq: Rfq, deadline: Deadline, code: str, 
     if at_break.dataset_version != option.dataset_version or at_break.total_eur >= option.total_eur:
         return option
     return at_break.model_copy(update={"chargeable_kg": option.chargeable_kg})
+
+
+async def next_break_for(ctx: Context, code: str, chargeable_kg: Decimal) -> int | None:
+    """The airline's first weight break above the chargeable weight, for a bid at that break while the rate API is
+    down (R13). Brackets are free and stay up through a rate outage; when they fail, the airline's breaks from its
+    last rate read stand in. None when there is no higher break or none can be read."""
+    try:
+        breaks = await ctx.portal.brackets(code)
+    except (NotOnPortal, ApiError, httpx.HTTPError, KeyError, ValueError):
+        cached = [b for (c, _), b in _breaks.items() if c == code]
+        if not cached:
+            return None
+        breaks = cached[-1]
+    return next((b for b in sorted(breaks) if b > chargeable_kg), None)
 
 
 async def _read(ctx: Context, rfq: Rfq, deadline: Deadline, code: str, name: str) -> RateOption | None:

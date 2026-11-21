@@ -6,7 +6,7 @@ import pytest
 import respx
 
 from pixel.api import portal as portal_module
-from pixel.api.portal import NotOnPortal, Portal, RateLimited
+from pixel.api.portal import NotOnPortal, Portal, RateLimited, RatesUnavailable
 from pixel.config import settings
 from pixel.contracts import Rfq, Source
 from pixel.core import events
@@ -92,6 +92,7 @@ async def test_not_on_portal_carries_hint(portal, status):
     with pytest.raises(NotOnPortal) as err:
         await read(portal)
     assert "some-air@example.test" in err.value.hint
+    assert isinstance(err.value, RatesUnavailable) == (status == 503)
 
 
 @respx.mock
@@ -143,3 +144,25 @@ async def test_the_next_break_is_billed_when_it_is_cheaper(conn, monkeypatch, to
     assert (option.total, option.billed_kg, option.chargeable_kg, option.rate_id) == (
         Decimal(total), Decimal(billed), Decimal(400), rate_id,
     )  # fmt: skip
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("answer", "cached", "chargeable", "expected"),
+    [
+        ((200, [0, 100, 300, 1000]), {}, "859", 1000),
+        ((200, [1000, 0, 300]), {}, "300", 1000),  # a weight on a break looks for the one above it
+        ((200, [0, 100]), {}, "859", None),
+        ((503, None), {("SA", "v1"): (0, 1000), ("SA", "v2"): (0, 500)}, "859", None),
+        ((503, None), {("SA", "v1"): (0, 500), ("SA", "v2"): (0, 900, 1000)}, "859", 900),  # the newest read
+        ((404, None), {}, "859", None),
+    ],
+)
+async def test_next_break_for_reads_brackets_or_falls_back_to_the_last_cached(
+    portal, monkeypatch, answer, cached, chargeable, expected
+):
+    status, breaks = answer
+    respx.get(f"{BASE}/v1/portal/brackets").respond(status, json={"breaks_kg": breaks} if breaks else {})
+    monkeypatch.setattr(portal_rates, "_breaks", dict(cached))
+    ctx = Context(settings(), None, None, portal, None, None)
+    assert await portal_rates.next_break_for(ctx, "SA", Decimal(chargeable)) == expected
