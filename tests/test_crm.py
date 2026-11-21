@@ -126,3 +126,23 @@ def test_stats_keep_scorer_and_customer_apart(pipe):
     assert s["points_total"] == 90
     assert s["spend_per_accepted_usd"] == Decimal("0.0020")
     assert s["median_response_s"] == 90
+
+
+def test_customer_summary_counts_quotes_and_wins(pipe):
+    from pixel.crm import customers
+
+    ctx = pipe.ctx
+    for sid, who in ((1, "buyer@acme.example"), (2, "Buyer@Acme.example"), (3, "ops@globex.example")):
+        ctx.db.execute(
+            "INSERT INTO sessions (id, customer, state, received_at) VALUES (?, ?, 'open', ?)",
+            (sid, who, T0.isoformat()),
+        )
+    quotes.save(ctx, quote(1, status=QuoteStatus.ACCEPTED))
+    quotes.save(ctx, quote(2, customer="Buyer@Acme.example", status=QuoteStatus.DECLINED))
+    shipments.create(ctx, quote(1))
+    acme = next(c for c in customers.summary(ctx) if c["customer"] == "buyer@acme.example")
+    assert (acme["requests"], acme["quoted"], acme["won"], acme["lost"], acme["shipments"]) == (2, 2, 1, 1, 1)
+    assert acme["won_eur"] == Decimal("370.74")
+    profile = customers.profile(ctx, "BUYER@acme.example")
+    assert {q.session_id for q in profile["quotes"]} == {1, 2}
+    assert customers.profile(ctx, "nobody@example.com") is None

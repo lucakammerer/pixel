@@ -42,7 +42,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   `extract.py`, `compose.py`, `booking.py`), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,
   `bids.py`, `pickup.py`, `engine.py`
-- `pixel/crm/`: quotes, bookings, shipments; `pixel/ui/`: sessions UI and dashboard
+- `pixel/crm/`: quotes, bookings, shipments, customers; `pixel/ui/`: requests (`routes.py`), CRM viewer (`crm.py`),
+  performance (`dashboard.py`), shared HTML and styles (`page.py`)
 - `pixel/llm.py`: the only gateway caller
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
