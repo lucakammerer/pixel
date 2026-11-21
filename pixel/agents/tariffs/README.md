@@ -48,6 +48,11 @@ the findings of `check`.
 - Lanes are written as codes, as city names with codes, or grouped under an origin heading.
 - The scanned sheet is skewed and split over two pages: rates on one, surcharges on the other.
 - `check` cannot know whether a code is a real airport; it only checks the form.
+- A sheet read by column position turns into wrong values when an update reorders its columns: Minimum and Transit
+  swapped read the minimum as transit days, and `check` only notices when the numbers leave its ranges.
+  `tests/fixtures/tariffs/variants/` holds sheets with one change each; every change must be parsed right or
+  refused, never parsed into wrong values.
+- A sheet in another currency than EUR parses, but sheet pricing has no exchange rate for it and drops the sheet.
 
 ## Open
 

@@ -184,6 +184,12 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   error each give the plain mail, never an exception on the quote or the fallback path.
 - A reasoning model spends its output tokens on reasoning and can return empty slots: set `PIXEL_MODEL_PROSE` to a
   fast non-reasoning model.
+- A labelled field reads the other way round from a sentence: "Service: express", not "express service". A number
+  can use a space for thousands ("1 250 kg"). `tests/fixtures/rfqs/rewrites.jsonl` holds such phrasings; a row with
+  `known_gap` is one the rules read wrong today.
+- A carrier's answer can name the offer's validity in days next to the transit time ("valid for 7 days, transit 3
+  days"); the first number of days is not always the transit. `tests/fixtures/mails/bid_probes.jsonl` holds such
+  answers.
 
 ## Open
 
