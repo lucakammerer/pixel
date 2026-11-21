@@ -26,7 +26,8 @@ async def test_answers_from_the_crm_by_booking_reference(pipe):
                                       body="Where is booking BK-AB12CD34?"))  # fmt: skip
     (sent,) = pipe.sent
     assert sent["to"] == "tracking@hackloop.mail" and sent["in_reply_to"] == 40
-    assert s.id in sent["body"] and "confirmed by Kestrel Airways" in sent["body"] and "FRA → JFK" in sent["body"]
+    assert s.id in sent["body"] and "Kestrel Airways" in sent["body"] and "confirmed" in sent["body"]
+    assert "BK-AB12CD34" in sent["body"] and "from FRA to JFK" in sent["body"]
 
 
 async def test_finds_by_customer_and_lane(pipe):
@@ -62,6 +63,8 @@ async def test_the_desk_describes_a_door_shipment_by_pickup_postcode_weight_and_
     await agent.handle(pipe.ctx, to_message(json.loads((MAILS / "tracking-door-to-port.json").read_text()), "in"))
     body = pipe.sent[0]["body"]
     assert ours.id in body and ours.booking_reference in body and same_destination.id not in body
+    # The desk signs as the customer and gives the ready date: answer them by name, with the arrival, in sentences.
+    assert body.startswith("Hi Sara,") and "Sunday 29 November" in body and "@" not in body
 
 
 async def test_the_desk_describes_a_port_shipment_by_lane_weight_and_company(pipe):

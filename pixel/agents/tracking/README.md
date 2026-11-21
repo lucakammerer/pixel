@@ -19,8 +19,11 @@ shipment it matched, or that it matched none.
 `agent.py` `handle`: `match` looks for references in the mail (`BK-…` from the airline, `PX-…` ours) and finds the
 shipment with `crm/shipments.py` `find`. Without a reference, `described` reads the desk's description of the
 shipment (origin airport or pickup postcode, destination, weight, company name) and narrows the shipments to that
-destination by each of them; last it tries a customer address and a lane (`FRA to JFK`, `FRA-JFK`). `answer` writes status, airline, lane, weight, booking reference and transit time from the stored
-shipment, for up to five matches. No gateway call at all. Unknown shipment: we say we hold none under that
+destination by each of them; last it tries a customer address and a lane (`FRA to JFK`, `FRA-JFK`). `answer` writes, in sentences and in the asker's register (`greeting`: the name they signed with, formal, neutral
+or casual), for up to five matches: weight, route (the pickup postcode for a door shipment), airline, status,
+booking reference, the arrival from the ready date and the transit time (`details`: the ready date of the request
+the shipment was quoted for, else the question's), and our `PX-…` reference; signed by `PIXEL_SIGNER`. No customer
+address, no labels. No gateway call at all. Unknown shipment: we say we hold none under that
 reference and ask for the booking reference. The reply goes to the sender, in the thread, through `core.outbox`.
 
 ## Pitfalls
@@ -33,6 +36,7 @@ reference and ask for the booking reference. The reply goes to the sender, in th
 
 ## Open
 
-- Q11: what makes an answer correct is still unknown; the answer gives status, airline, lane, weight and both
-  references.
+- Q11: what makes an answer correct is still unknown; the answer gives status, airline, lane, weight, transit and
+  both references. Since the answer is prose (no more `Status:` line, no customer address), watch the tracking
+  points on the board after it goes live.
 - No tracking question for a port-to-port shipment has been captured yet; that test uses a written mail.
