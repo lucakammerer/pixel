@@ -14,6 +14,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `rfqs/rewrites.jsonl`: several requests (lanes, weights, volumes, dimensions, fastest, door pickup), each written
   many ways, languages and number formats, with the same expected fields. `probe_*` rows test phrasings that trip
   keyword rules.
+- `rfqs/followup-answers.json`: answers to our one question, each naming another airport beside the request's;
+  benchmark section 15 appends each to every captured request and requires the same fields. `known_gaps`:
+  `"<answer>:<fixture>"` read wrong today, each ending `Owner: <role>.`
 - `rfqs/partial_cases.jsonl`: incomplete requests that still have a price basis, and ambiguous or contradictory
   ones, with the facts that may be inferred and those that must stay unknown.
 - `voice/`: two captured mails whose content is only a voice message (mp3 embedded, 200 KB and 218 KB): `rfq-voice-message.json`

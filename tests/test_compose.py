@@ -10,7 +10,7 @@ from test_extract import DEADLINE, captured
 from pixel import llm
 from pixel.agents.rfq import compose, dangerous, extract
 from pixel.config import settings
-from pixel.contracts import LlmResult, Message, RateOption, Rfq, Source
+from pixel.contracts import LlmResult, Message, Preference, RateOption, Rfq, Source
 from pixel.core.context import Context
 
 NOW = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
@@ -409,3 +409,48 @@ async def test_a_chinese_request_is_answered_in_chinese_or_in_checked_english(ct
     assert (await compose.translate(ctx, request, OPTION, english, 5)).startswith("您好，")
     assert await compose.translate(ctx, request, OPTION, english, 5) == english
     assert await compose.translate(ctx, rfq("fr"), OPTION, english, 5) == english  # our own text, no call
+
+
+@pytest.mark.parametrize(
+    ("request_text", "garbled"),
+    [
+        ("Guten Tag,\nwir versenden nächste Woche Maschinenteile nach BBB.\nGruß", "Ihre nächste Woche"),
+        ("Guten Tag,\nwir versenden eine Palette mit Ersatzteilen nach BBB.\nGruß", "Ihre eine Palette"),
+        ("Guten Tag,\nwir versenden elektronische Bauteile nach BBB.\nGruß", "Ihre elektronische Bauteile"),
+        ("Guten Tag,\nWare: Motor\nVon AAA nach BBB, 1200 kg.", "Ihre Motor"),
+        ("Guten Tag, bitte ein Angebot für unsere Firma, von AAA nach BBB.\nGruß", "Ihre Firma"),
+    ],
+)
+def test_german_goods_sentence_reads_as_german(request_text, garbled):
+    _, body = compose.render(rfq("de"), OPTION, request=request_text)
+    assert garbled not in body
+
+
+def test_german_fastest_goods_sentence_keeps_the_dative():
+    r = rfq("de", 5).model_copy(update={"preference": Preference.FASTEST})
+    _, body = compose.render(r, OPTION, request="Ware: Maschinenteile\nVon AAA nach BBB, so schnell wie möglich.")
+    assert "bei Ihren Maschinenteile " not in body
+
+
+@pytest.mark.parametrize(
+    ("request_text", "expected"),
+    [
+        ("Could you quote me a rate from FRA to ORD for 340 kg?", None),
+        ("Please quote FRA to ORD, 340 kg.", None),
+        ("Please quote for Acme Industries from MUC to JFK.", None),
+        ("Cargo: Pallets\nFrom FRA to ORD", None),
+        ("Please quote for 4 pallets of automotive parts from FRA to ORD.", "automotive parts"),
+        ("We have 3 boxes of medical instruments ready on Friday.", "medical instruments"),
+    ],
+)
+def test_goods_of_non_goods_and_package_types(request_text, expected):
+    assert compose.goods_of(request_text) == expected
+
+
+def test_adaptive_facility_naming():
+    trucker_option = OPTION.model_copy(update={"trucker": "Example Trucking"})
+    _, body = compose.render(rfq("en"), trucker_option, request="Please collect from our factory in Stuttgart.")
+    assert "pickup at your factory by Example Trucking" in body
+    _, body = compose.render(rfq("en"), trucker_option, request="Please pick up from our plant in Munich.")
+    assert "pickup at your plant by Example Trucking" in body
+
