@@ -85,6 +85,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   mail said "booked at 5819.38 EUR all-in" after a quote of 6175.48 (the portal prices the flight without our
   pickup, as in 8 of 16 bookings today); main's `booking._notify_booked` now states the quoted total. Next: the
   human column once round 19's award is out, then the German wording on a German request.
+- 21.11. 18:00 CET: round 20 rejected (`too_high`, Klaus's warehouse pickup in Nuremberg flown from FRA: the
+  main loop's). Round 19's booking and confirmation went out with the quote's greeting and "Viele Grüße". Tried
+  answering the small talk Klaus and Petra open with ("Hope your week's going well!" gets "All good here, thanks
+  for asking!" before the price), by rule; changed: one sentence; next: round 19's tracking +10 and its human award.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 

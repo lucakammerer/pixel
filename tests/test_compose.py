@@ -312,3 +312,19 @@ def test_the_earliest_departure_is_answered_only_when_asked():
     assert "departure from AAA on Thursday 26 November" in body and "Sunday 29 November" in body
     _, body = compose.render(rfq("en"), pickup, request="Ready on 2026-11-25, truck to the departure airport please.")
     assert "departure from" not in body
+
+
+@pytest.mark.parametrize(
+    ("opening", "answered"),
+    [
+        ("Hope your week’s going well! Could you quote AAA to BBB?", True),
+        ("Hope your week's going well. Please quote AAA to BBB.", True),
+        ("I hope you're doing well. Please quote AAA to BBB.", True),
+        ("Please quote AAA to BBB, hope the price is good as well.", False),
+    ],
+)
+def test_the_customers_small_talk_is_answered_before_the_price(opening, answered):
+    _, body = compose.render(rfq("en"), OPTION, request=f"Hi there,\n\n{opening}\n\nCheers,\nKlaus")
+    paragraph = body.split("\n\n")[1]
+    assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]) == answered
+    assert body.count("1234.57 EUR") == 1
