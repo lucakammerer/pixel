@@ -5,7 +5,7 @@ uv run python -m tools.replay --session 123                        # a whole ses
 uv run python -m tools.replay --capture 123 > tests/fixtures/mails/rfq-door.json
 uv run python -m tools.replay --db data/pixel.sqlite3 --session 123    # with the stored tariffs, carriers and bids
 
-A replay always runs dry and with an API client that refuses every call unless `--online` is given (then portal
+A replay runs dry and with an API client that refuses every call unless `--online` is given (then portal
 and gateway are real, mail still is not). It runs on a fresh database, or with `--db` on a copy of that database,
 never on the file itself: tariffs, carriers, zones and the mails we sent take part, and what the replayed mails
 left behind (their sessions, quotes and events) is removed from the copy first. The mail's stored time is moved to
@@ -28,7 +28,7 @@ from pixel.api.client import make_client
 from pixel.api.mailbox import Mailbox, to_message
 from pixel.app import build_context
 from pixel.config import settings
-from pixel.contracts import Message
+from pixel.contracts import Event, Message
 from pixel.core import events, orchestrator, poller
 
 
@@ -38,9 +38,16 @@ class OfflineMailbox(Mailbox):
     def __init__(self, client: httpx.AsyncClient, files: dict[tuple[int, int], bytes]):
         super().__init__(client)
         self.files = files
+        self.sent = 0
 
     async def poll(self, since_id: int, limit: int = 200):
         return [], since_id
+
+    async def send(self, to, subject, body, in_reply_to=None, attachments=()) -> Message:
+        """Reached only in an `as_live` replay: the mail gets an id no stored mail has and goes nowhere."""
+        self.sent -= 1
+        raw = {"id": self.sent, "to": to, "subject": subject, "body": body, "in_reply_to": in_reply_to}
+        return to_message(raw, "out")
 
     async def attachment(self, message_id: int, attachment_id: int) -> bytes:
         return self.files[(message_id, attachment_id)]
@@ -85,22 +92,43 @@ def _copy(source: str, target: str, raws: list[dict]) -> int:
     return last
 
 
-async def replay(raws: list[dict], online: bool, db: str | None = None) -> int:
-    config = dataclasses.replace(settings(), dry_run=True, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3"))
+async def run(raws: list[dict], online: bool, db: str | None = None, as_live: bool = False) -> list[Event]:
+    """The events the mails left behind. `as_live` measures a request the way the live process meets it: our
+    mails reach a mailbox that sends nothing, so we wait for answers as we do live; every later mail arrives as
+    long after the first as it did; the replay ends when the first mail is handled. Never with a customer's
+    acceptance among the mails: online it books at the portal."""
+    config = dataclasses.replace(
+        settings(), dry_run=not as_live, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3")
+    )
     last_event = _copy(db, config.db_path, raws) if db else 0
     ctx = build_context(config)
     client = make_client(config) if online else httpx.AsyncClient(transport=httpx.MockTransport(_offline))
     ctx.mailbox = OfflineMailbox(client, _files(raws))
     if not online:
         ctx.portal.client = ctx.gateway.client = ctx.board.client = client
-    session_id = None
-    for raw in raws:
-        message: Message = to_message(raw, "in").model_copy(update={"sent_at": datetime.now(UTC)})
-        stored = poller.ingest(ctx, message)
+    first = to_message(raws[0], "in").sent_at
+
+    async def feed(raw: dict, wait: bool) -> None:
+        message = to_message(raw, "in")
+        if wait:
+            await asyncio.sleep((message.sent_at - first).total_seconds())
+        stored = poller.ingest(ctx, message.model_copy(update={"sent_at": datetime.now(UTC)}))
         if stored:
-            session_id = session_id or stored.session_id
             await orchestrator.dispatch(ctx, stored)
-    for event in events.since(ctx, last_event, limit=10_000):
+
+    if as_live:
+        later = [asyncio.create_task(feed(raw, wait=True)) for raw in raws[1:]]
+        await feed(raws[0], wait=False)
+        for task in later:
+            task.cancel()
+    else:
+        for raw in raws:
+            await feed(raw, wait=False)
+    return events.since(ctx, last_event, limit=10_000)
+
+
+async def replay(raws: list[dict], online: bool, db: str | None = None) -> int:
+    for event in await run(raws, online, db):
         usage = {"tokens_in": event.tokens_in, "tokens_out": event.tokens_out, "cost_usd": event.cost_usd,
                  "ms": event.duration_ms} if event.kind == "llm.call" else {}  # fmt: skip
         print(json.dumps({**event.payload, **usage, "ts": event.ts.isoformat(timespec="seconds"),

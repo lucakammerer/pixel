@@ -116,7 +116,7 @@ feedback            core/feedback.py every 10 s: points per request, the option 
 | `pixel/crm/` | `quotes.py`, `bookings.py`, `shipments.py`, `schema.py` |
 | `pixel/ui/` | `routes.py` (sessions list, session view, event stream, step in), `dashboard.py` |
 | `pixel/llm.py` | The only module that calls the gateway; counts tokens and cost |
-| `tools/` | `replay.py`, `board_me.py`, `set_openai_key.py`, `webhook.py` |
+| `tools/` | `replay.py`, `kpi.py` and `kpi_pr.sh` (accuracy, cost and speed on replayed requests, compared with the base in every pull request), `board_me.py`, `set_openai_key.py`, `webhook.py` |
 
 ### 4.3 Sessions and the event log
 
@@ -348,4 +348,7 @@ Generalization and Frontend work in files that cannot break a quote; a pipeline 
 Everyone takes a night shift at the dashboard.
 
 Every pull request states what it changes in accepted rate, response time or spend per quote, measured on replayed
-fixtures or on `/v1/board/me`, and may not make another KPI worse without saying so.
+fixtures or on `/v1/board/me`, and may not make another KPI worse without saying so. The replayed part is posted
+by CI: `tools/kpi.py` `report`, run by `.github/workflows/ci.yml` on the base and on the branch, offline on the
+mail fixtures. `tools/kpi_pr.sh` runs it on the live host instead: the stored requests with the carriers' answers,
+the real portal and gateway, cost in USD and time to the quote in seconds, each with its points (R28, R29).

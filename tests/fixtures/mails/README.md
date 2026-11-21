@@ -11,6 +11,9 @@ stores our own mails the captured ones answer (the bid request, the quote, a req
 
 A fixture may carry `content_base64` on an attachment; `tools/replay.py` serves it instead of downloading.
 
+Every fixture the router places as a customer's request is replayed by `tools/kpi.py` in each pull request; its
+price on the base and on the branch is compared there, offline.
+
 Captured carrier answers, each to a request in the wording of `pixel/pricing/bids.py` `_subject` and `_body`:
 
 - `bid-decline-lane.json`: an airline that serves the destination but not the lane declines and lists the lanes it
