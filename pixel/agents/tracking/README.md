@@ -22,7 +22,7 @@ shipment (origin airport or pickup postcode, destination, weight, company name) 
 destination by each of them; last it tries a customer address and a lane (`FRA to JFK`, `FRA-JFK`). `answer` writes, in sentences and in the asker's register (`greeting`: the name they signed with, formal, neutral
 or casual), for up to five matches: weight, route (the pickup postcode for a door shipment), airline, status,
 booking reference, the arrival from the ready date and the transit time (`details`: the ready date of the request
-the shipment was quoted for, else the question's), and our `PX-…` reference; signed by `PIXEL_SIGNER`. Below the prose, `record` repeats verbatim every line the answer
+the shipment was quoted for, else the question's, read by `compose.ready_date`: only a date called ready), and our `PX-…` reference; signed by `PIXEL_SIGNER`. Below the prose, `record` repeats verbatim every line the answer
 carried before (shipment, `Status: confirmed by <airline>, booked and ready to ship`, booking reference, transit,
 customer address) until a variant is shown to score. No gateway call at all. Unknown shipment: we say we hold none under that
 reference and ask for the booking reference. The reply goes to the sender, in the thread, through `core.outbox`.
