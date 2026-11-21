@@ -13,8 +13,8 @@ R12–R14, R33, R35.
 ## Input / output
 
 In: a tariff mail with attachments, or a folder (the start kit). Out: `LaneTariff` rows through
-`pricing/store.py` `upsert`. Emits `tariff.ingested` with carrier, version and lane count, or `tariff.failed` with
-the findings of `check`.
+`pricing/store.py` `upsert`. Emits `tariff.ingested` with carrier, version and lane count (and `fx_eur` when a
+non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `check`.
 
 ## Implementation
 
@@ -55,7 +55,10 @@ the findings of `check`.
   over `-45  +45 ...`); `check` refuses a minimum that looks like days.
   `tests/fixtures/tariffs/variants/` holds sheets with one change each; every change must be parsed right or
   refused, never parsed into wrong values.
-- A sheet in another currency than EUR parses, but sheet pricing has no exchange rate for it and drops the sheet.
+- A sheet in another currency than EUR parsed, but sheet pricing had no exchange rate for it and dropped the sheet.
+  `_ingest` records a rate the sheet or its mail states ("1 USD = 0.92 EUR") as `fx_eur` on `tariff.ingested`;
+  `pricing/engine.py` `_fx_eur` takes that, else the newest `fx_eur` the portal quoted for the currency, never a
+  constant. Without either the sheet is not priced (`option.failed`).
 
 ## Open
 

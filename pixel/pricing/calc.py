@@ -47,9 +47,10 @@ def _priced(tariff: LaneTariff, billed: Decimal) -> tuple[Decimal, Decimal, Deci
     return freight, tariff.fuel_per_kg * billed, tariff.security_per_kg * billed
 
 
-def price_tariff(tariff: LaneTariff, rfq: Rfq) -> RateOption:
+def price_tariff(tariff: LaneTariff, rfq: Rfq, fx_eur: Decimal | None = None) -> RateOption:
     """Freight = rate of the bracket x billed weight, at least the minimum (before surcharges); fuel and
-    security per kg of the billed weight. Takes the cheapest of the weight's own bracket and every higher break."""
+    security per kg of the billed weight. Takes the cheapest of the weight's own bracket and every higher break.
+    A sheet in another currency needs `fx_eur`, EUR per unit of it."""
     chargeable = chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
     candidates = [chargeable]
     if BILL_HIGHER_BREAK:
@@ -69,7 +70,8 @@ def price_tariff(tariff: LaneTariff, rfq: Rfq) -> RateOption:
         security=money(security),
         total=total,
         currency=tariff.currency,
-        total_eur=to_eur(total, tariff.currency, None),
+        fx_eur=None if tariff.currency == "EUR" else fx_eur,
+        total_eur=to_eur(total, tariff.currency, fx_eur),
         transit_days=tariff.transit_days,
         dataset_version=tariff.version,
     )
