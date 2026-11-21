@@ -107,6 +107,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   Regensburg" with every fact as before. The quote read "Going well here, thanks! Thanks for your request, happy to
   help with the laboratory glassware ready.": the small-talk answer no longer thanks (the opening line does), and
   the goods stop before "ready". Next: the tracking total, the human column.
+- 21.11. 18:30 CET: total 1437.66 with 15 accepted at 18:10, 1577.66 with 17 accepted at 18:30: +140 = 2 x 60 +
+  2 x 10. Both tracking answers in between scored, the second (round 22's, "53088 to SGN") already signed "Best
+  regards to Regensburg" (#93): the sign-off in kind keeps the +10. Human: PIXEL 0, no award to any team since
+  round 16. Next: the human column; no more tracking changes while it scores.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
