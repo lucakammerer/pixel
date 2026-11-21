@@ -47,6 +47,11 @@ Captured mails of a request, from the request to the confirmed booking:
 - `rfq-excluded-airline.json`: round 42, FRA-ULN door to port, cheapest. The customer rules out one airline for this
   and every later request; we quoted it as the cheapest bid and were rejected as `excluded_airline`.
   `../scored-excluded-airline.json` holds the bids and the verdict.
+- `rfq-door-packing-weight-differs-from-mail.json`: round 57, door to port (73825 Esslingen) to EZE, cheapest. Two
+  shapes seen apart before, now in one mail: a "RE: FW:" subject and an "-----Original Message-----" below that
+  belong to an old VIE-RUH request (708 kg), and an attached packing list (embedded) whose 1729 kg contradicts the
+  mail's 1210 kg, its table's columns in another order (weight, width, length, height, pieces). Quoted on 1729 kg,
+  accepted.
 - `rfq-port-to-port.json`: a request that names both airports and delivers to the airport itself; the rules read
   it without a model.
 - `rfq-port-cheapest-airline-bids.json`: round 28, port to port and cheapest, sent while the portal's rate API

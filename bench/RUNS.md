@@ -226,3 +226,20 @@ What follows:
   (accept, decline too high/too low/DG, thanks, DG documents to follow), all read right on main; the four declines
   logged as accepted before 16:35 read as declines now. None of 98 customer replies in a thread held a new request,
   so the reply-in-old-thread gap stays a note. Next: capture the next request whose reading or verdict differs.
+- 21.11. 21:45, unseen-shape cycle 1 (live DB copy to round 57, mail 15634): every request since round 36 reads
+  the same with today's rules; rounds 9, 14, 33-35 and 42, lost live, read right now. 43-57 all accepted, three
+  with a -22.5 `adjustment` (48-50) not explained by the reading. New shape: round 57, an old request quoted below
+  plus a packing list that contradicts the mail's weight (1729 against 1210 kg), quoted on the document and
+  accepted; its capture now embeds the PDF and has its row. Generated: `simulate --seed`, seeds 2-29 found one
+  oracle artefact (a volume the mail rounds to two decimals), 0 misreads. Tariff sheets, 8 more one-factor
+  variants: rates per 100 kg parsed 100 times too high (fixed), a validity on one line dropped the sheet (fixed);
+  open, Owner accuracy: a minimum written `1,250.00` or a remarks column with a number drop the sheet (text sheets
+  have no model reader), a minimum on freight plus surcharges has no field, a USD sheet is not priced. Next: the
+  routing and customer-reply axes as one-factor grids.
+- 21.11. 22:20, unseen-shape cycle 2 (live to round 61, mail 16738): rounds 58-61 accepted and read the same today;
+  their shapes are known (an old request quoted below, a document that agrees and declares dangerous goods the mail
+  calls non-dangerous). Generated: routing, every captured request with one change (reply or forward prefixes, an
+  upper-case sender, city names for codes, 'kilograms', a tariff-like attachment name): 298 cases, 0 routed away
+  from a request. Customer replies, the 136 live ones with our quote quoted below: an Outlook or German header
+  without an address let our 'we will book it for you' read as an acceptance (27 replies), and sent requests with
+  an old request below to the model; fixed in `extract.HISTORY`. Next: tracking questions and bids by the same grid.
