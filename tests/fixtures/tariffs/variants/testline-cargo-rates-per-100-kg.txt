@@ -1,0 +1,16 @@
+Testline Cargo | Air export tariff
+Currency    EUR
+Valid from  01.11.2026
+Valid to    30.11.2026
+All rates are per 100 kg of chargeable weight, in EUR.
+Chargeable weight is the higher of actual weight and volume weight (1 cbm = 167 kg).
+Fuel and security surcharges are charged per kg of the weight the freight is billed on.
+The minimum charge applies to the freight before surcharges.
+
+Lane        Transit     Minimum     -45       +45       +100      +250      +500      +1000     
+CGN-SYD              5  EUR 75.00   EUR 592.00  EUR 503.00  EUR 387.00  EUR 302.00  EUR 233.00  EUR 186.00
+DUS-JFK              5  EUR 100.00  EUR 396.00  EUR 321.00  EUR 282.00  EUR 234.00  EUR 183.00  EUR 150.00
+
+Surcharges per kg of billed weight
+CGN-SYD: fuel EUR 0.76 per kg, security EUR 0.21 per kg
+DUS-JFK: fuel EUR 1.09 per kg, security EUR 0.13 per kg

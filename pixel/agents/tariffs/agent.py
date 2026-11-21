@@ -24,6 +24,7 @@ BREAK = r"(?:from\s+(\d+)\s*kg|(\d+)\s*kg\s*\+|([-+])(\d+))"
 BREAK_TOKEN = re.compile(rf"(?:(?<=\s)|^){BREAK}(?=\s|$)", re.IGNORECASE)
 BREAK_LINE = re.compile(rf"^\s*{BREAK}\s+({NUM})\s*$", re.IGNORECASE)
 IMAGES = {".jpg", ".jpeg", ".png"}
+RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
 
 
@@ -123,6 +124,7 @@ def _read(lines: list[str]) -> Sheet:
     breaks: list[Decimal] = []
     surcharge_columns = False
     block: tuple[str, str] | None = None
+    per_kg = Decimal(1)
     for raw in lines:
         line = raw.strip()
         lower = line.lower()
@@ -132,6 +134,9 @@ def _read(lines: list[str]) -> Sheet:
             sheet.carrier = line.split("|")[0].strip() if "|" in line else ""
             if sheet.carrier:
                 continue
+        if m := RATE_UNIT.search(line):
+            per_kg = Decimal(m.group(1) or 1)
+            continue
         if m := re.match(r"currency\b[\s:|]*([A-Z]{3})\b", line, re.IGNORECASE):
             sheet.currency = m.group(1).upper()
             continue
@@ -161,7 +166,7 @@ def _read(lines: list[str]) -> Sheet:
             sheet.surcharges[lane] = (_num(fuel.group(1)), _num(security.group(1)))
             continue
         if block and (m := BREAK_LINE.match(line)):
-            sheet.lanes[block]["breaks"].append((_break_kg(m), _num(m.group(5))))
+            sheet.lanes[block]["breaks"].append((_break_kg(m), _num(m.group(5)) / per_kg))
             continue
         if block and (m := re.match(rf"(transit|minimum|fuel|security)\b\D*?({NUM})", line, re.IGNORECASE)):
             key = m.group(1).lower()
@@ -180,7 +185,8 @@ def _read(lines: list[str]) -> Sheet:
         if not breaks or len(numbers) != expected:
             raise ValueError(f"row with {len(numbers)} numbers, expected {expected}: {line!r}")
         values = [_num(n) for n in numbers]
-        row = {"transit": int(values[0]), "minimum": values[1], "breaks": list(zip(breaks, values[2:], strict=False))}
+        rates = [(b, r / per_kg) for b, r in zip(breaks, values[2:], strict=False)]
+        row = {"transit": int(values[0]), "minimum": values[1], "breaks": rates}
         if surcharge_columns:
             row["fuel"], row["security"] = values[-2], values[-1]
         sheet.lanes[lane] = row
