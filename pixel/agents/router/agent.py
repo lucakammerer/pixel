@@ -8,7 +8,7 @@ from pixel.core.events import emit
 TARIFF_FILES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "jpeg", "docx")
 TARIFF_NAME = re.compile(r"tariff|tarif|rate|preis|price")
 BOOKING_CONFIRMED = re.compile(r"\bbooking\b.+\bconfirmed\b", re.IGNORECASE)
-WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³)\b", re.IGNORECASE)
+WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³|lbs?|pounds?|t|tons?|tonnes?|tonnen)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
 
 MODEL_KINDS = (MailKind.CUSTOMER_RFQ, MailKind.CUSTOMER_REPLY, MailKind.TRACKING_QUESTION, MailKind.OTHER)
