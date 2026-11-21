@@ -357,6 +357,23 @@ def test_the_customers_small_talk_is_answered_before_the_price(opening, answered
     assert body.count("1234.57 EUR") == 1
 
 
+def test_a_french_request_is_answered_in_french_with_its_fastest_option():
+    """Round 70: a French mail asking for « l'option la plus rapide » was read as English and cheapest, and the
+    English quote was rejected as wrong_language."""
+    mail = captured("rfq-french-fastest.json")
+    request = extract.by_rules(mail, DEADLINE)
+    assert (request.language, request.preference) == ("fr", extract.Preference.FASTEST)
+    option = OPTION.model_copy(update={"origin": "DUS", "destination": "SYD", "chargeable_kg": Decimal("1412.49")})
+    _, body = compose.render(request, option, request=mail.body)
+    assert body.startswith("Bonjour Klaus,") and "tout compris" in body and "3 jours" in body
+    assert "1412,49 kg" in body and "le jeudi 26 novembre" in body and "À vous aussi, bonne journée !" in body
+    assert compose.check(body, request, option) and not re.search(r"\b(?:Hello|Hi|days|transit is|regards)\b", body)
+    note = dangerous.with_note(body, "UN1950", "fr", "mail")
+    assert "marchandises dangereuses" in note
+    counts = compose._words_lang(note)
+    assert counts["fr"] > 2 * max(counts["en"], counts["de"])
+
+
 @pytest.mark.parametrize(
     ("request_text", "goods"),
     [

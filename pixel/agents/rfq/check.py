@@ -452,10 +452,11 @@ def _text(q: Quote, request: str, options: list[RateOption], files: tuple[str, .
 
 
 def _language(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
-    de, en = compose._words_lang(q.body)
+    counts = compose._words_lang(q.body)
     lang = compose.language_of(q.rfq)
-    if (lang == "de" and en > de * 2 and en >= 8) or (lang == "en" and de > en * 2 and de >= 8):
-        return [Finding("language", WARN, f"customer writes {lang}, the mail reads {'en' if en > de else 'de'}")]
+    reads = max(counts, key=counts.get)
+    if reads != lang and counts[reads] > counts[lang] * 2 and counts[reads] >= 8:
+        return [Finding("language", WARN, f"customer writes {lang}, the mail reads {reads}")]
     return []
 
 

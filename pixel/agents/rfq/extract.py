@@ -85,11 +85,15 @@ PIECES = re.compile(
 NOT_URGENT = re.compile(
     r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
     r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger"
-    r"|(?:not|nicht)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+)?(?:fastest|quickest|schnellst\w*))\b",
+    r"|pas\s+(?:urgent|press[ée]\w*)"
+    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*"
+    r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*)\b", re.IGNORECASE)
-CHEAPEST = re.compile(r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*)\b", re.IGNORECASE)
+FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide)\b", re.IGNORECASE)
+CHEAPEST = re.compile(
+    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix)\b", re.IGNORECASE
+)
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
     r"as possible|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
@@ -124,6 +128,9 @@ GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wi
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
            "you", "your", "shipment", "thanks"}  # fmt: skip
+FRENCH = {"le", "la", "les", "des", "du", "et", "pour", "nous", "vous", "votre", "un", "une", "est", "avec", "merci",
+          "bonjour", "poids", "envoi", "colis", "que", "pouvez", "cordialement", "devis", "dans", "aux"}  # fmt: skip
+LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH}
 
 SYSTEM = (
     "You read an air freight customer's request for a quote and return its facts as JSON. "
@@ -312,9 +319,18 @@ def _currency(text: str) -> str | None:
     return asked.pop() if len(asked) == 1 else None
 
 
+def words_of(text: str, extra: dict[str, set[str]] | None = None) -> dict[str, int]:
+    """How many of each language's common words the text holds."""
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    return {
+        lang: sum(w in known or w in (extra or {}).get(lang, ()) for w in words) for lang, known in LANGUAGES.items()
+    }
+
+
 def _language(text: str) -> str:
-    words = re.findall(r"[a-zäöüß]+", text.lower())
-    return "de" if sum(w in GERMAN for w in words) > sum(w in ENGLISH for w in words) else "en"
+    """The language with the most common words; English on a tie (round 70 was French, answered in English)."""
+    counts = words_of(text)
+    return max(counts, key=lambda lang: (counts[lang], lang == "en"))
 
 
 def _preference(text: str) -> Preference:

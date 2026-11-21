@@ -53,7 +53,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
-- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as a clerk writes to
+- `compose.py` `render`: a reply (`Re:` the customer's subject) in English, German or French, written as a clerk writes to
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
   by the name they signed with (the model's slot, else `signed_name` by rule). "Hope your week's going well" is
@@ -220,6 +220,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
+- A request can come in French (round 70: « l'option la plus rapide », signed "Cheers"). `extract.py` `_language`
+  counts each language's common words; anything we have no `TEXT` for is answered in English, which the scorer
+  rejects as `wrong_language`.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says
   "non-dangerous". `extract.py` `dangerous_goods` reads the mail and every attachment; a declaration adds
   `dangerous_goods_documents` to `Rfq.missing` and emits `rfq.dangerous_goods` with the declared text. "Non-dangerous

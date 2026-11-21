@@ -18,6 +18,10 @@ NOTE = {
           "({goods}), die Mail selbst beschreibt sie anders. Wir behandeln die Sendung als Gefahrgut (dangerous "
           "goods). Bitte senden Sie uns die Versendererklärung für Gefahrgut (Shipper's Declaration for Dangerous "
           "Goods, DGD) und das Sicherheitsdatenblatt (MSDS), damit die Airline die Fracht annimmt.",
+    "fr": "Un point avant la réservation : le document joint à votre mail déclare la marchandise comme dangereuse "
+          "({goods}), alors que le mail la décrit autrement. Nous traiterons l'envoi comme marchandise dangereuse. "
+          "Merci de nous envoyer la déclaration de l'expéditeur pour marchandises dangereuses (DGD) et la fiche de "
+          "données de sécurité (MSDS), afin que la compagnie accepte la marchandise.",
 }  # fmt: skip
 # The mail itself declared them: there is no attached document to point to.
 NOTE_MAIL = {
@@ -28,6 +32,9 @@ NOTE_MAIL = {
           "die Sendung entsprechend. Bitte senden Sie uns die Versendererklärung für Gefahrgut (Shipper's "
           "Declaration for Dangerous Goods, DGD) und das Sicherheitsdatenblatt (MSDS), damit die Airline die "
           "Fracht annimmt.",
+    "fr": "Un point avant la réservation : comme vous l'indiquez, il s'agit de marchandises dangereuses ({goods}), et "
+          "nous traiterons l'envoi comme tel. Merci de nous envoyer la déclaration de l'expéditeur pour marchandises "
+          "dangereuses (DGD) et la fiche de données de sécurité (MSDS), afin que la compagnie accepte la marchandise.",
 }  # fmt: skip
 
 
