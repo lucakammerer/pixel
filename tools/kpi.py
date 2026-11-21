@@ -1,7 +1,7 @@
 """Accuracy, cost and speed of this checkout on replayed requests, and what changed against another checkout.
 
 uv run python -m tools.kpi > branch.json                          # the request fixtures, offline, as JSON
-uv run python -m tools.kpi --online --db data/pixel.sqlite3       # the requests stored in that database, online
+uv run python -m tools.kpi --online --db data/pixel.sqlite3       # the newest requests stored there, online
 uv run python -m tools.kpi --report branch.json --base base.json  # both results as Markdown for the pull request
 
 A request is replayed with `tools/replay.py` `run`: a mail fixture on a database that holds the start kit, or with
@@ -36,6 +36,9 @@ ROOT = Path(__file__).parent.parent
 QUOTE_MAILS = (MailKind.CUSTOMER_RFQ.value, MailKind.CARRIER_BID.value, MailKind.RATEDESK_REPLY.value)
 COST_POINTS, COST_ZERO_USD = 40, Decimal("0.10")  # R28
 TIME_POINTS, TIME_FULL_S, TIME_ZERO_S = 15, 120, 360  # R29
+# Online, a replayed request reads the portal on the live key's budget of rate reads and takes as long as it did
+# live. Base and branch of this many fit between two live requests.
+STORED_REQUESTS = 4
 
 
 async def _kit() -> str:
@@ -52,8 +55,8 @@ def _stored(db: str) -> dict[str, list[dict]]:
     marks = ",".join("?" * len(QUOTE_MAILS))
     rows = conn.execute(
         f"SELECT session_id, data FROM messages WHERE direction = 'in' AND kind IN ({marks}) AND session_id IN"
-        " (SELECT id FROM messages WHERE direction = 'in' AND kind = ?) ORDER BY id",
-        (*QUOTE_MAILS, MailKind.CUSTOMER_RFQ.value),
+        " (SELECT id FROM messages WHERE direction = 'in' AND kind = ? ORDER BY id DESC LIMIT ?) ORDER BY id",
+        (*QUOTE_MAILS, MailKind.CUSTOMER_RFQ.value, STORED_REQUESTS),
     ).fetchall()
     conn.close()
     requests: dict[str, list[dict]] = {}
