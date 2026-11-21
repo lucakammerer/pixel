@@ -120,6 +120,8 @@ Three lines per scenario: what we tried, what changed, what is next.
   them what I know and keep the rest of the mail. Round 25 accepted (60) and booked. Jonas wrote "Dear Air Freight
   Team … Kind regards" and got "Dear Jonas,": a formal mail is now greeted with the whole signed name ("Dear Jonas
   Kessler,", no guessed Mr or Ms), in quote and booking mails. Next: the human column.
+- 21.11. 18:50 CET: round 26 accepted (60) and booked. "We are shipping spare parts for packaging machines: 8 pieces"
+  gave no goods, so the stock opening went out; `goods_of` now reads it. Next: the human column.
 
 ### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
 

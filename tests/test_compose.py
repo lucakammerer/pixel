@@ -301,6 +301,7 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
         ("The sports equipment will be ready for pickup on 2026-12-02: 11 pieces", "sports equipment"),
         ("The cargo is electronic control units, packed in 5 pieces, with 1403 kg.", "electronic control units"),
         ("We’ll have 10 pieces of laboratory glassware ready for pickup on 2026-11-25.", "laboratory glassware"),
+        ("We are shipping spare parts for packaging machines: 8 pieces, 1708 kg.", "spare parts for packaging machines"),
         ("The shipment will be ready on 2026-11-25: 4 cartons, each 48 kg gross.", None),
         ("Please send both lots together for this import shipment to BBB.", None),
     ],
