@@ -147,3 +147,26 @@ def test_customer_summary_counts_quotes_and_wins(pipe):
     profile = customers.profile(ctx, "BUYER@acme.example")
     assert {q.session_id for q in profile["quotes"]} == {1, 2}
     assert customers.profile(ctx, "nobody@example.com") is None
+
+
+def test_carrier_scorecard_times_answers_by_their_request_and_counts_the_scorers_best(pipe):
+    from pixel.crm import carriers
+
+    ctx, at = pipe.ctx, lambda s: T0 + timedelta(seconds=s)
+    q = quote(1)
+    quotes.save(ctx, q.model_copy(update={"sent_at": at(90)}))
+    name = q.option.carrier
+    lane = {"carrier": name, "origin": "AAA", "destination": "BBB", "pickup": False}
+    pipe.emit(ctx, "bid.requested", "pricing", session_id=1, message_id=501, payload=lane, ts=at(0))
+    pipe.emit(ctx, "bid.requested", "pricing", session_id=1, message_id=502, payload=lane, ts=at(10))
+    pipe.emit(ctx, "bid.received", "pricing", session_id=1, payload=lane | {"priced": True, "request_id": 502},
+              ts=at(40))  # fmt: skip
+    pipe.emit(ctx, "bid.received", "pricing", session_id=1, payload=lane | {"priced": False, "request_id": 501},
+              ts=at(60))  # fmt: skip
+    pipe.emit(ctx, "bid.skipped", "pricing", session_id=2, payload=lane)
+    pipe.emit(ctx, "carrier.lanes", "pricing", session_id=1, payload={"carrier": name, "lanes": ["AAA-CCC"]})
+    pipe.emit(ctx, "feedback", "board", session_id=1, payload={"verdict": "accepted", "carrier": name})
+
+    [card] = carriers.scorecard(ctx)
+    assert (card["requested"], card["skipped"], card["answers"], card["priced"], card["median_s"]) == (2, 1, 2, 1, 45)
+    assert (card["best"], card["quoted"], card["lanes"]) == (1, 1, {"AAA-CCC"})
