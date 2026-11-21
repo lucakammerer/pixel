@@ -104,6 +104,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request can leave its weight to the attached packing list ("Total gross weight (kg): 715"): when the mail names
   no weight, `extract` reads the attachments' text with it, for the rules and the model. A document number ("No.
   53839") is no postcode.
+- A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
+  to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.
+- A pickup "from our warehouse" can name no postcode and no town but the signature's (round 15): truckers then answer
+  "To quote we need: the pickup postcode", and a quote without the pickup is too low.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - The same guess can hit a request without a pickup zone, or a destination (a city code, a nearby airfield): no
