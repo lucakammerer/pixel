@@ -320,7 +320,8 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
         )
     text = t[what].format(scope=scope, origin=quote.option.origin, destination=quote.option.destination,
                           weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
-    body = "\n\n".join([frame["hello_name"][tone].format(name=name) if name else frame["hello"], text,
+    hello = frame["hello_name"][tone].format(name=compose.addressed(name, request, ctx.settings.signer, tone))
+    body = "\n\n".join([hello if name else frame["hello"], text,
                           f"{bye}\n{ctx.settings.signer}\n{compose.COMPANY}"])  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:
