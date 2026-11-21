@@ -43,8 +43,9 @@ VOLUME = (
     re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
     re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
 )
+EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
 DIMS = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s])))?\b",  # "in total": a word, not inches
+    rf"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s]|(?:{EACH})\b)))?\b",  # "in total": a word, not inches
     re.IGNORECASE,
 )
 PER_M = {"mm": Decimal(1000), "cm": Decimal(100), "m": Decimal(1), "in": 1 / Decimal("0.0254")}
@@ -61,7 +62,6 @@ LOT = re.compile(
     r"(?im)^\s*(?:[-*•]|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])\s*(\d+)\s+"
     r"(?!(?:kgs?|kilos?|lbs?|cbm|cm|mm|m3|m)\b)[^\W\d](.+)$"
 )
-EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
 ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
 MODE = rf"(?:\b(?P<each>{EACH})|\b(?P<all>{ALL}))?\s*"
 PER_PIECE = rf"(?:\b(?:{EACH})\b|(?<!\w)à)"
