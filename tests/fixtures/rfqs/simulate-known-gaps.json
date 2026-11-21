@@ -20,11 +20,6 @@
     "note": "A mail that leaves every figure to a document labelled in German: 'Bruttogewicht (kg)' ending the table header runs into the first row ('5' kg), the volume is 0. Owner: Cost."
   },
   {
-    "family": "document",
-    "axes": {"relation": ["correction_outdated", "correction_de"], "labels": "en"},
-    "note": "A weight the customer corrects in other words than 'The corrected … is' or 'use … in this email' ('Correction: the gross weight is now 2218 kg, the attached list is outdated', the same in German) loses to a document whose table bears out its own weight. Owner: Cost."
-  },
-  {
     "family": "mail",
     "axes": {"volume": "dims_in"},
     "note": "'24 x 16 x 51 in each' is read in centimetres: `DIMS` takes 'in' as inches only before the end or a sign, and 'each' is a word. Owner: Cost."
