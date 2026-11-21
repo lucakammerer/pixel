@@ -82,3 +82,7 @@ Our reply takes the name, the tone and the ready date from the customer's own wo
 `synthetic-rfq-facts-in-attachment.json`: round 10's request with its weight sentence replaced by "All details are
 in the attached packing specification". Weight and volume stand only in the attachment.
 
+`rfq-door-warehouse-no-postcode.json`: round 15, rejected too low. "RE: FW:" with an old request quoted below;
+pickup "from our warehouse" with no postcode or town, only the signature "Best greetings from Regensburg". The zone 93
+truckers answered "To quote we need: the pickup postcode", so the quote went out without a pickup.
+
