@@ -18,7 +18,7 @@ from pixel.config import Settings, settings
 from pixel.core import db, feedback, orchestrator, poller, webhook
 from pixel.core.context import Context
 from pixel.core.events import emit
-from pixel.ui import crm, dashboard, routes
+from pixel.ui import crm, dashboard, home, routes
 
 
 def build_context(config: Settings | None = None) -> Context:
@@ -73,6 +73,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PIXEL", lifespan=lifespan)
 app.include_router(webhook.router)
+app.include_router(home.router)
 app.include_router(routes.router)
 app.include_router(dashboard.router)
 app.include_router(crm.router)
