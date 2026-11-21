@@ -14,7 +14,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 4. Partial cases: the rows of `rfqs/partial_cases.jsonl` that have an invariant to check.
 5. Changed layouts: every sheet in `tariffs/variants/` is parsed right or refused, never parsed into wrong values.
 6. Routing: the router's rules on `mails/routing_probes.jsonl`.
-7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`.
+7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`, and on every captured pickup offer
+   (`pickup-offer-layouts.json`) with one change each (`PICKUP_CHANGES`): its total, currency and pickup hours.
 8. Spreadsheet changes: layout-only edits of every kit xlsx parse to the original's tariffs or are refused.
 9. Captured requests: every `mails/rfq-*.json` read by the rules against the fields a person read from the mail
    (`rfqs/live.jsonl`), with the score per field.
@@ -713,6 +714,61 @@ def audit_bids() -> list[BidRead]:
         want = f"{exp['total']} {exp['currency']} {exp['transit_days']}d" if exp else "refused"
         got = f"{option.total} {option.currency} {option.transit_days}d" if option else "refused"
         results.append(BidRead(row["case_id"], got, want, got == want or got == "refused", row.get("known_gap")))
+    return results + _pickup_reads()
+
+
+def _total_label(label: str):
+    return lambda t: re.sub(r"(?m)^(\s*)Total\b(?:, all-in)?", lambda m: m[1] + label, t)
+
+
+def _hourly(wording: str):
+    return lambda t: re.sub(r"45\.00 EUR for each hour", wording, t)
+
+
+def _lead_time(wording: str):
+    pattern = r"(\d+) hours (?=from order|after your order)|(?<=in )(\d+) hours"
+    return lambda t: re.sub(pattern, lambda m: wording.format(m[1] or m[2]) + (" " if m[1] else ""), t)
+
+
+# One change each to a captured pickup offer; its total and pickup hours stay the figures read by hand.
+PICKUP_CHANGES = {
+    "decimal comma": lambda t: re.sub(r"(\d)\.(\d\d)\b", r"\1,\2", t),
+    "euro sign": lambda t: re.sub(r"(\d+\.\d\d) EUR", r"€\1", t).replace("(EUR)", "(€)"),
+    "currency first": lambda t: re.sub(r"(\d+\.\d\d) EUR", r"EUR \1", t),
+    "euros in words": lambda t: re.sub(r"(\d+\.\d\d) EUR", r"\1 euros", t),
+    "in USD": lambda t: t.replace("EUR", "USD"),
+    "label Grand total": _total_label("Grand total"),
+    "label Sum": _total_label("Sum"),
+    "label Total amount": _total_label("Total amount"),
+    "label Total EUR": _total_label("Total EUR"),
+    "label Gesamt": _total_label("Gesamt"),
+    "label TOTAL:": _total_label("TOTAL:"),
+    "waiting per hour": _hourly("45.00 EUR per hour"),
+    "waiting EUR/h": _hourly("45.00 EUR/h"),
+    "waiting hourly": _hourly("45.00 EUR hourly"),
+    "waiting per started hour": _hourly("45.00 EUR per started hour"),
+    "waiting je Stunde": _hourly("45.00 EUR je Stunde"),
+    "lead time h": _lead_time("{} h"),
+    "lead time hrs": _lead_time("{} hrs"),
+    "lead time Stunden": _lead_time("{} Stunden"),
+}
+
+
+def _pickup_reads() -> list[BidRead]:
+    rfq = Rfq(session_id=1, message_id=1, customer="bench", origin="CGN", destination="LIM", weight_kg=D(1000),
+              volume_cbm=D(1), received_at=NOW, deadline_at=NOW, door_pickup=True)  # fmt: skip
+    results = []
+    for offer in json.loads((FIXTURES / "pickup-offer-layouts.json").read_text())["offers"]:
+        spoken = offer.get("attachment_text") or "\n".join(agent._spoken(offer["transcript"]))
+        text = bids._own_text(offer["body"]) + "\n" + spoken
+        for change, edit in PICKUP_CHANGES.items():
+            if (body := edit(text)) == text:
+                continue
+            option = bids.parse(_message("Re: Pickup request", body), rfq, needs_transit=False)
+            currency = "USD" if change == "in USD" else offer["currency"]
+            want = f"{offer['total']} {currency} {offer['pickup_hours']}h"
+            got = f"{option.total} {option.currency} {bids._pickup_hours(body)}h" if option else "refused"
+            results.append(BidRead(f"pickup {offer['layout']}: {change}", got, want, got in (want, "refused")))
     return results
 
 
@@ -912,7 +968,14 @@ def main() -> int:
     misread = [b for b in bid_reads if not b.ok and not b.known_gap]
     read = sum(b.got != "refused" for b in bid_reads)
     print(f"\n[7] Carrier bids: {sum(b.ok for b in bid_reads)}/{len(bid_reads)} safe, {read} read by rules")
+    pickups = [b for b in bid_reads if b.case_id.startswith("pickup ")]
+    for change in PICKUP_CHANGES:
+        rows = [b for b in pickups if b.case_id.endswith(f": {change}")]
+        model = sum(b.got == "refused" for b in rows)
+        print(f"    pickup offers, {change:<26} {sum(b.ok for b in rows) - model}/{len(rows)} by rules, {model} model")
     for b in bid_reads:
+        if b in pickups and b.ok:
+            continue
         status = "ok" if b.ok else ("GAP" if b.known_gap else "FAIL")
         print(f"    {status:<4} {b.case_id}: {b.got}" + ("" if b.got == b.expected else f", reference {b.expected}"))
         if b.known_gap and not b.ok:
