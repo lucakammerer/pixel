@@ -98,3 +98,18 @@ def test_spreadsheet_layout_changes_parse_the_same_or_are_refused():
     changes = bench.audit_xlsx_changes()
     assert any(v.outcome == "parsed right" for v in changes)
     assert [f"{v.file}: {v.outcome} {v.detail}" for v in changes if not v.safe and not v.known_gap] == []
+
+
+def test_every_captured_request_has_its_reference_and_the_rules_read_it_right():
+    """`rfqs/live.jsonl` holds what a person read from each captured request. A wrong rules reading fails unless
+    its row names it as a known gap; a request without a row fails until someone writes it (`--stub`)."""
+    live = bench.audit_live()
+    assert live
+    assert [f"{r.fixture}: {r.wrong_fields}" for r in live if r.right is False and not r.known_gap] == []
+    assert all(r.judged for r in live)
+
+
+def test_captured_requests_changed_as_seen_live_are_read_right_or_left_to_the_model():
+    mutated = bench.audit_live_mutations()
+    assert mutated
+    assert [f"{r.fixture}: {r.wrong_fields}" for r in mutated if r.right is False] == []

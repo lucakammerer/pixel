@@ -627,9 +627,56 @@ def names_code(text: str, code: str) -> bool:
     return bool(code and re.search(rf"\b{re.escape(code)}\b", text, re.IGNORECASE))
 
 
+COLUMN = re.compile(
+    r"(?P<name>width|length|height|breite|l(?:ä|ae)nge|h(?:ö|oe)he|pieces|pcs|qty|quantity|st(?:ü|ue)ck|"
+    r"gross\s+weight|weight|gewicht)(?:\s*\((?P<unit>mm|cm|m|kgs?)\))?",
+    re.IGNORECASE,
+)
+SIDE = {"width": 0, "breite": 0, "length": 1, "länge": 1, "laenge": 1, "height": 2, "höhe": 2, "hoehe": 2}
+COUNT = {"pieces", "pcs", "qty", "quantity", "stück", "stueck"}
+
+
+def _table_volume(text: str) -> Decimal | None:
+    """The volume a packing table's rows add up to: a header naming width, length, height and pieces, then rows
+    with one number per column."""
+    lines = text.splitlines()
+    for i, header in enumerate(lines):
+        columns = [(m["name"].casefold(), m["unit"]) for m in COLUMN.finditer(header)]
+        names = [name for name, _ in columns]
+        if not ({0, 1, 2} <= {SIDE.get(n) for n in names} and COUNT & set(names)):
+            continue
+        total = None
+        for row in lines[i + 1 :]:
+            cells = [number(c, thousands=False) for c in re.findall(r"\d[\d.,]*", row)]
+            if len(cells) != len(columns) or None in cells:
+                break
+            volume = Decimal(1)
+            for (name, unit), cell in zip(columns, cells, strict=True):
+                if name in SIDE:
+                    volume *= cell / _per_m(unit)
+                elif name in COUNT:
+                    volume *= cell
+            total = (total or Decimal(0)) + volume
+        return total
+    return None
+
+
+def _document_volume(text: str, pieces: int | None) -> Decimal | None:
+    """A document's stated total volume when its own table or dimensions bear it out (round 33)."""
+    stated = _unique(VOLUME, text, thousands=False)
+    if stated is None or EACH_VOLUME.search(text):
+        return None
+    one = _dims_volume(text)
+    measured = _table_volume(text) or (one * pieces if one is not None and pieces else None)
+    if measured is None or abs(measured - stated) > max(Decimal("0.01"), stated * Decimal("0.01")):
+        return None
+    return stated
+
+
 def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
-    """Resolve each shipment figure independently. Customer text takes precedence over a packing document.
-    Several documents must agree before their figure can be used by rule."""
+    """Resolve each shipment figure independently. Customer text takes precedence over a packing document, except
+    for a volume the document states and its own table or dimensions bear out (round 33: the mail's 2.78 cbm lost
+    to the attached spec's 1.92 cbm). Several documents must agree before their figure can be used by rule."""
     lots = [_lots(text) for _, text in sources]
     facts, evidence = {}, {}
 
@@ -650,6 +697,10 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
                 for (_, text), group, count in zip(sources, lots, counts, strict=True)
             ],
         )
+    documents = [(name, _document_volume(text, facts.get("pieces"))) for name, text in sources[1:]]
+    if len(corroborated := {v for _, v in documents if v is not None}) == 1:
+        facts["volume_cbm"] = corroborated.pop()
+        evidence["volume_cbm"] = [name for name, v in documents if v is not None]
     return facts, evidence
 
 

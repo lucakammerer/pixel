@@ -5,6 +5,10 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #157 | lucakammerer | ffcd8f8 | ok (mine) | live old request and reply subject moved from tools/ to `rfqs/live-mutations.json` |
+| #156 | lucakammerer | aa6886a | ok (mine) | a truck's load, a pallet rating or an earlier shipment no longer blocks a correct weight |
+| #153 | Konstantin-mody | 6a6bc04 | fixed (#157) | 21 hand labels match their mails, independent of code output (round 9: 1952, not the 1750 priced live); offline run reproducible; live lanes and weights written into tools/ |
+| #151 | Konstantin-mody | 06ab588 | fixed (#156) | no runtime cost (0.2 ms, never holds a quote); 36 live requests: only round 9 blocks, rightly; a heavier non-shipment figure ("carry 3 t", "last time 800 kg") blocked a correct weight |
 | #147 | lucakammerer | ea24ee8 | ok (mine) | `REFUSED`: an airline's refusal in our booking thread is no confirmation |
 | #146, #139 | lucakammerer | ae6a3a0, 77e4db1 | ok | RUNS notes only |
 | #145 | lucakammerer | b462562 | ok (mine) | router test for #142's two probes; fails before #142 |

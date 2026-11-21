@@ -225,10 +225,12 @@ MASS_EACH_AFTER = re.compile(
     re.IGNORECASE,
 )
 FILLER = r"(?:\s+(?:approx\.?|approximately|ca\.?|circa|about|around|roughly|is|of|rund|etwa|von))*"
-# Figures that are not the shipment's gross weight: a limit, a capacity, a chargeable or volume weight.
+# Figures that are not the shipment's gross weight: a limit, a capacity, a chargeable or volume weight, what a truck
+# carries or a pallet is rated for, an earlier shipment ("last time we shipped 800 kg").
 MASS_OTHER = re.compile(
     r"(?:max(?:imum|\.)?|up\s+to|bis\s+zu|limit|capacity|chargeable|volumetric|volume\s+weight|frachtpflichtig\w*"
-    rf"|volumengewicht)(?:\s+weight)?{FILLER}\s*:?\s*$",
+    rf"|volumengewicht|carr(?:y|ies)|rated\s+(?:for|at)|holds?)(?:\s+weight)?{FILLER}\s*:?\s*$"
+    r"|\b(?:last\s+(?:time|month|week|year)|previous(?:ly)?|letztes\s+mal)\b[^.\n]*$",
     re.IGNORECASE,
 )
 MASS_TOTAL = re.compile(

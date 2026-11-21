@@ -95,13 +95,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options and
   the finished text. BLOCK: lane, arithmetic of the parts, chargeable weight, pickup present exactly when asked for
   (round 15), the lots added up again (round 9), a priced weight no plain reading of the mail's own mass figures gives
-  (`_accounting`: kg, lb and t converted, net weights and limits left out, per-piece figures times their count; a
-  shipment given group by group only by its sum; a mail with no weight figure only warns), dangerous goods marked by
-  `extract` without the papers (round 10), the total exactly once and no other amount with a currency outside the DG
-  note, template leftovers. WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ
-  did not mark, an implausible price per kg, the language, an expired rate. The check never holds or changes a quote;
-  every result is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it.
-  A rule that raises becomes a WARN finding.
+  (`_accounting`: kg, lb and t converted, net weights, limits, a truck's or pallet's capacity and an earlier shipment
+  left out, per-piece figures times their count; a shipment given group by group only by its sum; a mail with no
+  weight figure only warns), dangerous goods marked by `extract` without the papers (round 10), the total exactly once
+  and no other amount with a currency outside the DG note, template leftovers. WARN: a total more than 5% from the
+  cheapest the session had (round 16), DG words the RFQ did not mark, an implausible price per kg, the language, an
+  expired rate. The check never holds or changes a quote; every result is a `quote.checked` event and a BLOCK is an
+  issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule that raises becomes a WARN finding.
 
 ## Pitfalls
 
@@ -152,7 +152,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself.
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
   combines fields separately, giving precedence to an explicit figure in the mail. A unique attachment value
-  can supply a missing field. `rfq.evidence` records its source. A positive weight recovered by code clears
+  can supply a missing field. One exception, round 33: the mail said 2.78 cbm (120 x 40 x 116 cm), the attached
+  packing spec 1.92 cbm with a table row of 5 pieces of 40 x 120 x 80 cm, and the scorer priced 1.92. A volume a
+  document states and its own table or dimensions times pieces bear out (`_document_volume`, `_table_volume`) wins
+  over the mail's. A stated volume nothing in the document confirms does not. Live requests 2264 and 2537 had
+  attachments that agreed with their mails. `rfq.evidence` records its source. A positive weight recovered by code clears
   the missing-weight flag. A document number alone is no pickup postcode.
 - A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
   to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.

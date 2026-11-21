@@ -3,6 +3,7 @@
 Usage:
     uv run python -m tools.benchmark_generalization          # every check, exit 1 on a failure
     uv run python -m tools.benchmark_generalization --gaps   # only the open known gaps, grouped by owner
+    uv run python -m tools.benchmark_generalization --stub   # an empty rfqs/live.jsonl row per new captured request
 
 Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `data/start-kit/`:
 
@@ -15,6 +16,10 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 6. Routing: the router's rules on `mails/routing_probes.jsonl`.
 7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`.
 8. Spreadsheet changes: layout-only edits of every kit xlsx parse to the original's tariffs or are refused.
+9. Captured requests: every `mails/rfq-*.json` read by the rules against the fields a person read from the mail
+   (`rfqs/live.jsonl`), with the score per field.
+10. The same requests changed in ways seen live (an old request quoted below, a reply's subject, pounds): each
+   read right or left to the model.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -284,6 +289,127 @@ def audit_partial_cases() -> tuple[Report, int]:
         else:
             unchecked += 1
     return report, unchecked
+
+
+@dataclass
+class Live:
+    fixture: str
+    by_rules: bool
+    wrong_fields: list[str] = field(default_factory=list)
+    judged: list[str] = field(default_factory=list)  # the fields its row states, the ones compared
+    known_gap: str | None = None
+
+    @property
+    def right(self) -> bool | None:
+        return None if not self.by_rules else not self.wrong_fields
+
+
+LIVE_FIELDS = ("origin", "destination", "weight_kg", "volume_cbm", "pieces", "preference", "door_pickup",
+               "pickup_postcode", "currency", "language")  # fmt: skip
+MAILS = FIXTURES / "mails"
+UNREAD = "?"  # a field of a stub row nobody has read from the mail yet
+
+
+def _live_value(rfq: Rfq, key: str):
+    value = getattr(rfq, key)
+    return value.value if isinstance(value, Preference) else value
+
+
+def _live_want(key: str, want):
+    return D(want) if key in ("weight_kg", "volume_cbm") and want is not None else want
+
+
+def audit_live() -> list[Live]:
+    """Every captured customer request (`mails/rfq-*.json`) against `rfqs/live.jsonl`: the fields a person read
+    from the mail itself, never from the code's output. A field the row leaves out is not judged (the origin of a
+    door-to-port request is the pickup zone's airport, set by `extract.extract`, not by the rules). None from the
+    rules is safe: the model reads the mail then. A captured request without a row is a failure: write its row."""
+    rows = {r["fixture"]: r for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
+    deadline = _deadline()
+    results = []
+    for path in sorted(MAILS.glob("rfq-*.json")):
+        row = rows.get(path.name)
+        if row is None:
+            results.append(Live(path.name, by_rules=True, wrong_fields=["no row in rfqs/live.jsonl"]))
+            continue
+        exp = {k: v for k, v in row["expected"].items() if k in LIVE_FIELDS and v != UNREAD}
+        if unread := [k for k, v in row["expected"].items() if v == UNREAD]:
+            results.append(Live(path.name, True, [f"fill in {', '.join(unread)} from the mail"], list(exp)))
+            continue
+        rfq = extract.by_rules(to_message(json.loads(path.read_text()), "in"), deadline)
+        if rfq is None:
+            results.append(Live(path.name, False, judged=list(exp), known_gap=row.get("known_gap")))
+            continue
+        wrong = [f"{k}: {_live_value(rfq, k)} != {want}" for k, want in exp.items()
+                 if _live_value(rfq, k) != _live_want(k, want)]  # fmt: skip
+        results.append(Live(path.name, True, wrong, list(exp), row.get("known_gap")))
+    return results
+
+
+def live_by_field(results: list[Live]) -> dict[str, tuple[int, int]]:
+    """Per field: right and judged among the requests the rules read."""
+    tally: dict[str, list[int]] = {k: [0, 0] for k in LIVE_FIELDS}
+    for r in results:
+        if not r.by_rules:
+            continue
+        wrong = {w.split(":", 1)[0] for w in r.wrong_fields}
+        for k in r.judged:
+            tally[k][1] += 1
+            tally[k][0] += k not in wrong
+    return {k: (right, total) for k, (right, total) in tally.items() if total}
+
+
+# A wrong reading seen live becomes a change applied to every captured request, with an answer known in advance.
+LIVE_MUTATIONS = RFQ_FIXTURES / "live-mutations.json"  # the old request and the reply subject, as seen live
+LB = D("0.45359237")
+
+
+def _mutations(raw: dict, exp: dict) -> dict[str, tuple[dict, dict]]:
+    """The changed mails of one request and what a right reading gives for each: an older request quoted below
+    (round 14), a reply's subject naming another lane, the weight written in pounds (21.11. 18:25)."""
+    seen = json.loads(LIVE_MUTATIONS.read_text())
+    found = {
+        "quoted_old_request": (
+            raw | {"body": raw["body"] + seen["quoted_old_request"], "subject": "RE: " + raw["subject"]},
+            exp,
+        ),
+        "reply_subject": (raw | {"subject": seen["reply_subject"]}, exp),
+    }
+    weight = exp.get("weight_kg")
+    if weight and len(re.findall(rf"(?<![\d.,]){re.escape(weight)} kg", raw["body"])) == 1:
+        lbs = (D(weight) / LB).quantize(D(1))
+        body = raw["body"].replace(f"{weight} kg", f"{lbs} lbs")
+        found["pounds"] = (raw | {"body": body}, exp | {"weight_kg": str(lbs * LB)})
+    return found
+
+
+def audit_live_mutations() -> list[Live]:
+    """Every captured request with a finished row, changed as `_mutations` says: read right or left to the model."""
+    rows = {r["fixture"]: r for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
+    deadline, results = _deadline(), []
+    for path in sorted(MAILS.glob("rfq-*.json")):
+        row = rows.get(path.name)
+        if row is None or UNREAD in row["expected"].values():
+            continue
+        exp = {k: v for k, v in row["expected"].items() if k in LIVE_FIELDS}
+        for name, (raw, want) in _mutations(json.loads(path.read_text()), exp).items():
+            case = f"{path.name} {name}"
+            rfq = extract.by_rules(to_message(raw, "in"), deadline)
+            if rfq is None:
+                results.append(Live(case, False, judged=list(want)))
+                continue
+            wrong = [f"{k}: {_live_value(rfq, k)} != {v}" for k, v in want.items()
+                     if _live_value(rfq, k) != _live_want(k, v)]  # fmt: skip
+            results.append(Live(case, True, wrong, list(want)))
+    return results
+
+
+def live_stubs() -> list[str]:
+    """A row to fill in for every captured request that has none: every field "?", to be read from the mail by
+    a person (null where the mail does not state it, the key removed where it is not to be judged). Never filled from what the code reads, or the corpus would only repeat today's misreads."""
+    have = {r["fixture"] for r in _jsonl(RFQ_FIXTURES / "live.jsonl")}
+    return [json.dumps({"fixture": p.name, "expected": dict.fromkeys(LIVE_FIELDS, UNREAD), "note": ""})
+            for p in sorted(MAILS.glob("rfq-*.json")) if p.name not in have]  # fmt: skip
 
 
 @dataclass
@@ -581,6 +707,7 @@ def open_gaps() -> dict[str, list[str]]:
     found = [(r.case_id, r.known_gap) for r in audit_rewrites() if r.by_rules and not r.right and r.known_gap]
     found += [(v.file, v.known_gap) for v in audit_variants() + audit_xlsx_changes() if not v.safe and v.known_gap]
     found += [(r.case_id, r.known_gap) for r in audit_routing() if not r.ok and r.known_gap]
+    found += [(r.fixture, r.known_gap) for r in audit_live() if r.right is False and r.known_gap]
     found += [(b.case_id, b.known_gap) for b in audit_bids() if not b.ok and b.known_gap]
     by_owner: dict[str, list[str]] = {}
     for case, note in found:
@@ -606,6 +733,9 @@ def print_gaps() -> None:
 def main() -> int:
     if "--gaps" in sys.argv:
         print_gaps()
+        return 0
+    if "--stub" in sys.argv:
+        print("\n".join(live_stubs()) or "every captured request has its row in rfqs/live.jsonl")
         return 0
     tariffs, errors = load_start_kit()
 
@@ -693,6 +823,30 @@ def main() -> int:
     if not unsafe_sheets:
         print("    ok   every other change parsed to the original's tariffs")
 
+    live = audit_live()
+    live_wrong = [r for r in live if r.right is False and not r.known_gap]
+    read = sum(r.by_rules for r in live)
+    print(f"\n[9] Captured requests: {sum(bool(r.right) for r in live)}/{len(live)} read right, {read} by rules")
+    for k, (right, total) in live_by_field(live).items():
+        print(f"    {k:<16} {right}/{total}")
+    for r in live:
+        if r.right is False:
+            status = "GAP" if r.known_gap else "FAIL"
+            print(f"    {status:<4} {r.fixture}: {'; '.join(r.wrong_fields)}")
+        elif r.right and r.known_gap:
+            print(f"    ok   {r.fixture}: now right, remove its known_gap")
+        elif r.right is None:
+            print(f"    model {r.fixture}")
+
+    mutated = audit_live_mutations()
+    mutated_wrong = [r for r in mutated if r.right is False]
+    print(f"\n[10] Captured requests, changed: {sum(bool(r.right) for r in mutated)}/{len(mutated)} read right, "
+          f"{sum(r.right is None for r in mutated)} left to the model")  # fmt: skip
+    for r in mutated_wrong:
+        print(f"    FAIL {r.fixture}: {'; '.join(r.wrong_fields)}")
+    if not mutated_wrong:
+        print("    ok   an old quoted request, a reply's subject and pounds change no field")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -702,6 +856,8 @@ def main() -> int:
         or misrouted
         or misread
         or unsafe_sheets
+        or live_wrong
+        or mutated_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")

@@ -328,6 +328,18 @@ def test_a_weight_the_mails_figures_do_not_give_blocks(text, misread, right):
     assert accounting(text, right) == []
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Last time we shipped 800 kg with you. This time FRA to ORD, 450 kg, 2 cbm, cheapest.",
+        "FRA to ORD, 450 kg, 2 cbm, cheapest. Our truck can carry 3 t, so one trip is enough.",
+        "FRA to ORD, 2 pallets, 450 kg in total, each pallet rated for 1000 kg, 2 cbm.",
+    ],
+)
+def test_a_heavier_figure_that_is_not_this_shipment_does_not_block(text):
+    assert accounting(text, "450") == []
+
+
 def test_round_9_a_lot_left_out_or_one_lot_alone_blocks():
     mail = json.loads((MAILS / "rfq-door-three-lots.json").read_text())["body"]
     for wrong in ("1750", "1030", "730"):

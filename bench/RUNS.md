@@ -154,7 +154,7 @@ round closing at the same time.
 | `scored`: prose, record block with "Customer: <address>", "from <postcode> via <airport>" | 21.11. | round 24, 17:31:42 UTC | 1647.66 (18 accepted) | 1657.66 (18 accepted) | +10, round 24 `tracking` 10 |
 | `a`: no address line, "from your site in Stuttgart, flying STR to EZE" (#116) | 17:35:32 UTC, f76a979 | round 25, 17:37:51 UTC, "70498 to EZE" | 1657.66 (19 accepted, round 26's 60 not yet in) | 1727.66 (19 accepted) | +10, round 25 `tracking` 10: kept |
 | `b`: the block's facts in the prose, no block (#126) | 17:42:27 UTC, f4f4c64 | round 26, 17:43:52 UTC, "81617 to BKK" | | | +10, round 26 `tracking` 10: kept |
-| `c`: `b` without "It has not left yet:" and "in case you need it", every fact kept (#129) | 17:48:30 UTC, 6728aba | round 27, 17:49:55 UTC, "24489 to EZE" | | | 0, round 27 `tracking` 0: no test of the wording. Meridian's reply to our booking request by mail (BK-43VLF40X, "Status: booked") was routed as a carrier bid (`sender:carrier`), so the shipment stayed at `booking` and the answer named no airline reference; `b` would have said the same. Kept, measured on the next confirmed shipment |
+| `c`: `b` without "It has not left yet:" and "in case you need it", every fact kept (#129) | 17:48:30 UTC, 6728aba | round 27, 17:49:55 UTC, "24489 to EZE" | | | 0, round 27 `tracking` 0: no test of the wording. Meridian's reply to our booking request by mail (BK-43VLF40X, "Status: booked") was routed as a carrier bid (`sender:carrier`), so the shipment stayed at `booking` and the answer named no airline reference; `b` would have said the same. Round 29 (18:02:04 UTC, "63198 to PVG", Nova Atlas by mail) lost its 10 the same way. Round 30, 18:08:07 UTC, "MUC to PVG", confirmed: `tracking` 10, total 1791.98 before, kept. The route of the airline's reply to our booking mail is fixed in 6adaf83 |
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
@@ -210,3 +210,7 @@ What follows:
   or with our team reference, in either word order (a customer's "Booking request ..., confirmed" stays a request);
   #144 reads "1 250 kg" as 1250 kg and "Service: express" as fastest. All 29 live requests read as before, offline
   KPI unchanged. The portal API is back since round 30. Next: two requests in one mail, an unusual acceptance.
+- 21.11. 19:25, new request kind since round 33: an attached packing specification or packing list contradicts the
+  mail's volume (round 33: 2.78 against 1.92 cbm, round 34: 11.69 against 7.49), and the scorer prices the document.
+  Both rejected too high; #159 (repair loop) lets a document's volume win when its table bears it out, and reads
+  round 34 as 7.49 cbm. Round 34 is a fixture now. Next: the first verdict on such a request with #159 live.
