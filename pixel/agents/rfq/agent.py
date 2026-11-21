@@ -18,7 +18,12 @@ PROSE_WAIT_S = 10
 def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
     option = selection.select(rfq, options)
     subject, body = compose.render(
-        rfq, option, prose, compose.customer_subject(ctx, rfq.message_id), ctx.settings.signer
+        rfq,
+        option,
+        prose,
+        compose.customer_subject(ctx, rfq.message_id),
+        ctx.settings.signer,
+        compose.customer_body(ctx, rfq.message_id),
     )
     calls = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE kind = 'llm.call' AND session_id = ?", (rfq.session_id,)

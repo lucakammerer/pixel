@@ -40,6 +40,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   line and a person's signature (`PIXEL_SIGNER`). Code formats every number and name; two phrasings per language
   alternate by session. `check` proves the finished mail holds the total exactly once with its currency, carrier
   and transit; on failure the mail is rendered without the model's slots (R9, P1).
+- `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
+  own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the transit), one air
+  waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
   `closing`, on `PIXEL_MODEL_PROSE` when set. `clean` drops each slot that holds a digit, a three-letter code, a
   currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German

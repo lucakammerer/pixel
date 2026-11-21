@@ -176,10 +176,10 @@ def test_short_closings_in_both_languages_pass():
 def test_a_rendering_error_with_slots_falls_back_to_plain(monkeypatch):
     real = compose._body
 
-    def broken(rfq, option, prose, signer):
+    def broken(rfq, option, prose, signer, *rest):
         if prose != compose.Prose():
             raise KeyError("boom")
-        return real(rfq, option, prose, signer)
+        return real(rfq, option, prose, signer, *rest)
 
     monkeypatch.setattr(compose, "_body", broken)
     _, body = compose.render(rfq("en"), OPTION, compose.Prose(intro="Thanks for your request, happy to help."))
@@ -205,3 +205,15 @@ def test_unreadable_stored_prose_is_none(ctx):
 def test_adopt_never_raises(ctx, monkeypatch):
     monkeypatch.setattr(compose, "clean", lambda *a, **k: 1 / 0)
     assert compose.adopt(ctx, rfq("en"), message(), {"intro": "x"}) == compose.Prose()
+
+
+def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
+    request = "Ready on 2026-11-25 at our site in 51447.\n\nLot 1: 300 kg\nLot 2: 200 kg\nOne air waybill please."
+    pickup = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
+    _, body = compose.render(rfq("en"), pickup, request=request)
+    assert "Wednesday 25 November" in body and "Sunday 29 November" in body  # 3 days transit, a day to the airport
+    assert "single air waybill" in body and body.count("1234.57 EUR") == 1
+
+
+def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
+    assert compose.ready_date("Please quote 300 kg, it must arrive by 2026-12-01.") is None
