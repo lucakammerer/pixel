@@ -58,7 +58,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `team_reference`), one portal booking by `rate_id`; a lost connection is retried once (the portal answers 200 with
   the same booking), 410 fetches a fresh rate and books that, 503 or a quote without `rate_id` books by mail with the
   airline (address from the 503 message, else the carrier list), 404 and 409 are `booking.failed`. A second
-  acceptance books nothing twice. The customer mails (booked, confirmed) are in the customer's language, with
+  acceptance books nothing twice. A dry run (`PIXEL_DRY_RUN=1`) and every replay never book at the portal: the
+  booking falls through to the booking mail, which the outbox holds. The customer mails (booked, confirmed) are in the customer's language, with
   money and weight formatted by `compose`, the stored first name and the same signer, without a model call.
   `handle_confirmation`: "Booking <reference> confirmed" marks booking and shipment
   confirmed and tells the customer once.
