@@ -295,6 +295,7 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
         ("- Commodity: maintenance spray cans, 4 pieces", "maintenance spray cans"),
         ("Our buyer is importing some control units from us in Germany.", "control units"),
         ("The sports equipment will be ready for pickup on 2026-12-02: 11 pieces", "sports equipment"),
+        ("The cargo is electronic control units, packed in 5 pieces, with 1403 kg.", "electronic control units"),
         ("The shipment will be ready on 2026-11-25: 4 cartons, each 48 kg gross.", None),
         ("Please send both lots together for this import shipment to BBB.", None),
     ],
