@@ -155,7 +155,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   can supply a missing field. One exception, round 33: the mail said 2.78 cbm (120 x 40 x 116 cm), the attached
   packing spec 1.92 cbm with a table row of 5 pieces of 40 x 120 x 80 cm, and the scorer priced 1.92. A volume a
   document states and its own table or dimensions times pieces bear out (`_document_volume`, `_table_volume`) wins
-  over the mail's. A stated volume nothing in the document confirms does not. Live requests 2264 and 2537 had
+  over the mail's. A stated volume nothing in the document confirms does not. The same holds for the gross weight
+  (round 35: the mail said 2644 kg, the spec 1751 kg in its total and its row): `_document_weight` takes the
+  document's total only when the table's one weight column, headed in kg, adds up to it within 0.5 kg. A row's
+  weight is never multiplied by its pieces; a column without kg, a second weight column or a weight per piece leaves
+  the mail standing. Live requests 2264 and 2537 had
   attachments that agreed with their mails. `rfq.evidence` records its source. A positive weight recovered by code clears
   the missing-weight flag. A document number alone is no pickup postcode.
 - A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
