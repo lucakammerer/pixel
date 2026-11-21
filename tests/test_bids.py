@@ -13,7 +13,7 @@ from pixel import llm
 from pixel.agents.rfq import agent, extract
 from pixel.api.mailbox import to_message
 from pixel.config import settings
-from pixel.contracts import LaneTariff, LlmResult, Message, Rfq, Source
+from pixel.contracts import LaneTariff, LlmResult, Message, RateOption, Rfq, Source
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
@@ -22,6 +22,38 @@ from pixel.pricing import bids, engine, portal_rates, store
 
 NOW = datetime.now(UTC)
 IDS = count(100)
+
+
+@pytest.mark.parametrize(
+    "phrase,hours",
+    [
+        ("Pickup time: 11 hours", 11),
+        ("pick up within 25 hours", 25),
+        ("collect within 12 hours", 12),
+        ("Abholung in 12 Stunden", 12),
+        ("Ready in 9 hrs", 9),
+        ("We can collect.", None),
+    ],
+)
+def test_pickup_hours_ignore_offer_validity(phrase, hours):
+    assert bids._pickup_hours(f"Offer valid for 24 hours. {phrase}") == hours
+
+
+def test_combine_balances_timed_pickup_bids():
+    request = rfq(door_pickup=True)
+    airline = RateOption(
+        source=Source.PORTAL, carrier="Air", origin=request.origin, destination=request.destination,
+        chargeable_kg=D(100), billed_kg=D(100), freight=D(100), total=D(100), currency="EUR", total_eur=D(100),
+        transit_days=1,
+    )  # fmt: skip
+    pickups = [
+        airline.model_copy(update={"carrier": name, "trucker": name, "pickup_hours": hours, "total_eur": D(price)})
+        for name, price, hours in [("Slow", 20, 24), ("Fast", 25, 8), ("Other", 30, 16), ("Untimed", 10, None)]
+    ]
+    [combined] = engine.combine(request, [airline, *pickups])
+    assert (combined.trucker, combined.pickup_hours, combined.total_eur) == ("Fast", 8, D(125))
+    [fallback] = engine.combine(request, [airline, pickups[1], pickups[-1]])
+    assert fallback.trucker == "Untimed"
 
 
 def deadline(seconds: float = 3) -> Deadline:

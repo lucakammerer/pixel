@@ -20,11 +20,12 @@ ACCEPT = re.compile(
     re.IGNORECASE,
 )
 DECLINE = re.compile(
-    r"\b(decline|no thanks|too (?:low|high)|not competitive|pass on|not interested|too expensive|went with|"
+    r"\b(decline|no thanks|(?<!not )too (?:low|high)|not competitive|pass on (?:this|it|that|your offer)|not interested|"
+    r"too expensive|went with|"
     r"another (?:offer|forwarder)|"
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:go ahead|accept|book|proceed|confirm|take it|move forward|be moving forward)|"
-    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
+    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
     re.IGNORECASE,
 )
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
@@ -42,6 +43,12 @@ async def handle_reply(ctx: Context, message: Message) -> None:
     """The customer answered our quote: acceptance -> book; decline -> quote declined; else a person answers."""
     quote = quotes.for_session(ctx, message.session_id)
     said = intent(f"{message.subject}\n{_new_text(message.body)}")
+    if quote is not None and quote.sent_at is None and quote.status == QuoteStatus.DRAFT:
+        events.emit(
+            ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
+            payload={"note": "Customer replied to an unsent draft", "intent": said, "quote_id": quote.id},
+        )  # fmt: skip
+        return
     if quote is None or said == "other":
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
