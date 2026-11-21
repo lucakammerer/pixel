@@ -1,10 +1,14 @@
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from pixel.agents.rfq import agent as rfq_agent
-from pixel.core import events, orchestrator, outbox, quote_recovery
+from pixel.core import events, orchestrator, outbox, poller, quote_recovery
+from pixel.core.context import Context
+from pixel.crm import quotes
+from pixel.pricing import portal_rates, store
+from tests.test_extract import mail
 from tests.test_outbox import ingest_rfq, kinds, make_ctx, make_quote
 
 
@@ -179,3 +183,64 @@ async def test_recover_restarts_an_open_request(conn, monkeypatch):
     await orchestrator.recover(ctx)
     await asyncio.gather(*ctx.tasks)
     assert restarted == [rfq.id]
+
+
+async def test_late_seen_request_still_asks_airlines_for_a_bid(conn, monkeypatch):
+    """Seen 160 s after it was stored (a restart, a poll backlog): the handler keeps its turn, recovery asks no airline."""
+    ctx = make_ctx(conn)  # live defaults: target 100 s, hard 315 s
+    stored = datetime.now(UTC) - timedelta(seconds=160)  # 155 s left before hard_at
+    msg = mail("Please quote AAA to BBB, 100 kg, 0.3 cbm.").model_copy(update={"sent_at": stored})
+    store.save_carriers(
+        ctx, [{"name": "Test Air", "kind": "airline", "email": "test-air@example.com", "serves": "BBB"}]
+    )
+
+    async def no_portal(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(portal_rates, "lanes", no_portal)
+    monkeypatch.setattr(portal_rates, "options", no_portal)
+    first = poller.ingest(ctx, msg)
+    task = asyncio.create_task(orchestrator.dispatch(ctx, first))
+    try:
+        enquiry = None
+        async with asyncio.timeout(3):
+            while enquiry is None:
+                await asyncio.sleep(0.01)
+                enquiry = conn.execute("SELECT id FROM messages WHERE purpose='bid_request'").fetchone()
+        response = msg.model_copy(update={"id": 100, "sender": "test-air@example.com", "subject": "Re: Rate request",
+                                          "body": "Our all-in freight rate is EUR 2.80/kg. Transit 3 days.",
+                                          "in_reply_to": enquiry[0], "sent_at": datetime.now(UTC)})  # fmt: skip
+        await orchestrator.dispatch(ctx, poller.ingest(ctx, response))
+        await asyncio.wait_for(task, 5)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert quotes.for_session(ctx, msg.id).total == 280
+
+
+class SlowGateway:
+    def __init__(self):
+        self.purposes = []
+
+    async def chat(self, payload):
+        self.purposes.append(payload["response_format"]["json_schema"]["name"])
+        await asyncio.sleep(2)  # a slow model answer, still running at the takeover
+        raise RuntimeError("gateway down")
+
+
+async def test_takeover_does_not_repeat_the_extraction_call(conn):
+    """The takeover cancels the model read before its `llm.call` is written; recovery must not read again."""
+    base = make_ctx(conn)
+    gateway = SlowGateway()
+    ctx = Context(base.settings, conn, base.mailbox, None, gateway, None)
+    stored = datetime.now(UTC) - timedelta(seconds=149)  # the takeover fires 1 s from now
+    msg = mail("Hi, some cargo from our plant near Munich to a customer in the Chicago area, could you quote?")
+    msg = poller.ingest(ctx, msg.model_copy(update={"sent_at": stored}))
+    task = asyncio.create_task(orchestrator.quote_with_deadline(ctx, msg))
+    try:
+        await asyncio.sleep(4)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    calls = [p for p in gateway.purposes if p == "rfq_extract"]
+    assert len(calls) == 1
