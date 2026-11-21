@@ -289,6 +289,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`_with_attachments`, in a thread: a transcript takes seconds); the others still count. A priced mail is never
   read with its attachments: an airline's terms ("unable to accept …") or a forwarded invoice total would hide its
   price.
+- A request can give its volume in cubic feet and its weight in pounds (round 79: "1413.17 lb", "95.00 cubic
+  feet"). Code converts both (`_volume`, `FT3`; `_weight`, `LB`); a model figure that stands in the text only
+  before another unit (`_only_with`) is replaced by code's reading, so the cross-check never takes 95 cbm.
 - The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
   181.96 EUR offer). Every answer the rules price is read by the model too (`pricing/bids.py` `_crosscheck`, the
   same text, code adds the charges up, at most 6 s); where the totals differ the model's wins, as a `bid.crosscheck`
