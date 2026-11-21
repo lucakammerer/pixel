@@ -1,6 +1,5 @@
-"""The quote mail. Code writes every number and name as prose; the model writes small slots around it (R31): the
-customer's first name and one short opening line (the closing slot is no longer rendered). Slots that fail a check are
-dropped, never the quote (P1, R9)."""
+"""Render the quote from the greeting directly into the offer (R31).
+Code writes the offer. The model may supply the customer's signed first name for the greeting."""
 
 import asyncio
 import json
@@ -27,8 +26,6 @@ TEXT = {
         "subject": "Quote {origin} to {destination}, {weight} kg",
         "hello_name": {"formal": "Dear {name},", "neutral": "Hello {name},", "casual": "Hi {name},"},
         "hello": "Hello,",
-        # the opening no longer thanks, so the answer to their small talk does, once
-        "well_back": ("All good here, thanks for asking!", "Going well here, thanks!", "All well on our side, thanks!"),
         "core": {
             "cheapest": (
                 (
@@ -168,7 +165,6 @@ TEXT = {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
         "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
-        "well_back": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
         "core": {
             "cheapest": (
                 (
@@ -279,7 +275,6 @@ TEXT = {
         "subject": "Devis {origin} – {destination}, {weight} kg",
         "hello_name": {"formal": "Bonjour {name},", "neutral": "Bonjour {name},", "casual": "Bonjour {name},"},
         "hello": "Bonjour,",
-        "well_back": ("Tout va bien de notre côté, merci !", "Tout va bien ici, merci de demander !"),
         "core": {
             "cheapest": (
                 (
@@ -386,33 +381,16 @@ TEXT = {
 }
 
 PROSE_SYSTEM = (
-    "You are an air export clerk at a freight forwarder, answering a customer's mail that asks for an air freight "
-    "quote. Code writes the greeting, the answer to 'hope you are well', the price, routing, dates, what the price "
-    "covers, the booking line and the sign-off. You write four fields in the language with ISO code {language}, "
-    "in the customer's tone (German: always formal Sie; French: always vous). "
-    "first_name: the customer's first name only if they signed the mail with it, else null. "
-    "hook: copied word for word from the customer's mail, the one phrase a person would react to before giving "
-    "the price: a friendly remark of theirs (thanks for checking, thanks for your help, a word about their buyer or "
-    "their own business) or the reason they give for the request (it is urgent, it is "
-    "an import for their buyer). Never 'hope your week is going well', a formal thank-you line, their sign-off or "
-    "their wish for the day, and never a plain fact such as goods, weight, pieces, route, a date or a file they sent. null when the "
-    "mail has none, which is common. "
-    "intro: null when hook is null; else one short sentence, at most ten plain words, reacting to the hook the way "
-    "a colleague would, for example: thanks for checking -> no trouble at all; their buyer is importing -> glad to help them get it there. Write your own words, never the hook's. Never announce "
-    "the offer, never thank them for the request, inquiry, mail or details, never say you noted, read, received or "
-    "understood anything, and never begin the way one of the openings under Our notes begins. "
-    "closing: always null. "
-    "Never write digits, numbers, prices, currencies, dates, weekdays, months, airlines, airports, cities, "
-    "countries, or names of people or companies. No 'we are pleased to', no 'here is', no exclamation marks. "
-    'Answer as JSON {{"first_name": ..., "hook": ..., "intro": ..., "closing": ...}}.'
+    "Read the customer's own email. Return their first name exactly as signed, or null if they did not sign "
+    'with a first name. Answer as JSON {"first_name": ...}.'
 )
 NULLABLE = {"type": ["string", "null"]}
 PROSE_FIELDS = {"first_name": NULLABLE, "intro": NULLABLE, "closing": NULLABLE}
 PROSE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "properties": {**PROSE_FIELDS, "hook": NULLABLE},
-    "required": [*PROSE_FIELDS, "hook"],
+    "properties": {"first_name": NULLABLE},
+    "required": ["first_name"],
 }
 
 DIGIT = re.compile(r"\d")
@@ -652,10 +630,6 @@ def _transit(option: RateOption, t: dict) -> str:
     return f"{option.transit_days} {t['day'] if option.transit_days == 1 else t['days']}"
 
 
-def _sentence(text: str) -> str:
-    return text if text[-1] in ".!?…" else f"{text}."
-
-
 def ready_date(text: str) -> date | None:
     """The date the cargo is ready: the first date after "ready". Any other date may be a deadline, so none."""
     found = READY.search(text)
@@ -767,9 +741,7 @@ def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
 
 
 def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "", request: str = "") -> str:
-    """Written as a clerk writes to this customer (R31): greeting and sign-off in their register, the answer to their
-    small talk and the model's opening ahead of the offer, the goods in their words, the validity and booking line,
-    the signature. No filler line, smiley or P.S.: the jury reads those as a template."""
+    """Start with the customer's greeting, then state the offer directly (R31)."""
     lang = language_of(rfq)
     t = TEXT[lang]
     pick = random.Random(rfq.session_id).choice  # wording varies by session; one session always reads the same
@@ -786,12 +758,8 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         origin=option.origin, destination=option.destination, carrier=option.carrier, goods=goods,
         total=money(option.total), currency=option.currency, transit=_transit(option, t),
     )  # fmt: skip
-    # the model's opening or none: a stock opening is the template the jury reads past (R31)
-    offer = [_sentence(prose.intro)] if prose.intro and not air_only else []
-    if WELL.search(request):
-        offer.insert(0, pick(t["well_back"]))
     site = match.group(1).lower() if (match := WAREHOUSE.search(request)) else "site"
-    offer += [price_line, basis.format(trucker=option.trucker, site=site)]
+    offer = [price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
     book = [pick(t["valid"]).format(until=_until(rfq, option, t))] if option.valid_until else []
@@ -970,21 +938,14 @@ def adopt(ctx: Context, rfq: Rfq, message: Message, raw: dict) -> Prose:
     return prose
 
 
-def notes(earlier: tuple[str, ...]) -> str:
-    """The openings we already sent this customer, so the next one begins differently."""
-    sent = "".join(f"\n- {o}" for o in earlier[-5:])
-    return f"Our notes: openings we sent this customer before:{sent}" if sent else ""
-
-
 async def prose(ctx: Context, rfq: Rfq, message: Message) -> Prose | None:
-    """The quote's one small model call when rules read the request (R28, R31). None on any failure; never
-    blocks the quote."""
+    """Read the signed name for the greeting when rules read the request (R28, R31)."""
     try:
         result = await llm.ask_json(
             ctx,
             purpose="quote.prose",
-            system=PROSE_SYSTEM.format(language=language_of(rfq)),
-            user=f"Subject: {message.subject}\n\n{own_words(message.body)[:1500]}\n\n{notes(_history(ctx, rfq))}",
+            system=PROSE_SYSTEM,
+            user=own_words(message.body)[-1500:],
             schema=PROSE_SCHEMA,
             session_id=rfq.session_id,
             max_output_tokens=150,
