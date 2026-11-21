@@ -342,6 +342,20 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
         return ""
 
 
+QUOTED = re.compile(r"^(?:>|-{2,}\s*(?:Original|Forwarded|Ursprüngliche|Weitergeleitete)|On .+ wrote:|Am .+ schrieb"
+                    r"|(?:From|Von|Sent|Gesendet): )", re.IGNORECASE)  # fmt: skip
+
+
+def own_text(request: str) -> str:
+    """The customer's own words: a forwarded or quoted mail below them has its own greeting, name and dates."""
+    kept = []
+    for line in request.splitlines():
+        if QUOTED.match(line.strip()):
+            break
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def register(request: str) -> str:
     """How the customer writes: formal, casual or neutral, from their greeting and closing."""
     return "formal" if FORMAL.search(request) else "casual" if CASUAL.search(request) else "neutral"
@@ -420,6 +434,7 @@ def render(
     customer's, answered with `Re:`. When the finished mail fails `check` or the slots break the rendering, it is
     rendered again without slots."""
     lang = language_of(rfq)
+    request = own_text(request)
     title = reply_subject(subject) or TEXT[lang]["subject"].format(
         origin=option.origin, destination=option.destination, weight=weight(rfq.weight_kg, lang)
     )
