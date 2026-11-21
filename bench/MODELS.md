@@ -34,3 +34,7 @@ What the numbers say beyond the choice:
 - Six mails are a small sample. Rerun with captured requests once we have them, outside the hours that matter:
   the spend counts in the 18-minute window it happens in.
 - The gateway allows 20 calls in flight per team, then answers 429.
+- **No audio.** `GET /v1/gateway/models` (21.11.2026, round 67) lists no audio model; `gpt-4o-mini-audio-preview` is
+  refused as `model_not_allowed`, and an `input_audio` part to `gpt-6-luna` as "content blocks are expected to be
+  either text or image_url". Voice messages are transcribed locally (`agents/tariffs/agent.py` `_transcribe`), never at
+  the gateway.

@@ -16,6 +16,10 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   keyword rules.
 - `rfqs/partial_cases.jsonl`: incomplete requests that still have a price basis, and ambiguous or contradictory
   ones, with the facts that may be inferred and those that must stay unknown.
+- `voice/`: two captured mails whose content is only a voice message (mp3 embedded, 200 KB and 218 KB): `rfq-voice-message.json`
+  (round 65, every fact of the request spoken) and `bid-pickup-voice-message.json` (round 67, a trucker's
+  pickup offer spoken). Outside `mails/`, so `tools.kpi` and the rules' corpus do not run the local speech model
+  on every gate; `uv run python -m tools.replay tests/fixtures/voice/<file>` replays one with its transcript.
 - `rfqs/live.jsonl`: one row per captured customer request (`mails/rfq-*.json`) with the fields a person read
   from the mail itself: lane, gross weight, volume, pieces, wish, pickup and its postcode, currency, language. A
   field left out is not judged (the origin of a door-to-port request comes from the pickup zone, not the mail);

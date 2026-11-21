@@ -272,6 +272,34 @@ async def test_a_pickup_price_in_an_attached_offer_is_read(ctx, monkeypatch):
     assert (found["pickup"], found["trucker"], found["pickup_hours"]) == ("165.70", "Truck A", 29)
 
 
+async def test_a_trucker_who_answers_only_in_a_file_no_code_reads_is_answered_unpriced_without_an_error(
+    ctx, monkeypatch
+):
+    """A photographed offer: no code reads an image outside a tariff mail. The file is an `attachment.unreadable`,
+    the trucker counts as answered, and no model call copies a price from a mail that holds none."""
+
+    class NoDownload:
+        async def attachment(self, message_id, attachment_id):
+            raise AssertionError("a type without a reader is never downloaded")
+
+    async def no_model(ctx, **kw):
+        raise AssertionError("the mail holds no price to copy")
+
+    monkeypatch.setattr(llm, "ask_json", no_model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
+    photo = Attachment(id=1, filename="offer-TRK-6203.jpg", content_type="image/jpeg", size=10)
+    message = mail("a@truck", "Our offer TRK-6203 is in the attached photo.").model_copy(
+        update={"attachments": (photo,)}
+    )
+    await bids.record(replace(ctx, mailbox=NoDownload()), message)
+    assert kinds(ctx, "attachment.unreadable") == [
+        {"file": "offer-TRK-6203.jpg", "type": "image/jpeg", "reason": "no code parser for .jpg"}
+    ]
+    [received] = kinds(ctx, "bid.received")
+    assert (received["priced"], received["unread"]) == (False, ["offer-TRK-6203.jpg"])
+    assert kinds(ctx, "error") == kinds(ctx, "option.found") == []
+
+
 async def test_the_captured_rate_desk_answer_gives_one_option_per_priced_airline_without_a_model(ctx, monkeypatch):
     async def no_model(ctx, **kw):
         raise AssertionError("the rules must read the desk's answer")

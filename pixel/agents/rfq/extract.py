@@ -671,17 +671,14 @@ def _declared(lines: list[str]) -> str | None:
 
 
 async def _attachments(ctx: Context, message: Message) -> list[tuple[str, list[str]]]:
-    """The text lines of every attachment code can read (packing list, letter of instruction)."""
-    from pixel.agents.tariffs.agent import _lines
+    """The text lines of every attachment code can read (packing list, letter of instruction, a voice message). Facts
+    only in a file code cannot read (a video, a scan) count as missing: the one question asks for them."""
+    from pixel.agents.tariffs.agent import attachment_lines
 
     files = []
     for attachment in message.attachments:
-        try:
-            content = await ctx.mailbox.attachment(message.id, attachment.id)
-            files.append((attachment.filename, await asyncio.to_thread(_lines, attachment.filename, content)))
-        except Exception as e:  # noqa: BLE001 - an unreadable attachment must not cost the quote
-            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "rfq_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+        if (lines := await attachment_lines(ctx, message, attachment, "rfq")) is not None:
+            files.append((attachment.filename, lines))
     return files
 
 
