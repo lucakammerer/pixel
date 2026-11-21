@@ -31,7 +31,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and codes known locally. Only an unserved guess triggers a time-limited portal check and, if still unresolved,
   one optional `rfq.airports` call. Quoted older correspondence is excluded.
 - `agent.py` `fallback` reads the RFQ and the stored options on its current lane. A late complete option can be
-  sent while the session is automatic. A door request waits for a priced trucker until `hard_at`. If pickup is
+  sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30
+  from receipt. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
+  A door request waits for a priced trucker until `hard_at`. If pickup is
   still unpriced at that point, the reply states the airport-to-airport price and excludes pickup. A zone hint
   used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
   when the postcode is missing, including when the quoted pickup price is for the zone pending address confirmation.
@@ -101,7 +103,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   for (round 15), the lots added up again (round 9), a priced weight no plain reading of the mail's own mass
   figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier shipment left out, per-piece figures times their
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
-  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers.
+  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
+  a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67).
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.
@@ -112,6 +115,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A carrier's answer can carry a number the rules take for its price in a layout they have not seen: round 67
+  quoted a trucker's "45.00 EUR for each hour" of waiting instead of its 181.96 total and was rejected as too low.
+  `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
+  selection and records it (`option.failed`, `error: implausible`); `check.py` `_implausible` blocks a quote that
+  still holds one. Evidence and limits: `docs/calc.md`, when a bid is not trusted.
 - A customer can rule out an airline ("Please do not offer … for this shipment or for any of our future
   inquiries"), and it can be the cheapest bid. Round 42 quoted it and was rejected as `excluded_airline`; the
   exclusion is read by rule and holds for that customer's later requests too (`extract.py` `_ruled_out`).
@@ -134,7 +142,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
 - A door-to-port request names the destination and the pickup address, not the origin airport. The rules read it
-  when it names one destination and a pickup postcode; the origin is the zone's airport.
+  when it names one destination and a pickup postcode; the origin is the zone's airport. "Select the departure airport for
+  the fastest option to JFK" names no origin: `_destination_only` ignores an origin label that points at the destination
+  (round 69, where it dropped the customer's answer and no quote went out).
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
@@ -147,7 +157,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
   (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
 - Dimensions in inches ("5 skids 48x40x50 in") were read as centimetres: 0.1 cbm instead of 7.9. A unit of in, inch
-  or inches is converted by code ("in" only before punctuation or the line end: "120x80x150 in total" is cm); no
+  or inches is converted by code ("in" only before punctuation, the line end or "each", "per", "je": "24 x 16 x 51
+  in each" is inches, "120x80x150 in total" is cm); no
   unit is centimetres. Skids, crates, drums, cases, Packstücke and Kisten count
   as pieces.
 - "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
@@ -161,20 +172,23 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself.
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
-  excludes attachments that explicitly name a different origin or destination airport. For weight and volume,
-  an explicit email correction takes precedence. When the customer names one eligible attachment to use,
-  its corroborated figures can resolve disagreement between attachments. A unique attachment value can still
-  supply a missing field. Round 33: the mail said 2.78 cbm (120 x 40 x 116 cm), the attached
-  packing spec 1.92 cbm with a table row of 5 pieces of 40 x 120 x 80 cm, and the scorer priced 1.92. A volume a
-  document states and its own table or dimensions times pieces bear out (`_document_volume`, `_table_volume`) wins
-  over the mail's. A stated volume nothing in the document confirms does not. The same holds for the gross weight
-  (round 35: the mail said 2644 kg, the spec 1751 kg in its total and its row): `_document_weight` takes the
-  document's total only when the table's one weight column, headed in kg, adds up to it within 0.5 kg. A row's
-  weight is never multiplied by its pieces; a column without kg, a second weight column or a weight per piece leaves
-  the mail standing. Live requests 2264 and 2537 had
-  attachments that agreed with their mails. `rfq.evidence` records the chosen sources and any attachment airport
-  conflicts. A positive weight recovered by code clears
-  the missing-weight flag. A document number alone is no pickup postcode.
+  excludes attachments that name a different origin or destination airport (another shipment, #164). For weight
+  and volume, an explicit email correction takes precedence, and "use the weight in this email" keeps the mail's.
+  When the customer names one eligible attachment to use, only that one counts. Otherwise what the document states
+  wins over the mail (rounds 33 to 35: the mail said 2.78 cbm, 11.69 cbm, 2644 kg; the scorer priced the attached
+  spec's 1.92 cbm, 7.49 cbm, 1751 kg). `_document_facts` reads one document: its labelled totals ("Total pieces",
+  "Bruttogewicht gesamt (kg)", "Volume: 7.25 cbm"), the totals of its packing table (`_table_totals`: sum of
+  weights, sum of L × W × H × pieces), or both. A weight column marked per piece ("per pc", "each", "/pc", "unit",
+  "je Stück") is multiplied by the row's pieces; a weight column in lb is converted; with no unit or a second
+  weight column the table gives no weight. A net or tare weight ("Net weight", "Nettogewicht", "Tare weight"), as a
+  line or a column, is never the gross weight and is left out. A document whose totals and table disagree settles nothing: the mail
+  stands. Several documents count only when they agree. A table header ending in "Gross weight (kg)" ran into the
+  first row ('5' kg, volume 0): a labelled figure never comes from the next line, and the totals are read off the
+  text around the table. A document that names only another destination but carries the mail's own weight (and
+  pieces and volume where both state them) is this shipment with the lane mistyped in the mail: its destination
+  wins. Live requests 2264 and 2537 had attachments that agreed with their mails. `rfq.evidence` records the chosen
+  sources and any attachment airport conflicts. A positive weight recovered by code clears the missing-weight
+  flag. A document number alone is no pickup postcode.
 - A number the model returns that the mail does not write is the model's own arithmetic ("480 lbs" to kg, dimensions
   to cbm): `_from_model` replaces it with code's reading of the parts, and keeps the model's only when code has none.
 - A pickup "from our warehouse" can name no postcode and no town but the signature's (round 15): truckers then answer
@@ -223,8 +237,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   can use a space for thousands ("1 250 kg"). `tests/fixtures/rfqs/rewrites.jsonl` holds such phrasings; a row with
   `known_gap` is one the rules read wrong today.
 - A carrier's answer can name the offer's validity in days next to the transit time ("valid for 7 days, transit 3
-  days"); the first number of days is not always the transit. `tests/fixtures/mails/bid_probes.jsonl` holds such
-  answers.
+  days"); the first number of days is not always the transit. `pricing/bids.py` `_days` takes the number after
+  "transit", "Transitzeit", "Laufzeit" or "T/T" (never "Laufzeit des Angebots", the offer's validity, nor
+  "transit via" a hub), else the first one no "valid", "gültig", "good" or "Laufzeit des Angebots" stands before.
+  `tests/fixtures/mails/bid_probes.jsonl` holds such answers.
+- A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
+  attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message). When the body
+  alone holds no price, `pricing/bids.py` `record` reads it together with every attachment code can read
+  (`_with_attachments`, in a thread: a transcript takes seconds); an unreadable file is an `error` event, the
+  others still count. A priced mail is never read with its attachments: an airline's terms ("unable to accept …")
+  or a forwarded invoice total would hide its price.
+- A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
+  packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
+  we had to ask the customer for every fact.
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

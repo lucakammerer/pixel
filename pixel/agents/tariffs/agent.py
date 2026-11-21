@@ -4,6 +4,7 @@ import hashlib
 import io
 import itertools
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -16,14 +17,43 @@ from pixel.api.client import ApiError
 from pixel.contracts import LaneTariff, Message
 from pixel.core import events
 from pixel.core.context import Context
-from pixel.pricing import store
+from pixel.pricing import bids, store
 
 NUM = r"\d+(?:[.,]\d+)?"
 CODE = re.compile(r"\b[A-Z]{3}\b")
 BREAK = r"(?:from\s+(\d+)\s*kg|(\d+)\s*kg\s*\+|([-+])(\d+))"
 BREAK_TOKEN = re.compile(rf"(?:(?<=\s)|^){BREAK}(?=\s|$)", re.IGNORECASE)
 BREAK_LINE = re.compile(rf"^\s*{BREAK}\s+({NUM})\s*$", re.IGNORECASE)
+# The columns before the weight breaks, by header: "Minimum  Transit" as often as "Transit  Minimum".
+LEAD_COLUMN = re.compile(
+    r"\b(?:(?P<transit>transit|laufzeit|t/t)|(?P<minimum>minimum|min\.|mindest\w*))(?!\w)", re.IGNORECASE
+)
 IMAGES = {".jpg", ".jpeg", ".png"}
+AUDIO = {".mp3", ".wav", ".m4a", ".ogg"}
+SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
+# Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
+SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
+SPOKEN_EUR = re.compile(r"(\d[\d,.]*)\s*euros?\b", re.IGNORECASE)
+# Whisper writes small numbers as words: "four hours", "twelve pieces", "vier Stunden" become digits for the rules.
+ONES = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+ONES_DE = ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn", "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn"]
+ONES_DE += ["siebzehn", "achtzehn", "neunzehn"]
+TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+TENS_DE = ["zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
+NUMBER_WORDS = {w: i + 1 for words in (ONES, ONES_DE) for i, w in enumerate(words)} | {"ein": 1, "eine": 1, "einen": 1}
+NUMBER_WORDS |= {w: 10 * (i + 2) for words in (TENS, TENS_DE) for i, w in enumerate(words)}
+_ones = "|".join(sorted((w for w, n in NUMBER_WORDS.items() if n < 20), key=len, reverse=True))
+_tens = "|".join(w for w, n in NUMBER_WORDS.items() if n >= 20)
+SPOKEN_NUMBER = re.compile(
+    rf"\b(?:(?P<one_de>{_ones})und(?P<ten_de>{_tens})|(?P<ten>{_tens})(?:[\s-]+(?P<unit>{_ones}))?|(?P<one>{_ones}))"
+    r"(?=\s+(?:working\s+|business\s+)?(?:hours?|hrs?|days?|pieces?|pallets?|boxes|cartons?|crates?|packages?|colli"
+    r"|stunden|tagen?|werktagen?|stück|paletten|kisten|kartons?|packstücke?)\b)",
+    re.IGNORECASE,
+)
+_speech: list = []
+_speech_lock = threading.Lock()
+VALIDITY = re.compile(r"valid(?:ity)?(?:\s+from)?\b[\s:|]*(.+?)\s+(?:-|–|—|to|until|bis)\s+(.+)$", re.IGNORECASE)
+RATE_UNIT = re.compile(r"\brates\s+are\s+(?:quoted\s+)?per\s+(\d+)?\s*kg\b", re.IGNORECASE)  # "per 100 kg" divides
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y")
 
 
@@ -58,6 +88,14 @@ def _date(value: object) -> date:
         except ValueError:
             continue
     raise ValueError(f"unknown date: {text!r}")
+
+
+def _span(start: str, end: str) -> tuple[date, date] | None:
+    """Both ends of a validity written on one line, or None when either is not a date."""
+    try:
+        return _date(start), _date(end)
+    except ValueError:
+        return None
 
 
 def _break_kg(match: re.Match) -> Decimal:
@@ -110,11 +148,62 @@ def _lines(filename: str, content: bytes) -> list[str]:
             return content.decode("utf-8").splitlines()
         except UnicodeDecodeError:
             return content.decode("latin-1").splitlines()
+    if suffix in AUDIO:
+        return _spoken(_transcribe(content))
     raise ValueError(f"no code parser for {suffix or filename}")
+
+
+def speech_model():
+    """The local speech model, loaded once. The app loads it at start, so no request waits for its download."""
+    from faster_whisper import WhisperModel
+
+    with _speech_lock:
+        if not _speech:
+            _speech.append(WhisperModel(SPEECH_MODEL, device="cpu", compute_type="int8"))
+        return _speech[0]
+
+
+def _transcribe(content: bytes) -> list[str]:
+    """A voice message as one line per spoken sentence, by a local model: no gateway spend. Slow: run it in a thread."""
+    import av
+    import numpy as np
+
+    with av.open(io.BytesIO(content)) as container:
+        resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
+        pcm = [f.to_ndarray() for frame in container.decode(audio=0) for f in resampler.resample(frame)]
+    audio = np.concatenate(pcm, axis=1).flatten().astype(np.float32) / 32768
+    model = speech_model()
+    with _speech_lock:
+        segments, _ = model.transcribe(audio, beam_size=1)
+        text = " ".join(segment.text.strip() for segment in segments)
+    # Segments break mid-sentence ("Collection at Postcode" / "51943 ..."): a sentence is one line.
+    return re.split(r"(?<=[.!?])\s+", text)
+
+
+def _number(m: re.Match) -> str:
+    if m["one_de"]:
+        return str(NUMBER_WORDS[m["ten_de"].lower()] + NUMBER_WORDS[m["one_de"].lower()])
+    if m["ten"]:
+        return str(NUMBER_WORDS[m["ten"].lower()] + (NUMBER_WORDS[m["unit"].lower()] if m["unit"] else 0))
+    return str(NUMBER_WORDS[m["one"].lower()])
+
+
+def _spoken(lines: list[str]) -> list[str]:
+    lines = [SPOKEN_NUMBER.sub(_number, line) for line in lines]
+    return [
+        SPOKEN_EUR.sub(r"\1 EUR", SPOKEN_CENTS.sub(lambda m: f"{m[1]}.{int(m[2]):02d} EUR", line)) for line in lines
+    ]
 
 
 def _codes(text: str, currency: str | None) -> list[str]:
     return [c for c in CODE.findall(text) if c != currency]
+
+
+def _lead(line: str) -> list[str] | None:
+    named = [m.lastgroup for m in LEAD_COLUMN.finditer(line)]
+    return (
+        named if sorted(named) == ["minimum", "transit"] and not re.search(r"\d", BREAK_TOKEN.sub("", line)) else None
+    )
 
 
 def _read(lines: list[str]) -> Sheet:
@@ -123,17 +212,27 @@ def _read(lines: list[str]) -> Sheet:
     breaks: list[Decimal] = []
     surcharge_columns = False
     block: tuple[str, str] | None = None
+    lead = ["transit", "minimum"]
+    per_kg = Decimal(1)
+    above = ""
     for raw in lines:
         line = raw.strip()
         lower = line.lower()
+        previous, above = above, line
         if not line:
             continue
         if sheet.carrier is None:
             sheet.carrier = line.split("|")[0].strip() if "|" in line else ""
             if sheet.carrier:
                 continue
+        if m := RATE_UNIT.search(line):
+            per_kg = Decimal(m.group(1) or 1)
+            continue
         if m := re.match(r"currency\b[\s:|]*([A-Z]{3})\b", line, re.IGNORECASE):
             sheet.currency = m.group(1).upper()
+            continue
+        if (m := VALIDITY.match(line)) and (span := _span(m.group(1), m.group(2))):
+            sheet.valid_from, sheet.valid_to = span
             continue
         if m := re.match(r"valid\s+from\b[\s:|]*(.+)$", line, re.IGNORECASE):
             sheet.valid_from = _date(m.group(1))
@@ -147,6 +246,9 @@ def _read(lines: list[str]) -> Sheet:
             continue
         tokens = list(BREAK_TOKEN.finditer(line))
         if len(tokens) >= 2:
+            # The header orders the columns: on the breaks' line or right above it, never a note or legend sentence.
+            if named := _lead(line) or (not re.search(r"[;:]|\.$", previous) and _lead(previous)):
+                lead = named
             breaks = [_break_kg(t) for t in tokens]
             surcharge_columns = "fuel" in lower and "security" in lower
             block = None
@@ -161,7 +263,7 @@ def _read(lines: list[str]) -> Sheet:
             sheet.surcharges[lane] = (_num(fuel.group(1)), _num(security.group(1)))
             continue
         if block and (m := BREAK_LINE.match(line)):
-            sheet.lanes[block]["breaks"].append((_break_kg(m), _num(m.group(5))))
+            sheet.lanes[block]["breaks"].append((_break_kg(m), _num(m.group(5)) / per_kg))
             continue
         if block and (m := re.match(rf"(transit|minimum|fuel|security)\b\D*?({NUM})", line, re.IGNORECASE)):
             key = m.group(1).lower()
@@ -180,7 +282,10 @@ def _read(lines: list[str]) -> Sheet:
         if not breaks or len(numbers) != expected:
             raise ValueError(f"row with {len(numbers)} numbers, expected {expected}: {line!r}")
         values = [_num(n) for n in numbers]
-        row = {"transit": int(values[0]), "minimum": values[1], "breaks": list(zip(breaks, values[2:], strict=False))}
+        row = dict(zip(lead, values[:2], strict=True)) | {
+            "breaks": [(b, r / per_kg) for b, r in zip(breaks, values[2:], strict=False)]
+        }
+        row["transit"] = int(row["transit"])
         if surcharge_columns:
             row["fuel"], row["security"] = values[-2], values[-1]
         sheet.lanes[lane] = row
@@ -328,8 +433,8 @@ async def read_with_model(ctx: Context, filename: str, pages: tuple[bytes, ...])
 
 
 def check(tariffs: list[LaneTariff]) -> list[str]:
-    """Code checks on every parse: rates fall as weight rises, minimum > 0, lane codes known, dates sane.
-    A sheet with findings is stored as failed, not used for pricing."""
+    """Code checks on every parse: rates fall as weight rises, minimum > 0 and no transit days, lane codes known,
+    dates sane. A sheet with findings is stored as failed, not used for pricing."""
     if not tariffs:
         return ["no lanes"]
     findings = []
@@ -350,6 +455,8 @@ def check(tariffs: list[LaneTariff]) -> list[str]:
             findings.append(f"{lane}: valid from after valid to")
         if t.minimum <= 0:
             findings.append(f"{lane}: minimum {t.minimum}")
+        elif t.breaks and t.minimum <= 30 and t.minimum == int(t.minimum) and t.minimum < 2 * t.breaks[0][1]:
+            findings.append(f"{lane}: minimum {t.minimum} looks like transit days")  # columns read swapped
         if not 0 < t.transit_days <= 30:
             findings.append(f"{lane}: transit {t.transit_days}")
         if not t.breaks or t.breaks[0][0] != 0:
@@ -378,7 +485,22 @@ def _pdf_pages(content: bytes) -> tuple[bytes, ...]:
         return tuple(pages)
 
 
-async def _ingest(ctx: Context, source: str, files: list[tuple[str, bytes]], session_id: int | None = None) -> None:
+def _stated_fx(files: list[tuple[str, bytes]], currency: str, mail: str) -> Decimal | None:
+    """EUR per unit of a non-EUR sheet's currency as the sheet or its mail states it ("1 USD = 0.92 EUR")."""
+    if currency == "EUR":
+        return None
+    for name, content in files:
+        try:
+            if fx := bids._fx("\n".join(_lines(name, content)), currency):
+                return fx
+        except ValueError:  # a scan or image: no text to read
+            continue
+    return bids._fx(mail, currency)
+
+
+async def _ingest(
+    ctx: Context, source: str, files: list[tuple[str, bytes]], session_id: int | None = None, mail: str = ""
+) -> None:
     filename = files[0][0]
     try:
         if Path(filename).suffix.lower() in IMAGES:
@@ -405,13 +527,10 @@ async def _ingest(ctx: Context, source: str, files: list[tuple[str, bytes]], ses
         )
         return
     store.upsert(ctx, tariffs)
-    events.emit(
-        ctx,
-        "tariff.ingested",
-        "tariffs",
-        session_id=session_id,
-        payload={"source": source, "carrier": tariffs[0].carrier, "version": tariffs[0].version, "lanes": len(tariffs)},
-    )
+    payload = {"source": source, "carrier": tariffs[0].carrier, "version": tariffs[0].version, "lanes": len(tariffs)}
+    if fx := _stated_fx(files, tariffs[0].currency, mail):
+        payload["fx_eur"] = str(fx)  # read by `pricing/engine.py` `_fx_eur`
+    events.emit(ctx, "tariff.ingested", "tariffs", session_id=session_id, payload=payload)
 
 
 def _documents(files: list[tuple[str, bytes]]) -> dict[str, list[tuple[str, bytes]]]:
@@ -442,7 +561,7 @@ async def handle(ctx: Context, message: Message) -> None:
     for key, document in _documents(files).items():
         if key.lower().endswith(".csv") and _reference_csv(ctx, document[0][1]):
             continue
-        await _ingest(ctx, f"mail:{message.id}:{key}", document, message.session_id)
+        await _ingest(ctx, f"mail:{message.id}:{key}", document, message.session_id, message.body)
 
 
 async def ingest_folder(ctx: Context, folder: Path) -> None:

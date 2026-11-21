@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import date
 from decimal import Decimal as D
 from pathlib import Path
@@ -49,6 +50,42 @@ def test_check_flags_rates_rising_with_weight(start_kit):
     t = agent.parse("x.txt", (start_kit / "yellowtail-air-freight-tariff-2026-11.txt").read_bytes())[0]
     broken = t.model_copy(update={"breaks": ((D(0), D("2.00")), (D(45), D("3.00")))})
     assert agent.check([broken])
+
+
+def test_check_flags_a_minimum_that_looks_like_transit_days(start_kit):
+    t = agent.parse("x.txt", (start_kit / "yellowtail-air-freight-tariff-2026-11.txt").read_bytes())[0]
+    assert agent.check([t.model_copy(update={"minimum": D(5)})])  # Minimum and Transit read swapped
+
+
+def _swap_lead(text: str) -> str:
+    """Every rate row with its transit and minimum in the other order."""
+    return re.sub(r"(?m)^([A-Z]{3}-[A-Z]{3}\s+)(\d+)(\s+)(\S+ [\d.]+)", r"\1\4\3\2", text)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        # a note with both words and no digit, over a header that names neither
+        lambda s, h: s.replace(h, "Lane        Days        Min charge", 1).replace(
+            "\n\n" + "Lane",
+            "\nNote: minimum charges apply before surcharges; transit times are calendar days.\n\nLane",
+            1,
+        ),
+        # a legend line under the header, naming the columns in the other order
+        lambda s, h: re.sub(
+            r"(?m)^(Lane .*\n)", r"\1(minimum per shipment in EUR, transit in calendar days)\n", s, count=1
+        ),
+        # the header's names one line above its breaks, minimum first
+        lambda s, h: _swap_lead(s.replace(h + "   ", "Lane        Minimum     Transit\n", 1)),
+    ],
+    ids=["note", "legend", "names_above_breaks"],
+)
+def test_transit_and_minimum_come_from_the_header_only(start_kit, change):
+    source = (start_kit / "yellowtail-air-freight-tariff-2026-11.txt").read_text()
+    want = {(t.origin, t.destination): (t.transit_days, t.minimum) for t in agent.parse("y.txt", source.encode())}
+    tariffs = agent.parse("y.txt", change(source, "Lane        Transit     Minimum").encode())
+    assert {(t.origin, t.destination): (t.transit_days, t.minimum) for t in tariffs} == want
+    assert agent.check(tariffs) == []
 
 
 def test_unknown_layout_is_refused():

@@ -1,7 +1,8 @@
 import asyncio
+from decimal import Decimal
 
 from pixel.api.mailbox import RATEDESK
-from pixel.contracts import RateOption, Rfq, Source
+from pixel.contracts import LaneTariff, RateOption, Rfq, Source
 from pixel.core import events, feedback, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
@@ -15,11 +16,32 @@ def _found(ctx: Context, rfq: Rfq, option: RateOption) -> None:
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
 
 
+def _fx_eur(ctx: Context, tariff: LaneTariff) -> Decimal | None:
+    """EUR per unit of a sheet's currency: as the sheet or its tariff mail states it (`tariff.ingested`), else the
+    newest the portal quoted for that currency. Never a constant: without either the sheet is not priced."""
+    stated = (
+        ctx.db.execute(
+            "SELECT json_extract(payload,'$.fx_eur') FROM events WHERE kind='tariff.ingested'"
+            " AND json_extract(payload,'$.source')=? AND json_extract(payload,'$.fx_eur') IS NOT NULL"
+            " ORDER BY id DESC LIMIT 1",
+            (tariff.source,),
+        ).fetchone()
+        or ctx.db.execute(
+            "SELECT json_extract(payload,'$.option.fx_eur') FROM events WHERE kind='option.found'"
+            " AND json_extract(payload,'$.option.source')=? AND json_extract(payload,'$.option.currency')=?"
+            " AND json_extract(payload,'$.option.fx_eur') IS NOT NULL ORDER BY id DESC LIMIT 1",
+            (Source.PORTAL.value, tariff.currency),
+        ).fetchone()
+    )
+    return Decimal(str(stated[0])) if stated else None
+
+
 def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
     found = []
     for tariff in store.lookup(ctx, rfq.origin, rfq.destination, rfq.received_at.date()):
         try:
-            option = calc.price_tariff(tariff, rfq)
+            fx = None if tariff.currency == "EUR" else _fx_eur(ctx, tariff)
+            option = calc.price_tariff(tariff, rfq, fx)
         except ValueError as exc:
             events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                         payload={"source": "sheet", "carrier": tariff.carrier, "error": str(exc)})  # fmt: skip
@@ -45,10 +67,32 @@ def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
     return bool(down) and not asked
 
 
-def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE) -> list[RateOption]:
+def _distrusted(ctx: Context, rfq: Rfq, option: RateOption) -> None:
+    """Once per bid: an `option.failed` that `feedback.attention` shows, so the reading can be repaired."""
+    name = option.trucker or option.carrier
+    seen = ctx.db.execute(
+        "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.error')="
+        "'implausible' AND json_extract(payload,'$.carrier')=? AND json_extract(payload,'$.total_eur')=?",
+        (rfq.session_id, name, str(option.total_eur)),
+    ).fetchone()
+    if not seen:
+        events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
+                    message_id=option.evidence_message_id,
+                    payload={"source": "pickup" if option.trucker else "bid", "carrier": name,
+                             "total_eur": str(option.total_eur), "error": "implausible"})  # fmt: skip
+
+
+def combine(
+    rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE, ctx: Context | None = None
+) -> list[RateOption]:
     """Airline options, each with the balanced pickup added for door-to-port (Q4: the best price includes it).
-    Without a pickup price a door-to-port request is priced port-to-port rather than not at all."""
+    Without a pickup price a door-to-port request is priced port-to-port rather than not at all. A bid
+    `selection.implausible` distrusts takes no part; with `ctx` it is recorded."""
     matching = [o for o in options if session.on_lane(o, rfq)]
+    distrusted = [o for o in matching if selection.implausible(o, matching)]
+    for option in distrusted if ctx is not None else ():
+        _distrusted(ctx, rfq, option)
+    matching = [o for o in matching if o not in distrusted]
     airline = [o for o in matching if o.trucker is None]
     pickups = [o for o in matching if o.trucker is not None]
     if not (rfq.door_pickup and pickups):
@@ -96,4 +140,4 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     # Also reuse same-lane bids published before recovery or while another price source was still running.
     carried = [o for o in session.for_request(ctx, rfq) if o.source in (Source.PORTAL, Source.BID, Source.RATEDESK)]
     all_options = dict.fromkeys(sheets + portal + offers + pickups + carried)
-    return combine(rfq, list(all_options), feedback.pickup_rule(ctx))
+    return combine(rfq, list(all_options), feedback.pickup_rule(ctx), ctx)

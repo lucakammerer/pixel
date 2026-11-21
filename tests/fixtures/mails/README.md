@@ -26,6 +26,8 @@ Captured carrier answers, each to a request in the wording of `pixel/pricing/bid
 - `bid-airline-priced-labelled.json`: the same from an airline that is neither in a sheet nor on the portal, with
   transit and validity on labelled lines of their own. The carriers' wording differs from mail to mail.
 - `bid-pickup-priced.json`: a trucker's pickup price, a pickup time in hours, a validity time and a quote reference.
+- `bid-pickup-in-attachment.json`: round 63, a trucker's pickup offer as a pdf table (embedded), the body only
+  "you find our price offer in the attachment"; total, base and weight charge, lead time in hours.
 - `ratedesk-portal-rates.json`: the rate desk's answer, a thread of its own that names our mail by its subject: the
   portal's rate per airline on the lane with its rate id and validity, and the address of an airline that is not on
   the portal.
@@ -45,6 +47,11 @@ Captured mails of a request, from the request to the confirmed booking:
 - `rfq-excluded-airline.json`: round 42, FRA-ULN door to port, cheapest. The customer rules out one airline for this
   and every later request; we quoted it as the cheapest bid and were rejected as `excluded_airline`.
   `../scored-excluded-airline.json` holds the bids and the verdict.
+- `rfq-door-packing-weight-differs-from-mail.json`: round 57, door to port (73825 Esslingen) to EZE, cheapest. Two
+  shapes seen apart before, now in one mail: a "RE: FW:" subject and an "-----Original Message-----" below that
+  belong to an old VIE-RUH request (708 kg), and an attached packing list (embedded) whose 1729 kg contradicts the
+  mail's 1210 kg, its table's columns in another order (weight, width, length, height, pieces). Quoted on 1729 kg,
+  accepted.
 - `rfq-port-to-port.json`: a request that names both airports and delivers to the airport itself; the rules read
   it without a model.
 - `rfq-port-cheapest-airline-bids.json`: round 28, port to port and cheapest, sent while the portal's rate API
@@ -120,3 +127,6 @@ round 11: the latest one counts.
 `tests/fixtures/warehouse-rounds.json` lists rounds 15 to 19 with what we read, what we quoted, the verdict and the
 bound it gives on the scorer's best price.
 
+`rfq-voice-unread.json`: round 69, the whole request was a voice message we could not read, so we asked.
+`customer-answers-every-fact.json`: the answer 13 s later with every fact, door-to-port to JFK; "select the departure
+airport for the fastest option to JFK" read JFK as an origin and the answer was dropped.

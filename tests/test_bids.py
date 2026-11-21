@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import re
 from dataclasses import replace
@@ -11,9 +12,10 @@ import pytest
 
 from pixel import llm
 from pixel.agents.rfq import agent, extract
+from pixel.agents.tariffs.agent import _spoken
 from pixel.api.mailbox import to_message
 from pixel.config import settings
-from pixel.contracts import LaneTariff, LlmResult, Message, RateOption, Rfq, Source
+from pixel.contracts import Attachment, LaneTariff, LlmResult, Message, RateOption, Rfq, Source
 from pixel.core import events, outbox
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
@@ -113,6 +115,8 @@ def kinds(ctx, kind):
         ("Hello,\nour all-in price is EUR 1.234,50, transit 3 days.\nRegards", "1234.50", "EUR", 3),
         ("Freight 2.10/kg\nTotal: 980.00 USD (1 USD = 0.92 EUR)\nTransit time: 4 days", "980.00", "USD", 4),
         ("We offer 845,00 € all in, 2 Tage Laufzeit.\n\n> Please quote 100 kg, EUR 5 per kg", "845.00", "EUR", 2),
+        ("EUR 900,00 all-in. Transitzeit: 3 Tage. Laufzeit des Angebots: 14 Tage.", "900.00", "EUR", 3),
+        ("EUR 900.00 all-in, 2 days. Transit via DXB, 1 day stopover.", "900.00", "EUR", 2),
     ],
 )
 def test_rules_read_a_bid(body, total, currency, days):
@@ -226,6 +230,46 @@ def test_rules_read_the_captured_airline_bid_and_pickup_bid():
     assert (labelled.total, labelled.currency, labelled.transit_days) == (D("586.80"), "EUR", 6)
     pickup = bids.parse(captured("bid-pickup-priced.json"), rfq(), needs_transit=False)
     assert (pickup.total, pickup.currency) == (D("182.62"), "EUR")
+
+
+OFFERS = json.loads((Path(__file__).parent / "fixtures" / "pickup-offer-layouts.json").read_text())["offers"]
+
+
+@pytest.mark.parametrize("offer", OFFERS, ids=[o["layout"] for o in OFFERS])
+def test_rules_read_every_attached_offer_layout_and_never_the_waiting_time(offer):
+    """Rounds 63 to 65: a letter, a table with its currency only in the header, a quotation, a voice message. "45.00
+    EUR for each hour" of waiting read as the price would quote the pickup far too low; a model call per trucker
+    costs spend."""
+    text = offer.get("attachment_text") or "\n".join(_spoken(offer["transcript"]))
+    body = bids._own_text(offer["body"]) + "\n" + text
+    message = Message(id=9, session_id=1, direction="in", sender="t@x", to="us@x", subject="Re: Pickup", body=body,
+                      sent_at=NOW)  # fmt: skip
+    found = bids.parse(message, rfq(), needs_transit=False)
+    assert (str(found.total), found.currency, bids._pickup_hours(body)) == (
+        offer["total"], offer["currency"], offer["pickup_hours"])  # fmt: skip
+
+
+async def test_a_pickup_price_in_an_attached_offer_is_read(ctx, monkeypatch):
+    """Round 63: every trucker priced the pickup in an attachment (pdf, docx, mp3); the body says only "see the
+    attachment". Read without the file, no pickup was priced and the airport-only fallback was rejected as too low."""
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "bid-pickup-in-attachment.json").read_text())
+
+    class Files:
+        async def attachment(self, message_id, attachment_id):
+            return base64.b64decode(raw["attachments"][0]["content_base64"])
+
+    async def model(ctx, *, user, **kw):
+        offer = "Total 165.70" in user
+        data = {"offer": offer, "total": "165.70" if offer else None, "components": [], "currency": "EUR",
+                "transit_days": None, "eur_per_unit": None}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
+    message = to_message(raw, "in").model_copy(update={"session_id": 1, "sender": "a@truck"})
+    await bids.record(replace(ctx, mailbox=Files()), message)
+    [found] = [o["option"] for o in kinds(ctx, "option.found")]
+    assert (found["pickup"], found["trucker"], found["pickup_hours"]) == ("165.70", "Truck A", 29)
 
 
 async def test_the_captured_rate_desk_answer_gives_one_option_per_priced_airline_without_a_model(ctx, monkeypatch):
@@ -352,3 +396,30 @@ def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days
 )
 def test_pickup_hours_read_a_decimal_and_skip_a_clock_time(text, hours):
     assert bids._pickup_hours(text) == hours  # 10.5 read as 5 and 09:00 h as 0 pick the wrong trucker
+
+
+AIRLINE_BODY = "Hello,\nwe can offer EUR 900.00, transit 3 days.\nRegards, Air One"
+ATTACHED = {
+    # the customer's invoice forwarded back, or a company letter: a labelled total that is no freight price
+    "invoice_total": "Commercial invoice\nTotal value: EUR 12,500.00\n",
+    # general terms: a decline word that is no decline of this request
+    "terms_decline_word": "General terms\nThe carrier is unable to accept dangerous goods without a declaration.\n",
+}
+
+
+@pytest.mark.parametrize("case", list(ATTACHED))
+async def test_an_airline_bid_keeps_its_mail_price_beside_an_unrelated_attachment(ctx, monkeypatch, case):
+    class Files:
+        async def attachment(self, message_id, attachment_id):
+            return ATTACHED[case].encode()
+
+    async def no_model(ctx, **kw):
+        raise AssertionError("the mail alone reads by rules")
+
+    monkeypatch.setattr(llm, "ask_json", no_model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq().model_dump(mode="json"))
+    att = Attachment(id=1, filename="terms.txt", content_type="text/plain", size=10)
+    message = mail("one@air", AIRLINE_BODY).model_copy(update={"attachments": (att,)})
+    await bids.record(replace(ctx, mailbox=Files()), message)
+    found = [(o["option"]["total"], o["option"]["transit_days"]) for o in kinds(ctx, "option.found")]
+    assert found == [("900.00", 3)]

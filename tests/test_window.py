@@ -22,9 +22,24 @@ def test_the_window_opens_after_our_answer_and_the_first_two_minutes_and_closes_
     add(conn, 1, "quote.sent", T0 + timedelta(seconds=30))
     assert not open_now(conn, *at(40))  # answered, but still in the first two minutes
     assert open_now(conn, *at(125))
-    assert not open_now(conn, *at(310))  # the next request is due within a minute
+    assert not open_now(conn, *at(335))  # the next request is due within 30 s
     add(conn, 1, "route", T0 + timedelta(seconds=130), '{"kind": "carrier_bid"}')  # a bid is not a request
     assert open_now(conn, *at(135))
+
+
+def test_a_fallback_at_the_hard_deadline_still_opens_the_window(conn):
+    """Rounds 63 to 65: every quote went out as the fallback at 315 s; a window that ended at 300 s kept the fix out."""
+    add(conn, 1, "route", T0, '{"kind": "customer_rfq"}')
+    add(conn, 1, "quote.fallback", T0 + timedelta(seconds=HARD_S))
+    assert open_now(conn, *at(HARD_S + 3))
+
+
+def test_an_urgent_deploy_goes_as_soon_as_the_answer_is_out(conn):
+    add(conn, 1, "route", T0, '{"kind": "customer_rfq"}')
+    assert not open_now(conn, *at(10), first_s=0)  # the request is still being answered
+    add(conn, 1, "quote.sent", T0 + timedelta(seconds=30))
+    assert open_now(conn, *at(32), first_s=0)
+    assert not open_now(conn, *at(32))
 
 
 def test_a_missed_request_keeps_the_window_shut_while_it_can_still_get_a_quote(conn):

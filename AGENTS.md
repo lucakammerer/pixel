@@ -16,8 +16,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   between options in `pixel/pricing/selection.py`: Decimal, tested. A model never computes, compares or writes a
   price.
 - **Rules first, model as fallback.** A model only reads what code cannot: an unusual request, an odd carrier
-  answer, an unknown tariff layout. One small gateway call per quote by default (R28: none earns no cost points,
-  0.10 USD per accepted quote earns none either).
+  answer, an unknown tariff layout. One small gateway call per quote by default (R28: an 18-minute window
+  without any gateway spend earns no cost points, 0.10 USD per accepted quote earns none either).
 - **All model calls go through `pixel/llm.py`,** which calls the 5U gateway and logs tokens and cost. No other
   module imports an LLM client or `pixel/api/gateway.py`.
 - **Everything is an event.** Every mail in and out, every decision and every model call is written with
@@ -134,7 +134,8 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
    `.github/`, is a top-level `.md` file or belongs to the deploy job itself, it moves the live checkout without a
    restart. Otherwise it tests the commit in the clone (`uv sync --locked`, `uv run pytest -q`, `uv run ruff check .`);
    red is refused for good and sent to `PIXEL_ALERT_URL`. Green waits for `tools/window.py`, at most one restart per
-   round unless a merge since the live commit has `URGENT` in its title, then moves the live checkout, `uv sync --locked --no-dev`,
+   round and from a request's third minute on; a merge since the live commit with `URGENT` in its title lifts both
+   (the answer to the current request must still be out). Then it moves the live checkout, `uv sync --locked --no-dev`,
    restarts and checks that the UI answers; if not, it goes back to the previous commit and alerts. Root runs only
    files installed by hand: the job as `/opt/pixel/cd/cd.sh` and the units in `/etc/systemd/system`. A merged change
    to `deploy/cd.sh`, `deploy/pixel-cd.*` or `deploy/pixel.service` only logs that it differs; install it on the host
@@ -181,11 +182,15 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
 - Spending rate reads on airlines that cannot win: reads are capped per minute, and `ports` and `brackets` are
   free.
 - Booking with a `rate_id` older than 15 minutes: 410. Fetch a fresh rate and book that.
-- Calling the model "just to be sure" in a loop or per carrier answer: the hourly spend is divided by *accepted*
-  quotes only.
+- Calling the model "just to be sure" in a loop or per carrier answer: the spend of an 18-minute window is
+  divided by its *accepted* quotes only, and every USD costs 400 points.
+- Spending at the gateway outside the live service while rounds are scored (`tools.bench_models`,
+  `tools.kpi --online`, `tools.replay --online`, `tools/kpi_pr.sh`, any process that holds our key): the scorer
+  counts it in the window it happens in. On 21.11. spend the live service never logged took 8 and 12 cost points
+  from single windows, more than a day of quotes.
 - Switching `PIXEL_MODEL` to a reasoning model without measuring it: reasoning tokens count against
   `max_completion_tokens`, and a small cap then returns no answer at all (`bench/MODELS.md`).
-- Sending no gateway call at all for a quote: that quote earns no cost points.
+- Sending no gateway call at all in an 18-minute window: no quote of that window earns cost points.
 - Treating the start kit as the truth for the weekend. It is one version; the tariff mails and the hourly changes
   replace it.
 - Catching an exception in a handler and going on silently. Emit an `error` event; the fallback covers the quote.

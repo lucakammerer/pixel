@@ -24,7 +24,9 @@ flowchart TD
     ENG --> SEL[calc + selection<br/>code, Decimal]
     SEL --> Q[quote text]
     Q --> OUT[outbox<br/>first quote only]
-    O -.->|late bid or hard deadline| OUT
+    O -->|unanswered at 2m 30s or handler ends early| REC[quote recovery]
+    REC -->|sheets, portal and missing pickup enquiries| ENG
+    O -.->|recovered price, late bid or hard deadline| OUT
     OUT --> MB
 
     BK -->|book by rate id| PORTAL
@@ -56,7 +58,9 @@ Up to 100 points per accepted quote: 45 for price accuracy, 40 for low model cos
 accepted only within 5% of the best price, and only as our first reply within 6 minutes. Code calculates the price.
 A request normally uses one small gateway call.
 
-A door-to-port quote includes a trucker price. If only air freight is priced, PIXEL keeps the request open for late
+If the normal handler ends without a quote, or the request is still unanswered 2 minutes 30 seconds after receipt,
+the orchestrator takes over. It checks stored prices and runs a short second sourcing pass if needed. A door-to-port
+quote includes a trucker price. If only air freight is priced, PIXEL keeps the request open for late
 pickup bids. At the hard deadline it can send the airport-to-airport price with pickup explicitly excluded. If the
 customer omitted the postcode, the quote asks for the pickup address. With no air price at all the round is recorded
 as missed. A customer question about an offer goes to the operator. An affirmative instruction to book a delivered
@@ -88,7 +92,7 @@ changes, the fifth makes the jury see it.
 
 - **Thinks:** a model call is a purchase. What did it buy that a rule could not?
 - **Owns:** `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, every prompt.
-- **Watches:** spend per accepted quote per hour, calls per quote, tokens per call, share of requests read by rules alone.
+- **Watches:** spend per accepted quote per 18-minute window, calls per quote, tokens per call, share of requests read by rules alone.
 - **Asks of every change:** does this add a call, a longer prompt or a bigger model, and is one call per quote still true?
 - **First tasks:** the smallest model that extracts reliably; a rule for every request the model read twice the same way;
   a budget per session that a runaway loop cannot pass.

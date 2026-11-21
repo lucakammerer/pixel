@@ -21,6 +21,7 @@ from pixel.agents.rfq import compose
 from pixel.agents.rfq.extract import DG_DOCUMENTS, number, own_words
 from pixel.contracts import Preference, Quote, RateOption, Source
 from pixel.pricing.calc import CBM_KG
+from pixel.pricing.selection import TRUST, implausible
 
 BLOCK, WARN = "block", "warn"
 CENTS = Decimal("0.03")  # parts are rounded one by one; the total once (docs/calc.md)
@@ -127,9 +128,11 @@ def _best_price(q: Quote, request: str, options: list[RateOption], files: tuple[
     5% above it is rejected when the scorer takes that one (round 16: the fastest trucker instead of the cheapest).
     WARN, not BLOCK: which trucker the scorer takes is learned from feedback (`pricing/selection.py`)."""
     o, r = q.option, q.rfq
-    airlines = [a for a in options if a.trucker is None and a.total_eur > 0
+    airlines = [a for a in options if a.trucker is None and a.total_eur > 0 and not implausible(a, options)
                 and (a.origin, a.destination) == (r.origin, r.destination)]  # fmt: skip
-    pickups = [p.total_eur for p in options if p.trucker is not None and p.total_eur > 0]
+    pickups = [
+        p.total_eur for p in options if p.trucker is not None and p.total_eur > 0 and not implausible(p, options)
+    ]
     if not airlines or (r.door_pickup and not pickups):
         return []
     if r.preference == Preference.FASTEST:
@@ -142,6 +145,18 @@ def _best_price(q: Quote, request: str, options: list[RateOption], files: tuple[
     if o.total_eur * (1 + ACCEPT) < best:
         return [Finding("best_price", WARN, f"{o.total_eur} EUR is below every option the session had ({best} EUR)")]
     return []
+
+
+def _implausible(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """The quote holds no bid `selection.implausible` distrusts (round 67: a trucker's waiting charge per hour
+    quoted as the pickup, rejected as too low). `engine.combine` leaves such a bid out; this catches a path that
+    did not."""
+    o = q.option
+    held = [p for p in options if (o.trucker and p.trucker == o.trucker)
+            or (p.trucker is None and (p.source, p.carrier) == (o.source, o.carrier))]  # fmt: skip
+    return [Finding("implausible_bid", BLOCK, f"{p.trucker or p.carrier} at {p.total_eur} EUR is below {TRUST} times "
+                                              "the cheapest other price of its kind")
+            for p in held if implausible(p, options)][:1]  # fmt: skip
 
 
 def _per_kg(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
@@ -457,5 +472,5 @@ def _pct(value: Decimal, best: Decimal) -> str:
     return f"{(value / best - 1) * 100:.1f}%" if best else "?"
 
 
-RULES = (_required, _lane, _arithmetic, _chargeable, _pickup, _best_price, _per_kg, _weight, _accounting, _dangerous, _text,
-         _language, _validity)  # fmt: skip
+RULES = (_required, _lane, _arithmetic, _chargeable, _pickup, _best_price, _implausible, _per_kg, _weight, _accounting,
+         _dangerous, _text, _language, _validity)  # fmt: skip

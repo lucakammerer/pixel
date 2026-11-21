@@ -34,17 +34,32 @@ TOTAL_BEFORE = re.compile(
     TOTAL_LABEL + r"(?:\s+(?:freight|air|rate|price|cost|charge|is|of|amount))*[\s:=,-]*$", re.IGNORECASE
 )
 TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE)
+# An offer letter: "Our price for this transport is 273.20 EUR. It has a base charge of 104.00 EUR and ..."
+PRICE_IS = re.compile(r"\b(?:our|the|this)\s+price\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)\s*$", re.IGNORECASE)
+# An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none.
+HEADER_CURRENCY = re.compile(rf"\((?P<c>{CURRENCY})\)")
+TOTAL_LINE = re.compile(rf"^\s*{TOTAL_LABEL}[\s:,-]*(?P<n>{AMOUNT})\s*$", re.IGNORECASE)
 KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
 KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
 # A basis other than the whole shipment ("per pallet", "/ 100 kg"); "per shipment" or "per AWB" is the flat total.
 FLAT = r"(?!(?:shipment|consignment|awb|air\s*waybill|sendung|auftrag)\b)"
-OTHER_BASIS = re.compile(rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE)
+# "45.00 EUR for each hour" of waiting is a surcharge per unit, never the offer's price.
+OTHER_BASIS = re.compile(
+    rf"^\s*(?:/\s*{FLAT}(?:\d|[a-z])|(?:per|pro|je|(?:for\s+)?each|an?)\s+{FLAT}(?:\d|[a-z]))", re.IGNORECASE
+)
 TRANSIT = re.compile(
     r"(\d+)(?:\s*[-–]\s*\d+)?\s*(?:(?:calendar|working|business|werk)\s*)?(days?|d|tage?n?|werktage?n?)\b",
     re.IGNORECASE,
 )
-TRANSIT_HOURS = re.compile(r"(?:transit|laufzeit)[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
+# "offer valid for 7 days, transit 3 days": the figure after the transit word counts, a validity never does.
+# "Laufzeit des Angebots" is the offer's validity and "transit via DXB" names a hub, neither is a transit time.
+TRANSIT_LABEL = r"\b(?:transit(?:\s*time|zeit)?|laufzeit|t/t)\b(?!\s+(?:via\b|de[sr]\s+(?:angebots|offerte)))"
+LABELLED_TRANSIT = re.compile(TRANSIT_LABEL + r"[^\d\n]{0,24}?" + TRANSIT.pattern, re.IGNORECASE)
+VALIDITY = re.compile(
+    r"\b(?:valid(?:ity)?|g(?:ü|ue)ltig\w*|good|laufzeit\s+de[sr]\s+(?:angebots|offerte))\b[^\d\n]{0,20}$", re.IGNORECASE
+)
+TRANSIT_HOURS = re.compile(TRANSIT_LABEL + r"[^\d\n]{0,24}(\d+)\s*(?:hours?|hrs?|h|stunden?|std)\b", re.IGNORECASE)
 # "10.5 hours" and "4,5 Stunden" are one figure; "09:00 h" is a clock time, not a duration.
 HOURS = re.compile(r"(?<![\d:.,])(\d+(?:[.,]\d+)?)\s*(?:hours?|hrs?|h\b|stunden?|std\b)", re.IGNORECASE)
 PICKUP_HOURS = re.compile(
@@ -102,7 +117,12 @@ def _rate(text: str) -> Decimal:
 def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
     found, labelled = set(), set()
     unresolved_unit = False
+    headers = {m.group("c") for m in HEADER_CURRENCY.finditer(text)}
     for line in FX.sub("", text).splitlines():
+        if len(headers) == 1 and (m := TOTAL_LINE.match(line)):
+            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), next(iter(headers)))
+            found.add(price)
+            labelled.add(price)
         prices = list(PRICED.finditer(line))
         for i, m in enumerate(prices):
             before = line[prices[i - 1].end() if i else 0 : m.start()]
@@ -116,7 +136,7 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
             currency = m.group("c1") or m.group("c2")
             price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency, currency))
             found.add(price)
-            if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after):
+            if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after) or PRICE_IS.search(before):
                 labelled.add(price)
     if unresolved_unit and not labelled:
         return None
@@ -127,8 +147,11 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
 def _days(text: str) -> int | None:
     if match := TRANSIT_HOURS.search(text):
         return calc.transit_days(int(match[1]), hours=True)
-    if match := TRANSIT.search(text):
+    if match := LABELLED_TRANSIT.search(text):
         return calc.transit_days(int(match[1]), hours=False)
+    for match in TRANSIT.finditer(text):
+        if not VALIDITY.search(text[: match.start()]):
+            return calc.transit_days(int(match[1]), hours=False)
     return None
 
 
@@ -368,6 +391,22 @@ def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool
     return None, all(tuple(lane) == current for lane in lanes)
 
 
+async def _with_attachments(ctx: Context, message: Message) -> str:
+    """The carrier's own words and the text of every attachment code can read: truckers send their offer as a pdf
+    or docx and write only "see the attachment" in the mail."""
+    from pixel.agents.tariffs.agent import _lines
+
+    parts = [_own_text(message.body)]
+    for attachment in message.attachments:
+        try:
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            parts += await asyncio.to_thread(_lines, attachment.filename, content)  # a voice message takes seconds
+        except Exception as e:  # noqa: BLE001  an unreadable file (a voice message) must not lose the body
+            events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
+                        payload={"where": "bid_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+    return "\n".join(parts)
+
+
 async def record(ctx: Context, message: Message) -> None:
     """Called by the orchestrator for every bid or desk answer: parse (model only if `parse` gives None),
     emit `bid.received` and `option.found`."""
@@ -384,8 +423,18 @@ async def record(ctx: Context, message: Message) -> None:
                     payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
                              "ignored": "different or ambiguous lane"})  # fmt: skip
         return
-    listed = parse_desk(message, rfq) if kind == "ratedesk" else []
-    option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
+
+    def by_rules(message: Message) -> tuple[list[RateOption], RateOption | None]:
+        listed = parse_desk(message, rfq) if kind == "ratedesk" else []
+        return listed, None if listed else parse(message, rfq, needs_transit=not pickup)
+
+    # An attachment counts only when the mail alone holds no price: an airline's terms or a forwarded invoice beside
+    # a priced mail must not hide that price.
+    listed, option = by_rules(message)
+    if message.attachments and not listed and option is None:
+        message = message.model_copy(update={"body": await _with_attachments(ctx, message)})
+        listed, option = by_rules(message)
+    read_by = "rules"
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
     if not listed and option is None and kind != "ratedesk" and not DECLINE.search(_own_text(message.body)):
         read_by = "model"

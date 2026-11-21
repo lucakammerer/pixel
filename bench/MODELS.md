@@ -32,5 +32,5 @@ What the numbers say beyond the choice:
 - **The field every model got wrong** is the volume of the mail that gives only dimensions per piece: that is
   arithmetic, and code does it (`agents/rfq/extract.py` `_volume`).
 - Six mails are a small sample. Rerun with captured requests once we have them, outside the hours that matter:
-  the spend counts in the hour it happens.
+  the spend counts in the 18-minute window it happens in.
 - The gateway allows 20 calls in flight per team, then answers 429.

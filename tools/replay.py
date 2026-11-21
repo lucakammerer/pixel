@@ -6,10 +6,10 @@ uv run python -m tools.replay --capture 123 > tests/fixtures/mails/rfq-door.json
 uv run python -m tools.replay --db data/pixel.sqlite3 --session 123    # with the stored tariffs, carriers and bids
 
 A replay runs dry and with an API client that refuses every call unless `--online` is given (then portal
-and gateway are real, mail still is not). It runs on a fresh database, or with `--db` on a copy of that database,
-never on the file itself: tariffs, carriers, zones and the mails we sent take part, and what the replayed mails
-left behind (their sessions, quotes and events) is removed from the copy first. The mail's stored time is moved to
-now, so its deadline starts with the replay.
+and gateway are real, mail still is not, and the scorer counts the spend in that 18-minute window, R28). It runs
+on a fresh database, or with `--db` on a copy of that database, never on the file itself: tariffs, carriers, zones
+and the mails we sent take part, and what the replayed mails left behind (their sessions, quotes and events) is
+removed from the copy first. The mail's stored time is moved to now, so its deadline starts with the replay.
 """
 
 import argparse
@@ -128,6 +128,15 @@ class _ReplayLoop(asyncio.SelectorEventLoop):
 
     def time(self):
         return super().time() + self.replay_selector.elapsed
+
+    def run_in_executor(self, executor, func, *args):
+        """A thread's work would let the skipped timers outrun it; on the replay clock it takes no time."""
+        future = self.create_future()
+        try:
+            future.set_result(func(*args))
+        except Exception as e:  # noqa: BLE001  handed to the awaiting caller, as a thread would
+            future.set_exception(e)
+        return future
 
 
 def _offline_run(raws: list[dict], db: str | None, as_live: bool) -> list[Event]:

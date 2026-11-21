@@ -15,7 +15,8 @@ from pixel.agents.tariffs import agent as tariffs
 from pixel.api.client import ApiError
 from pixel.api.portal import Lane, _option
 from pixel.contracts import LlmResult, Preference
-from pixel.pricing import bids, engine, portal_rates, selection, store
+from pixel.core import events
+from pixel.pricing import bids, calc, engine, portal_rates, selection, store
 from tests.test_bids import FakePortal, deadline, kinds, mail, rfq
 from tests.test_outbox import make_ctx
 from tests.test_portal import RATE
@@ -194,3 +195,25 @@ async def test_scanned_pdf_renders_each_page_and_validates_before_activation(ctx
     await tariffs._ingest(ctx, "bad-scan.pdf", files)
     assert len(calls) == 2 and len(kinds(ctx, "tariff.failed")) == 1
     assert not store.has_source(ctx, "bad-scan.pdf")
+
+
+@pytest.mark.parametrize(
+    "mail_says, portal_fx, fx",
+    [
+        ("All rates in USD. Exchange rate: 1 USD = 0.95 EUR.", "0.92", "0.95"),  # the tariff mail's own rate
+        ("", "0.92", "0.92"),  # the newest rate the portal quoted for USD
+        ("", None, None),  # no rate anywhere: not priced, never a constant
+    ],
+)
+async def test_a_usd_sheet_is_priced_with_its_stated_or_the_newest_portal_rate(ctx, mail_says, portal_fx, fx):
+    sheet = (FIXTURES / "variants" / "testline-cargo-usd.txt").read_bytes()
+    await tariffs._ingest(ctx, "usd.txt", [("usd.txt", sheet)], mail=mail_says)
+    for rate in ("0.80", portal_fx) if portal_fx else ():
+        option = {"source": "portal", "currency": "USD", "fx_eur": rate}
+        events.emit(ctx, "option.found", "pricing", session_id=9, payload={"option": option})
+    request = rfq().model_copy(update={"origin": "CGN", "destination": "SYD"})
+    [option] = engine.sheet_options(ctx, request) or [None]
+    if fx is None:
+        assert option is None
+    else:
+        assert (option.currency, option.fx_eur, option.total_eur) == ("USD", D(fx), calc.money(option.total * D(fx)))

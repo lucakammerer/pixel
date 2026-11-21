@@ -48,6 +48,9 @@ call fails, a new thread becomes `customer_rfq` (a missed request costs the whol
 - Subject words are weak evidence: a customer can write "booking" and "confirmed" in a new request, and an airline
   can word its confirmation differently from the API's example. The sender or our team reference decides. `tests/fixtures/mails/routing_probes.jsonl` holds
   such mails; `tools/benchmark_generalization.py` section 6 checks them.
+- A sender with a display name ("Kestrel Ops <ops@kestrel-airways.hackloop.mail>") never matched the carrier list,
+  tracking or the rate desk, so a carrier bid became a customer request. `api/mailbox.py` `to_message` keeps the
+  address only (`_address`).
 
 ## Open
 

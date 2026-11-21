@@ -124,15 +124,5 @@
     "pdf",
     "xlsx",
     "docx"
-  ],
-  "known_gaps": {
-    "pieces": "the mail's piece count wins over the document's 'Total pieces'. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
-    "destination": "the mail's destination wins over the document's 'Destination airport'; we would quote the wrong lane. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
-    "weight:weight_per_piece": "a table weight per piece is not multiplied out, so the mail's total weight wins. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
-    "weight:table_only": "a document with only a table (no total lines) does not count: the mail's weight wins. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
-    "volume:table_only": "a document with only a table (no total lines) does not count: the mail's volume wins. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
-    "volume_only:table_only": "same as volume:table_only. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
-    "weight_and_volume:weight_per_piece": "same as weight:weight_per_piece. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
-    "weight_and_volume:table_only": "same as weight:table_only. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources)."
-  }
+  ]
 }

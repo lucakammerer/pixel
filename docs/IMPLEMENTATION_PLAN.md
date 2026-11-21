@@ -12,9 +12,9 @@ question is deleted here.
 
 | # | Question | Until answered we assume |
 | --- | --- | --- |
-| Q1 | Does build-time work count as gateway spend: must parsing the start kit (the scanned tariff) go through the gateway, and does that spend land in "spend per accepted quote in the hour"? | Yes to both: ingestion runs through `llm.py`, once per file, outside the hours we score in where possible |
-| Q2 | How is a gateway call tied to a quote for "a quote made without a gateway call earns no cost points": by a time window, by the hour, or by something we send with the call? | By time: one call between the request and our reply |
-| Q3 | Is the hourly cost the team's whole gateway spend in that hour divided by its accepted quotes, so spend on rejected quotes, tariff mails and tracking answers counts too? | Yes |
+| Q1 | Does build-time work count as gateway spend: must parsing the start kit (the scanned tariff) go through the gateway, and does that spend land in the window's spend per accepted quote? | Yes to both: ingestion runs through `llm.py`, once per file, outside the hours we score in where possible |
+| Q2 | How is a gateway call tied to a quote? | Answered on 21.11.: not at all. The spend of an 18-minute window is shared over the quotes accepted in it; only a window without any spend earns no cost points (R28) |
+| Q3 | Is the cost the team's whole gateway spend in that window divided by its accepted quotes, so spend on rejected quotes, tariff mails and tracking answers counts too? | Yes |
 | Q4 | What exactly is the "best price": the cheapest all-in total over every source (sheets, portal, bids, desk, browser page), or the best of the option the customer asked for (the fastest one for "fastest")? Does it include the pickup for door-to-port? | The all-in total of the option the customer asked for, pickup included |
 | Q6 | The 50/50 rule among carrier bids: what is the formula (normalised how?), and how does it combine with "cheapest or fastest": does it only pick among mail bids, and do sheets and portal then compete on price alone? | Among trucker bids only, price and speed as multiples of the best (`docs/calc.md`); airline bids compete one by one with the other sources by the customer's wish (round 28) |
 | Q7 | Which currency must the total be in when the cheapest rate is not in EUR? Which exchange rate and rounding does the scorer use? | The rate's own currency and total, compared in EUR with the rate's exchange rate |
@@ -36,8 +36,9 @@ question is deleted here.
 1. **Acceptance is a cliff.** A quote more than 5% above the best price scores 0 on all three kinds. Being right
    comes before being cheap or fast: 45 points for accuracy, and the other 55 only exist for accepted quotes.
 2. **Cost is nearly free if we are disciplined.** 40 points for staying far below 0.10 USD per accepted quote, but
-   zero without any gateway call. One small call per quote keeps almost all of them. The hourly figure is spend per
-   *accepted* quote: every wasted call and every rejected quote makes each accepted one more expensive.
+   zero for an 18-minute window without any gateway call. One small call per quote keeps almost all of them. The
+   figure is the window's spend per *accepted* quote: every wasted call and every rejected quote makes each
+   accepted one more expensive.
 3. **Time is the smallest prize and the hardest limit.** 15 points for answering within 2 minutes, nothing at all
    after 6. We aim for 100 seconds and never miss 6 minutes.
 4. **The sheets are instant and free.** A request on a lane we hold a tariff for is priced in milliseconds by code.
@@ -89,6 +90,7 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                   bids     mail carriers with outstanding prices        bid.requested → bid.received
                   pickup   mail truckers for a door-to-port request     option.found
                 selection.select → compose.render → outbox.send_quote  quote.sent
+  recovery      unanswered after 150 s or handler exits                quote.recovery
   fallback      watch stored options for a complete price              quote.waiting
                 hard deadline: send available scope or record a miss   quote.fallback | quote.missed
 customer_reply      affirmative booking of a delivered quote → shipment → book by rate id or mail
@@ -145,12 +147,13 @@ queries (`sessions`, `quotes`, `bookings`, `shipments`, `tariffs`); the log is w
 
 ### 4.4 Deadlines
 
-`core/orchestrator.py` `deadline_for` gives every request four times, all measured from the stored time of the RFQ
+`core/orchestrator.py` `deadline_for` and `Deadline.recovery_at` define the request's deadlines, measured from the stored time of the RFQ
 mail, not from when we polled it:
 
 | Time | Default | Meaning |
 | --- | --- | --- |
 | `target_at` | +100 s | Send by here: full time points with 20 s to spare (R29) |
+| `recovery_at` | +150 s | Hand an unanswered request to recovery |
 | `hard_at` | +315 s | The fallback sends the best stored option, built by code alone (P3) |
 | `expires_at` | +360 s | The request is lost (R1) |
 
@@ -159,8 +162,12 @@ mail can start while portal reads are pending. Bid collection ends when all expe
 closes. That window runs until the later of `target_at` and `PIXEL_BID_WAIT_S` after the enquiries, capped at
 `hard_at`. A late start therefore still leaves time for a trucker to price the pickup.
 
-If the live agent finishes without a complete price, the fallback checks stored options for the current lane
-until a complete price arrives or `hard_at` is reached. A door request needs a priced trucker before then. At
+If the live agent finishes without sending or reaches `recovery_at`, the orchestrator takes over and checks stored
+options for the current lane until a complete price arrives or `hard_at` is reached. It gives an in-flight quote time
+to finish. In the meantime, `core/quote_recovery.py` `source` has up to 20 seconds before `hard_at` to recheck sheets
+and the portal for missing air prices and request pickup bids from eligible truckers without an enquiry for the
+pickup. It uses the normal extraction path if no RFQ was stored and no model read has already finished.
+A door request needs a priced trucker before `hard_at`. At
 `hard_at`, an available airport-to-airport price may be sent with pickup excluded and `complete_service=false`.
 A missing postcode prompts a request for the pickup address in that quote. If air freight itself is still
 unpriced, the orchestrator emits `quote.missed`.
@@ -246,7 +253,7 @@ outbox with first-quote-only, recipient check, mail limit, dry run and takeover;
    restart, and each mail shows up as `mail.in` and `route` events with the right session.
 2. The first real mails of each kind that arrive are captured as fixtures; `classify` places every fixture
    correctly without a model call; a carrier's answer lands in the session of the RFQ it was requested for.
-3. With a fake RFQ agent that never returns, the fallback sends at `hard_at`; with one that has no option,
+3. With a fake RFQ agent that never returns, recovery takes over at `recovery_at`; with one that has no option,
    `quote.missed` is emitted; with one that returns in time, exactly one quote leaves. Tested with a fake clock.
 4. A second `send_quote` for the same session raises `NotSent("duplicate_quote")`, also when two tasks race.
 5. `PIXEL_DRY_RUN=1` sends nothing and emits `mail.held`; 429 from the mail limit is waited out, never dropped.
@@ -334,7 +341,7 @@ Once quotes are being accepted, nobody follows packages any more. Five people, o
 
 | Role | Answers for | Owns | First tasks |
 | --- | --- | --- | --- |
-| **Cost** | 40 points | `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, prompts | Spend per accepted quote per hour; smallest model that extracts reliably; more rules, fewer calls |
+| **Cost** | 40 points | `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, prompts | Spend per accepted quote per 18-minute window; smallest model that extracts reliably; more rules, fewer calls |
 | **Speed** | 15 points, and the 6 minute limit | `pixel/core/`, `pixel/agents/router/`, `pixel/api/`, `pixel/app.py` | Response-time histogram; the wait-for-bids rule; no missed request across restarts and API errors; the alert on two failed quotes |
 | **Accuracy** | 45 points, and the 5% cliff | `pixel/pricing/`, `pixel/agents/tariffs/`, `tests/` except fixtures | Every rejected quote from `/v1/board/me` becomes a replay fixture and a fix; new tariff versions; Q4–Q7 |
 | **Generalization** | Accepted rate after every change | `tests/fixtures/`, Pitfalls sections, the change log in `bench/RUNS.md` | Hand-calculated prices as a second opinion on `calc.py`; parsed tariffs read against their files; written variants of requests and carrier answers; every real mail labelled |

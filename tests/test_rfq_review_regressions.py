@@ -31,7 +31,7 @@ def with_attachment(message):
 
 
 async def test_mail_weight_and_attached_volume_both_reach_pricing(conn):
-    ctx = make_ctx(conn, PackingList("Gross weight: 80 kg\nTotal volume: 10 cbm"))
+    ctx = make_ctx(conn, PackingList("Total volume: 10 cbm"))
     msg = with_attachment(mail("Please quote AAA-BBB, total gross weight 100 kg. See the attached packing list."))
     rfq = await extract.extract(ctx, msg, DEADLINE)
     assert (rfq.weight_kg, rfq.volume_cbm, calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)) == (100, 10, 1670)
@@ -304,3 +304,18 @@ async def test_early_fallback_waits_for_pickup_and_deadline_quote_labels_air_onl
     assert partial and scope in partial.body.lower() and "all-in" not in partial.body.lower()
     draft = next(e for e in events.for_session(ctx, msg.session_id) if e.kind == "quote.drafted")
     assert draft.payload["complete_service"] is False
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        "Packing list\nNet weight: 450 kg\n",
+        "Packing list\nLength (cm) Width (cm) Height (cm) Pieces Net weight (kg)\n120 80 41 5 450\n",
+        "Packliste\nLänge (cm) Breite (cm) Höhe (cm) Stück Nettogewicht (kg)\n120 80 41 5 450\n",
+        "Packing list\nTare weight: 25 kg\n",
+    ],
+)
+async def test_a_document_net_or_tare_weight_never_replaces_the_mail_gross(conn, doc):
+    body = "Please quote FRA-ORD, 5 pallets, gross weight 500 kg, 2 cbm."
+    rfq = await extract.extract(make_ctx(conn, PackingList(doc)), with_attachment(mail(body)), DEADLINE)
+    assert rfq.weight_kg == Decimal(500)
