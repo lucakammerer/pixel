@@ -125,6 +125,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   quoted a trucker's "45.00 EUR for each hour" of waiting instead of its 181.96 total and was rejected as too low.
   `pricing/bids.py` `_price` skips a figure "per", "je", "for each" or "for every" unit, and a total line takes a
   table's currency only from the nearest header above it that names one, never under a "(kg)" or "per kg" header.
+  "The fuel (security, waiting) rate is" never labels the offer's price (`PRICE_IS`), and an amount at a line's end
+  joins the next line's currency only when that line holds the currency alone (`UNWRAP`).
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
   selection and records it (`option.failed`, `error: implausible`); `check.py` `_implausible` blocks a quote that
   still holds one. Evidence and limits: `docs/calc.md`, when a bid is not trusted.

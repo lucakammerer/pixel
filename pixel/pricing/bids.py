@@ -30,9 +30,10 @@ SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
 PRICED = re.compile(
     rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£])(?![A-Za-z])"
 )
-# A pdf wraps "for 256.85" and "EUR." onto two lines: amount and currency are joined again.
+# A pdf wraps "for 256.85" and "EUR." onto two lines: amount and currency are joined again, only when the next line
+# holds the currency alone ("Rate per kg: 2.80" over "EUR 300.00 all-in" stays two prices).
 UNWRAP = re.compile(
-    rf"(?<=[.,]\d\d)[ \t]*\n[ \t]*(?=(?:{CURRENCY}|[€$£])(?![A-Za-z]))"
+    rf"(?<=[.,]\d\d)[ \t]*\n[ \t]*(?=(?:{CURRENCY}|[€$£])(?![A-Za-z])[ \t]*[.,;:!]?[ \t]*(?:\n|$))"
     rf"|(?<![A-Za-z])({CURRENCY}|[€$£])[ \t]*\n[ \t]*(?=\d[\d.,]*[.,]\d\d(?!\d))"
 )
 TOTAL_LABEL = r"\b(?:total(?: price)?|all[- ]in|gesamt(?:preis)?|overall)\b"
@@ -41,9 +42,11 @@ TOTAL_BEFORE = re.compile(
 )
 TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE)
 # An offer letter: "Our price for this transport is 273.20 EUR. It has a base charge of 104.00 EUR and ...", a mail:
-# "Our all-in air freight rate from FRA to KTM is ...", "... and deliver it to FRA airport for 182.62 EUR".
+# "Our all-in air freight rate from FRA to KTM is ...", "... and deliver it to FRA airport for 182.62 EUR"; a fuel,
+# security or waiting rate is a surcharge, never the offer.
 PRICE_IS = re.compile(
-    r"(?:\b(?:our|the|this)\s+(?:[\w-]+\s+){0,3}?(?:price|rate)\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)"
+    r"(?:\b(?:our|the|this)\s+(?!(?:[\w-]+\s+){0,3}?(?:fuel|security|waiting|storage|handling|surcharge)\b)"
+    r"(?:[\w-]+\s+){0,3}?(?:price|rate)\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)"
     r"|\bdeliver\b[^\d\n.]{0,40}?\bfor)\s*$",
     re.IGNORECASE,
 )

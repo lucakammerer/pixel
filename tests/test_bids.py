@@ -509,3 +509,18 @@ def test_generated_bids_never_take_another_amount_for_the_price(text, price):
 def test_two_labelled_transit_times_are_no_transit():
     text = "Note: our rate to CAI last week was EUR 900.00, with a transit time of 5 days.\nTransit time: 2 days"
     assert bids._days(text) is None  # the first one, another lane's, was quoted
+
+
+@pytest.mark.parametrize(
+    "text, wrong",
+    [
+        ("We can offer 350.00 EUR for this shipment, transit 2 days. The fuel rate is EUR 120.00, already included.",
+         D("120.00")),
+        ("Freight 350.00 EUR, transit 2 days.\nOur security rate is 15.00 EUR per shipment.", D("15.00")),
+        ("Pickup at 51252 for 165.70 EUR.\nThe waiting rate is 45.00 EUR.", D("45.00")),
+        ("Rate per kg: 2.80\nEUR 300.00 all-in, transit 2 days", D("280.00")),  # the stated all-in is 300.00
+    ],
+)  # fmt: skip
+def test_a_surcharge_or_a_per_kg_rate_is_never_the_offer_price(text, wrong):
+    price = bids._price(text, rfq())
+    assert price is None or price[0] != wrong
