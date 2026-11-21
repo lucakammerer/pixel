@@ -1,7 +1,8 @@
 {
-  "note": "Trucker bids of four scored door-to-port requests of 21.11.2026 as (trucker, EUR, pickup hours), and the bid the scorer's best price contained, derived from our accuracy points for that request.",
+  "note": "Trucker bids of the scored door-to-port rounds of 21.11.2026 whose pickup place the scorer priced as we did, as (trucker, EUR, pickup hours), and the bid the scorer's best price contained, derived from our points for that round (docs/calc.md, which trucker the scorer takes).",
   "requests": [
     {
+      "round": 2,
       "bids": [
         [
           "Spessart Spedition",
@@ -32,6 +33,7 @@
       "scorer": "Bodenseefracht"
     },
     {
+      "round": 4,
       "bids": [
         [
           "Elbkante Logistik",
@@ -57,6 +59,7 @@
       "scorer": "Westfalenroute"
     },
     {
+      "round": 11,
       "bids": [
         [
           "Odenwald Cargo",
@@ -87,6 +90,7 @@
       "scorer": "Maintal Transport Logistik"
     },
     {
+      "round": 13,
       "bids": [
         [
           "Alpenblick Logistik",
@@ -115,6 +119,58 @@
         ]
       ],
       "scorer": "Hansekogge Trucking"
+    },
+    {
+      "round": 14,
+      "bids": [
+        [
+          "Rheinufer Spedition",
+          "379.38",
+          7
+        ],
+        [
+          "Spessart Spedition",
+          "113.05",
+          32
+        ],
+        [
+          "Westfalenroute",
+          "321.74",
+          4
+        ],
+        [
+          "Schwabenbote Transporte",
+          "379.79",
+          6
+        ]
+      ],
+      "scorer": "Westfalenroute"
+    },
+    {
+      "round": 19,
+      "bids": [
+        [
+          "Elbkante Logistik",
+          "214.06",
+          29
+        ],
+        [
+          "Westfalenroute",
+          "356.10",
+          11
+        ],
+        [
+          "Bodenseefracht",
+          "451.14",
+          12
+        ],
+        [
+          "Maintal Transport Logistik",
+          "347.09",
+          13
+        ]
+      ],
+      "scorer": "Westfalenroute"
     }
   ]
 }
