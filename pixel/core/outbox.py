@@ -223,8 +223,13 @@ async def _deliver(
         try:
             sent = await ctx.mailbox.send(to, subject, body, parent)
         except ApiError as e:
-            # Rejection, or failure before connecting, definitely produced no mail. A lost POST response is ambiguous.
-            if 400 <= e.status < 500 or e.status == 0 and e.detail in {"ConnectError", "ConnectTimeout", "PoolTimeout"}:
+            # Rejection, or failure before connecting, definitely produced no mail. A lost POST response is ambiguous,
+            # except for a quote: only the first quote counts (R4), so a second one is harmless, a lost one is not.
+            if (
+                quote is not None
+                or 400 <= e.status < 500
+                or e.status == 0 and e.detail in {"ConnectError", "ConnectTimeout", "PoolTimeout"}
+            ):
                 ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))
             if e.status == 429:
                 await asyncio.sleep(e.retry_after or 1.0)
@@ -238,6 +243,8 @@ async def _deliver(
             )
             raise
         except (Exception, asyncio.CancelledError) as e:
+            if quote is not None:  # the fallback must still be able to answer (R1); a duplicate quote is harmless
+                ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))
             emit(
                 ctx,
                 "error",
