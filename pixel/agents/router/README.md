@@ -39,7 +39,8 @@ call fails, a new thread becomes `customer_rfq` (a missed request costs the whol
   like a tariff. Routing such a request to the tariff agent lost it.
 - The carrier list lives in the `carriers` table that `pricing/store.py` fills; until the start kit is ingested,
   rule 5 still catches tariff mails by their attachment.
-- The fixtures in `tests/fixtures/mails/` are synthetic until the first real mails are captured.
+- Every captured request (`tests/fixtures/mails/rfq-*.json`) must be placed by the rules: `tests/test_router.py`
+  checks each one. A request can give its weight in pounds or tonnes and its places as city names.
 
 ## Open
 

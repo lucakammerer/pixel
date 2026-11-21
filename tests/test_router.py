@@ -25,7 +25,7 @@ EXPECTED = {
     "synthetic-tariff.json": MailKind.TARIFF,
     "synthetic-tracking.json": MailKind.TRACKING_QUESTION,
     "ratedesk-portal-rates.json": MailKind.RATEDESK_REPLY,
-}
+} | {f.name: MailKind.CUSTOMER_RFQ for f in MAILS.glob("rfq-*.json")}  # every captured request, by rules
 
 
 def mail(name: str):
@@ -80,3 +80,10 @@ async def test_unclear_new_thread_asks_the_model_once(ctx, monkeypatch):
     message = poller.ingest(ctx, mail("synthetic-rfq-unclear.json"))
     assert await classify(ctx, message) == MailKind.CUSTOMER_RFQ  # a failed call never loses a request
     assert len(calls) == 1
+
+
+async def test_a_request_in_tonnes_between_cities_is_a_request_by_rules(ctx):
+    raw = {"id": 990, "from": "buyer@hackloop.mail", "to": "pixel@hackloop.mail", "subject": "Air freight",
+           "body": "Hello, we need to ship 1.2 t of machine parts from Munich to Tokyo.", "in_reply_to": None,
+           "references": [], "received_at": "2026-11-21T16:00:00+00:00", "attachments": []}  # fmt: skip
+    assert await classify(ctx, poller.ingest(ctx, to_message(raw, "in"))) == MailKind.CUSTOMER_RFQ
