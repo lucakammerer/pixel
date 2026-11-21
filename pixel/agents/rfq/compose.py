@@ -1,52 +1,99 @@
 """The quote mail. Code writes every number and name as prose; the model writes three small slots around it (R31):
-the customer's first name, an intro that shows we read their mail, and a closing line. Slots that fail a check are
+the customer's first name and one short opening line (the closing slot is no longer rendered). Slots that fail a check are
 dropped, never the quote (P1, R9)."""
 
 import json
+import random
 import re
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, timedelta
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 from pixel import llm
 from pixel.agents.rfq.extract import ENGLISH, GERMAN
-from pixel.contracts import Message, RateOption, Rfq
+from pixel.contracts import Message, Preference, RateOption, Rfq
 from pixel.core import events
 from pixel.core.context import Context
 
 CENT = Decimal("0.01")
 DEFAULT_SIGNER = "Lena Berger"
 COMPANY = "Air Export, PIXEL Air Freight"
+OFFICE = ZoneInfo("Europe/Berlin")  # our desk's clock: "until 17:22 today" is the customer's time too
 
 TEXT = {
     "en": {
         "subject": "Quote {origin} to {destination}, {weight} kg",
-        "hello_name": "Hello {name},",
+        "hello_name": {"formal": "Dear {name},", "neutral": "Hello {name},", "casual": "Hi {name},"},
         "hello": "Hello,",
         "intro": (
             "Thanks for your request, happy to help with this one.",
-            "Thanks for reaching out, here is what we can do for you.",
+            "Thanks for the enquiry.",
+            "Thank you for getting in touch.",
+            "Many thanks for your request.",
         ),
-        "core": (
-            (
-                "We can fly your shipment from {origin} to {destination} with {carrier} for {total} {currency} all-in, "
-                "with {transit} in transit."
+        "core": {
+            "cheapest": (
+                (
+                    "We can fly your shipment from {origin} to {destination} with {carrier} for {total} {currency} "
+                    "all-in, with {transit} in transit."
+                ),
+                (
+                    "As you asked for the most economical option, I would go with {carrier} from {origin} to "
+                    "{destination}: {total} {currency} all-in, {transit} in transit."
+                ),
+                (
+                    "From {origin} to {destination} I can offer you {total} {currency} all-in with {carrier}; transit "
+                    "is {transit}."
+                ),
+                (
+                    "My best price from {origin} to {destination} is {total} {currency} all-in, flying with {carrier}, "
+                    "{transit} in transit."
+                ),
             ),
+            "fastest": (
+                (
+                    "We can fly your shipment from {origin} to {destination} with {carrier} for {total} {currency} "
+                    "all-in, with {transit} in transit."
+                ),
+                (
+                    "As speed matters here, I would go with {carrier} from {origin} to {destination}: {transit} in "
+                    "transit, {total} {currency} all-in."
+                ),
+                (
+                    "For the fastest routing from {origin} to {destination} I can offer {carrier}, {transit} in "
+                    "transit, at {total} {currency} all-in."
+                ),
+                (
+                    "{carrier} gets your shipment from {origin} to {destination} in {transit}, for {total} {currency} "
+                    "all-in."
+                ),
+            ),
+        },
+        "basis": (
+            "That covers air freight, fuel and security surcharges.",
+            "The price includes the air freight and the fuel and security surcharges.",
+        ),
+        "basis_pickup": (
+            "That covers pickup at your site by {trucker}, air freight, fuel and security surcharges.",
             (
-                "Our best option from {origin} to {destination} is {carrier}: {total} {currency} all-in, "
-                "{transit} in transit."
+                "The price includes collection from your site by {trucker}, the air freight and the fuel and security "
+                "surcharges."
             ),
         ),
-        "basis": "That is based on {chargeable} kg chargeable weight and covers air freight, fuel and security "
-        "surcharges.",
-        "basis_pickup": "That is based on {chargeable} kg chargeable weight and covers pickup at your door by "
-        "{trucker}, air freight, fuel and security surcharges.",
-        "valid": "The rate holds until {until} UTC.",
+        "bulky": (
+            "As the cargo is bulky for its weight, the airline charges it on {chargeable} kg volume weight.",
+            "Because of the volume, the freight is calculated on {chargeable} kg chargeable weight.",
+        ),
+        "valid": ("I can hold the rate until {until}.", "The rate is good until {until}."),
+        "until_today": "{time} today",
+        "until": "{time} on {day}",
         "book": (
             "If that works for you, just reply and I'll book it right away.",
             "Just reply to this mail if you'd like to go ahead, and I'll take care of the booking.",
+            "Let me know if you would like to go ahead and I'll book it straight away.",
         ),
-        "bye": "Best regards,\n{signer}\n" + COMPANY,
+        "bye": {"formal": "Kind regards,", "neutral": "Best regards,", "casual": "Best wishes,"},
         "day": "day",
         "days": "days",
         "arrival": "With the cargo ready on {ready}, the earliest arrival at {destination} would be {arrive}.",
@@ -73,32 +120,66 @@ TEXT = {
     },
     "de": {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
-        "hello_name": "Hallo {name},",
+        "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
         "intro": (
             "Vielen Dank für Ihre Anfrage, darum kümmere ich mich gerne.",
-            "Danke für Ihre Nachricht, hier ist unser Angebot für Sie.",
+            "Danke für Ihre Anfrage.",
+            "Vielen Dank für Ihre Nachricht.",
         ),
-        "core": (
-            (
-                "Wir können Ihre Sendung von {origin} nach {destination} mit {carrier} für {total} {currency} all-in "
-                "fliegen, die Laufzeit beträgt {transit}."
+        "core": {
+            "cheapest": (
+                (
+                    "Wir können Ihre Sendung von {origin} nach {destination} mit {carrier} für {total} {currency} "
+                    "all-in fliegen, die Laufzeit beträgt {transit}."
+                ),
+                (
+                    "Von {origin} nach {destination} kann ich Ihnen {total} {currency} all-in mit {carrier} anbieten, "
+                    "die Laufzeit beträgt {transit}."
+                ),
+                (
+                    "Mein bester Preis von {origin} nach {destination} ist {total} {currency} all-in mit {carrier}, "
+                    "Laufzeit {transit}."
+                ),
             ),
+            "fastest": (
+                (
+                    "Wir können Ihre Sendung von {origin} nach {destination} mit {carrier} für {total} {currency} "
+                    "all-in fliegen, die Laufzeit beträgt {transit}."
+                ),
+                (
+                    "Da es schnell gehen soll, empfehle ich {carrier} von {origin} nach {destination}: Laufzeit "
+                    "{transit}, {total} {currency} all-in."
+                ),
+                (
+                    "Am schnellsten geht es von {origin} nach {destination} mit {carrier}, Laufzeit {transit}, zu "
+                    "{total} {currency} all-in."
+                ),
+            ),
+        },
+        "basis": (
+            "Enthalten sind Luftfracht, Treibstoff- und Sicherheitszuschlag.",
+            "Der Preis umfasst die Luftfracht sowie Treibstoff- und Sicherheitszuschlag.",
+        ),
+        "basis_pickup": (
+            "Enthalten sind die Abholung bei Ihnen durch {trucker}, Luftfracht, Treibstoff- und Sicherheitszuschlag.",
             (
-                "Unser bestes Angebot von {origin} nach {destination} ist {carrier}: {total} {currency} all-in bei "
-                "{transit} Laufzeit."
+                "Der Preis umfasst die Abholung bei Ihnen durch {trucker}, die Luftfracht sowie Treibstoff- und "
+                "Sicherheitszuschlag."
             ),
         ),
-        "basis": "Grundlage sind {chargeable} kg frachtpflichtiges Gewicht; enthalten sind Luftfracht, Treibstoff- "
-        "und Sicherheitszuschlag.",
-        "basis_pickup": "Grundlage sind {chargeable} kg frachtpflichtiges Gewicht; enthalten sind die Abholung bei "
-        "Ihnen durch {trucker}, Luftfracht, Treibstoff- und Sicherheitszuschlag.",
-        "valid": "Der Preis gilt bis {until} UTC.",
+        "bulky": (
+            "Da die Ware für ihr Gewicht viel Platz braucht, rechnet die Airline mit {chargeable} kg Volumengewicht.",
+            "Wegen des Volumens wird die Fracht auf {chargeable} kg frachtpflichtiges Gewicht berechnet.",
+        ),
+        "valid": ("Ich halte die Rate bis {until}.", "Der Preis gilt bis {until}."),
+        "until_today": "heute {time} Uhr",
+        "until": "{day}, {time} Uhr",
         "book": (
             "Wenn das für Sie passt, antworten Sie einfach kurz, dann buche ich sofort.",
             "Antworten Sie einfach auf diese Mail, wenn Sie buchen möchten, den Rest übernehme ich.",
         ),
-        "bye": "Viele Grüße\n{signer}\n" + COMPANY,
+        "bye": {"formal": "Mit freundlichen Grüßen", "neutral": "Viele Grüße", "casual": "Viele Grüße"},
         "day": "Tag",
         "days": "Tage",
         "arrival": "Ist die Ware am {ready} bereit, wäre sie frühestens am {arrive} in {destination}.",
@@ -130,10 +211,10 @@ PROSE_SYSTEM = (
     "freight quote. Code writes the greeting, the price, the routing and the sign-off; you write only three short "
     "pieces, in the language with ISO code {language}, matching the customer's tone (German: always formal Sie). "
     "first_name: the customer's first name only if they signed the mail with it, else null. "
-    "intro: one or two warm, natural sentences that show you read their mail: refer in words to the goods, the "
-    "urgency, the timing or a question they asked. If they asked something a quote cannot answer, say you will "
-    "come back to them on it. "
-    "closing: one short friendly sentence for the very end, not a call to action and not a sign-off, or null. "
+    "intro: ONE short sentence, at most fifteen words, the way a colleague opens a reply: a thank-you with one "
+    "specific word about the goods or the urgency. Never repeat or summarise their mail back to them, and never "
+    "say that you noted, read or received their details. "
+    "closing: always null. "
     "Never write digits, numbers, prices, currencies, dates, weekdays, months, airlines, airports, cities or "
     "countries. Do not greet and do not sign. Sound like a person, not a template: no 'we are pleased to', no "
     'exclamation marks. Answer as JSON {{"first_name": ..., "intro": ..., "closing": ...}}.'
@@ -160,7 +241,17 @@ FRAME = re.compile(r"^\s*(hello|hi|dear|hallo|guten tag|sehr geehrte)\b|\b(best 
                    r"freundliche grüße|mit freundlichen)\b", re.IGNORECASE)  # fmt: skip
 INFORMAL_DE = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer|eure\w*)\b", re.IGNORECASE)
 NAME = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]{1,19}")
-LIMITS = {"intro": 260, "closing": 140}
+LIMITS = {"intro": 140, "closing": 140}
+# An opening that hands the customer's mail back to them, or runs past one sentence, reads like a machine.
+ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|bezüglich|sorgfältig|"
+                  r"zur Kenntnis)\b|[.!?]\s+\S", re.IGNORECASE)  # fmt: skip
+FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
+CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
+SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
+NOT_SIGNED = re.compile(
+    r"\b(?:Thanks|Thank|Regards|Cheers|Best|Kind|Many|Greetings|Danke|Viele|Beste|Team|Department|Logistics|"
+    r"Shipping|Purchasing|Sales|Export|Import|Manager|Coordinator|Office|Desk|GmbH|AG|Ltd|Inc)\b"
+)
 SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
@@ -251,35 +342,56 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
         return ""
 
 
-def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "") -> str:
+def register(request: str) -> str:
+    """How the customer writes: formal, casual or neutral, from their greeting and closing."""
+    return "formal" if FORMAL.search(request) else "casual" if CASUAL.search(request) else "neutral"
+
+
+def signed_name(request: str, signer: str = "") -> str | None:
+    """The first name the customer signed with, read by rule from the mail's last block: the greeting keeps the
+    name also when the model's slot is missing (a failed call, the fallback quote)."""
+    blocks = [b for b in re.split(r"\n\s*\n", request.strip()) if b.strip()]
+    for line in blocks[-1].splitlines() if blocks else []:
+        line = line.strip().rstrip(",")
+        if SIGNED.match(line) and not NOT_SIGNED.search(line):
+            first = line.split()[0]
+            return None if first.casefold() in signer.casefold().split() else first
+    return None
+
+
+def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
+    """17:22 today: the validity on our desk's clock, with the day only when it is not today."""
+    until = option.valid_until.astimezone(OFFICE)
+    today = until.date() == rfq.received_at.astimezone(OFFICE).date()
+    return t["until_today" if today else "until"].format(time=until.strftime("%H:%M"), day=_day(until.date(), t))
+
+
+def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "", request: str = "") -> str:
     lang = language_of(rfq)
     t = TEXT[lang]
-    pick = rfq.session_id % 2
-    core = t["core"][pick].format(
+    pick = random.Random(rfq.session_id).choice  # wording varies by session; one session always reads the same
+    tone = register(request)
+    core = pick(t["core"]["fastest" if rfq.preference == Preference.FASTEST else "cheapest"]).format(
         origin=option.origin, destination=option.destination, carrier=option.carrier,
         total=money(option.total), currency=option.currency, transit=_transit(option, t),
     )  # fmt: skip
-    chargeable = weight(option.chargeable_kg, lang)
-    basis = (
-        t["basis_pickup"].format(chargeable=chargeable, trucker=option.trucker)
-        if option.trucker
-        else t["basis"].format(chargeable=chargeable)
-    )
-    offer = [core, basis]
+    offer = [core, pick(t["basis_pickup"]).format(trucker=option.trucker) if option.trucker else pick(t["basis"])]
+    if option.chargeable_kg > rfq.weight_kg:
+        offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
     if option.valid_until:
-        offer.append(t["valid"].format(until=option.valid_until.astimezone(UTC).strftime("%d.%m.%Y %H:%M")))
-    ending = [t["book"][pick]] + ([_sentence(prose.closing)] if prose.closing else [])
+        offer.append(pick(t["valid"]).format(until=_until(rfq, option, t)))
+    name = prose.first_name or signed_name(request, signer)
     lines = [
-        t["hello_name"].format(name=prose.first_name) if prose.first_name else t["hello"],
+        t["hello_name"][tone].format(name=name) if name else t["hello"],
         "",
-        _sentence(prose.intro) if prose.intro else t["intro"][pick],
+        _sentence(prose.intro) if prose.intro else pick(t["intro"]),
         "",
         " ".join(offer),
         "",
         *([said, ""] if said else []),
-        " ".join(ending),
+        pick(t["book"]),  # the mail ends on the booking sentence: no stock closing line (R31)
         "",
-        t["bye"].format(signer=signer),
+        f"{t['bye'][tone]}\n{signer}\n{COMPANY}",
     ]
     return "\n".join(lines)
 
@@ -314,12 +426,12 @@ def render(
     said = answers(rfq, option, request)
     if prose and prose != Prose():
         try:
-            body = _body(rfq, option, prose, signer, said)
+            body = _body(rfq, option, prose, signer, said, request)
             if check(body, rfq, option):
                 return title, body
         except Exception:  # noqa: BLE001, S110  a slot must never cost the quote; render it plain
             pass
-    return title, _body(rfq, option, Prose(), signer, said)
+    return title, _body(rfq, option, Prose(), signer, said, request)
 
 
 def _words_lang(text: str) -> tuple[int, int]:
@@ -332,6 +444,8 @@ def _sentence_ok(text: str, slot: str, lang: str, banned: set[str]) -> bool:
     if not text or len(text) > LIMITS[slot] or "\n" in text or text.lstrip().startswith(("-", "*", "•")):
         return False
     if DIGIT.search(text) or CODE.search(text) or SYMBOL.search(text) or CALENDAR.search(text) or FRAME.search(text):
+        return False
+    if slot == "intro" and ECHO.search(text):
         return False
     lowered = text.casefold()
     if any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowered) for name in banned):
