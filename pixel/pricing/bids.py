@@ -420,10 +420,18 @@ async def record(ctx: Context, message: Message) -> None:
                     payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
                              "ignored": "different or ambiguous lane"})  # fmt: skip
         return
-    if message.attachments:
+
+    def by_rules(message: Message) -> tuple[list[RateOption], RateOption | None]:
+        listed = parse_desk(message, rfq) if kind == "ratedesk" else []
+        return listed, None if listed else parse(message, rfq, needs_transit=not pickup)
+
+    # An attachment counts only when the mail alone holds no price: an airline's terms or a forwarded invoice beside
+    # a priced mail must not hide that price.
+    listed, option = by_rules(message)
+    if message.attachments and not listed and option is None:
         message = message.model_copy(update={"body": await _with_attachments(ctx, message)})
-    listed = parse_desk(message, rfq) if kind == "ratedesk" else []
-    option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
+        listed, option = by_rules(message)
+    read_by = "rules"
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
     if not listed and option is None and kind != "ratedesk" and not DECLINE.search(_own_text(message.body)):
         read_by = "model"
