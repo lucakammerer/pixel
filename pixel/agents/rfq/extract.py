@@ -97,9 +97,9 @@ DOOR = re.compile(
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
-    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b"
-    r"|\bno\s+(?:pick[\s-]?up|collection)\s+(?:is\s+)?(?:needed|required|necessary)\b"
-    r"|\bkeine\s+abholung\s+(?:nötig|notwendig|erforderlich)\b",
+    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst|(?:to\s+(?:the\s+)?(?:port|airport)))\b"
+    r"|\bno\s+(?:door[\s-]*)?(?:pick[\s-]?up|collection)\s+(?:is\s+)?(?:needed|required|necessary)\b"
+    r"|\bkeine\s+(?:tür[\s-]*)?abholung\s+(?:nötig|notwendig|erforderlich)\b",
     re.IGNORECASE,
 )
 POSTCODE = re.compile(
