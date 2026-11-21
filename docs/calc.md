@@ -21,6 +21,8 @@ Decimal only; a model never computes, compares or writes a price (P1).
 
 - **Portal** (`api/portal.py`): its `total` is already freight + fuel + security; it gives no split, so
   `freight = total`.
+  `portal_rates._at_next_break` reads the airline's next weight break as well and bills that break when its total
+  is lower (R13); the option then carries the break as billed weight and that read's rate id.
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
   code adds them up.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
@@ -42,7 +44,6 @@ Each lives in one place; change it there.
 | Q | Assumption | Where |
 | --- | --- | --- |
 | Q4 | The best price is the all-in total of the option the customer asked for, pickup included | `engine.combine` |
-| Q5 | On sheets a higher break is billed when cheaper; on the portal we read only the actual weight | `calc.BILL_HIGHER_BREAK` |
 | Q6 | Balanced = min-max scaled price and days, equal weights, among bids only; the winner then competes by the customer's wish | `selection.balanced`, `selection.select` |
 | Q7 | We quote in the chosen rate's own currency and compare in EUR with the rate's exchange rate | `selection.select`, `compose.render` |
 | Q13 | The pickup zone is the first two digits of the postcode | `pickup.zone_of` |
