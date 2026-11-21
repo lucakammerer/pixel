@@ -404,5 +404,6 @@ async def test_a_gateway_that_refuses_the_model_still_gives_a_reading(monkeypatc
     rfq = await extract.extract(None, mail(body), DEADLINE)
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.extracted_by) == (Decimal(100), Decimal("0.5"), "guess")
     assert emitted[0][1]["payload"]["where"] == "rfq_extract_model"
+    assert "model not allowed" not in str(emitted[0][1]["payload"])  # the gateway's text can quote the OpenAI key
     with pytest.raises(RuntimeError):  # nothing to guess from
         await extract.extract(None, mail("Could you help us with a shipment next week?"), DEADLINE)
