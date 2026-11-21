@@ -95,6 +95,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   questions of the day offline on a copy with the zone fallback: the 9 found before find the same shipment, the
   3 answered "no shipment" find the right one. Added: the answer names the desk's postcode, not our fill-in.
   Next: round 21's tracking answer, then the human award.
+- 21.11. 18:15 CET: round 22 accepted (60) and booked at the quoted total, signed "Best regards to Regensburg" in
+  quote and booking. "The cargo is electronic control units, packed in 5 pieces" gave no goods, so the stock opening
+  went out; `goods_of` now reads it. Board: human START Milan 4, AEIOU 4, MAKEANOTHERMD 1, TALOS 1, Austrian
+  Power 1, PIXEL 0: no award to any team since round 16. Next: round 21's tracking answer.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 

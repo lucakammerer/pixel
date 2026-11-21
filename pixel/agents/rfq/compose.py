@@ -347,6 +347,7 @@ GOODS = re.compile(
     r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
     r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
     r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
+    r"|\b(?:cargo|goods|shipment) (?:is|are|consists? of) (?P<g>[a-z][a-z -]{2,40}?)(?=, packed|,? in \d| packed)"
 )
 NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
              "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
