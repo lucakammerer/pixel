@@ -185,3 +185,9 @@ What follows:
   fallback after 60 s. Next: the verdict of the first round that gets the question first (does it count as our
   first reply?).
 
+- 21.11. 18:50, round 28 lost (CGN-DFW, cheapest, rejected too high): since 17:38 UTC the portal's rate API answers
+  503 "rates are still published on the portal page", so the portal airlines were asked by mail and sent the first
+  priced airline bids we have seen live (Lumen 457.08 in 1 day, Ultraviolet 390.45 in 4 days). Balanced picked Lumen,
+  the 416.16 sheet beat it, and the scorer's best was at most 396.34: among airlines the wish decides, not R15.
+  #130 holds the round as a fixture; the selection fix and the feedback read of an unclosed row (round 27 logged as
+  0 points, scored 54.32) went to the main loop. Next: the verdict of the first quote after its fix.
