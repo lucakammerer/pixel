@@ -498,7 +498,8 @@ def test_a_rate_per_unit_or_a_weight_is_never_the_offer_total(name, airline, bod
         ("Our all-in rate is CHF 2'748.45, including fuel.", (D("2748.45"), "CHF")),  # read as CHF 2
         ("and deliver it to DUS airport for 256.85\nEUR.\nNote: the other postcode would be 28.22 EUR.",
          (D("256.85"), "EUR")),  # a pdf line wrap left the note's price alone
-        ("Amount (€)\nBase charge  47.55\nTotal  124.65\nNote: the other postcode would be 74.98 €.", None),
+        ("Amount (€)\nBase charge  47.55\nTotal  124.65\nNote: the other postcode would be 74.98 €.",
+         (D("124.65"), "EUR")),  # the header's sign is the total row's currency
     ],
 )  # fmt: skip
 def test_generated_bids_never_take_another_amount_for_the_price(text, price):
