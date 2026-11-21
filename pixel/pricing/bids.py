@@ -47,9 +47,16 @@ TOTAL_AFTER = re.compile(r"^\s*(?:in\s+total|all[- ]in|gesamt)\b", re.IGNORECASE
 PRICE_IS = re.compile(
     r"(?:\b(?:our|the|this)\s+(?!(?:[\w-]+\s+){0,3}?(?:fuel|security|waiting|storage|handling|surcharge)\b)"
     r"(?:[\w-]+\s+){0,3}?(?:price|rate)\b[^\d\n.]{0,40}?\b(?:is|amounts\s+to|comes\s+to)"
-    r"|\bdeliver\b[^\d\n.]{0,40}?\bfor)\s*$",
+    r"|\bdeliver\b[^\d\n.]{0,40}?\bfor|\bwe\s+(?:can\s+)?(?:offer|quote)(?:\s+you)?|\bour\s+offer\s+is)\s*$",
     re.IGNORECASE,
 )
+# A price beside the offer that is not its own: "rates from", "ab", a minimum, an earlier offer, an option, "... extra".
+SIDE_BEFORE = re.compile(
+    r"\b(?:from|ab|starting\s+(?:at|from)|as\s+low\s+as|minimum(?:\s+charge)?|min\.|was|would\s+be|optional\s+[\w-]+)"
+    r"[\s:]*$",
+    re.IGNORECASE,
+)
+SIDE_AFTER = re.compile(r"^\s*(?:extra|more)\b", re.IGNORECASE)
 # An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none. The nearest
 # header above the total counts: "Chargeable weight (kg)" or "per kg (EUR)" over it is no price in that currency.
 HEADER_UNIT = re.compile(rf"\((?P<u>{CURRENCY}|[€$£]|kgs?|lbs?|cbm|m3|pcs)\)", re.IGNORECASE)
@@ -174,6 +181,8 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
             per_kg = bool(PER_KG.match(after) or KG_LABEL.search(before))
             if not per_kg and OTHER_BASIS.match(after):
                 unsure = True
+                continue
+            if SIDE_BEFORE.search(before) or SIDE_AFTER.match(after):
                 continue
             raw = m.group("n1") or m.group("n2")
             amount = _amount(raw, unit_rate=per_kg)
