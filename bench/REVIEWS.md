@@ -5,6 +5,9 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #107 | lucakammerer | 3ecb7f9 | needs follow-up (deploy thread) | a merged cd.sh runs as root untested; every merge is live within a round |
+| #106 | lucakammerer | 1feb72c | ok | two more stiff openers rejected; one-sentence rule kept |
+| #105 | lucakammerer | ba16727 | ok (second reviewer's area) | company token inside a longer word; three-letter tokens can match unrelated words |
 | #103 | lucakammerer | review/currency-from-99 | own | currency part of #99; exchange rate only from the request's own options |
 | #102 | lucakammerer | 97217eb | ok | bench notes only |
 | #101 | TripleCF | 8986943 | ok | score rows sorted by round as a number; read-only |
