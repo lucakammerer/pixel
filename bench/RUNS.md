@@ -12,6 +12,7 @@ One line per setup change (R33): when, what failed, what it was, the commit that
 
 | When | Symptom | Cause | Fix |
 | --- | --- | --- | --- |
+| 21.11. 19:30 UTC | 891 poll `error` events, `429: one poll per 5 seconds` | the mailbox limits polls to one per 5 s; we poll every 1 s | open, Speed (`core/poller.py`, `PIXEL_POLL_SECONDS`) |
 
 ## Voice loop (R31, R30)
 
@@ -568,3 +569,13 @@ What follows:
   rebooking the next option, B9 telling the customer about a failed booking, B10 an address for a portal airline,
   B11 to B15 need a decision or a live sighting; B14 unverified. Next: the live board for any booking or tracking
   reason code.
+
+
+- 21.11. 22:15, cycle (selection against the scorer): the 34 scored rounds with a known best price, replayed through
+  today's `engine.combine` and `selection.select` on the options each had when we quoted: 32 give the scorer's total,
+  airline and trucker to the cent (11 and 14 cannot be rebuilt: their pickup bids were stored for an origin read
+  before the one we quoted). Frozen as `scored-rounds.json`. Only `times_the_best` fits all 32; `share_of_best` and
+  `share_of_worst` miss 2, `min_max` 16, the cheapest trucker 24. Setup change seen on the way: since 19:30 UTC the
+  mailbox answers a poll faster than one per 5 s with 429 (891 `error` events by 20:46); no round lost, as the push
+  delivers the mail, but `PIXEL_POLL_SECONDS=1.0` now polls into the limit. Open for Speed (`core/poller.py`).
+  Next: currencies need live evidence first (every option, bid and tariff so far is EUR).
