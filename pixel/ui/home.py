@@ -2,10 +2,11 @@
 Links into the operator views (requests, CRM, dashboard). Reads the event log and the CRM only."""
 
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.core.context import Context
@@ -47,6 +48,17 @@ box-shadow:var(--shadow-sm);transition:transform .2s,box-shadow .2s}
 .kpis>div:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
 .kpis .k{font-size:12px;color:var(--muted)}.kpis .v{font-size:28px;font-weight:500;letter-spacing:-.025em;line-height:1.2;
 font-variant-numeric:tabular-nums;margin-top:2px}.kpis .note{font-size:12px;color:var(--muted)}
+.photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:80px}
+.photo{position:relative;min-height:340px;border-radius:24px;overflow:hidden;display:flex;flex-direction:column;
+justify-content:flex-end;padding:28px;color:#fff;box-shadow:var(--shadow)}
+.photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .8s ease}
+.photo:hover img{transform:scale(1.03)}
+.photo::before{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(90deg,rgba(15,20,40,.72),
+rgba(15,20,40,.28) 60%,rgba(15,20,40,.05)),linear-gradient(0deg,rgba(15,20,40,.45),transparent 55%)}
+.photo>div{position:relative;z-index:2;max-width:380px}
+.photo h2{font-size:28px;font-weight:500;letter-spacing:-.025em;line-height:1.15;margin:0 0 8px;color:#fff}
+.photo p{margin:0;font-size:15px;line-height:1.5;color:rgba(255,255,255,.86)}
+@media (max-width:820px){.photos{grid-template-columns:1fr}.photo{min-height:280px}}
 .trusted{margin-top:80px;text-align:center}
 .trusted h2{font-size:14px;font-weight:400;color:var(--muted);margin:0 0 20px;letter-spacing:0}
 .marquee{overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
@@ -138,6 +150,24 @@ def numbers(ctx: Context) -> dict:
     }
 
 
+PHOTOS = {"air.jpg", "road.jpg"}
+
+
+@router.get("/assets/img/{name}", include_in_schema=False)
+def photo(name: str) -> FileResponse:
+    if name not in PHOTOS:
+        raise HTTPException(404)
+    return FileResponse(Path(__file__).with_name("img") / name, media_type="image/jpeg")
+
+
+PHOTO_CARDS = (
+    ("air.jpg", "By air, at any hour",
+     "Rate sheets, the rate portal and airline bids, compared for every request."),
+    ("road.jpg", "From your door",
+     "When you ask for pickup, the trucker's price is part of the one all-in total."),
+)  # fmt: skip
+
+
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request, q: str = "", state: str = ""):
     if q or state:  # an old link to the request list
@@ -191,6 +221,13 @@ async def home(request: Request, q: str = "", state: str = ""):
         CSS
         + hero
         + kpis
+        + "<section class=photos>"
+        + "".join(
+            f"<article class=photo><img src='/assets/img/{f}' alt='' loading=lazy>"
+            f"<div><h2>{esc(t)}</h2><p>{esc(d)}</p></div></article>"
+            for f, t, d in PHOTO_CARDS
+        )
+        + "</section>"
         + "<h2 class=big>How it works</h2>"
         + pipeline.render(ctx)
         + trusted

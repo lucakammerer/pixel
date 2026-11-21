@@ -40,3 +40,15 @@ def test_reseed_deletes_only_its_own_database(tmp_path):
     live.write_text("live")
     preview.build(tmp_path / "pixel", reseed=True, count=1, seed=1)  # a typo'd --db that prefixes the live file
     assert live.read_text() == "live"
+
+
+def test_start_page_photos_are_served_and_nothing_else(tmp_path):
+    ctx, _ = preview.build(tmp_path / "preview.sqlite3", reseed=True, count=5, seed=3)
+    app = FastAPI()
+    app.include_router(home.router)
+    app.state.ctx = ctx
+    client = TestClient(app)
+    for name in home.PHOTOS:
+        resp = client.get(f"/assets/img/{name}")
+        assert resp.status_code == 200 and resp.headers["content-type"] == "image/jpeg"
+    assert client.get("/assets/img/..%2Fhome.py").status_code == 404
