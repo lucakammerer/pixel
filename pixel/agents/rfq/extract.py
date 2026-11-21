@@ -27,7 +27,8 @@ ORIGIN_LABEL = re.compile(
 )
 DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
 
-NUM = r"(\d[\d.,']*)"
+# "1 250 kg": a space (also a no-break one) between thousands, not after a date's or a range's digits.
+NUM = r"((?<![\d.,\-/])\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?![\d.,'])|\d[\d.,']*)"
 OTHER_UNIT = r"\s*(?i:lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
 WEIGHT = (
     re.compile(rf"{NUM}\s*(?i:kgs?|kilos?|kilograms?|kilogramm)\b"),
@@ -85,7 +86,7 @@ NOT_URGENT = re.compile(
 FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*)\b", re.IGNORECASE)
 CHEAPEST = re.compile(r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*)\b", re.IGNORECASE)
 HURRY = re.compile(
-    r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|as soon as possible|as (?:quickly|fast) "
+    r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
     r"as possible|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
     r"|dringend\w*)\b",
     re.IGNORECASE,
@@ -177,7 +178,7 @@ SCHEMA = {
 
 
 def number(text: str, thousands: bool = True) -> Decimal | None:
-    s = text.strip().replace("'", "").replace(" ", "").rstrip(".,")
+    s = re.sub(r"['\s\u00a0\u202f]", "", text).rstrip(".,")
     if "." in s and "," in s:
         decimal_sep = "." if s.rfind(".") > s.rfind(",") else ","
         s = s.replace("," if decimal_sep == "." else ".", "").replace(",", ".")
