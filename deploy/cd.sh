@@ -94,13 +94,17 @@ if ! grep -qx "$new" "$CD/green" 2> /dev/null; then
   fi
 fi
 
+# URGENT in a merge since the live commit: no limit of one restart per round, and no wait for the request's first
+# two minutes; the answer to the current request must still be out.
+urgent=
+as git -C "$REPO" log --format=%B "$live..$new" | grep -q URGENT && urgent=--urgent
 last=$(cat "$CD/restarted" 2> /dev/null || echo 0)
-if [ $(($(date +%s) - last)) -lt "$ROUND_S" ] && ! as git -C "$REPO" log --format=%B "$live..$new" | grep -q URGENT; then
+if [ $(($(date +%s) - last)) -lt "$ROUND_S" ] && [ -z "$urgent" ]; then
   log "$(short "$new") green, waiting: one restart per round"
   exit 0
 fi
-log "$(short "$new") green, waiting for the window"
-in_app ".venv/bin/python -m tools.window" || { log "$(short "$new") green, no window within 5 minutes"; exit 0; }
+log "$(short "$new") green, waiting for the window${urgent:+ (urgent)}"
+in_app ".venv/bin/python -m tools.window $urgent" || { log "$(short "$new") green, no window within 5 minutes"; exit 0; }
 if [ "$DRY" = 1 ]; then
   log "would deploy $(short "$live")..$(short "$new") now"
   exit 0
