@@ -888,3 +888,36 @@ def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
 )
 def test_someone_else_collecting_the_goods_is_no_door_pickup(body):
     assert extract.by_rules(mail(body), DEADLINE).door_pickup is False
+
+
+LANGUAGE_PROBES = [json.loads(line) for line in (Path(__file__).parent / "fixtures/rfqs/languages.jsonl").open()]
+
+
+@pytest.mark.parametrize("case", LANGUAGE_PROBES, ids=lambda case: case["case_id"])
+def test_the_language_is_read_from_the_customers_own_words(case):
+    """Rounds 70 and 72: the body is in any language, the persona's sign-off stays English or German, an older mail
+    can be quoted below in another one, and a voice message can carry the whole request."""
+    text = extract._text(mail(case["body"], case["subject"]))
+    assert extract._language(text, None, case.get("attachment", "")) == case["language"]
+
+
+async def test_a_question_for_a_missing_fact_is_asked_in_the_customers_language(conn, monkeypatch):
+    ctx = Context(settings(), conn, None, None, None, None)
+    request = poller.ingest(ctx, mail("Hola, necesitamos una cotización AAA-BBB, 4 cajas, 600 kg. Gracias.").model_copy(
+        update={"id": 9200, "session_id": 9200, "sender": "buyer@hackloop.mail"}))  # fmt: skip
+    asked = []
+
+    async def fake_ask(ctx, **kw):
+        assert kw["purpose"] == "question.translate" and "es" in kw["system"]
+        return LlmResult(data={"body": kw["user"].replace("Hello,", "Hola:")}, model="m", tokens_in=1, tokens_out=1,
+                         cost_usd=Decimal(0))  # fmt: skip
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        asked.append(body)
+        return request.model_copy(update={"id": 9201, "direction": "out"})
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask)
+    monkeypatch.setattr(outbox, "send", send)
+    monkeypatch.setattr(extract, "ASK_WAIT_S", 0)
+    await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert asked[0].startswith("Hola:") and "volume" in asked[0]

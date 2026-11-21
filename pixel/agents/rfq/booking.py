@@ -358,6 +358,9 @@ AIR_ONLY = {
 }
 
 
+TRANSLATE_WAIT_S = 15
+
+
 def _lang(quote: Quote) -> str:
     return compose.language_of(quote.rfq)
 
@@ -383,6 +386,10 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
         text += THANKS[lang]
     body = "\n\n".join([compose.greeting(lang, name, request), text,
                         compose.signature(bye, ctx.settings.signer)])  # fmt: skip
+    if lang != quote.rfq.language:  # the thread's language, also when the customer's reply is English
+        english, names = body, (quote.option.origin, quote.option.destination, *facts.values())
+        body = await compose.localize(ctx, quote.rfq.language, quote.session_id, body, TRANSLATE_WAIT_S,
+                                      lambda text: compose.kept(english, text, names), "booking.translate")  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:
         await outbox.send(

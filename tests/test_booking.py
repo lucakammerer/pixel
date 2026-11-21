@@ -430,6 +430,30 @@ async def test_a_decline_word_after_the_booking_keeps_the_quote_accepted(pipe, a
     assert quotes.get(pipe.ctx, "Q-1").status == QuoteStatus.ACCEPTED
 
 
+async def test_a_chinese_thread_is_told_in_chinese_and_never_loses_a_reference(pipe, monkeypatch):
+    """The thread keeps the request's language after the quote, also when the customer accepts in English; a
+    translation that drops a reference or the price is not sent, the English notice is."""
+    from pixel import llm
+    from pixel.contracts import LlmResult
+
+    zh = quote(1)
+    zh = zh.model_copy(update={"rfq": zh.rfq.model_copy(update={"language": "zh"})})
+    replies = iter([lambda english: "您好，\n\n" + english.split("\n\n", 1)[1], lambda english: "您好，预订已确认。"])
+
+    async def fake_ask(ctx, **kw):
+        assert kw["purpose"] == "booking.translate" and "zh" in kw["system"]
+        body = next(replies)(kw["user"])
+        return LlmResult(data={"body": body}, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask)
+    facts = {"airline": "Kestrel Airways", "reference": "PX-ABC123", "airline_reference": "BK-AB12CD34"}
+    await booking._tell_customer(pipe.ctx, zh, 20, "booked", price="370.74", currency="EUR", **facts)
+    await booking._tell_customer(pipe.ctx, zh, 20, "confirmed", **facts)
+    booked, confirmed = (m["body"] for m in pipe.sent)
+    assert booked.startswith("您好，") and "PX-ABC123" in booked and "370.74 EUR" in booked
+    assert confirmed.startswith("Hello") and "PX-ABC123" in confirmed and "BK-AB12CD34" in confirmed
+
+
 PACKLISTE = b"Packliste\nAuftragsnummer: 4500123\nKolli: 2\nBruttogewicht: 150 kg\n"
 
 
