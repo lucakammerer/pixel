@@ -78,6 +78,16 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the original register, name, sign-off and signer.
 
+- `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
+  the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
+  and the finished text. BLOCK: lane, arithmetic of the parts, chargeable weight, pickup present exactly when asked
+  for (round 15), the lots added up again (round 9), dangerous goods marked by `extract` without the papers
+  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers.
+  WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
+  implausible price per kg, the language, an expired rate. The check never holds or changes a quote; every result
+  is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
+  that raises becomes a WARN finding.
+
 ## Pitfalls
 
 - A customer's yes comes in many shapes ("Bitte buchen Sie.", "Please book it and send us the AWB once
