@@ -636,29 +636,59 @@ SIDE = {"width": 0, "breite": 0, "length": 1, "länge": 1, "laenge": 1, "height"
 COUNT = {"pieces", "pcs", "qty", "quantity", "stück", "stueck"}
 
 
-def _table_volume(text: str) -> Decimal | None:
-    """The volume a packing table's rows add up to: a header naming width, length, height and pieces, then rows
-    with one number per column."""
+def _table(text: str) -> tuple[list[tuple[str, str | None]], list[list[str]]] | None:
+    """A packing table: its columns (name, unit) from a header naming width, length, height and pieces, and the
+    rows below it with one number per column."""
     lines = text.splitlines()
     for i, header in enumerate(lines):
         columns = [(m["name"].casefold(), m["unit"]) for m in COLUMN.finditer(header)]
         names = [name for name, _ in columns]
         if not ({0, 1, 2} <= {SIDE.get(n) for n in names} and COUNT & set(names)):
             continue
-        total = None
+        rows = []
         for row in lines[i + 1 :]:
-            cells = [number(c, thousands=False) for c in re.findall(r"\d[\d.,]*", row)]
-            if len(cells) != len(columns) or None in cells:
+            cells = re.findall(r"\d[\d.,]*", row)
+            if len(cells) != len(columns):
                 break
-            volume = Decimal(1)
-            for (name, unit), cell in zip(columns, cells, strict=True):
-                if name in SIDE:
-                    volume *= cell / _per_m(unit)
-                elif name in COUNT:
-                    volume *= cell
-            total = (total or Decimal(0)) + volume
-        return total
+            rows.append(cells)
+        return columns, rows
     return None
+
+
+def _table_volume(text: str) -> Decimal | None:
+    """The volume a packing table's rows add up to."""
+    columns, rows = _table(text) or ([], [])
+    total = None
+    for row in rows:
+        cells = [number(c, thousands=False) for c in row]
+        if None in cells:
+            break
+        volume = Decimal(1)
+        for (name, unit), cell in zip(columns, cells, strict=True):
+            if name in SIDE:
+                volume *= cell / _per_m(unit)
+            elif name in COUNT:
+                volume *= cell
+        total = (total or Decimal(0)) + volume
+    return total
+
+
+def _document_weight(text: str) -> Decimal | None:
+    """A document's stated total gross weight when its table's one weight column, headed in kg, adds up to it
+    (round 35: the mail said 2644 kg, the spec's total and its row 1751 kg). A row's weight is never multiplied by
+    its pieces, and a weight per piece or a second weight column is ambiguous: then the mail stands."""
+    stated = _unique(WEIGHT, text, thousands=True)
+    table = _table(text)
+    if stated is None or EACH_WEIGHT.search(text) or table is None:
+        return None
+    columns, rows = table
+    weights = [i for i, (name, _) in enumerate(columns) if "weight" in name or name == "gewicht"]
+    if len(weights) != 1 or columns[weights[0]][1] not in ("kg", "kgs") or not rows:
+        return None
+    cells = [number(row[weights[0]]) for row in rows]
+    if None in cells or abs(sum(cells) - stated) > Decimal("0.5"):
+        return None
+    return stated
 
 
 def _document_volume(text: str, pieces: int | None) -> Decimal | None:
@@ -675,8 +705,8 @@ def _document_volume(text: str, pieces: int | None) -> Decimal | None:
 
 def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
     """Resolve each shipment figure independently. Customer text takes precedence over a packing document, except
-    for a volume the document states and its own table or dimensions bear out (round 33: the mail's 2.78 cbm lost
-    to the attached spec's 1.92 cbm). Several documents must agree before their figure can be used by rule."""
+    for a volume or gross weight the document states and its own table bears out (round 33: the mail's 2.78 cbm
+    lost to the attached spec's 1.92 cbm; round 35: 2644 kg to 1751 kg). Several documents must agree before their figure can be used by rule."""
     lots = [_lots(text) for _, text in sources]
     facts, evidence = {}, {}
 
@@ -701,6 +731,10 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
     if len(corroborated := {v for _, v in documents if v is not None}) == 1:
         facts["volume_cbm"] = corroborated.pop()
         evidence["volume_cbm"] = [name for name, v in documents if v is not None]
+    documents = [(name, _document_weight(text)) for name, text in sources[1:]]
+    if len(corroborated := {v for _, v in documents if v is not None}) == 1:
+        facts["weight_kg"] = corroborated.pop()
+        evidence["weight_kg"] = [name for name, v in documents if v is not None]
     return facts, evidence
 
 
