@@ -42,7 +42,7 @@ VOLUME = (
     re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
 )
 DIMS = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in)?\b",
+    r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s])))?\b",  # "in total": a word, not inches
     re.IGNORECASE,
 )
 PER_M = {"mm": Decimal(1000), "cm": Decimal(100), "m": Decimal(1), "in": 1 / Decimal("0.0254")}
