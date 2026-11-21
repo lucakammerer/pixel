@@ -243,3 +243,11 @@ What follows:
   from a request. Customer replies, the 136 live ones with our quote quoted below: an Outlook or German header
   without an address let our 'we will book it for you' read as an acceptance (27 replies), and sent requests with
   an old request below to the model; fixed in `extract.HISTORY`. Next: tracking questions and bids by the same grid.
+- 21.11. 23:00, channel matrix (after rounds 63-67, lost to carrier answers in attachments): every kind against
+  where its information sits, as benchmark section 12. New generated cells, read by each handler's own function:
+  a packing list as txt or csv (4860 cases), an acceptance or decline, a tracking reference, a booking
+  confirmation's references and a whole tariff, each only in an attachment of five formats. Found: csv was read as
+  raw text, so a csv packing list lost to the mail's figures (252 of 972) and a csv tariff was refused; replies,
+  tracking questions and confirmations read the body only. All fixed; 31 cells are known gaps with owners (bids
+  and the rate desk in attachments, scans, voice messages other than requests and pickup offers, a tariff in the
+  body, a mail that disagrees with its attachment outside requests). Next: flip the bid and scan cells.

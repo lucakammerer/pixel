@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
+from pixel.agents.rfq import extract
 from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, TEXT, in_kind, ready_date
 from pixel.agents.rfq.extract import number
 from pixel.contracts import Message, Shipment
@@ -239,11 +240,17 @@ def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Det
     return out
 
 
+async def question(ctx: Context, message: Message) -> str:
+    """Subject, body and the text of every attachment: the reference may stand only in an attached enquiry."""
+    attached = await extract._attachments(ctx, message) if message.attachments else []
+    return "\n".join([message.subject, message.body, *(line for _, lines in attached for line in lines)])
+
+
 async def handle(ctx: Context, message: Message) -> None:
     """Finds the shipment the question means (a reference, or its description: origin or pickup postcode,
     destination, weight, company) in the CRM and
     answers in the thread from the CRM alone. Says so plainly when we hold no such shipment."""
-    found, reference = match(ctx, f"{message.subject}\n{message.body}", message.sender)
+    found, reference = match(ctx, await question(ctx, message), message.sender)
     body = answer(found, reference, message.body, details(ctx, found, message.body), signer=ctx.settings.signer)
     events.emit(
         ctx, "tracking.answered", "tracking", session_id=message.session_id, message_id=message.id,

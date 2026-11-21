@@ -70,14 +70,22 @@ def intent(text: str) -> str:
     return "other"
 
 
-async def handle_reply(ctx: Context, message: Message) -> None:
-    """The customer answered our quote: acceptance -> book; decline -> quote declined; else a person answers."""
-    quote = quotes.for_session(ctx, message.session_id)
+async def reply_intent(ctx: Context, message: Message) -> str:
+    """The reply's own words decide; only when they say nothing does an attachment (a signed offer, a letter)."""
     # A reply written below the quoted mail keeps its own lines after the quote.
     unquoted = "\n".join(line for line in message.body.splitlines() if not line.lstrip().startswith(">"))
     own = extract.HISTORY.split(unquoted, maxsplit=1)[0].strip()
     subject = "" if extract.REPLY_SUBJECT.match(message.subject) else message.subject
     said = intent(own or subject)
+    if said == "other" and message.attachments:
+        said = intent("\n".join(line for _, lines in await extract._attachments(ctx, message) for line in lines))
+    return said
+
+
+async def handle_reply(ctx: Context, message: Message) -> None:
+    """The customer answered our quote: acceptance -> book; decline -> quote declined; else a person answers."""
+    quote = quotes.for_session(ctx, message.session_id)
+    said = await reply_intent(ctx, message)
     if quote is not None and quote.sent_at is None and quote.status == QuoteStatus.DRAFT:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
@@ -190,17 +198,22 @@ async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to:
                          reference=booking.team_reference, airline_reference=booking.booking_reference or "-")  # fmt: skip
 
 
+async def confirmed_references(ctx: Context, message: Message) -> tuple[str | None, str | None]:
+    """The airline's booking reference and ours, from the subject, the body or an attached confirmation."""
+    attached = await extract._attachments(ctx, message) if message.attachments else []
+    text = "\n".join([message.body, *(line for _, lines in attached for line in lines)])
+    match = CONFIRMED.search(message.subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
+    # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
+    ours = OURS.search(text)
+    return (match.group(1).strip(".,:;") if match else None), (ours.group(1) if ours else None)
+
+
 async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told."""
-    match = (
-        CONFIRMED.search(message.subject) or CONFIRMED.search(message.body) or AIRLINE_REFERENCE.search(message.body)
-    )
-    reference = match.group(1).strip(".,:;") if match else None
-    # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
-    ours = OURS.search(message.body)
+    reference, ours = await confirmed_references(ctx, message)
     booking = (
         (reference and bookings.by_reference(ctx, reference))
-        or (ours and bookings.by_team_reference(ctx, ours.group(1)))
+        or (ours and bookings.by_team_reference(ctx, ours))
         or bookings.for_session(ctx, message.session_id)
     )
     if booking is None:

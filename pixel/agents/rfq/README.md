@@ -131,6 +131,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   available.", "Could you book it, please?"). `booking.py` `intent` takes an acceptance anywhere in a sentence that
   is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes
   goes to a person, nothing is booked and the tracking bonus is lost.
+- The yes, the no or the airline's confirmation can stand only in an attachment (a signed letter, a confirmation
+  sheet) under a body that says "see attached". `booking.py` `reply_intent` reads every attachment code can read
+  when the reply's own words say nothing; `confirmed_references` reads both references from the body and every
+  attachment. A scan, a voice message, and an attachment that disagrees with the mail are open cells of the
+  channel matrix (`tests/fixtures/channel-gaps.json`).
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
   name, sign-off and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
