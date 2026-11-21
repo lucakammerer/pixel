@@ -18,9 +18,20 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Implementation
 
-- `agent.py` `handle`: extract, price, select, write, send. `fallback`: the best stored option, by code alone.
-- `extract.py` `by_rules`, `extract`: the request as an `Rfq`; rules first, one model call otherwise.
-- `compose.py` `render`: the mail text. Numbers come from the `RateOption`, formatted by code.
+- `agent.py` `handle`: `extract.extract`; when rules read the request, `compose.opening` runs in parallel as the
+  one gateway call of the quote (R28); `pricing/engine.py` `options`; `selection.select`; `compose.render`;
+  `outbox.send_quote`. A request missing origin, destination or weight emits `error` and returns None; the
+  orchestrator's fallback and the UI take over.
+- `agent.py` `fallback`: the RFQ and every `option.found` of the session, read back from the event log
+  (`pricing/session.py`), combined and selected by code alone, no model call. Returns the quote unsent.
+- `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
+  weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly
+  requested currency, `de` or `en`. None unless exactly one lane and one weight are found.
+- `extract.py` `extract`: `by_rules`, else exactly one `llm.ask_json` (`rfq.extract`); code validates the answer and
+  lists what is missing in `Rfq.missing`. Emits `rfq.extracted` with the whole `Rfq`.
+- `compose.py` `render`: subject and body in English or German, one all-in total with its currency formatted by
+  code, carrier, transit, chargeable weight, what is included, validity when the rate has one. `opening`: one
+  sentence from the model; code drops it if it holds a digit or a three-letter code, and any failure gives None.
 - `booking.py` `handle_reply`: `intent` reads accept, decline or other by rules (English and German, a decline
   wins); anything else becomes a `human.note` for a person, no model call. `book`: one shipment (`PX-…`, our
   `team_reference`), one portal booking by `rate_id`; a lost connection is retried once (the portal answers 200 with
@@ -31,8 +42,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
-To be filled from the first real mails.
+- A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
+- Two weights in one mail (per piece and total) make the rules unsure: the model reads it.
+- The opening sentence must not contain a price or a code: the scorer reads the one total we write.
 
 ## Open
 
-- Everything: this is the skeleton.
+- The quote is in the chosen rate's currency even when the customer asked for another (Q7).
+- `handle` does not store the quote in the CRM or emit `quote.sent`; that is the outbox's or orchestrator's job.

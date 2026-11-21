@@ -22,24 +22,24 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 
 | # | Rule | Source | Lives in | Status |
 | --- | --- | --- | --- | --- |
-| R9 | Every quote states one all-in total with its currency, for one option: the one the customer asked for, cheapest or fastest | Brief | `pricing/selection.py` `select`, `agents/rfq/compose.py` `render` | open |
-| R10 | Prices come from the rate sheets, the rate portal and bids from 2 to 5 carriers. Some airlines are only in the sheets, others only on the portal; destinations missing on the portal are priced by mail to the airline | Brief, API | `pricing/engine.py` `options` | open |
-| R11 | Chargeable weight = max(weight in kg, volume in cbm × 167); the bracket is picked by the chargeable weight | Kit, API (`Rate.chargeable_weight_kg`) | `pricing/calc.py` `chargeable_kg` | open |
-| R12 | Sheet price: rate per kg of the bracket × billed weight, at least the lane's minimum, which applies to the freight before surcharges; plus fuel and security per kg of the billed weight | Kit | `pricing/calc.py` `price_tariff` | open |
-| R13 | The best price is not always the obvious one: read the sheets closely (breaks differ per airline, a higher break can be cheaper, neighbouring breaks can carry the same rate) | Brief, Kit | `pricing/calc.py` `price_tariff`, `tests/test_calc.py` | open |
+| R9 | Every quote states one all-in total with its currency, for one option: the one the customer asked for, cheapest or fastest | Brief | `pricing/selection.py` `select`, `agents/rfq/compose.py` `render` | done |
+| R10 | Prices come from the rate sheets, the rate portal and bids from 2 to 5 carriers. Some airlines are only in the sheets, others only on the portal; destinations missing on the portal are priced by mail to the airline | Brief, API | `pricing/engine.py` `options` | done |
+| R11 | Chargeable weight = max(weight in kg, volume in cbm × 167); the bracket is picked by the chargeable weight | Kit, API (`Rate.chargeable_weight_kg`) | `pricing/calc.py` `chargeable_kg` | done |
+| R12 | Sheet price: rate per kg of the bracket × billed weight, at least the lane's minimum, which applies to the freight before surcharges; plus fuel and security per kg of the billed weight | Kit | `pricing/calc.py` `price_tariff` | done |
+| R13 | The best price is not always the obvious one: read the sheets closely (breaks differ per airline, a higher break can be cheaper, neighbouring breaks can carry the same rate) | Brief, Kit | `pricing/calc.py` `price_tariff`, `tests/test_calc.py` | done |
 | R14 | A tariff has a currency and a validity (from, to); airlines send new tariffs by mail every month | Kit, Brief | `agents/tariffs/agent.py` `parse`, `check`, `handle`; `pricing/store.py` `lookup` | done |
-| R15 | Among carrier bids the right one is the most balanced: price and speed weigh 50/50 | Brief | `pricing/selection.py` `balanced` | open |
-| R16 | A door-to-port request adds a trucker pickup: the pickup zone belongs to one airport (`pickup_zones.csv`), truckers serve zones (`carrier-list.csv`) | Brief, Kit | `pricing/pickup.py` | open |
-| R17 | No margin is added: margins are out of scope, the score compares our total with the best price | Brief | `pricing/calc.py` | open |
+| R15 | Among carrier bids the right one is the most balanced: price and speed weigh 50/50 | Brief | `pricing/selection.py` `balanced` | done |
+| R16 | A door-to-port request adds a trucker pickup: the pickup zone belongs to one airport (`pickup_zones.csv`), truckers serve zones (`carrier-list.csv`) | Brief, Kit | `pricing/pickup.py`, `pricing/engine.py` `combine` | done |
+| R17 | No margin is added: margins are out of scope, the score compares our total with the best price | Brief | `pricing/calc.py` | done |
 
 ## The rate portal
 
 | # | Rule | Source | Lives in | Status |
 | --- | --- | --- | --- | --- |
-| R18 | `GET /v1/portal/ports` lists every lane the portal prices with its airlines. `GET /v1/portal/brackets` gives an airline's weight breaks; an airline not on the portal returns 404 with the address to mail. Neither is rate limited | API | `api/portal.py` `lanes`, `brackets` | open |
-| R19 | `GET /v1/portal/rates` prices the weight we ask for, in that weight's bracket. Rate reads are capped per key in a fixed one-minute window: 429 with `Retry-After`; the limit is in `X-RateLimit-Limit`, what is left in `X-RateLimit-Remaining`. 503 comes with a message saying where to get the rate instead | API | `api/portal.py` `rate`, `pricing/portal_rates.py` `options` | open |
-| R20 | A portal rate's `total` is freight + fuel + security in `currency`; when the currency is not EUR the rate carries its exchange rate (EUR per unit). It carries `transit_days`, `valid_until` (15 minutes) and `dataset_version` | API, Brief | `contracts.py` `RateOption`, `pricing/calc.py` `to_eur` | open |
-| R21 | Rates can also come from a browser page behind a bot challenge and from the desk at `ratedesk@hackloop.mail`, which answers by mail | Brief | `pricing/bids.py` (desk); browser: not planned | open |
+| R18 | `GET /v1/portal/ports` lists every lane the portal prices with its airlines. `GET /v1/portal/brackets` gives an airline's weight breaks; an airline not on the portal returns 404 with the address to mail. Neither is rate limited | API | `api/portal.py` `lanes`, `brackets`; `pricing/portal_rates.py` `lanes` (cached) | done |
+| R19 | `GET /v1/portal/rates` prices the weight we ask for, in that weight's bracket. Rate reads are capped per key in a fixed one-minute window: 429 with `Retry-After`; the limit is in `X-RateLimit-Limit`, what is left in `X-RateLimit-Remaining`. 503 comes with a message saying where to get the rate instead | API | `api/portal.py` `rate`, `pricing/portal_rates.py` `options` | done |
+| R20 | A portal rate's `total` is freight + fuel + security in `currency`; when the currency is not EUR the rate carries its exchange rate (EUR per unit). It carries `transit_days`, `valid_until` (15 minutes) and `dataset_version` | API, Brief | `api/portal.py` `_option`, `pricing/calc.py` `to_eur` | done |
+| R21 | Rates can also come from a browser page behind a bot challenge and from the desk at `ratedesk@hackloop.mail`, which answers by mail | Brief | `pricing/bids.py` (desk answers are read; we do not yet ask the desk); browser: not planned | open |
 
 ## Booking and tracking
 
@@ -56,11 +56,11 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | --- | --- | --- | --- | --- |
 | R26 | A quote is accepted when it is within 5% of the best price (first reply only, within 6 minutes). Only accepted quotes score, up to 100 points each; the score is the sum over all requests | Brief, Slides | — | n/a |
 | R27 | Price accuracy, 45 points: full at the best price, fewer the further above it | Brief, Board | `pricing/` | open |
-| R28 | LLM cost, 40 points: gateway spend per accepted quote in the hour; full at no spend, zero at 0.10 USD. A quote made without a gateway call earns no cost points. Cost points are added once an hour, up to about an hour after a quote | Brief, API | `llm.py` `ask_json`, `spend_usd` | open |
+| R28 | LLM cost, 40 points: gateway spend per accepted quote in the hour; full at no spend, zero at 0.10 USD. A quote made without a gateway call earns no cost points. Cost points are added once an hour, up to about an hour after a quote | Brief, API | `llm.py` `ask_json`, `spend_usd`; `agents/rfq/agent.py` `handle` (one call per quote) | done |
 | R29 | Response time, 15 points: full within 2 minutes of the request, zero at 6 minutes | Brief | `core/orchestrator.py` `deadline_for` | open |
 | R30 | +10 for a correct tracking answer on a booked shipment | Brief, Board | `agents/tracking/agent.py` `answer`, `tests/test_tracking.py` | done |
 | R31 | +10 from the jury for the accepted mail that reads most human | Brief, Board | `agents/rfq/compose.py` | open |
-| R32 | All model calls go through the gateway (`POST /v1/gateway/chat/completions`, `/responses`, `/embeddings`), OpenAI models only, with our own OpenAI key stored once at the gateway | Brief, API | `llm.py`, `tools/set_openai_key.py` | open |
+| R32 | All model calls go through the gateway (`POST /v1/gateway/chat/completions`, `/responses`, `/embeddings`), OpenAI models only, with our own OpenAI key stored once at the gateway | Brief, API | `llm.py`, `api/gateway.py`, `tools/set_openai_key.py` | done |
 | R33 | After a few hours the setup changes about once an hour, unannounced. We learn of a change from failed quotes: `GET /v1/board/me` gives per request the verdict (`accepted`, `rejected`, `pending`, `open`, `no answer`, `voided`), a reason code and the points per kind | Brief, API | `tools/board_me.py` `run`, `crm/quotes.py` `stats`, `ui/dashboard.py` | done |
 
 ## The final
