@@ -1,21 +1,27 @@
-# Owners review every change to their files. Work split: docs/IMPLEMENTATION_PLAN.md §7.
-# Until the KPI owners are named, every section points to the default owner: replace the handle per section.
+# Owners review every change to their files. Roles: README.md "Team", docs/IMPLEMENTATION_PLAN.md §7.
+# Until the role owners are named, every section points to the default owner: replace the handle per section.
 
-# Shared (default for everything not listed below): crm, ui, booking, tracking, contracts, docs, tools
+# Shared (default for everything not listed below): crm, ui endpoints, booking, tracking, contracts, docs, tools
 *                                    @lucakammerer
 
-# Accuracy
-/pixel/pricing/                      @lucakammerer
-/pixel/agents/tariffs/               @lucakammerer
-/tests/                              @lucakammerer
+# 1 Cost
+/pixel/llm.py                        @lucakammerer
+/pixel/agents/rfq/extract.py         @lucakammerer
+/pixel/agents/rfq/compose.py         @lucakammerer
 
-# Speed
+# 2 Speed
 /pixel/core/                         @lucakammerer
 /pixel/agents/router/                @lucakammerer
 /pixel/api/                          @lucakammerer
 /pixel/app.py                        @lucakammerer
 
-# Cost
-/pixel/llm.py                        @lucakammerer
-/pixel/agents/rfq/extract.py         @lucakammerer
-/pixel/agents/rfq/compose.py         @lucakammerer
+# 3 Accuracy
+/pixel/pricing/                      @lucakammerer
+/pixel/agents/tariffs/               @lucakammerer
+/tests/                              @lucakammerer
+
+# 4 Generalization
+/tests/fixtures/                     @lucakammerer
+
+# 5 Frontend, business and pitch
+/pixel/ui/page.py                    @lucakammerer

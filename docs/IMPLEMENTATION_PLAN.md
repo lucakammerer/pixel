@@ -326,19 +326,25 @@ request at 16:00. Order when in doubt: A, then B, then C.
 
 ---
 
-## 7. After the foundation: split by KPI
+## 7. After the foundation: five roles
 
-Once quotes are being accepted, the three owners stop following packages and each takes one KPI
-([`AGENTS.md`](../AGENTS.md), [`.github/CODEOWNERS`](../.github/CODEOWNERS)).
+Once quotes are being accepted, nobody follows packages any more. Five people, one role each; the personas are in
+[`README.md`](../README.md#team), the files in [`AGENTS.md`](../AGENTS.md) and
+[`.github/CODEOWNERS`](../.github/CODEOWNERS).
 
-| KPI | Points | Owns | First tasks |
+| Role | Answers for | Owns | First tasks |
 | --- | --- | --- | --- |
-| **Accuracy** | 45, and the 5% cliff | `pixel/pricing/`, `pixel/agents/tariffs/`, `tests/` | Every rejected quote from `/v1/board/me` becomes a replay fixture and a fix; new tariff versions; Q4–Q7 |
-| **Speed** | 15, and the 6 minute limit | `pixel/core/`, `pixel/agents/router/`, `pixel/api/` | Response-time histogram; the wait-for-bids rule; no missed request across restarts and API errors |
-| **Cost** | 40 | `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, prompts | Spend per accepted quote per hour; smallest model that extracts reliably; more rules, fewer calls |
+| **Cost** | 40 points | `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, prompts | Spend per accepted quote per hour; smallest model that extracts reliably; more rules, fewer calls |
+| **Speed** | 15 points, and the 6 minute limit | `pixel/core/`, `pixel/agents/router/`, `pixel/api/`, `pixel/app.py` | Response-time histogram; the wait-for-bids rule; no missed request across restarts and API errors; the alert on two failed quotes |
+| **Accuracy** | 45 points, and the 5% cliff | `pixel/pricing/`, `pixel/agents/tariffs/`, `tests/` except fixtures | Every rejected quote from `/v1/board/me` becomes a replay fixture and a fix; new tariff versions; Q4–Q7 |
+| **Generalization** | Accepted rate after every change | `tests/fixtures/`, Pitfalls sections, the change log in `bench/RUNS.md` | Hand-calculated prices as a second opinion on `calc.py`; parsed tariffs read against their files; written variants of requests and carrier answers; every real mail labelled |
+| **Frontend, business and pitch** | UX and design, mail voice, the pitch | `pixel/ui/page.py` | The open questions to 5U (§0); model mails in our voice; the demo path and the pitch |
 
-Shared, reviewed by whoever did not write the change: `pixel/crm/`, `pixel/ui/`, `pixel/agents/rfq/booking.py`,
-`pixel/agents/tracking/`, `pixel/contracts.py`, `docs/`, `tools/`.
+Shared, reviewed by whoever did not write the change: `pixel/crm/`, `pixel/ui/routes.py`, `pixel/ui/dashboard.py`,
+`pixel/agents/rfq/booking.py`, `pixel/agents/tracking/`, `pixel/contracts.py`, `docs/`, `tools/`.
+
+Generalization and Frontend work in files that cannot break a quote; a pipeline owner merges their branches.
+Everyone takes a night shift at the dashboard.
 
 Every pull request states what it changes in accepted rate, response time or spend per quote, measured on replayed
 fixtures or on `/v1/board/me`, and may not make another KPI worse without saying so.

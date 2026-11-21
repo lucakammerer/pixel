@@ -60,14 +60,17 @@ worktree each, no shared files.
 - **C, CRM, booking, tracking, UI:** `pixel/crm/`, `pixel/ui/`, `pixel/agents/rfq/booking.py`,
   `pixel/agents/tracking/`, `tools/board_me.py`, `bench/`
 
-**After the foundation** ([plan §7](docs/IMPLEMENTATION_PLAN.md#7-after-the-foundation-split-by-kpi)): three
-owners, one KPI each; file owners in [`.github/CODEOWNERS`](.github/CODEOWNERS) review every change to their files.
+**After the foundation** ([plan §7](docs/IMPLEMENTATION_PLAN.md#7-after-the-foundation-five-roles)): five
+roles, one number each; the personas are in [`README.md`](README.md#team). File owners in
+[`.github/CODEOWNERS`](.github/CODEOWNERS) review every change to their files.
 
-- **Accuracy** (45 points and the 5% cliff): `pixel/pricing/`, `pixel/agents/tariffs/`, `tests/`
-- **Speed** (15 points and the 6 minute limit): `pixel/core/`, `pixel/agents/router/`, `pixel/api/`
 - **Cost** (40 points): `pixel/llm.py`, `pixel/agents/rfq/extract.py`, `pixel/agents/rfq/compose.py`, prompts
-- **Shared:** `pixel/crm/`, `pixel/ui/`, `pixel/agents/rfq/booking.py`, `pixel/agents/tracking/`,
-  `pixel/contracts.py`, `docs/`, `tools/`
+- **Speed** (15 points and the 6 minute limit): `pixel/core/`, `pixel/agents/router/`, `pixel/api/`, `pixel/app.py`
+- **Accuracy** (45 points and the 5% cliff): `pixel/pricing/`, `pixel/agents/tariffs/`, `tests/` except fixtures
+- **Generalization** (accepted rate after a change): `tests/fixtures/`, the Pitfalls sections of the agent READMEs
+- **Frontend, business and pitch** (UX, mail voice, the pitch): `pixel/ui/page.py`
+- **Shared:** `pixel/crm/`, `pixel/ui/routes.py`, `pixel/ui/dashboard.py`, `pixel/agents/rfq/booking.py`,
+  `pixel/agents/tracking/`, `pixel/contracts.py`, `docs/`, `tools/`
 
 Edit only your files. If you need another owner's function to behave differently, change its signature on `main` in
 a commit of its own and tell the others first. Every pull request states its effect on accepted rate, response time
