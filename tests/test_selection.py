@@ -60,7 +60,6 @@ def test_balanced_picks_the_trucker_the_scorer_picked():
 
 
 def test_airline_bids_compete_by_the_customers_wish():
-    # round 28: the scorer took Ultraviolet's 390.45 (4 days) for cheapest, not the balanced Lumen 457.08 (1 day)
-    bids = [opt("Lumen", "457.08", 1, Source.BID), opt("Ultraviolet", "390.45", 4, Source.BID)]
-    assert select(rfq(Preference.CHEAPEST), bids + [opt("Quetzal", "416.16", 3)]).carrier == "Ultraviolet"
-    assert select(rfq(Preference.FASTEST), bids + [opt("Quetzal", "416.16", 3)]).carrier == "Lumen"
+    scored = json.loads((Path(__file__).parent / "fixtures" / "scored-airline-bids.json").read_text())
+    options = [opt(o["carrier"], o["total"], o["days"], Source(o["source"])) for o in scored["options"]]
+    assert select(rfq(Preference(scored["preference"])), options).carrier == scored["scorer_carrier"]

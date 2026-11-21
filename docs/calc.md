@@ -44,7 +44,7 @@ Decimal only; a model never computes, compares or writes a price (P1).
   `tests/fixtures/pickup-bids.json` holds the trucker bids of those rounds and the bid the scorer's best price
   contained. Best / own summed, own / worst summed and min-max scaling each miss at least one. Airline bids are
   not balanced: they compete by the customer's wish with sheets, portal and the rate desk (round 28, session 7244:
-  the scorer's best for cheapest was the cheaper 4-day bid, not the balanced 1-day bid).
+  the scorer's best for cheapest was the cheaper 4-day bid, not the balanced 1-day bid; `tests/fixtures/scored-airline-bids.json`).
 - The rule is not fixed: `core/feedback.py` reads our points after every request, works back to the scorer's best
   price (accuracy falls linearly to 0 at 10% off the best price, in either direction: fitted on scored requests, not
   stated by 5U) and finds the option that total belongs to. `pickup_rule` then uses the entry of `selection.RULES`
