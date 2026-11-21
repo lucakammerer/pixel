@@ -20,6 +20,9 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    (`rfqs/live.jsonl`), with the score per field.
 10. The same requests changed in ways seen live (an old request quoted below, a reply's subject, pounds): each
    read right or left to the model.
+11. Mail against its attached document (rounds 33 to 35): every figure the document states, changed in the mail,
+   in every column order, file format and document layout (`tools/document_conflicts.py`); the document's figure
+   is the right reading.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -52,6 +55,7 @@ from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
 from pixel.pricing import bids
 from pixel.pricing.calc import chargeable_kg, price_tariff
+from tools import document_conflicts
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -722,6 +726,12 @@ def open_gaps() -> dict[str, list[str]]:
         (r.fixture, r.known_gap) for r in audit_live() + audit_live_mutations() if r.right is False and r.known_gap
     ]
     found += [(b.case_id, b.known_gap) for b in audit_bids() if not b.ok and b.known_gap]
+    seen_gaps = set()
+    for r in document_conflicts.audit():
+        key = f"{r.case.change}:{r.case.layout}"
+        if r.right is False and r.known_gap and r.known_gap not in seen_gaps:
+            seen_gaps.add(r.known_gap)
+            found.append((f"document conflict {key}", r.known_gap))
     by_owner: dict[str, list[str]] = {}
     for case, note in found:
         owner = m.group(1) if (m := re.search(r"Owner: (\w+)", note)) else "unassigned"
@@ -867,6 +877,29 @@ def main() -> int:
     if not mutated_wrong:
         print("    ok   an old quoted request, a reply's subject and pounds change no field")
 
+    conflicts = document_conflicts.audit()
+    conflicts_wrong = [r for r in conflicts if r.right is False and not r.known_gap]
+    print(f"\n[11] Mail against its document: {sum(bool(r.right) for r in conflicts)}/{len(conflicts)} read the "
+          f"document's figures, {sum(r.right is None for r in conflicts)} left to the model")  # fmt: skip
+    layouts = document_conflicts.LAYOUTS
+    print(f"    {'mail states wrong':<18} " + " ".join(f"{name:>16}" for name in layouts))
+    for change, row in document_conflicts.by_change(conflicts).items():
+        cells = []
+        for name in layouts:
+            ok, bad, model = row.get(name, (0, 0, 0))
+            cells.append(f"{ok}/{ok + bad + model}" + ("" if not model else f" m{model}"))
+        print(f"    {change:<18} " + " ".join(f"{c:>16}" for c in cells))
+    noted = set()
+    for r in conflicts:
+        if r.right is False and r.known_gap and r.known_gap not in noted:
+            noted.add(r.known_gap)
+            print(f"    gap  {r.case.change}: {r.known_gap}")
+    stale = {f"{r.case.change}:{r.case.layout}" for r in conflicts if r.right and r.known_gap}
+    for key in sorted(stale):
+        print(f"    ok   {key}: now right, narrow or remove its known_gap")
+    for r in conflicts_wrong[:20]:
+        print(f"    FAIL {r.name}: {'; '.join(r.wrong_fields)}")
+
     failed = bool(
         prices.failures
         or sources.failures
@@ -878,6 +911,7 @@ def main() -> int:
         or unsafe_sheets
         or live_wrong
         or mutated_wrong
+        or conflicts_wrong
     )
     print("\n" + "=" * 70)
     print(" FAILED" if failed else " PASSED")

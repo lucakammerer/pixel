@@ -1,0 +1,138 @@
+{
+  "note": "Rounds 33 to 35: the attached document carries the shipment as the scorer prices it, and the mail states one figure differently, its dimensions changed to match. Each base is one of those requests: the mail as a template, the document's truth, and a wrong value per field. tools/document_conflicts.py renders every base with every wrong field, column order and file format; a right reading is always the document's.",
+  "bases": [
+    {
+      "seen_live": "rfq-sli-volume-differs-from-mail.json",
+      "subject": "Air freight quote: {origin} to {destination}",
+      "body": "Hi there,\n\nHope your week’s going well! Could you send me an all-in price in EUR for the cheapest air freight option from {origin} to {destination} ({destination_name})? We’ll deliver the shipment to {origin} ourselves, and it’ll be ready on 2026-11-27.\n\nIt’s {pieces} pieces of furniture samples, with a gross weight of {weight_kg} kg and a total volume of {volume_cbm} cbm. Each piece measures {length} x {width} x {height} cm. I’ve attached our packing specification for reference.\n\nThanks for checking!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+      "document": {
+        "title": "Packing Specification",
+        "name": "SLI_53351",
+        "date": "2026-11-27",
+        "shipper": "Hofmann Textilwerk KG, Bielefeld, Germany",
+        "consignee": "Cairo Imports Ltd., Cairo, EG",
+        "goods": "furniture samples"
+      },
+      "truth": {
+        "origin": "MUC",
+        "destination": "CAI",
+        "destination_name": "Cairo, EG",
+        "pieces": 5,
+        "weight_kg": "292",
+        "length": 120,
+        "width": 40,
+        "height": 80
+      },
+      "wrong": {
+        "destination": "AMM",
+        "destination_name": "Amman, JO"
+      }
+    },
+    {
+      "seen_live": "rfq-packing-list-volume-differs-from-mail.json",
+      "subject": "Air freight quote: {origin} to {destination}",
+      "body": "Hi,\n\nCould you quote an all-in price in EUR for the fastest air freight option from {origin} to {destination} ({destination_name})? The shipment will be ready on 2026-11-27, and we’ll deliver it to {origin} ourselves.\n\nIt’s {pieces} pieces of automotive sensors, {weight_kg} kg gross and {volume_cbm} cbm total. Each piece is {length} x {width} x {height} cm. The packing list is attached.\n\nMira Petersen\nNordlicht Audio",
+      "document": {
+        "title": "Packing List",
+        "name": "packing-spec_36075",
+        "date": "2026-11-27",
+        "shipper": "Nordlicht Audio GmbH, Kiel, Germany",
+        "consignee": "Sao Paulo Industrial Supply, Sao Paulo, BR",
+        "goods": "automotive sensors"
+      },
+      "truth": {
+        "origin": "MUC",
+        "destination": "GRU",
+        "destination_name": "Sao Paulo, BR",
+        "pieces": 5,
+        "weight_kg": "1384",
+        "length": 140,
+        "width": 100,
+        "height": 107
+      },
+      "wrong": {
+        "destination": "GIG",
+        "destination_name": "Rio de Janeiro, BR"
+      }
+    },
+    {
+      "seen_live": "rfq-spec-weight-differs-from-mail.json",
+      "subject": "Air freight quote: {origin} to {destination}",
+      "body": "Hi,\n\nCould you quote the fastest air freight option from {origin} to {destination}, with an all-in price in EUR?\n\nThe automotive sensors will be ready on 2026-11-24. We’ll deliver them to {origin} ourselves: {pieces} pieces, {weight_kg} kg gross, {volume_cbm} cbm.\n\nThe packing specification is attached.\n\nMira Petersen\nNordlicht Audio",
+      "document": {
+        "title": "Packing Specification",
+        "name": "shipment_details_81971",
+        "date": "2026-11-24",
+        "shipper": "Nordlicht Audio GmbH, Kiel, Germany",
+        "consignee": "Ho Chi Minh City Imports Ltd., Ho Chi Minh City, VN",
+        "goods": "automotive sensors"
+      },
+      "truth": {
+        "origin": "MUC",
+        "destination": "SGN",
+        "destination_name": "Ho Chi Minh City, VN",
+        "pieces": 19,
+        "weight_kg": "1751",
+        "length": 100,
+        "width": 100,
+        "height": 63
+      },
+      "wrong": {
+        "destination": "HAN",
+        "destination_name": "Hanoi, VN"
+      }
+    }
+  ],
+  "column_orders": [
+    [
+      "weight",
+      "width",
+      "length",
+      "height",
+      "pieces"
+    ],
+    [
+      "length",
+      "weight",
+      "width",
+      "height",
+      "pieces"
+    ],
+    [
+      "weight",
+      "length",
+      "height",
+      "width",
+      "pieces"
+    ],
+    [
+      "pieces",
+      "height",
+      "width",
+      "length",
+      "weight"
+    ],
+    [
+      "length",
+      "width",
+      "height",
+      "pieces",
+      "weight"
+    ]
+  ],
+  "formats": [
+    "pdf",
+    "xlsx",
+    "docx"
+  ],
+  "known_gaps": {
+    "pieces": "the mail's piece count wins over the document's 'Total pieces'. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
+    "destination": "the mail's destination wins over the document's 'Destination airport'; we would quote the wrong lane. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
+    "weight:weight_per_piece": "a table weight per piece is not multiplied out, so the mail's total weight wins. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
+    "weight:table_only": "a document with only a table (no total lines) does not count: the mail's weight wins. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
+    "volume:table_only": "a document with only a table (no total lines) does not count: the mail's volume wins. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
+    "volume_only:table_only": "same as volume:table_only. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
+    "weight_and_volume:weight_per_piece": "same as weight:weight_per_piece. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources).",
+    "weight_and_volume:table_only": "same as weight:table_only. Owner: Cost (pixel/agents/rfq/extract.py _cargo_sources)."
+  }
+}

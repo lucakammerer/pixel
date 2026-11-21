@@ -155,6 +155,16 @@ def test_captured_requests_changed_as_seen_live_are_read_right_or_left_to_the_mo
     assert [f"{r.fixture}: {r.wrong_fields}" for r in mutated if r.right is False and not r.known_gap] == []
 
 
+def test_a_mail_that_contradicts_its_attached_document_is_read_by_the_document():
+    """Rounds 33 to 35: every figure the attached document states, changed in the mail, in every column order,
+    format and layout. A reading other than the document's fails unless `document-conflicts.json` names the
+    changed field (or field:layout) as a known gap."""
+    results = bench.document_conflicts.audit()
+    assert len(results) > 1000
+    assert any(r.right for r in results)
+    assert [f"{r.name}: {r.wrong_fields}" for r in results if r.right is False and not r.known_gap] == []
+
+
 def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
     """Every seventh document case and every mail case of `tools/simulate.py`: read right or left to the model, unless
     `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now must lose its note."""
