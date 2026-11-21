@@ -23,7 +23,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   preference or a destination the text names and they differ, the model's wins, as an `rfq.crosscheck` event; on
   any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
   the prose (`prose.raw`) and `compose.adopt` checks it; only without either, `compose.prose` runs in parallel. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
-  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (bids by
+  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (no bid
+  to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by
   mail, pickup and airline, are waited for until all are in, or until the later of `target_at` and
   `PIXEL_BID_WAIT_S` after the ask, never past `hard_at`: `pricing/bids.py` `collect`); `selection.select`; `compose.render`;
   `outbox.send_quote`, which attaches the quote's text as a PDF to every quote (R38, `core/pdf.py`). A request missing origin, destination or weight emits `error` and returns None; the
