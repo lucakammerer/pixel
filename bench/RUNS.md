@@ -210,3 +210,7 @@ What follows:
   or with our team reference, in either word order (a customer's "Booking request ..., confirmed" stays a request);
   #144 reads "1 250 kg" as 1250 kg and "Service: express" as fastest. All 29 live requests read as before, offline
   KPI unchanged. The portal API is back since round 30. Next: two requests in one mail, an unusual acceptance.
+- 21.11. 19:25, new request kind since round 33: an attached packing specification or packing list contradicts the
+  mail's volume (round 33: 2.78 against 1.92 cbm, round 34: 11.69 against 7.49), and the scorer prices the document.
+  Both rejected too high; #159 (repair loop) lets a document's volume win when its table bears it out, and reads
+  round 34 as 7.49 cbm. Round 34 is a fixture now. Next: the first verdict on such a request with #159 live.
