@@ -1,4 +1,4 @@
-"""Polls the mailbox, stores each mail once, hands it to the orchestrator."""
+"""Polls the mailbox, stores each mail once, hands it to the orchestrator. `core/webhook.py` feeds `accept` too."""
 
 import asyncio
 import re
@@ -81,6 +81,17 @@ def spawn(ctx: Context, coro: Awaitable[None]) -> asyncio.Task:
     return task
 
 
+def accept(ctx: Context, message: Message, on_message: Callable[[Message], Awaitable[None]]) -> None:
+    """One mail from a poll or a push: ingest, then dispatch without blocking the caller."""
+    try:
+        stored = ingest(ctx, message)
+    except Exception as e:  # noqa: BLE001  one bad mail must not stop the mailbox
+        emit(ctx, "error", "poller", message_id=message.id, payload={"where": "ingest", "error": repr(e)})
+        return
+    if stored:
+        spawn(ctx, on_message(stored))
+
+
 async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) -> None:
     """Loops forever: poll with the stored `since_id`, store, emit `mail.in`, dispatch without blocking the loop.
     `since_id` moves only after a mail is stored, so a restart neither loses nor repeats one (R2)."""
@@ -97,14 +108,8 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
             await asyncio.sleep(ctx.settings.poll_seconds)
             continue
         for message in messages:
-            try:
-                stored = ingest(ctx, message)
-            except Exception as e:  # noqa: BLE001  one bad mail must not stop the mailbox
-                emit(ctx, "error", "poller", message_id=message.id, payload={"where": "ingest", "error": repr(e)})
-                stored = None
+            accept(ctx, message, on_message)
             db.put(ctx.db, SINCE_KEY, str(message.id))
-            if stored:
-                spawn(ctx, on_message(stored))
         if next_since_id > since_id:
             since_id = next_since_id
             db.put(ctx.db, SINCE_KEY, str(since_id))

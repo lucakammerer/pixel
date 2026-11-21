@@ -32,10 +32,10 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 
 - `pixel/contracts.py`: the data contracts all modules share (`Message`, `Rfq`, `LaneTariff`, `RateOption`,
   `Quote`, `Booking`, `Shipment`, `Event`). Changed only on `main`, in a commit of its own.
-- `pixel/app.py`: process entry; one process runs poller, handlers and UI
+- `pixel/app.py`: process entry; one process runs poller, push endpoint, handlers and UI
 - `pixel/api/`: the 5U API (`client.py`, `mailbox.py`, `portal.py`, `gateway.py`, `board.py`)
-- `pixel/core/`: `poller.py`, `orchestrator.py` (dispatch, deadlines, fallback), `outbox.py` (all outgoing mail),
-  `events.py` (the log and its live stream), `db.py`, `context.py`
+- `pixel/core/`: `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, fallback),
+  `outbox.py` (all outgoing mail), `events.py` (the log and its live stream), `db.py`, `context.py`
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,
@@ -45,8 +45,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`,
-  `board_me.py`, `set_openai_key.py`; `bench/RUNS.md`: our results per request; `data/start-kit/`: the kit as
-  downloaded
+  `board_me.py`, `set_openai_key.py`, `webhook.py`; `bench/RUNS.md`: our results per request; `data/start-kit/`:
+  the kit as downloaded
 
 ## Who owns what
 
@@ -90,12 +90,15 @@ uv run python -m tools.replay --db <database> --session <id>     # a stored sess
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
+uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
 tools/deploy.sh                                 # the checked-out commit to the live host, restarts the service
 ```
 
 Only one process may run with `PIXEL_DRY_RUN=0` against the real mailbox: the `pixel` service on the live host
 (`deploy/pixel.service`; its `.env` and database live only there). A unit drop-in on the host binds the UI to the
-address its reverse proxy reaches, and the proxy asks for a login. A restart waits at most 3 seconds for open
+address its reverse proxy reaches, and the proxy asks for a login. The mailbox pushes new mail to `POST /hook`, which
+must pass the proxy without that login: a push is checked by its signature (`PIXEL_WEBHOOK_SECRET`). One endpoint
+per team: subscribing another URL takes the pushes away from the live host, which then only polls. A restart waits at most 3 seconds for open
 connections: the UI's live stream would otherwise hold the service in shutdown past a request's deadline.
 Everything else runs dry or on replayed mail.
 

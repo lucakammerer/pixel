@@ -78,7 +78,8 @@ Deviations from this list need a reason written here.
 ### 4.1 Flow of one request
 
 ```
-poller        GET /v1/mailbox/messages?since_id=…  every second, store once  mail.in
+webhook       POST /hook: the mailbox pushes each new mail, signed          mail.in
+poller        GET /v1/mailbox/messages?since_id=…  every second, the safety net; a mail is stored once
 router        rules on sender, thread, attachments; model only if unsure   route
 orchestrator  customer_rfq → session row + a task with a deadline (target 100 s, hard 315 s, expiry 360 s)
   rfq agent     extract (rules, else one model call)                   rfq.extracted
@@ -103,9 +104,9 @@ board feedback      tools/board_me.py every few minutes                score
 | --- | --- |
 | `pixel/contracts.py` | The data contracts every module imports: `Message`, `Rfq`, `LaneTariff`, `RateOption`, `Quote`, `Booking`, `Shipment`, `Event`, `LlmResult` |
 | `pixel/config.py` | Settings from `.env` |
-| `pixel/app.py` | Process entry: builds the `Context`, starts the poller, mounts the UI |
+| `pixel/app.py` | Process entry: builds the `Context`, starts the poller, mounts the push endpoint and the UI |
 | `pixel/api/` | The 5U API: `client.py` (key header, retries), `mailbox.py`, `portal.py`, `gateway.py`, `board.py` |
-| `pixel/core/` | `db.py` (SQLite, schema), `events.py` (the log and its live stream), `poller.py`, `orchestrator.py` (dispatch, deadlines, recovery), `outbox.py` (the only way mail leaves), `context.py` |
+| `pixel/core/` | `db.py` (SQLite, schema), `events.py` (the log and its live stream), `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, recovery), `outbox.py` (the only way mail leaves), `context.py` |
 | `pixel/agents/router/` | `classify`: which kind of mail this is |
 | `pixel/agents/rfq/` | `agent.py` (the quote), `extract.py`, `compose.py` (the mail text), `booking.py` (acceptance, booking, confirmation) |
 | `pixel/agents/tracking/` | Answers tracking questions from the CRM |
@@ -114,7 +115,7 @@ board feedback      tools/board_me.py every few minutes                score
 | `pixel/crm/` | `quotes.py`, `bookings.py`, `shipments.py`, `schema.py` |
 | `pixel/ui/` | `routes.py` (sessions list, session view, event stream, step in), `dashboard.py` |
 | `pixel/llm.py` | The only module that calls the gateway; counts tokens and cost |
-| `tools/` | `replay.py`, `board_me.py`, `set_openai_key.py` |
+| `tools/` | `replay.py`, `board_me.py`, `set_openai_key.py`, `webhook.py` |
 
 ### 4.3 Sessions and the event log
 

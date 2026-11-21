@@ -1,6 +1,8 @@
-"""GET/POST /v1/mailbox/messages. Maps the API's mail shape to `contracts.Message`."""
+"""GET/POST /v1/mailbox/messages and the push subscription. Maps the API's mail shape to `contracts.Message`."""
 
 import base64
+import hashlib
+import hmac
 from datetime import UTC, datetime
 from typing import Any
 
@@ -78,6 +80,12 @@ def check_attachments(attachments: tuple[tuple[str, str, bytes], ...]) -> None:
             raise ValueError(f"attachment over 10 MB: {filename}")
 
 
+def signed(secret: str, timestamp: str, body: bytes, signature: str) -> bool:
+    """A push's `X-Webhook-Signature`: `sha256=` + hex HMAC-SHA256 of timestamp + `.` + raw body."""
+    expected = "sha256=" + hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
 class Mailbox:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
@@ -118,3 +126,15 @@ class Mailbox:
     async def attachment(self, message_id: int, attachment_id: int) -> bytes:
         response = await request(self.client, "GET", f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}")
         return response.content
+
+    async def subscribe(self, url: str, secret: str) -> None:
+        """Every new mail is pushed to `url`, signed with `secret`. A second call replaces both."""
+        await request(self.client, "PUT", "/v1/mailbox/webhook", json={"url": url, "secret": secret})
+
+    async def webhook_test(self) -> dict[str, Any]:
+        """One signed test call to our endpoint: `delivered`, `status_code`, `error`."""
+        return (await request(self.client, "POST", "/v1/mailbox/webhook/test")).json()
+
+    async def webhook(self) -> dict[str, Any]:
+        """Our subscription and the last 20 pushes."""
+        return (await request(self.client, "GET", "/v1/mailbox/webhook")).json()
