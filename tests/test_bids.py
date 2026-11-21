@@ -308,6 +308,21 @@ async def test_a_pickup_price_in_an_attached_offer_is_read(ctx, monkeypatch):
     assert (found["pickup"], found["trucker"], found["pickup_hours"]) == ("165.70", "Truck A", 29)
 
 
+PER_KG_TABLE = "\n".join(
+    "  ".join(row)
+    for row in [
+        ["Portal rates AAA-BBB, 340.0 kg, 1.2 cbm"],
+        ["Airline", "Code", "Rate per kg (EUR)", "Total (EUR)", "Transit (days)", "Rate id", "Valid until (UTC)"],
+        ["Polaris Air Logistics", "PL", "2.80", "952.00", "4", "R-C5nfsmcn3aSHlsgp", "21 Nov 2026 14:38"],
+    ]
+)
+
+
+def test_a_rate_per_kg_column_is_never_the_desk_total():
+    found = bids.parse_desk(mail("ratedesk@hackloop.mail", f"Please find the rates attached.\n\n{PER_KG_TABLE}"), rfq())
+    assert {o.total for o in found} <= {D("952.00")}
+
+
 async def test_a_trucker_who_answers_only_in_a_file_no_code_reads_is_answered_unpriced_without_an_error(
     ctx, monkeypatch
 ):
@@ -576,3 +591,16 @@ async def test_an_answer_the_rules_price_costs_no_model_call(ctx, monkeypatch):
     monkeypatch.setattr(llm, "ask_json", model)
     await bids.record(ctx, mail("a@truck", "Pickup EUR 165.70"))
     assert ([o["option"]["pickup"] for o in kinds(ctx, "option.found")], calls) == (["165.70"], [])
+
+
+@pytest.mark.parametrize(
+    ("body", "total"),
+    [
+        ("We can collect your shipment (total 3 euro pallets) in 50978: 165.00 EUR, pickup within 4 hours.", "165.00"),
+        ("Pickup of 4 Euro pallets from 50978 to FRA: 210.00 EUR, collection within 5 hours.", "210.00"),
+        ("Our price for the 2 Euro-Paletten is 145.00 EUR, pickup in 3 hours.", "145.00"),
+    ],
+)
+def test_euro_pallets_are_no_price(body, total):
+    option = bids.parse(mail("t@x", body), rfq(), needs_transit=False)
+    assert option is not None and (option.total, option.currency) == (D(total), "EUR")

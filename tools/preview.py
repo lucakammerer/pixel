@@ -13,6 +13,7 @@ import asyncio
 import csv
 import json
 import random
+import subprocess
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -34,11 +35,11 @@ from pixel.contracts import (
     Rfq,
     Source,
 )  # fmt: skip
-from pixel.core import db, events
+from pixel.core import db, events, feedback
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import store
-from pixel.ui import crm, dashboard, home, routes
+from pixel.ui import crm, dashboard, home, nightshift, routes
 
 KIT = Path("data/start-kit")
 US = "pixel@hackloop.mail"
@@ -57,6 +58,7 @@ COMPANIES = (  # invented: (address, company, person, town); the UI reads the co
 FATES = ("quoted",) * 5 + ("booked",) * 5 + ("confirmed",) * 4 + ("declined",) * 3 + ("fallback",) * 2 + (
     "failed", "missed")  # fmt: skip
 CENT = Decimal("0.01")
+LOST = "no_pdf_offer"  # the night shift's run of lost rounds: the reason merges in this repository name
 
 
 class Kit:
@@ -106,7 +108,7 @@ class Seeder:
         return m
 
     # -- one request -----------------------------------------------------------------------------------------
-    def request(self, t0: datetime, fate: str, *, live_deadline: bool = False) -> int:
+    def request(self, t0: datetime, fate: str, *, live_deadline: bool = False, verdict: str | None = None) -> int:
         r = self.rng
         customer = r.choice(self.customers)
         airline = r.choice(self.kit.airlines)
@@ -187,7 +189,7 @@ class Seeder:
         self.ctx.db.execute("UPDATE sessions SET state = 'quoted', quote_message_id = ? WHERE id = ?", (out.id, sid))
         self.emit(sent_at, "quote.fallback" if fate == "fallback" else "quote.sent", "rfq", session_id=sid,
                   payload={"quote": q.id, "total": str(q.total), "currency": q.currency})  # fmt: skip
-        self.score(q, sent_at)
+        self.score(q, sent_at, verdict)
         if fate == "declined":
             reply = self.mail(sent_at + timedelta(minutes=r.randint(3, 20)), sid, "in", customer, US,
                               f"Re: {q.subject}", "Thanks, but we found a cheaper option this time.",
@@ -302,22 +304,29 @@ class Seeder:
             self.emit(booking.confirmed_at, "booking.confirmed", "crm", session_id=q.session_id,
                       payload={"booking_reference": booking.booking_reference})  # fmt: skip
 
-    def score(self, q: Quote, sent_at: datetime) -> None:
+    def score(self, q: Quote, sent_at: datetime, verdict: str | None = None) -> None:
         r = self.rng
         self.round += 1
-        verdict = r.choices(["accepted", "rejected", "pending"], [0.78, 0.17, 0.05])[0]
+        verdict = verdict or r.choices(["accepted", "rejected", "pending"], [0.78, 0.17, 0.05])[0]
         points = {"accuracy": round(r.uniform(3.8, 4.5), 1), "cost": round(r.uniform(2.6, 4.0), 1),
                   "time": round(max(0.2, 1.5 - (sent_at - q.rfq.received_at).total_seconds() / 300), 1)}  # fmt: skip
         if verdict != "accepted":
             points = {k: 0 for k in points}
-        reason = f"{r.uniform(5.2, 11):.1f}% above the best price" if verdict == "rejected" else ""
-        if verdict == "accepted":
-            self.emit(sent_at + timedelta(seconds=31), "feedback", "board", session_id=q.session_id,
-                      payload={"round": self.round, "verdict": verdict, "carrier": q.option.carrier,
-                               "trucker": q.option.trucker})  # fmt: skip
-        self.emit(sent_at + timedelta(seconds=30), "score", "board",
+        reason = {"rejected": r.choice(["too_high", "too_low"]), LOST: LOST}.get(verdict, "")
+        verdict = "rejected" if verdict == LOST else verdict
+        at = sent_at + timedelta(seconds=30)
+        self.emit(at, "score", "board",
                   payload={"round": self.round, "sent_at": sent_at.isoformat(), "verdict": verdict, "reason": reason,
                            "points": points, "total": round(sum(points.values()), 1)})  # fmt: skip
+        if verdict != "pending":
+            seconds = (sent_at - q.rfq.received_at).total_seconds()
+            self.emit(at, "feedback", "board", session_id=q.session_id,
+                      payload={"round": self.round, "verdict": verdict, "reason": reason or None}
+                      | ({"points": str(45 + feedback.time_points(seconds)), "carrier": q.option.carrier,
+                          "trucker": q.option.trucker} if verdict == "accepted" else {}))  # fmt: skip
+        if reason == LOST:
+            self.emit(at, "error", "outbox", session_id=q.session_id,
+                      payload={"where": "pdf", "error": "offer PDF read as truncated"})  # fmt: skip
 
     def tracking(self, at: datetime) -> None:
         found = shipments.recent(self.ctx, 100)
@@ -336,15 +345,72 @@ class Seeder:
                   payload={"shipment": s.id, "status": s.status})  # fmt: skip
 
     def history(self, count: int) -> None:
-        """`count` requests over the past hours, one every 6 minutes, ending with two still open now."""
+        """`count` requests over the past hours, one every 6 minutes, ending with two still open now. With 14 or
+        more, four in a row are rejected as LOST and the fifth is accepted."""
         now = datetime.now(UTC)
+        run = range(count - 12, count - 8) if count >= 14 else range(0)
         for i in range(count):
             t0 = now - timedelta(minutes=6 * (count - i) + 4)
-            self.request(t0, self.rng.choice(FATES))
+            fate = "quoted" if i in run else "booked" if run and i == run.stop else self.rng.choice(FATES)
+            self.request(t0, fate, verdict=LOST if i in run else "accepted" if run and i == run.stop else None)
             if i % 7 == 6:
                 self.tracking(t0 + timedelta(minutes=3))
         self.request(now - timedelta(seconds=150), "human", live_deadline=True)
         self.request(now - timedelta(seconds=40), "open", live_deadline=True)
+
+
+def deploys(conn, cd_log: Path) -> None:
+    """A deploy job's log around the seeded run of LOST rounds: this repository's own merges to main, put live every
+    20 minutes; the second newest merge naming LOST goes live during the run, the newest right after its last round.
+    The night shift page then reads these merges from here instead of from git, at the times of the synthetic night."""
+    row = conn.execute(
+        "SELECT MIN(ts), MAX(ts), (SELECT MIN(ts) FROM events), MIN(json_extract(payload, '$.round')) FROM events"
+        " WHERE kind = 'feedback' AND json_extract(payload, '$.reason') = ?",
+        (LOST,),
+    ).fetchone()
+    if row[0] is None:
+        return
+    first, last, start = (datetime.fromisoformat(ts) for ts in row[:3])
+    now = datetime.now(UTC)
+    out = subprocess.run(["git", "log", "--first-parent", "-n", "120", "--format=%H%x1f%s%x1f%b%x1e"],
+                         check=False, capture_output=True, text=True).stdout  # fmt: skip
+    merges = [r.strip("\n").split("\x1f") for r in out.split("\x1e") if r.strip()][::-1]
+    named = [i for i, (_, s, b) in enumerate(merges) if LOST in s + b]
+    if len(named) < 2:
+        return
+    fix, tried = named[-1], named[-2]
+    # the merges name the rounds they repair: number the seeded rounds so the run is one of them
+    shift = min(nightshift.named("".join(merges[tried] + merges[fix])) or {row[3]}) - row[3]
+    conn.execute(
+        "UPDATE events SET payload = json_set(payload, '$.round', json_extract(payload, '$.round') + ?)"
+        " WHERE kind IN ('feedback', 'score')",
+        (shift,),
+    )
+    moves = [(first + timedelta(minutes=6), tried), (last + timedelta(seconds=90), fix)]
+    before = [first - timedelta(minutes=5 + 20 * n) for n in range(int((first - start).total_seconds() // 1200))]
+    moves += [(at, tried - 1 - 2 * n) for n, at in enumerate(before) if tried - 1 - 2 * n >= 0]
+    after = [last + timedelta(minutes=12 + 20 * n) for n in range(int((now - last).total_seconds() // 1200))]
+    moves += [(at, min(fix + 2 * (n + 1), len(merges) - 1)) for n, at in enumerate(after)]
+    moves.sort()
+    lines, commits, done = [], [], 0
+    for at, to in moves:
+        if to < done:
+            continue
+        carried = merges[done : to + 1]
+        for j, (sha, subject, body) in enumerate(carried):
+            pr = nightshift.MERGE.match(subject)
+            commits.append({"sha": sha, "at": at - timedelta(minutes=4, seconds=20 * (len(carried) - j)),
+                            "pr": pr and pr[1], "title": body.strip().splitlines()[0] if body.strip() else subject,
+                            "text": f"{subject}\n{body}"})  # fmt: skip
+        urgent = " (urgent)" if any("URGENT" in b for _, _, b in carried) else ""
+        new, old = merges[to][0][:7], merges[max(done - 1, 0)][0][:7]
+        tested, green = at - timedelta(seconds=70), at - timedelta(seconds=6)
+        lines += [f"{tested:%m-%d %H:%M:%S} testing {new}",
+                  f"{green:%m-%d %H:%M:%S} {new} green, waiting for the window{urgent}",
+                  f"{at:%m-%d %H:%M:%S} deployed {old}..{new}, restarted once"]  # fmt: skip
+        done = to + 1
+    cd_log.write_text("\n".join(lines) + "\n")
+    nightshift.history = lambda: [dict(c) for c in commits]
 
 
 async def play(seeder: Seeder, every: float) -> None:
@@ -410,6 +476,8 @@ def build(path: Path, *, reseed: bool, count: int, seed: int) -> tuple[Context, 
         store.save_carriers(ctx, seeder.kit.carriers)
         seeder.history(count)
         print(f"seeded {count} requests into {path}")
+    nightshift.CD_LOG = path.with_name(path.name + "-cd.log")  # ignored like the database
+    deploys(conn, nightshift.CD_LOG)
     return ctx, seeder
 
 

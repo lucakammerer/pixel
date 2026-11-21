@@ -11,11 +11,12 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.core.context import Context
 from pixel.crm import customers, quotes
-from pixel.ui import impact, names, pipeline
+from pixel.ui import impact, names, nightshift, pipeline
 from pixel.ui.page import clock, customer_href, esc, layout, money
 from pixel.ui.routes import list_sessions
 
 router = APIRouter()
+router.include_router(nightshift.router)
 
 DESKS = (TRACKING, RATEDESK)
 
@@ -184,7 +185,7 @@ async def home(request: Request, q: str = "", state: str = ""):
         "the rate portal and live carrier bids, and answers with one all-in price within minutes. "
         "It books when you accept and tells you where your shipment is.</p>"
         "<div class=cta><a class='btn primary' href='/dashboard'>Open the live dashboard</a>"
-        "</div></div>"
+        "<a class=btn href='/night'>See how it repairs itself</a></div></div>"
         "<div class=clockcard><div class=k>Last answer sent</div>"
         f"<div class=big>{clock(last)[:5] if last else '—'}</div>"
         f"<div class=row><span>Requests answered</span><b>{n['answered']} / {n['requests']}</b></div>"
