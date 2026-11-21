@@ -175,6 +175,17 @@ shown for editing. The deadline fallback still sends unless the person has sent 
 missed request. In `core/outbox.py` mail with purpose `human` (sent by a person from the UI) and the fallback quote
 pass a takeover; every other automatic mail of that session is held.
 
+What the sessions UI (`pixel/ui/routes.py`) relies on from the other packages:
+
+- `app.state.ctx` holds the `Context` (set in `pixel/app.py` `lifespan`).
+- `route` events carry `{"kind": <MailKind>}`; `option.found` carries `{"option": <RateOption as JSON>}`;
+  `mail.held` carries `to`, `subject`, `body` and `reason`, so the person can edit and send the draft.
+- The RFQ agent stores its quote with `crm.quotes.save` as a draft and again once sent; the session view and the
+  person's send read it from there. While the quote is a draft, what the person sends is that quote
+  (`outbox.send_quote`), so first-quote-only and the fallback see it.
+- In a session a person took over, the outbox lets through what the person sends: `send` with `purpose="human"`
+  and `send_quote` called from the send route.
+
 ---
 
 ## 5. Backlog

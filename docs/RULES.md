@@ -68,7 +68,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | # | Rule | Source | Lives in | Status |
 | --- | --- | --- | --- | --- |
 | R34 | The leaderboard alone does not pick the winner. Pitch: 3 minutes plus 2 minutes of questions. The jury judges the pitch, UX and design, the codebase and how human the mails read | Brief, Slides | `ui/`, the whole repo | open |
-| R35 | Required parts: router; up to three agents (RFQ and booking, track and trace, tariff ingestion); pricing module with automatic ingestion of new tariffs; CRM with history, won and lost and a dashboard; sessions UI with streaming where a person finds a session and steps in | Brief | `agents/`, `pricing/`, `crm/`, `ui/` | open |
+| R35 | Required parts: router; up to three agents (RFQ and booking, track and trace, tariff ingestion); pricing module with automatic ingestion of new tariffs; CRM with history, won and lost and a dashboard; sessions UI with streaming where a person finds a session and steps in | Brief | `agents/`, `pricing/`, `crm/` (`quotes.stats` for won, lost and the dashboard), `ui/routes.py` (sessions, live stream, take over), `ui/dashboard.py` | open |
 | R36 | Scope: air export RFQs only, with a door-to-port option. Out: a TMS, margins, ocean freight, competition between teams | Brief | — | n/a |
 
 ## Our own rules
