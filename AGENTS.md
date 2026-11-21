@@ -35,7 +35,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/app.py`: process entry; one process runs poller, push endpoint, handlers and UI
 - `pixel/api/`: the 5U API (`client.py`, `mailbox.py`, `portal.py`, `gateway.py`, `board.py`)
 - `pixel/core/`: `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, fallback),
-  `outbox.py` (all outgoing mail), `events.py` (the log and its live stream), `db.py`, `context.py`
+  `outbox.py` (all outgoing mail), `events.py` (the log and its live stream), `db.py`, `context.py`;
+  `feedback.py` (what each request scored, why it lost points, which balanced rule fits the scorer)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,

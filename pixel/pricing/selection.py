@@ -24,17 +24,32 @@ def _share(best: Decimal, value: Decimal) -> Decimal:
     return Decimal(1) if value == best else (best / value if value else Decimal(0))
 
 
-def balanced(bids: list[RateOption], speed: Callable[[RateOption], int] = lambda b: b.transit_days) -> RateOption:
-    """Among carrier bids: price and speed weigh 50/50 (R15). Each bid scores its share of the best price and its
-    share of the best speed (best / own), the highest equal-weight sum wins. `speed` is transit days for an airline,
-    pickup hours for a trucker. Why this formula and not min-max scaling: docs/calc.md."""
-    cheapest = min(b.total_eur for b in bids)
-    quickest = min(Decimal(speed(b)) for b in bids)
+def _scaled(value: Decimal, low: Decimal, high: Decimal) -> Decimal:
+    return Decimal(0) if high == low else (value - low) / (high - low)
+
+
+# What "balanced" can mean, as a cost per value (lower is better). The first is used until scored requests say
+# otherwise: `core/feedback.py` `pickup_rule` counts which rule picks the trucker the scorer picked.
+RULES: dict[str, Callable[[Decimal, list[Decimal]], Decimal]] = {
+    "share_of_best": lambda value, values: -_share(min(values), value),
+    "share_of_worst": lambda value, values: value / max(values) if max(values) else Decimal(0),
+    "min_max": lambda value, values: _scaled(value, min(values), max(values)),
+}
+
+
+def balanced(
+    bids: list[RateOption], speed: Callable[[RateOption], int] = lambda b: b.transit_days, rule: str = "share_of_best"
+) -> RateOption:
+    """Among carrier bids: price and speed weigh 50/50 (R15), compared by one of `RULES`. `speed` is transit days
+    for an airline, pickup hours for a trucker. Why share-of-best is the default: docs/calc.md."""
+    cost = RULES[rule]
+    prices = [b.total_eur for b in bids]
+    speeds = [Decimal(speed(b)) for b in bids]
 
     def score(b: RateOption) -> Decimal:
-        return HALF * _share(cheapest, b.total_eur) + HALF * _share(quickest, Decimal(speed(b)))
+        return HALF * cost(b.total_eur, prices) + HALF * cost(Decimal(speed(b)), speeds)
 
-    return min(bids, key=lambda b: (-score(b), *_cheapest(b)))
+    return min(bids, key=lambda b: (score(b), *_cheapest(b)))
 
 
 def select(rfq: Rfq, options: list[RateOption]) -> RateOption:

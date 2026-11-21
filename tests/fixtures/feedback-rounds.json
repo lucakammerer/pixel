@@ -1,0 +1,10 @@
+{
+  "note": "One scored door-to-port request of 21.11.2026: what we quoted, the options the session had, the points it brought. We had added the cheapest trucker; the points fit the total with the balanced one.",
+  "seconds": 34,
+  "points": "40.62",
+  "airline": {"carrier": "Xenon Cargo Airlines", "total": "1483.43", "days": 3},
+  "pickups": [["Elbkante Logistik", "115.98", 29], ["Westfalenroute", "187.97", 11], ["Maintal Transport Logistik", "192.97", 13],
+              ["Bodenseefracht", "226.96", 12]],
+  "quoted_trucker": "Elbkante Logistik",
+  "scorer_trucker": "Westfalenroute"
+}
