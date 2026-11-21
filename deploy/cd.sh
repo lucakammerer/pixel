@@ -1,6 +1,8 @@
 #!/bin/sh
 # One pass of the host's own deploy: origin/main into the live checkout once it is green, in the safe window.
-# pixel-cd.timer runs it every 30 s as root; git, uv and the tests run as the user pixel.
+# pixel-cd.timer runs it every 30 s as root; git, uv and the tests run as the user pixel. Root runs only what was
+# installed by hand: this script as /opt/pixel/cd/cd.sh and the units in /etc/systemd/system. A merge never changes
+# them, so whoever can merge does not get root.
 #   PIXEL_CD_DRY=1   logs what it would do and changes nothing in the live checkout or the service
 #   touch /opt/pixel/cd/PAUSE   pauses it; rm to resume
 set -u
@@ -40,14 +42,18 @@ answers() {
   done
   return 1
 }
-# Moves the live checkout to $1 (only ever a commit from main that passed), syncs it and installs the unit if it changed.
+# Moves the live checkout to $1 (only ever a commit from main that passed) and syncs it.
 move() {
   as git -C "$APP" cat-file -e "$1^{commit}" 2> /dev/null || as git -C "$APP" fetch -q "$REPO" "$1" || return 1
   as git -C "$APP" reset -q --keep "$1" || return 1
   [ "${2:-}" = sync ] || return 0
-  in_app "uv sync --locked --no-dev -q" || return 1
-  cmp -s "$APP/deploy/pixel.service" /etc/systemd/system/pixel.service && return 0
-  install -m 644 "$APP/deploy/pixel.service" /etc/systemd/system/pixel.service && systemctl daemon-reload
+  in_app "uv sync --locked --no-dev -q"
+}
+# A change to these on main takes effect only once installed by hand; say so instead of installing it.
+pinned() {
+  cmp -s "$APP/deploy/cd.sh" "$CD/cd.sh" || log "deploy/cd.sh on main differs from $CD/cd.sh, install it by hand"
+  cmp -s "$APP/deploy/pixel.service" /etc/systemd/system/pixel.service \
+    || log "deploy/pixel.service on main differs from the installed unit, install it by hand"
 }
 
 [ -e "$CD/PAUSE" ] && { log "paused"; exit 0; }
@@ -71,6 +77,7 @@ if changed=$(as git -C "$REPO" diff --name-only "$live" "$new"); then
   if [ "$restart" = 0 ]; then
     [ "$DRY" = 1 ] || move "$new" || { log "could not move to $(short "$new")"; exit 0; }
     log "$(short "$live")..$(short "$new") no restart ($(echo $changed | wc -w) files)"
+    [ "$DRY" = 1 ] || pinned
     exit 0
   fi
 fi
@@ -102,6 +109,7 @@ fi
 date +%s > "$CD/restarted"
 if move "$new" sync && systemctl restart pixel && answers; then
   log "deployed $(short "$live")..$(short "$new"), restarted once"
+  pinned
   exit 0
 fi
 echo "$new" >> "$CD/red"

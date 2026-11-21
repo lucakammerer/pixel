@@ -482,16 +482,23 @@ def register(request: str) -> str:
     return "formal" if FORMAL.search(request) else "casual" if CASUAL.search(request) else "neutral"
 
 
-def signed_name(request: str, signer: str = "") -> str | None:
-    """The first name the customer signed with, read by rule from the mail's last block: the greeting keeps the
-    name also when the model's slot is missing (a failed call, the fallback quote)."""
+def signed_name(request: str, signer: str = "", full: bool = False) -> str | None:
+    """The first name the customer signed with (the whole signed name with `full`), read by rule from the mail's
+    last block: the greeting keeps the name also when the model's slot is missing (a failed call, the fallback)."""
     blocks = [b for b in re.split(r"\n\s*\n", request.strip()) if b.strip()]
     for line in blocks[-1].splitlines() if blocks else []:
         line = line.strip().rstrip(",")
         if SIGNED.match(line) and not NOT_SIGNED.search(line):
             first = line.split()[0]
-            return None if first.casefold() in signer.casefold().split() else first
+            return None if first.casefold() in signer.casefold().split() else line if full else first
     return None
+
+
+def addressed(name: str | None, request: str, signer: str, tone: str) -> str | None:
+    """The name in the greeting: "Dear Jonas Kessler" to a formal mail, as signed, without guessing Mr or Ms; the
+    first name otherwise."""
+    whole = signed_name(request, signer, full=True) if tone == "formal" and name else None
+    return whole if whole and " " in whole and whole.split()[0] == name else name
 
 
 def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
@@ -539,7 +546,7 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     name = prose.first_name or signed_name(request, signer)
     wish, bye = in_kind(request, lang, tone, name)
     lines = [
-        t["hello_name"][tone].format(name=name) if name else t["hello"],
+        t["hello_name"][tone].format(name=addressed(name, request, signer, tone)) if name else t["hello"],
         "",
         " ".join(offer),
         "",

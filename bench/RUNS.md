@@ -116,6 +116,10 @@ Three lines per scenario: what we tried, what changed, what is next.
   dropped, the goods line by rule takes their place. Not taken: two-sentence openings (every one today recited the
   mail), the closing slot (today: "Wishing you a wonderful day ahead.", "I appreciate your trust in our service …"),
   example lines in the prompt (copied into every quote). Next: the human column.
+- 21.11. 18:45 CET: the tracking answer and the quote's opening sentence went to two threads of their own; I sent
+  them what I know and keep the rest of the mail. Round 25 accepted (60) and booked. Jonas wrote "Dear Air Freight
+  Team … Kind regards" and got "Dear Jonas,": a formal mail is now greeted with the whole signed name ("Dear Jonas
+  Kessler,", no guessed Mr or Ms), in quote and booking mails. Next: the human column.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
