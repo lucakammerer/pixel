@@ -18,8 +18,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Implementation
 
-- `agent.py` `handle`: `extract.extract`; when rules read the request, `compose.opening` runs in parallel as the
-  one gateway call of the quote (R28); `pricing/engine.py` `options`; `selection.select`; `compose.render`;
+- `agent.py` `handle`: `extract.extract`; when rules read the request, `compose.prose` runs in parallel as the
+  one gateway call of the quote (R28); when the model read it, that call already drafted the prose (`prose.raw`)
+  and `compose.adopt` checks it. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
+  failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options`; `selection.select`; `compose.render`;
   `outbox.send_quote`. A request missing origin, destination or weight emits `error` and returns None; the
   orchestrator's fallback and the UI take over. Every drafted quote is saved to the CRM (`crm/quotes.py` `save`),
   the sent one again after `send_quote`, so booking finds it also when the fallback sent it.
@@ -31,15 +33,25 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `extract.py` `extract`: `by_rules`, else exactly one `llm.ask_json` (`rfq.extract`); code validates the answer and
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
   airport of the pickup zone as its origin (R16). Emits `rfq.extracted` with the whole `Rfq`.
-- `compose.py` `render`: subject and body in English or German, one all-in total with its currency formatted by
-  code, carrier, transit, chargeable weight, what is included, validity when the rate has one. `opening`: one
-  sentence from the model; code drops it if it holds a digit or a three-letter code, and any failure gives None.
+- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose: greeting
+  with the customer's first name when they signed with it, an intro, one offer paragraph with the all-in total and
+  its currency, carrier, transit, chargeable weight, what is included and the validity, a call to book, a closing
+  line and a person's signature (`PIXEL_SIGNER`). Code formats every number and name; two phrasings per language
+  alternate by session. `check` proves the finished mail holds the total exactly once with its currency, carrier
+  and transit; on failure the mail is rendered without the model's slots (R9, P1).
+- `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
+  `closing`, on `PIXEL_MODEL_PROSE` when set. `clean` drops each slot that holds a digit, a three-letter code, a
+  currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German
+  `du`, or is too long; the first name must stand in the customer's mail. The checked slots are stored as
+  `quote.prose`, so the fallback quote and the booking mails use them too.
 - `booking.py` `handle_reply`: `intent` reads accept, decline or other by rules (English and German, a decline
   wins); anything else becomes a `human.note` for a person, no model call. `book`: one shipment (`PX-…`, our
   `team_reference`), one portal booking by `rate_id`; a lost connection is retried once (the portal answers 200 with
   the same booking), 410 fetches a fresh rate and books that, 503 or a quote without `rate_id` books by mail with the
   airline (address from the 503 message, else the carrier list), 404 and 409 are `booking.failed`. A second
-  acceptance books nothing twice. `handle_confirmation`: "Booking <reference> confirmed" marks booking and shipment
+  acceptance books nothing twice. The customer mails (booked, confirmed) are in the customer's language, with
+  money and weight formatted by `compose`, the stored first name and the same signer, without a model call.
+  `handle_confirmation`: "Booking <reference> confirmed" marks booking and shipment
   confirmed and tells the customer once.
 
 ## Pitfalls
@@ -47,9 +59,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A door-to-port request names the destination and the pickup address, not the origin airport.
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.
-- The opening sentence must not contain a price or a code: the scorer reads the one total we write.
+- The prose slots must not contain a price or a code: the scorer reads the one total we write.
 - The total is written like the portal's and the carriers' own: no thousands separator, a decimal point, also in a
   German mail. A grouped total can be read as a different number.
+- Every step of the prose fails soft: an odd model answer, a missing name, a broken stored event or a rendering
+  error each give the plain mail, never an exception on the quote or the fallback path.
+- A reasoning model spends its output tokens on reasoning and can return empty slots: set `PIXEL_MODEL_PROSE` to a
+  fast non-reasoning model.
 
 ## Open
 
