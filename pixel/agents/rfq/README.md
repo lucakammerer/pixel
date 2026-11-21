@@ -120,6 +120,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   request is read again with the answer (a town alone maps to its zone). No answer 60 s after the request: the
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
   (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
+- Dimensions in inches ("5 skids 48x40x50 in") were read as centimetres: 0.1 cbm instead of 7.9. A unit of in, inch
+  or inches is converted by code; no unit is centimetres. Skids, crates, drums, cases, Packstücke and Kisten count
+  as pieces.
 - "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
   weight in kg, the kg wins.
 - A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the

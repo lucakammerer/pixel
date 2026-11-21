@@ -42,8 +42,18 @@ VOLUME = (
     re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
 )
 DIMS = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\b", re.IGNORECASE
+    r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in)?\b",
+    re.IGNORECASE,
 )
+PER_M = {"mm": Decimal(1000), "cm": Decimal(100), "m": Decimal(1), "in": 1 / Decimal("0.0254")}
+
+
+def _per_m(unit: str | None) -> Decimal:
+    """Units of one metre: dimensions without a unit are centimetres; "48x40x50 in" are inches."""
+    unit = (unit or "cm").lower()
+    return PER_M.get(unit, PER_M["in"])
+
+
 LOT_LINE = r"(?im)^\s*(?:[-*•]\s*(?=\d)|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])"
 LOT = re.compile(
     r"(?im)^\s*(?:[-*•]|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])\s*(\d+)\s+"
@@ -62,7 +72,9 @@ LOT_WEIGHT = re.compile(rf"{MODE}{NUM}\s*(?:kgs?|kilos?)\b(?:\s*(?P<kind>gross|b
 LOT_VOLUME = re.compile(rf"{MODE}{NUM}\s*(?:cbm\b|m3\b|m³)", re.IGNORECASE)
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
-    r"(\d+)\s*(?:pcs|pieces|pallets?|colli|packages|cartons|boxes|stück|stk|paletten|kartons)\b", re.IGNORECASE
+    r"(\d+)\s*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
+    r"|paletten|kartons|kisten)\b",
+    re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
     r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
@@ -242,7 +254,7 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
     if len(dims) != 1:
         return None
     *sides, unit = dims[0]
-    per_m = {"mm": Decimal(1000), "m": Decimal(1)}.get(unit.lower(), Decimal(100))
+    per_m = _per_m(unit)
     volume = Decimal(1)
     for side in sides:
         volume *= number(side, thousands=False) / per_m
@@ -268,7 +280,7 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
             cbm = number(stated.group(3), thousands=False) * (n if stated["each"] else 1)
         else:
             *sides, unit = dims.groups()[2:]
-            per_m = {"mm": Decimal(1000), "m": Decimal(1)}.get((unit or "cm").lower(), Decimal(100))
+            per_m = _per_m(unit)
             cbm = Decimal(1 if dims["all"] else n)
             for side in sides:
                 cbm *= number(side, thousands=False) / per_m
@@ -389,7 +401,7 @@ def _dims_volume(text: str) -> Decimal | None:
     *sides, unit = dims[0]
     volume = Decimal(1)
     for side in sides:
-        volume *= number(side, thousands=False) / {"mm": Decimal(1000), "m": Decimal(1)}.get(unit.lower(), Decimal(100))
+        volume *= number(side, thousands=False) / _per_m(unit)
     return volume
 
 
