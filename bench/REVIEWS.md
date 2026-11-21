@@ -91,3 +91,22 @@ commit, or a later merge that touches the same function or rule, puts it back in
 | #21 | lucakammerer | f39d2ab | ok | follow-ups #22, #33/#37 |
 | #16 | lucakammerer | b86a121 | ok | alert carries no payload or key; no retry by design |
 | #14 | lucakammerer | — | ok, superseded | default rule replaced by #46 |
+
+## Second review
+
+One pass over how the changes merged up to #92 fit together, on main at 6ed8188 (21.11., 18:15 CET). Every
+captured request was replayed offline (`tools.kpi`): 8 answered at their pinned prices, none lost against main; the
+14 unanswered have no sheet price offline and are unchanged. All 14 live tracking questions of the day and all 61
+customer replies were replayed against the fixed code.
+
+| PRs | Verdict | The finding that mattered |
+| --- | --- | --- |
+| #86 | fixed (#98) | a model-read door request dropped the customer's answer ("it is 51115"): no origin, request lost; in the replay the request itself was read as the answer and the wait ran on wall time, so `tools.kpi` never saw the 60 s |
+| #86 | ok | the question goes out only for a missing place (6 warehouse fixtures, no other), once per session (outbox key and the `question` row), never claims the quote; the answer routes as `other`, also after the fallback; a request with its place waits not a second |
+| #86, #77, #52 | ok | one door request with no place: question at ~1 s, answer ~10 s or guess at 60 s, bids asked then and collected until max(target_at, ask + 45 s) ≈ 106 s, quote ≤ ~114 s with nominal truckers; without a trucker price it waits for one until hard_at (315 s) and sends air-only there; the orchestrator cancels the task at hard_at, so the fallback always leaves before expiry |
+| #59, #68, #76, #87 | fixed (#109, URGENT) | "we have decided not to go ahead", "Bitte buchen Sie nicht", "go ahead with a competitor", "once we confirm pickup" booked at the portal; "We would like to book", "Angebot angenommen" and a reply below the quote did not book; a decline word after the booking set a booked quote declined |
+| #46, #81, #59 | ok | `pickup_rule` cannot switch on one round (RULE_LEAD 2); `_pickup_hours` misreads "10.5 hours" as 5 and "09:00 h" as 0, latent: every captured trucker writes whole hours |
+| #63, #88, #91 | fixed (#105) | "Sonnberg Kaffeeroesterei" never matched sonnberg-roesterei, so any customer's same-lane shipment within 1% could be the answer; 14 of 14 live questions right before and after; no wait, no provisional answer, one answer per question |
+| #67 | ok | every GET only reads; take over, send and release work end to end; customer text escaped everywhere; pages cost ~20 ms at today's size |
+| #64, #78 | ok, superseded by the host CD | the window stays shut over the question, the bid wait and the fallback; the Mac job's rollback could not push an older commit, moot since `deploy/cd.sh` resets the checkout |
+| #107 | fixed (#113) | URGENT was read from the newest merge only: an URGENT fix with any merge on top waited a round; takes effect once `/opt/pixel/cd/cd.sh` is installed by hand |
