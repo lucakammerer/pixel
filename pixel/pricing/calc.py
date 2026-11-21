@@ -7,7 +7,7 @@ from pixel.contracts import LaneTariff, RateOption, Rfq, Source
 CBM_KG = Decimal(167)
 CENT = Decimal("0.01")
 
-# Q5 assumption: on sheets we may bill a higher weight break when that makes the all-in total cheaper.
+# R13: a higher weight break is billed when that makes the all-in total cheaper, on sheets and on the portal.
 BILL_HIGHER_BREAK = True
 
 

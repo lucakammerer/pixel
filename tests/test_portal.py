@@ -7,7 +7,12 @@ import respx
 
 from pixel.api import portal as portal_module
 from pixel.api.portal import NotOnPortal, Portal, RateLimited
-from pixel.contracts import Source
+from pixel.config import settings
+from pixel.contracts import Rfq, Source
+from pixel.core import events
+from pixel.core.context import Context
+from pixel.core.orchestrator import Deadline
+from pixel.pricing import portal_rates
 
 BASE = "https://portal.test"
 RATE = {
@@ -94,3 +99,47 @@ async def test_brackets_404_is_not_on_portal(portal):
     respx.get(f"{BASE}/v1/portal/brackets").respond(404, json={"detail": "write to x@example.test"})
     with pytest.raises(NotOnPortal):
         await portal.brackets("Nobody Air")
+
+
+class LanePortal:
+    """One airline on one lane; the weight we ask for decides the total."""
+
+    rate_remaining = None
+
+    def __init__(self, totals: dict[int, str]):
+        self.totals = totals
+
+    async def lanes(self):
+        return [portal_module.Lane("AAA", "BBB", (("SA", "Some Air"),))]
+
+    async def brackets(self, airline):
+        return (0, 100, 500)
+
+    async def rate(self, origin, destination, airline, weight_kg, volume_cbm, *, not_after=None):
+        if int(weight_kg) not in self.totals:
+            raise RateLimited(60)
+        rate = {**RATE, "currency": "EUR", "chargeable_weight_kg": str(weight_kg), "total": self.totals[int(weight_kg)]}
+        return portal_module._option({**rate, "rate_id": f"R-{weight_kg}"})
+
+
+@pytest.mark.parametrize(
+    ("totals", "total", "billed", "rate_id"),
+    [
+        ({400: "1000.00", 500: "950.00"}, "950.00", 500, "R-500"),  # the next break is cheaper: bill it
+        ({400: "1000.00", 500: "1100.00"}, "1000.00", 400, "R-400"),
+        ({400: "1000.00"}, "1000.00", 400, "R-400"),  # the second read fails: keep what we have
+    ],
+)
+async def test_the_next_break_is_billed_when_it_is_cheaper(conn, monkeypatch, totals, total, billed, rate_id):
+    monkeypatch.setattr(portal_rates, "_lanes", None)
+    monkeypatch.setattr(portal_rates, "_breaks", {})
+    monkeypatch.setattr(events, "emit", lambda *a, **kw: None)
+    now = datetime.now(UTC)
+    ctx = Context(settings(), conn, None, LanePortal(totals), None, None)
+    rfq = Rfq(session_id=1, message_id=1, customer="c@x", origin="AAA", destination="BBB", weight_kg=Decimal(400),
+              received_at=now, deadline_at=now)  # fmt: skip
+    deadline = Deadline(received_at=now, target_at=now, hard_at=now, expires_at=now)
+    (option,) = await portal_rates.options(ctx, rfq, deadline)
+    assert (option.total, option.billed_kg, option.chargeable_kg, option.rate_id) == (
+        Decimal(total), Decimal(billed), Decimal(400), rate_id,
+    )  # fmt: skip

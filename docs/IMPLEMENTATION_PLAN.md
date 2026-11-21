@@ -16,7 +16,6 @@ question is deleted here.
 | Q2 | How is a gateway call tied to a quote for "a quote made without a gateway call earns no cost points": by a time window, by the hour, or by something we send with the call? | By time: one call between the request and our reply |
 | Q3 | Is the hourly cost the team's whole gateway spend in that hour divided by its accepted quotes, so spend on rejected quotes, tariff mails and tracking answers counts too? | Yes |
 | Q4 | What exactly is the "best price": the cheapest all-in total over every source (sheets, portal, bids, desk, browser page), or the best of the option the customer asked for (the fastest one for "fastest")? Does it include the pickup for door-to-port? | The all-in total of the option the customer asked for, pickup included |
-| Q5 | "The best price is not always the obvious one": may we bill a higher weight break when it is cheaper, on sheets and by asking the portal for a higher weight? Does the scorer's best price do that? | Yes on sheets; on the portal only after an answer, since we would book that weight |
 | Q6 | The 50/50 rule among carrier bids: what is the formula (normalised how?), and how does it combine with "cheapest or fastest": does it only pick among mail bids, and do sheets and portal then compete on price alone? | Min-max normalised price and transit, equal weights, among bids only; the winner then competes with the other sources by the customer's wish |
 | Q7 | Which currency must the total be in when the cheapest rate is not in EUR? Which exchange rate and rounding does the scorer use? | The rate's own currency and total, compared in EUR with the rate's exchange rate |
 | Q8 | Is response time measured from the stored time of the RFQ mail to the stored time of our reply? Is it linear between 2 and 6 minutes? | Yes to both |
@@ -201,7 +200,6 @@ P0 is the foundation (§6). Each item names its package; an item is done when it
 
 - Read `/v1/board/me` reason codes into the dashboard; alert when two quotes in a row fail (R33).
 - Tune `target_at` and the wait-for-bids rule from real response times of carriers.
-- Next-break pricing on the portal once Q5 is answered.
 - Booking by mail when the portal answers 503 or the quote has no `rate_id` (R22).
 - Mail tone: language of the customer, short, signed, no template smell (R31).
 
