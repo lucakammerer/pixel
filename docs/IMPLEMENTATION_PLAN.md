@@ -89,7 +89,8 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                   bids     mail to airlines not priced otherwise       bid.requested → bid.received → option.found
                   pickup   door-to-port: mail to the zone's truckers   option.found
                 selection.select → compose.render → outbox.send_quote  quote.sent
-  fallback      at hard_at without a quote: best stored option, code only   quote.fallback | quote.missed
+  fallback      at hard_at without a quote, or at once when the agent fails or returns without one:
+                best stored option, code only                          quote.fallback | quote.missed
 customer_reply      accept → crm shipment → portal booking by rate_id → customer told    booking.booked
 booking_confirmation  "Booking … confirmed" → shipment confirmed → customer told         booking.confirmed
 tracking_question   crm.shipments.find → answer in the thread          tracking.answered
@@ -119,9 +120,19 @@ board feedback      tools/board_me.py every few minutes                score
 ### 4.3 Sessions and the event log
 
 A **session** is one customer thread; its id is the id of the thread's first mail. Mail we send to carriers for a
-session and their answers belong to the same session (`core/poller.py` `session_of` follows `references`, and for a
-carrier's answer the bid request it replies to). Mail without a customer thread (a tariff mail) is a session of its
-own.
+session and their answers belong to the same session: `core/poller.py` `session_of` looks up `in_reply_to`, then
+`references` from the parent upwards, and takes the session of the first one we hold (a carrier's answer replies to
+our bid request, which `core/outbox.py` stored with the RFQ's session). Mail without a customer thread (a tariff
+mail) is a session of its own. Every outgoing mail is stored with its `purpose` (`bid_request`, `quote`,
+`fallback_quote`, `human`, ...); the router reads it to place the answers.
+
+`messages` holds every mail in and out once, by its API id, with the full `Message` as JSON; `sessions` holds one
+row per RFQ (customer, state `open`, `quoted` or `missed`, mode `auto` or `human`). Mail leaves only through
+`core/outbox.py`, which refuses (`NotSent`) before the API is called: an address outside R5 (`recipient`), dry run
+(`dry_run`, emits `mail.held`), a session a person took over (`human`) and a second quote in a session
+(`duplicate_quote`). The quote slot is a row `quote:<session>` in `kv`, inserted before the first `await`, so two
+racing tasks cannot both send; a failed send frees it for the fallback, a dry-run hold keeps it. The mail limit
+(R7) is a one-minute window in the process, and a 429 is waited out, never dropped.
 
 Every step appends an `Event` (`core/events.py` `KINDS`). Tables other than `events` hold current state for fast
 queries (`sessions`, `quotes`, `bookings`, `shipments`, `tariffs`); the log is what the UI shows and what
@@ -161,7 +172,8 @@ writes a price.
 
 A person can take a session over in the UI (`mode = human`): automatic mail for that session is held as drafts and
 shown for editing. The deadline fallback still sends unless the person has sent a quote: taking over never causes a
-missed request.
+missed request. In `core/outbox.py` mail with purpose `human` (sent by a person from the UI) and the fallback quote
+pass a takeover; every other automatic mail of that session is held.
 
 ---
 
