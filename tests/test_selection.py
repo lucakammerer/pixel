@@ -4,7 +4,7 @@ from decimal import Decimal as D
 from pathlib import Path
 
 from pixel.contracts import Preference, RateOption, Rfq, Source
-from pixel.pricing.selection import balanced, select
+from pixel.pricing.selection import DEFAULT_RULE, RULES, balanced, select
 
 NOW = datetime(2026, 11, 21, 16, tzinfo=UTC)
 
@@ -35,9 +35,21 @@ def test_ties_are_decided_by_speed_then_name():
 
 
 def test_balanced_weighs_price_and_speed_equally():
-    # share of the best (price, days): X (1, 0.25), Y (0.5, 1), Z (0.8, 0.67): Y has the highest sum
+    # times the best (price, days): X (1, 4), Y (2, 1), Z (1.25, 1.5): Z has the lowest sum
     bids = [opt("X", "400", 8, Source.BID), opt("Y", "800", 2, Source.BID), opt("Z", "500", 3, Source.BID)]
-    assert balanced(bids).carrier == "Y"
+    assert balanced(bids).carrier == "Z"
+
+
+def test_only_the_default_rule_picks_the_scorers_trucker_in_every_scored_request():
+    requests = json.loads((Path(__file__).parent / "fixtures" / "pickup-bids.json").read_text())["requests"]
+    fits = {}
+    for rule in RULES:
+        fits[rule] = all(
+            balanced([opt(name, eur, 0, Source.BID).model_copy(update={"trucker": name, "pickup_hours": hours})
+                      for name, eur, hours in r["bids"]], lambda b: b.pickup_hours, rule).trucker == r["scorer"]
+            for r in requests
+        )  # fmt: skip
+    assert fits == {rule: rule == DEFAULT_RULE for rule in RULES}
 
 
 def test_balanced_picks_the_trucker_the_scorer_picked():

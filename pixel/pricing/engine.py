@@ -26,7 +26,7 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
     return found
 
 
-def combine(rfq: Rfq, options: list[RateOption], rule: str = "share_of_best") -> list[RateOption]:
+def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE) -> list[RateOption]:
     """Airline options, each with the balanced pickup added for door-to-port (Q4: the best price includes it).
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all."""
     airline = [o for o in options if o.trucker is None]
