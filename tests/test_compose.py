@@ -232,20 +232,34 @@ def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
     assert compose.ready_date("Please quote 300 kg, it must arrive by 2026-12-01.") is None
 
 
-def test_every_customer_gets_the_same_personal_voice():
-    request = "Dear Sir or Madam,\n\nplease quote AAA to BBB.\n\nKind regards\nPetra Hofmann\nHead of Logistics"
+def test_formal_mail_gets_dear_and_the_full_name_casual_mail_the_warm_voice():
     option = OPTION.model_copy(update={"valid_until": datetime(2026, 11, 21, 16, 22, tzinfo=UTC)})
-    _, body = compose.render(rfq("en"), option, request=request)
-    # Named from the signature without a model slot, personal even to a formal mail, validity on our clock.
-    assert body.startswith(compose.greeting("en", "Petra", 1)) and "Best wishes,\nLena\n" in body and "!" in body
-    assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
-    _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
-    # Their "Cheers" is answered in kind; the rest reads as every other mail.
-    assert casual.startswith(compose.greeting("en", "Tom", 2)) and "Cheers,\nLena\n" in casual
-    _, both = compose.render(
-        rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Gruesse / Many greetings\nDeniz"
+    # Round 27 after #138: "Dear Sir or Madam" signed Jonas Kessler was answered "Hello Jonas!".
+    stiff = "Dear Sir or Madam,\n\nplease quote AAA to BBB.\n\nMit freundlichen Gruessen / Kind regards\nJonas Kessler"
+    _, body = compose.render(rfq("en"), option, request=stiff)
+    assert body.startswith("Dear Jonas Kessler,") and body.rstrip().endswith(
+        "Kind regards,\nLena Berger\n" + compose.COMPANY
     )
-    assert "Viele Grüße,\nLena\n" in both and "\nP.S. " in both
+    assert "!" not in body and "P.S." not in body and not compose.SMILEY.search(body)
+    _, de = compose.render(
+        rfq("de"),
+        option,
+        request="Sehr geehrte Damen und Herren,\n\nbitte um Angebot.\n\nMit freundlichen Grüßen\nJonas Kessler",
+    )
+    assert (
+        de.startswith("Guten Tag Jonas Kessler,")
+        and "Mit freundlichen Grüßen\nLena Berger\n" in de
+        and "P.S." not in de
+    )
+    _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
+    assert casual.startswith(compose.greeting("en", "Tom", 2)) and "Cheers,\nLena\n" in casual and "\nP.S. " in casual
+    _, locker = compose.render(rfq("de", 2), option, request="Hallo,\n\nbitte um Angebot.\n\nViele Grüße\nTom")
+    assert locker.startswith(compose.greeting("de", "Tom", 2)) and "Viele Grüße\nLena\n" in locker
+    # "Kind regards" alone is not clearly formal: the warm voice stays.
+    _, kind = compose.render(rfq("en", 3), option, request="Hello,\n\nquote please.\n\nKind regards\nPetra Hofmann")
+    assert kind.startswith(compose.greeting("en", "Petra", 3)) and "\nP.S. " in kind
+    for mail, lang in ((body, "en"), (de, "de"), (casual, "en"), (locker, "de"), (kind, "en")):
+        assert mail.count("1234.57") == 1 and mail.count("EUR") == 1 and compose.check(mail, rfq(lang), option)
 
 
 def test_the_customers_own_closing_is_answered_in_kind():

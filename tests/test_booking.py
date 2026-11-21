@@ -190,6 +190,19 @@ async def test_the_booking_mail_greets_and_signs_as_the_quote_did(pipe, accepted
     assert "\n\nCheers,\nLena\n" in told["body"] and "great to have you on board" in told["body"]
 
 
+async def test_the_booking_mail_to_a_formal_customer_stays_formal(pipe, accepted):
+    pipe.ctx.db.execute(
+        "INSERT INTO messages (id, session_id, direction, sender, recipient, subject, body, sent_at, data)"
+        " VALUES (1, 1, 'in', 'buyer@acme.example', 'us@pixel', 'RFQ', ?, 't', '{}')",
+        ("Dear Sir or Madam,\n\nplease quote FRA to JFK.\n\nKind regards\nJonas Example\nExample GmbH",),
+    )
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    (told,) = pipe.sent
+    assert told["body"].startswith("Dear Jonas Example,\n\n") and "\n\nKind regards,\nLena Berger\n" in told["body"]
+    assert not compose.SMILEY.search(told["body"])
+
+
 async def test_a_dry_run_never_books_at_the_portal(pipe, accepted):
     pipe.ctx.settings = dataclasses.replace(pipe.ctx.settings, dry_run=True)
     pipe.ctx.portal = Portal(None)

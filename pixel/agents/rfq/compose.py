@@ -399,6 +399,11 @@ ECHO = re.compile(
 )
 CAPITAL = re.compile(r"\b[A-ZÄÖÜ][\wäöüß-]+")
 FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
+# A formal salutation or closing, not "Kind regards" alone: such a customer gets "Dear", no smileys, the full name.
+CLEARLY_FORMAL = re.compile(
+    r"^\s*(?:dear|sehr geehrte)\b|\b(?:yours sincerely|yours faithfully|mit freundlichen gr)",
+    re.IGNORECASE | re.MULTILINE,
+)
 CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
 NOT_SIGNED = re.compile(
@@ -565,22 +570,39 @@ def signed_name(request: str, signer: str = "", full: bool = False) -> str | Non
     return None
 
 
-def greeting(lang: str, name: str | None, seed: int) -> str:
-    """The salutation by first name, the same for one session in the quote and in its booking mails."""
+def formal(request: str) -> bool:
+    return bool(CLEARLY_FORMAL.search(request))
+
+
+def addressed(name: str, request: str, signer: str) -> str:
+    """ "Dear Jonas Kessler" as signed, without guessing Mr or Ms; the first name when the whole one is not signed."""
+    whole = signed_name(request, signer, full=True)
+    return whole if whole and " " in whole and whole.split()[0] == name else name
+
+
+def greeting(lang: str, name: str | None, seed: int, request: str = "", signer: str = "") -> str:
+    """The salutation, the same for one session in the quote and in its booking mails: by first name, or "Dear"
+    with the signed name to a clearly formal mail."""
+    if formal(request):
+        t = TEXT[lang]
+        return t["hello_name"]["formal"].format(name=addressed(name, request, signer)) if name else t["hello"]
     w = TEXT[lang]["warm"]
     return random.Random(f"hello:{seed}").choice(w["hello"]).format(name=name) if name else w["hello_anon"]
 
 
 def sign_off(request: str, lang: str, name: str | None) -> tuple[str | None, str]:
-    """`in_kind`, with our own "Best wishes" where it would give the sign-off of their register."""
+    """`in_kind`, with our own "Best wishes" where it would give the sign-off of their register; a clearly formal
+    mail keeps "Kind regards"."""
+    if formal(request):
+        return in_kind(request, lang, "formal", name)
     tone = register(request)
     wish, bye = in_kind(request, lang, tone, name)
     return wish, TEXT[lang]["warm"]["bye"] if bye == TEXT[lang]["bye"][tone] else bye
 
 
-def signature(bye: str, signer: str) -> str:
-    """Signed with the first name, as a colleague signs; the company line stays."""
-    return f"{bye}\n{(signer.split() or [signer])[0]}\n{COMPANY}"
+def signature(bye: str, signer: str, full: bool = False) -> str:
+    """Signed with the first name, as a colleague signs, or the full name to a formal mail; the company line stays."""
+    return f"{bye}\n{signer if full else (signer.split() or [signer])[0]}\n{COMPANY}"
 
 
 SMILEY = re.compile(r" ?(?:👋|🙂|😊|✈️|👍)")
@@ -615,11 +637,12 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     lang = language_of(rfq)
     t = TEXT[lang]
     w = t["warm"]
+    stiff = formal(request)  # a clearly formal customer gets the calm lines, no smiley, no P.S.
     pick = random.Random(rfq.session_id).choice  # wording varies by session; one session always reads the same
     air_only = rfq.door_pickup and not option.trucker
     needs_address = rfq.door_pickup and not rfq.pickup_postcode
     preference = "fastest" if rfq.preference == Preference.FASTEST else "cheapest"
-    core = t["air_only"] if air_only else pick(w["core"][preference])
+    core = t["air_only"] if air_only else pick((t if stiff else w)["core"][preference])
     if option.trucker:
         basis = t["basis_zone_pickup"] if needs_address else pick(t["basis_pickup"])
     else:
@@ -634,7 +657,7 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         intro.insert(0, pick(t["well_back"]))
     site = "warehouse" if WAREHOUSE.search(request) else "site"
     offer = [price_line, basis.format(trucker=option.trucker, site=site)]
-    if not air_only:
+    if not air_only and not stiff:
         offer.append(pick(w["short"]))  # a short line after two long ones
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
@@ -642,11 +665,11 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     if needs_address:
         book.append(t["pickup_address"])
     else:
-        book.append(t["book_air_only"] if air_only else pick(w["book"]))
+        book.append(t["book_air_only"] if air_only else pick((t if stiff else w)["book"]))
     name = prose.first_name or signed_name(request, signer)
     wish, bye = sign_off(request, lang, name)
     lines = [
-        greeting(lang, name, rfq.session_id),
+        greeting(lang, name, rfq.session_id, request, signer),
         "",
         *([" ".join(intro), ""] if intro else []),
         " ".join(offer),
@@ -655,9 +678,8 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         " ".join(book),
         "",
         *([wish, ""] if wish else []),
-        signature(bye, signer),
-        "",
-        pick(w["ps"]),
+        signature(bye, signer, full=stiff),
+        *([] if stiff else ["", pick(w["ps"])]),
     ]
     return _one_each("\n".join(lines))
 

@@ -354,10 +354,11 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
         )
     text = t[what].format(scope=scope, origin=quote.option.origin, destination=quote.option.destination,
                           weight=compose.weight(quote.rfq.weight_kg, lang), **facts)  # fmt: skip
-    if what == "booked":  # once per thread, not again on the confirmation
+    stiff = compose.formal(request)
+    if what == "booked" and not stiff:  # once per thread, not again on the confirmation
         text += THANKS[lang]
-    body = "\n\n".join([compose.greeting(lang, name, quote.session_id), text,
-                        compose.signature(bye, ctx.settings.signer)])  # fmt: skip
+    body = "\n\n".join([compose.greeting(lang, name, quote.session_id, request, ctx.settings.signer), text,
+                        compose.signature(bye, ctx.settings.signer, full=stiff)])  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
     try:
         await outbox.send(

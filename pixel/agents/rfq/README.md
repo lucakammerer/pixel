@@ -48,7 +48,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
-  customer, formal or not (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
+  customer who does not write formally (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
   the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
   model's slot, else `signed_name` by rule); the model's opening on a line of its own when it passed, else none (no
   stock opening); the offer with an opinion ("I'd go with …", "Good news: …"): total and currency, carrier, transit,
@@ -57,7 +57,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`signature`) and a P.S. that only says what we do anyway. At most three smileys, none twice (`_one_each`).
   "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `sign_off` answers
   the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off goes to the town they
-  greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, "Best wishes". Code formats every
+  greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, "Best wishes". A clearly formal
+  mail (`formal`: "Dear …", "Sehr geehrte …", "Yours sincerely", "Mit freundlichen Grüßen"; "Kind regards" alone is
+  not) gets the register back: "Dear Jonas Kessler" as signed, without guessing Mr or Ms (`addressed`), the calm
+  offer and booking lines, no short line, smiley or P.S., "Kind regards" and the full name; its booking mails too,
+  without the thank-you. Code formats every
   number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
   proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
   is rendered without the model's slots (R9, P1).
