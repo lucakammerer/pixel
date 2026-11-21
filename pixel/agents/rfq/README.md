@@ -232,7 +232,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A request can come in French (round 70: « l'option la plus rapide », signed "Cheers") or Chinese (round 72,
   signed "Thanks a lot and have a lovely day!"; the model said "en" too). `extract.py` `_language` takes the
   script's language when most of the mail is not Latin (`_script`, `SCRIPTS`), else counts each language's common
-  words (`LANGUAGES`); the model's ISO code counts only for a language those lists do not know, in a script that
+  words (`LANGUAGES`; Spanish, Italian, Portuguese and Dutch need two of theirs, `TWO_WORDS`: "per kg" or a
+  "Saludos" sign-off alone made an English mail Italian or Spanish and its quote was translated); the model's ISO code counts only for a language those lists do not know, in a script that
   is not Latin or when the lists find almost nothing. A language we have no `TEXT` for gets the code-written
   English quote translated by one model call (`compose.py` `translate`, from `agent.py` `_in_language`, at most
   `TRANSLATE_WAIT_S`), kept only when `translated_ok` finds the total once, the currency, carrier, trucker, transit
