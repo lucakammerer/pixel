@@ -29,7 +29,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly
   requested currency, `de` or `en`. None unless exactly one lane and one weight are found.
 - `extract.py` `extract`: `by_rules`, else exactly one `llm.ask_json` (`rfq.extract`); code validates the answer and
-  lists what is missing in `Rfq.missing`. Emits `rfq.extracted` with the whole `Rfq`.
+  lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
+  airport of the pickup zone as its origin (R16). Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: subject and body in English or German, one all-in total with its currency formatted by
   code, carrier, transit, chargeable weight, what is included, validity when the rate has one. `opening`: one
   sentence from the model; code drops it if it holds a digit or a three-letter code, and any failure gives None.
@@ -43,6 +44,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A door-to-port request names the destination and the pickup address, not the origin airport.
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.
 - The opening sentence must not contain a price or a code: the scorer reads the one total we write.

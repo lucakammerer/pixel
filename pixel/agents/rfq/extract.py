@@ -6,6 +6,7 @@ from pixel.contracts import Message, Preference, Rfq
 from pixel.core import events
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
+from pixel.pricing import store
 from pixel.pricing.pickup import zone_of
 
 CURRENCIES = {"EUR", "USD", "GBP", "CHF", "CNY", "JPY", "HKD", "SGD", "AUD", "CAD", "INR", "AED"}
@@ -258,6 +259,9 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             max_output_tokens=200,
         )
         rfq = _from_model(result.data, message, deadline)
+    # A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16).
+    if not rfq.origin and rfq.pickup_zone and (airport := store.airport_of(ctx, rfq.pickup_zone)):
+        rfq = rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
     events.emit(
         ctx,
         "rfq.extracted",

@@ -1,14 +1,20 @@
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from pixel import llm
 from pixel.agents.rfq import extract
+from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import LlmResult, Message, Preference
 from pixel.core import events
+from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
+from pixel.pricing import store
+from pixel.pricing.pickup import zone_of
 
 RECEIVED = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
 DEADLINE = deadline_for(RECEIVED, settings())
@@ -81,3 +87,21 @@ async def test_rules_path_makes_no_model_call(monkeypatch, emitted):
     monkeypatch.setattr(llm, "ask_json", boom)
     rfq = await extract.extract(None, mail("AAA → BBB, 500 kg"), DEADLINE)
     assert rfq.extracted_by == "rules"
+
+
+async def test_a_captured_door_request_without_an_origin_takes_the_pickup_zones_airport(conn, monkeypatch, emitted):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-door-no-origin.json").read_text())
+    message = to_message(raw, "in")
+    assert extract.by_rules(message, DEADLINE) is None  # no origin airport in the mail
+
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": None, "destination": "ORD", "weight_kg": "676", "volume_cbm": "5.79", "pieces": 12,
+                "preference": "fastest", "door_pickup": True, "pickup_postcode": "51447", "currency": "EUR",
+                "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("51447"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, message, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.door_pickup, rfq.missing) == ("AAA", "ORD", True, ())
