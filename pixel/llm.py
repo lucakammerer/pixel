@@ -19,6 +19,7 @@ from pixel.core.context import Context
 PRICES: dict[str, tuple[str, str]] = {
     "gpt-4o-mini": ("0.15", "0.60"),
     "gpt-4.1-mini": ("0.40", "1.60"),
+    "gpt-4.1": ("2.00", "8.00"),
     "gpt-5-nano": ("0.05", "0.40"),
     "gpt-5-mini": ("0.25", "2.00"),
     "gpt-5.4-nano": ("0.20", "1.25"),

@@ -128,11 +128,12 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     # The prose may hold the quote at most PROSE_WAIT_S after it started, and never past target_at: a slow or
     # broken model call costs us the human slots, never the quote or its time points.
     task = None
-    if rfq.extracted_by == "rules":
+    raw = _raw_prose(ctx, rfq.session_id)  # the model's extraction or its cross-check drafted the slots
+    if rfq.extracted_by == "rules" and not raw:
         task = poller.spawn(ctx, compose.prose(ctx, rfq, message))
         prose_by = min(timing.now() + timedelta(seconds=PROSE_WAIT_S), deadline.target_at)
     else:
-        compose.adopt(ctx, rfq, message, _raw_prose(ctx, rfq.session_id))
+        compose.adopt(ctx, rfq, message, raw)
     options = await engine.options(ctx, rfq, deadline)
     if rfq.door_pickup:
         options = [o for o in options if o.trucker]

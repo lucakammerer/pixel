@@ -1112,6 +1112,48 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     return rfq
 
 
+CHECKED = ("destination", "weight_kg", "volume_cbm", "pieces", "preference")
+CHECK_WAIT_S = 6  # gpt-4.1 answers in about 1.2 s; a hanging gateway must not hold the bids
+
+
+async def _crosscheck(
+    ctx: Context, rfq: Rfq, message: Message, text: str, deadline: Deadline
+) -> tuple[Rfq, dict | None]:
+    """The rules' reading checked by a larger model reading the same text (`PIXEL_MODEL_CHECK`). On a field the price
+    depends on, a value the model reads (its figures settled by code in `_from_model`) wins over the rules': at first
+    sight the rules took the mail's figures over the packing list's (rounds 33 to 35), and the model did not; on all
+    44 accepted requests both read the same. A destination counts only when the text names it. Its prose slots
+    replace the separate prose call. On any failure the rules' reading stands."""
+    try:
+        result = await asyncio.wait_for(
+            llm.ask_json(
+                ctx,
+                purpose="rfq.crosscheck",
+                system=SYSTEM,
+                user=text,
+                schema=SCHEMA,
+                session_id=message.session_id,
+                max_output_tokens=500,
+                model=ctx.settings.model_check,
+            ),
+            CHECK_WAIT_S,
+        )
+        read = _from_model(result.data, message, deadline)
+    except Exception as e:  # noqa: BLE001  the rules' reading stands
+        events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
+                    payload={"where": "rfq_crosscheck", "error": type(e).__name__})  # fmt: skip
+        return rfq, None
+    differs = {
+        f: [str(getattr(rfq, f)), str(getattr(read, f))]
+        for f in CHECKED
+        if getattr(read, f) not in (None, "", 0) and getattr(read, f) != getattr(rfq, f)
+    }
+    taken = {f: getattr(read, f) for f in differs if f != "destination" or names_code(text, read.destination)}
+    events.emit(ctx, "rfq.crosscheck", "rfq", session_id=message.session_id, message_id=message.id,
+                payload={"model": result.model, "differs": differs, "taken": sorted(taken)})  # fmt: skip
+    return rfq.model_copy(update=taken), {k: result.data.get(k) for k in PROSE}
+
+
 async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tuple[Rfq, str]:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
@@ -1167,6 +1209,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     rfq, prose = rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
+    if rfq is not None and ctx.settings.model_check:
+        rfq, prose = await _crosscheck(ctx, rfq, message, text, deadline)
     if rfq is None:
         try:
             result = await llm.ask_json(
@@ -1177,6 +1221,9 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 schema=SCHEMA,
                 session_id=message.session_id,
                 max_output_tokens=500,
+                model=ctx
+                and ctx.settings.model_check
+                or None,  # gpt-4.1-mini took the mail's figures over the documents'
             )
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
