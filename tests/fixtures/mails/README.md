@@ -40,3 +40,6 @@ Captured mails of a request, from the request to the confirmed booking:
 
 `tracking-door-to-port.json` is the tracking desk's question about a door-to-port shipment: no reference, the
 shipment described by pickup postcode, destination, weight and company.
+
+`rfq-door-three-lots.json` is a door-to-port request in three lots with mixed per-piece and per-lot figures; our
+first quote for it was rejected as too low.

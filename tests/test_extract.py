@@ -117,3 +117,28 @@ def test_rules_read_the_captured_port_to_port_request():
         Decimal("5.90"),
     )
     assert (rfq.preference, rfq.door_pickup, rfq.currency) == (Preference.FASTEST, False, "EUR")
+
+
+async def test_a_captured_request_in_lots_is_added_up_by_code_whatever_the_model_summed(conn, monkeypatch, emitted):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-door-three-lots.json").read_text())
+    message = to_message(raw, "in")
+    # 730 + 4 x 48 + 5 x 206 kg gross; 1.68 + 4 x 1.1 x 1.1 x 0.52 + 5 x 1.2 x 1.0 x 0.08 cbm; 4 + 4 + 5 pieces
+    assert extract._lots(extract._text(message)) == (Decimal(1952), Decimal("4.6768"), 13)
+
+    async def as_the_model_read_it(ctx, **kw):
+        data = {"origin": None, "destination": "LOS", "weight_kg": "1750", "volume_cbm": "3.36", "pieces": 13,
+                "preference": "cheapest", "door_pickup": True, "pickup_postcode": "36627", "currency": "EUR",
+                "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("36627"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, message, DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.origin) == (Decimal(1952), Decimal("4.6768"), 13, "AAA")
+
+
+def test_a_lot_whose_figures_are_not_certain_is_left_to_the_model():
+    text = "Lot 1: 4 drums, 730 kg, together 1.68 cbm\nLot 2: 4 cartons, each 48 kg gross, each 110 x 110 x 52 cm"
+    assert extract._lots(text) is None  # 730 kg: each drum or all four?
+    assert extract._lots("Lot 1: 2 crates, each 50 kg, each 100 x 100 x 100 cm") is None  # one lot is no lot list
