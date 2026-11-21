@@ -51,10 +51,11 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
 
 def _noted(ctx: Context, rfq: Rfq, quote: Quote) -> Quote:
     """The quote with the dangerous-goods note, when the request's documents declare some (`dangerous.py`)."""
-    goods = dangerous.declared(ctx, rfq)
-    if not goods:
+    found = dangerous.declared(ctx, rfq)
+    if not found:
         return quote
-    return quote.model_copy(update={"body": dangerous.with_note(quote.body, goods, compose.language_of(rfq))})
+    goods, source = found
+    return quote.model_copy(update={"body": dangerous.with_note(quote.body, goods, compose.language_of(rfq), source)})
 
 
 async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | None:
