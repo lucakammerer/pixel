@@ -5,6 +5,10 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #117 | lucakammerer | 9ca8e7f | ok | second reviewer's ledger |
+| #116 | lucakammerer | e9630bd | ok, a measured bet | tracking variant a drops the address line; roll back after the first answer without +10 |
+| #115 | lucakammerer | f798435 | ok | asks for a missing volume too; no live request lacked one; Q9 caveat as #86 |
+| #113 | lucakammerer | 40f03be | ok (second reviewer's area) | takes effect only once `/opt/pixel/cd/cd.sh` is installed by hand |
 | #112 | lucakammerer | d9056e6 | ok | closes #107's finding: root runs only hand-installed files (checked on the host) |
 | #111 | lucakammerer | 2e771c1 | ok | formal greeting with the whole signed name |
 | #110 | TripleCF | e9de807 | ok | dashboard shows the scorer's total; a missing total no longer reads as 0 |
