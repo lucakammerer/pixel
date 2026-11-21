@@ -1,15 +1,13 @@
-"""Dangerous goods a customer's attachment declares. A quote for them has to name them and ask for the papers:
-without that the scorer rejects it (`dg_docs_missing`), whatever the mail itself says about the goods."""
+"""The quote's answer to dangerous goods. `extract.py` `dangerous_goods` finds what a mail or its attachment declares
+and marks the request (`DG_DOCUMENTS` in `Rfq.missing`, an `rfq.dangerous_goods` event). The quote then has to name
+the goods and ask for the papers: without that the scorer rejects it (`dg_docs_missing`), at an unchanged price."""
 
-import re
+import json
 
-from pixel.agents.tariffs.agent import _lines
-from pixel.contracts import Message
-from pixel.core import events
+from pixel.agents.rfq.extract import DG_DOCUMENTS
+from pixel.contracts import Rfq
 from pixel.core.context import Context
 
-DECLARED = re.compile(r"(?im)^\s*(?:dangerous goods|hazardous goods|gefahrgut|dg)\b\s*[:|]?\s*(.+?)\s*$")
-NOT_DANGEROUS = re.compile(r"(?i)^(?:no|none|non|not|nil|n/?a|nein|kein\w*|-+|—)\b")
 NOTE = {
     "en": "One point before we book: the document attached to your mail lists the goods as dangerous goods "
           "({goods}), while the mail describes them otherwise. We will handle the shipment as dangerous goods. "
@@ -22,25 +20,15 @@ NOTE = {
 }  # fmt: skip
 
 
-def declared_in(lines: list[str]) -> str | None:
-    for match in DECLARED.finditer("\n".join(lines)):
-        if not NOT_DANGEROUS.match(match.group(1)):
-            return match.group(1)
-    return None
-
-
-async def declared(ctx: Context, message: Message) -> str | None:
-    """What the mail's attachments declare as dangerous goods (UN number, class, name), or None."""
-    for attachment in message.attachments:
-        try:
-            lines = _lines(attachment.filename, await ctx.mailbox.attachment(message.id, attachment.id))
-        except Exception as exc:  # noqa: BLE001  an attachment we cannot read must not cost the quote
-            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "attachment", "file": attachment.filename, "error": type(exc).__name__})  # fmt: skip
-            continue
-        if goods := declared_in(lines):
-            return goods
-    return None
+def declared(ctx: Context, rfq: Rfq) -> str | None:
+    """What the request's documents declare, when `extract` marked it; None for ordinary goods."""
+    if DG_DOCUMENTS not in rfq.missing:
+        return None
+    row = ctx.db.execute(
+        "SELECT payload FROM events WHERE session_id = ? AND kind = 'rfq.dangerous_goods' ORDER BY id DESC LIMIT 1",
+        (rfq.session_id,),
+    ).fetchone()
+    return (json.loads(row["payload"]).get("declared") if row else None) or "see your document"
 
 
 def with_note(body: str, goods: str, language: str) -> str:

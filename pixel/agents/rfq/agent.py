@@ -49,6 +49,14 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
     return quote
 
 
+def _noted(ctx: Context, rfq: Rfq, quote: Quote) -> Quote:
+    """The quote with the dangerous-goods note, when the request's documents declare some (`dangerous.py`)."""
+    goods = dangerous.declared(ctx, rfq)
+    if not goods:
+        return quote
+    return quote.model_copy(update={"body": dangerous.with_note(quote.body, goods, compose.language_of(rfq))})
+
+
 async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | None:
     """extract -> pricing.engine.options (emits `option.found` as they arrive) -> selection.select ->
     compose.render -> outbox.send_quote. Sends at `deadline.target_at` at the latest unless waiting can
@@ -77,11 +85,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     prose = compose.stored(ctx, rfq.session_id)
     if not options:
         return None
-    quote = _quote(ctx, rfq, options, prose, fallback=False)
-    if goods := await dangerous.declared(ctx, message):
-        quote = quote.model_copy(update={"body": dangerous.with_note(quote.body, goods, compose.language_of(rfq))})
-        events.emit(ctx, "rfq.dangerous_goods", "rfq", session_id=rfq.session_id, payload={"declared": goods})
-    sent = await outbox.send_quote(ctx, quote)
+    sent = await outbox.send_quote(ctx, _noted(ctx, rfq, _quote(ctx, rfq, options, prose, fallback=False)))
     quotes.save(ctx, sent)
     return sent
 
@@ -92,7 +96,9 @@ async def fallback(ctx: Context, session_id: int) -> Quote | None:
     if rfq is None:
         return None
     options = engine.combine(rfq, session.options(ctx, session_id), feedback.pickup_rule(ctx))
-    return _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True) if options else None
+    if not options:
+        return None
+    return _noted(ctx, rfq, _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True))
 
 
 def _raw_prose(ctx: Context, session_id: int) -> dict:
