@@ -34,6 +34,7 @@ FEWER_BREAKS = {  # no 100 or 500 break, a new one at 300
     "DUS-JFK": {0: "3.96", 45: "3.21", 300: "2.20", 1000: "1.50"},
 }
 SMALL_MINIMUMS = {"CGN-SYD": "25.00", "DUS-JFK": "28.00"}
+LARGE_MINIMUMS = {"CGN-SYD": "1250.00", "DUS-JFK": "1100.00"}
 SPOTS = [("CGN-SYD", "120"), ("DUS-JFK", "280")]
 
 # (name, what changed, options for `render`, rates per lane if changed, minimums per lane if changed)
@@ -60,6 +61,20 @@ VARIANTS = [
         None,
     ),
     ("surcharge-missing", "one lane has no surcharge line", {"surcharges": "missing_one"}, None, None),
+    ("currency-symbol", "prices as '€ 5.92' instead of 'EUR 5.92'", {"money": "€ {v}"}, None, None),
+    ("currency-after", "prices as '5.92 EUR'", {"money": "{v} {c}"}, None, None),
+    ("minimum-thousands", "minimums above 1000 written '1,250.00'", {"thousands": True}, None, LARGE_MINIMUMS),
+    ("transit-days-word", "transit written as '5 days'", {"transit_format": "{} days"}, None, None),
+    ("lane-arrow", "lanes written 'CGN > SYD'", {"lane_sep": " > "}, None, None),
+    (
+        "validity-one-line",
+        "validity on one line: 'Valid 01.11.2026 - 30.11.2026'",
+        {"validity": "one_line"},
+        None,
+        None,
+    ),
+    ("remarks-column", "a Remarks column after the rates, with a number in it", {"remarks": True}, None, None),
+    ("rates-per-100-kg", "rates per 100 kg, the sheet says so", {"per_100": True}, None, None),
 ]
 ONLY_REFUSAL_IS_SAFE = {"surcharge-missing"}  # a lane without surcharges cannot be priced right
 GAPS: dict[str, str] = {}
@@ -90,20 +105,39 @@ def render(
     transit_format: str = "{}",
     minimum_first: bool = False,
     surcharges: str = "section",
+    money: str = "{c} {v}",
+    thousands: bool = False,
+    lane_sep: str = "-",
+    validity: str = "two_lines",
+    remarks: bool = False,
+    per_100: bool = False,
 ) -> str:
     def num(text: str) -> str:
+        if thousands:
+            text = f"{D(text):,.2f}"
         return text.replace(".", ",") if comma else text
+
+    def cash(text: str) -> str:
+        return money.format(c=currency, v=num(text))
+
+    def rate(text: str) -> str:
+        return cash(str(D(text) * 100) if per_100 else text)
 
     starts = sorted(rates["CGN-SYD"])
     columns = ["Lane", "Minimum", "Transit"] if minimum_first else ["Lane", "Transit", "Minimum"]
     breaks = [f"-{starts[1]}"] + [f"+{s}" for s in starts[1:]]
     extra = ["Fuel", "Security"] if surcharges == "columns" else []
+    extra += ["Remarks"] if remarks else []
+    valid = (
+        [f"Valid {dates[0]} - {dates[1]}"]
+        if validity == "one_line"
+        else [f"Valid from  {dates[0]}", f"Valid to    {dates[1]}"]
+    )
     lines = [
         f"{CARRIER} | Air export tariff",
         f"Currency    {currency}",
-        f"Valid from  {dates[0]}",
-        f"Valid to    {dates[1]}",
-        f"All rates are per kg of chargeable weight, in {currency}.",
+        *valid,
+        f"All rates are per {'100 kg' if per_100 else 'kg'} of chargeable weight, in {currency}.",
         "Chargeable weight is the higher of actual weight and volume weight (1 cbm = 167 kg).",
         "Fuel and security surcharges are charged per kg of the weight the freight is billed on.",
         "The minimum charge applies to the freight before surcharges.",
@@ -112,11 +146,13 @@ def render(
     ]
     for lane, facts in LANES.items():
         transit = transit_format.format(facts["transit"]).rjust(10) + "  "
-        minimum = f"{currency} {num(minimums[lane])}".ljust(12)
-        cells = [lane.ljust(12)] + ([minimum, transit] if minimum_first else [transit, minimum])
-        cells += [f"{currency} {num(rate)}".ljust(10) for _, rate in sorted(rates[lane].items())]
+        minimum = pad(cash(minimums[lane]), 12)
+        cells = [lane.replace("-", lane_sep).ljust(12)] + ([minimum, transit] if minimum_first else [transit, minimum])
+        cells += [pad(rate(value), 10) for _, value in sorted(rates[lane].items())]
         if surcharges == "columns":
-            cells += [f"{currency} {num(facts['fuel'])}".ljust(10), f"{currency} {num(facts['security'])}".ljust(10)]
+            cells += [pad(cash(facts["fuel"]), 10), pad(cash(facts["security"]), 10)]
+        if remarks:
+            cells += ["max 300 kg per piece"]
         lines.append("".join(cells).rstrip())
     if surcharges in ("section", "missing_one"):
         lines += ["", "Surcharges per kg of billed weight"]
@@ -124,10 +160,15 @@ def render(
             if surcharges == "missing_one" and lane == "DUS-JFK":
                 continue
             lines.append(
-                f"{lane}: fuel {currency} {num(facts['fuel'])} per kg, "
-                f"security {currency} {num(facts['security'])} per kg"
+                f"{lane.replace('-', lane_sep)}: fuel {cash(facts['fuel'])} per kg, "
+                f"security {cash(facts['security'])} per kg"
             )
     return "\n".join(lines) + "\n"
+
+
+def pad(text: str, width: int) -> str:
+    """A cell in its column, never touching the next one."""
+    return text.ljust(max(width, len(text) + 2))
 
 
 def iso(day: str) -> str:
