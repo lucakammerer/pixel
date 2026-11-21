@@ -96,14 +96,15 @@ VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
-# The desk's list as a table: columns found by their header, in this order, so "Rate id" is no price column.
+# The desk's list as a table: columns found by their header, in this order, so "Rate id" is no price column, nor
+# is "Rate per kg".
 DESK_COLUMNS = {
     "rate_id": r"\brate[ _-]?id\b",
     "valid": r"\bvalid|\bg(?:ü|ue)ltig",
     "transit": r"\btransit|\blaufzeit",
     "code": r"\b(?:code|iata)\b",
     "name": r"\b(?:airline|carrier|fluggesellschaft)\b",
-    "price": r"\b(?:price|rate|total|all[- ]in|amount|preis)\b",
+    "price": r"\b(?:price|rate|total|all[- ]in|amount|preis)\b(?![^\n]{0,7}?(?:/|\bper\b|\bpro\b|\bje\b)\s*kg)",
 }
 # A cell of each column in a row whose cells are one space apart (a pdf table): the header gives their order.
 DESK_CELLS = {

@@ -587,3 +587,18 @@ async def test_the_model_cross_checks_a_bid_the_rules_read_and_its_total_wins(ct
     monkeypatch.setattr(llm, "ask_json", down)
     await bids.record(ctx, mail("b@truck", "Pickup EUR 90.00"))
     assert [o["option"]["pickup"] for o in kinds(ctx, "option.found")] == ["181.96", "90.00"]
+
+
+PER_KG_TABLE = "\n".join(
+    "  ".join(row)
+    for row in [
+        ["Portal rates AAA-BBB, 340.0 kg, 1.2 cbm"],
+        ["Airline", "Code", "Rate per kg (EUR)", "Total (EUR)", "Transit (days)", "Rate id", "Valid until (UTC)"],
+        ["Polaris Air Logistics", "PL", "2.80", "952.00", "4", "R-C5nfsmcn3aSHlsgp", "21 Nov 2026 14:38"],
+    ]
+)
+
+
+def test_a_rate_per_kg_column_is_never_the_desk_total():
+    found = bids.parse_desk(mail("ratedesk@hackloop.mail", f"Please find the rates attached.\n\n{PER_KG_TABLE}"), rfq())
+    assert {o.total for o in found} <= {D("952.00")}
