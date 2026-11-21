@@ -48,7 +48,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose the way a
-  clerk would: greeting in the customer's register (`register`: formal "Dear", neutral "Hello", casual "Hi") with
+  clerk would: greeting in the customer's register (`register`: formal "Dear" with the whole signed name, `addressed`, neutral
+  "Hello", casual "Hi") with
   the first name they signed with (the model's slot, else `signed_name` by rule), one paragraph that opens with a
   short line (the model's, else a thank-you naming the goods in the customer's own words, `goods_of`) and gives the quoted total and its currency, carrier, transit, what is included and the chargeable
   weight only when it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with
