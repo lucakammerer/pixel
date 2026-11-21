@@ -90,3 +90,7 @@ hand, one of them priced the zone's first postcode and a postcode of the town al
 `rfq-door-warehouse-known-customer.json`: round 16, missed. "Truck pickup from our warehouse" with no place at all
 and no signature town. The customer (Nordlicht Audio) had named "our site in 36627 (Fulda)" in round 9.
 
+`rfq-door-warehouse-earlier-sites.json`: round 17, missed (it arrived 11 s before the restart onto the fix). "Truck
+pickup from our warehouse", no place; this customer (Lindqvist Medtech) had named 51447 in round 1 and 21663 in
+round 11: the latest one counts.
+
