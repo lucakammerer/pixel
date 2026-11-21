@@ -47,18 +47,20 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
-- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose the way a
-  clerk would: greeting in the customer's register (`register`: formal "Dear" with the whole signed name, `addressed`, neutral
-  "Hello", casual "Hi") with
-  the first name they signed with (the model's slot, else `signed_name` by rule), one paragraph that opens with a
-  short line (the model's, else none: no stock opening) and gives the quoted total and its currency, carrier, transit, what is included and the chargeable
-  weight only when it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with
-  the booking sentence, and a person's signature (`PIXEL_SIGNER`). "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `in_kind` answers the customer's own closing:
-  a wish for the day is returned, and the sign-off goes to the town they greet from, or reads "Cheers" or "Viele
-  Grüße" when theirs does; without one, the sign-off of their register and no closing line. Code formats every
-  number and name; three to four phrasings per sentence, picked by session, so two quotes
-  do not read alike. `check` proves the finished mail holds the total exactly once with its currency, carrier and
-  transit; on failure the mail is rendered without the model's slots (R9, P1).
+- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
+  customer, formal or not (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
+  the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
+  model's slot, else `signed_name` by rule); the model's opening on a line of its own when it passed, else none (no
+  stock opening); the offer with an opinion ("I'd go with …", "Good news: …"): total and currency, carrier, transit,
+  what is included, a short line ("Simple as that."), the chargeable weight only when it is above the gross weight;
+  the validity on our desk's clock ("until 17:22 today") with the booking line; the signature by first name
+  (`signature`) and a P.S. that only says what we do anyway. At most three smileys, none twice (`_one_each`).
+  "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `sign_off` answers
+  the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off goes to the town they
+  greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, "Best wishes". Code formats every
+  number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
+  proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
+  is rendered without the model's slots (R9, P1).
 - `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
   own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
   transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
@@ -86,7 +88,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the selected billed weight. A 503 or an option without a rate id goes to the airline by mail. The carrier
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
-  Booking and confirmation mails use the original register, name, sign-off and signer.
+  Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
+  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`).
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
@@ -105,7 +108,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes
   goes to a person, nothing is booked and the tracking bonus is lost.
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
-  name, register and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
+  name, sign-off and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
   ("Dangerous goods: UN…, Class …") while the mail calls the goods non-dangerous. `extract.py`
   `dangerous_goods` reads them and marks the request; `agent.py` `_noted` then names the goods in the quote and asks

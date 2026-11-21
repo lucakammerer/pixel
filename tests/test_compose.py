@@ -72,16 +72,19 @@ def test_reply_subject_name_and_signer():
                           closing="Have a good day.")  # fmt: skip
     subject, body = compose.render(rfq("en"), OPTION, prose, "Machine parts to BBB", SIGNER)
     assert subject == "Re: Machine parts to BBB"
-    assert body.startswith("Hello Anna,\n\nHappy to help get the machine parts moving quickly.")
+    # The model's opening stands on a line of its own, below the greeting (R31).
+    assert body.startswith(
+        compose.greeting("en", "Anna", 1) + "\n\nHappy to help get the machine parts moving quickly."
+    )
     # The mail ends on the booking sentence and the signature: no stock closing line (R31).
-    assert "Have a good day" not in body and body.endswith(f"Best regards,\n{SIGNER}\n{compose.COMPANY}")
+    assert "Have a good day" not in body and f"Best wishes,\nLena\n{compose.COMPANY}\n\nP.S. " in body
     assert compose.reply_subject("AW: Anfrage") == "AW: Anfrage" and compose.reply_subject("") is None
 
 
 def test_without_subject_or_prose_still_a_full_mail():
     subject, body = compose.render(rfq("de"), OPTION)
     assert subject == "Angebot AAA nach BBB, 1.200 kg"
-    assert body.startswith("Guten Tag,\n\n") and "Viele Grüße" in body
+    assert body.startswith("Hallo!\n\n") and "Viele Grüße" in body
 
 
 @pytest.mark.parametrize(
@@ -167,7 +170,7 @@ def test_any_model_answer_gives_a_plain_full_mail(raw):
     prose = compose.clean(raw, rfq("en"), message(body=""), SIGNER)
     assert prose == compose.Prose()
     _, body = compose.render(rfq("en"), OPTION, prose)
-    assert body.startswith("Hello,\n\n") and body.count("1234.57 EUR") == 1
+    assert body.startswith("Hi there!\n\n") and body.count("1234.57 EUR") == 1
 
 
 def test_a_third_language_slot_is_dropped():
@@ -229,20 +232,20 @@ def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
     assert compose.ready_date("Please quote 300 kg, it must arrive by 2026-12-01.") is None
 
 
-def test_reads_like_a_clerk_in_the_customers_register():
+def test_every_customer_gets_the_same_personal_voice():
     request = "Dear Sir or Madam,\n\nplease quote AAA to BBB.\n\nKind regards\nPetra Hofmann\nHead of Logistics"
     option = OPTION.model_copy(update={"valid_until": datetime(2026, 11, 21, 16, 22, tzinfo=UTC)})
     _, body = compose.render(rfq("en"), option, request=request)
-    # Named from the signature without a model slot, formal like her mail, validity on our clock, no date stamp.
-    # Round 25: "Dear Jonas," to a formal mail; the whole signed name keeps it formal without guessing Mr or Ms.
-    assert body.startswith("Dear Petra Hofmann,") and "Kind regards,\nLena Berger" in body
+    # Named from the signature without a model slot, personal even to a formal mail, validity on our clock.
+    assert body.startswith(compose.greeting("en", "Petra", 1)) and "Best wishes,\nLena\n" in body and "!" in body
     assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
     _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
-    assert casual.startswith("Hi Tom,") and "Cheers,\nLena Berger" in casual
+    # Their "Cheers" is answered in kind; the rest reads as every other mail.
+    assert casual.startswith(compose.greeting("en", "Tom", 2)) and "Cheers,\nLena\n" in casual
     _, both = compose.render(
         rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Gruesse / Many greetings\nDeniz"
     )
-    assert "Viele Grüße,\nLena Berger" in both
+    assert "Viele Grüße,\nLena\n" in both and "\nP.S. " in both
 
 
 def test_the_customers_own_closing_is_answered_in_kind():
@@ -252,12 +255,12 @@ def test_the_customers_own_closing_is_answered_in_kind():
         "Thanks a lot and have a lovely day!\nBest greetings from Exampletown\nPetra Hofmann\nExport Desk"
     )
     _, body = compose.render(rfq("en"), OPTION, request=request)
-    assert "Have a lovely day too!\n\nBest regards to Exampletown,\nLena Berger" in body
-    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 5
+    assert "Have a lovely day too!\n\nBest regards to Exampletown,\nLena\n" in body
+    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 6
     assert body.count("1234.57 EUR") == 1 and compose.check(body, rfq("en"), OPTION)
     german = "Guten Tag,\n\nbitte um ein Angebot.\n\nEin schönes Wochenende und Grüße aus Exampletown\nAnna Muster"
     _, body = compose.render(rfq("de"), OPTION, request=german)
-    assert "Ihnen auch ein schönes Wochenende!\n\nViele Grüße nach Exampletown\nLena Berger" in body
+    assert "Ihnen auch ein schönes Wochenende!\n\nViele Grüße nach Exampletown\nLena\n" in body
 
 
 OPENINGS = json.loads((Path(__file__).parent / "fixtures" / "openings.json").read_text())
@@ -314,7 +317,7 @@ def test_an_english_request_from_a_german_town_is_answered_in_english_throughout
     assert request.language == "en"
     _, body = compose.render(request, OPTION, request=mail.body)
     body = dangerous.with_note(body, "UN1950, Class 2.1", compose.language_of(request), "packing-spec.pdf")
-    assert body.startswith("Hello Sara,") and "shipper's declaration" in body
+    assert body.startswith(compose.greeting("en", "Sara", request.session_id)) and "shipper's declaration" in body
     assert not re.search(r"Guten Tag|Laufzeit|Grüße|Angebot|Gefahrgut", body)
     german = dangerous.with_note(compose.render(rfq("de"), OPTION)[1], "UN1950", "de", "x.pdf")
     assert "Gefahrgut" in german and "One point before we book" not in german and "bei 3 Tage" not in german
@@ -325,7 +328,7 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
     "Hello," with "Kind regards". Only the customer's own words count."""
     mail = captured("rfq-door-quoted-old-request.json")
     _, body = compose.render(rfq("en"), OPTION, request=mail.body)
-    assert body.startswith("Hi Petra,") and "Best wishes," in body
+    assert body.startswith(compose.greeting("en", "Petra", 1)) and "Best wishes," in body
 
 
 def test_the_earliest_departure_is_answered_only_when_asked():
