@@ -19,7 +19,7 @@ HUMAN = "human"  # purpose of mail a person sends from the UI: passes a takeover
 
 
 class NotSent(Exception):
-    """Refused before the API was called: `reason` is dry_run, human, duplicate_quote or recipient."""
+    """Refused before the API was called: `reason` is dry_run, human, duplicate_quote, superseded or recipient."""
 
     def __init__(self, reason: str):
         super().__init__(reason)
@@ -44,10 +44,15 @@ def taken_over(ctx: Context, session_id: int | None) -> bool:
 
 
 def quoted(ctx: Context, session_id: int) -> bool:
-    """True once a quote for the session was sent, held by dry run, or is being sent."""
+    """True once a quote for the session was sent, held by dry run, or is being sent; also while the customer's
+    change is priced again (`agents/rfq/agent.py` `requote`), which then answers instead."""
     key = f"quote:{session_id}"
     return bool(
-        db.get(ctx.db, key) or ctx.db.execute("SELECT 1 FROM mail_delivery WHERE operation = ?", (key,)).fetchone()
+        db.get(ctx.db, key)
+        or db.get(ctx.db, f"requote:{session_id}")
+        or ctx.db.execute(
+            "SELECT 1 FROM mail_delivery WHERE operation = ? OR operation LIKE ?", (key, f"{key}:%")
+        ).fetchone()
     )
 
 
@@ -149,9 +154,14 @@ def _claimed(ctx: Context, key: str, is_quote: bool) -> Message | None:
     return None
 
 
-def _hold(ctx: Context, to: str, sid: int | None, purpose: str, quote: Quote | None, operator: bool) -> str | None:
+def _hold(
+    ctx: Context, to: str, sid: int | None, purpose: str, quote: Quote | None, operator: bool, parent: int | None
+) -> str | None:
     if not allowed(ctx, to):
         return "recipient"
+    # The customer changed the request before our quote: the answer to the change mail goes out, never the older facts.
+    if quote and parent == quote.rfq.message_id and db.get(ctx.db, f"requote:{sid}"):
+        return "superseded"
     if (
         not operator
         and taken_over(ctx, sid)
@@ -204,7 +214,7 @@ async def _deliver(
     while True:
         if sent := _claimed(ctx, key, quote is not None):
             return sent
-        reason = _hold(ctx, to, sid, purpose, quote, operator)
+        reason = _hold(ctx, to, sid, purpose, quote, operator, parent)
         if reason:
             emit(ctx, "mail.held", "outbox", session_id=sid, payload={**payload, "reason": reason})
             raise NotSent(reason)
@@ -212,7 +222,7 @@ async def _deliver(
         # While waiting another sender may have won the quote or a person may have taken over.
         if sent := _claimed(ctx, key, quote is not None):
             return sent
-        if reason := _hold(ctx, to, sid, purpose, quote, operator):
+        if reason := _hold(ctx, to, sid, purpose, quote, operator, parent):
             emit(ctx, "mail.held", "outbox", session_id=sid, payload={**payload, "reason": reason})
             raise NotSent(reason)
         with db.atomic(ctx.db):

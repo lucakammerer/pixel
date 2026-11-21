@@ -160,7 +160,7 @@ async def _fallback(ctx: Context, message: Message, deadline: Deadline) -> None:
             await outbox.send_quote(ctx, quote)
     except outbox.NotSent as e:
         if e.reason != "dry_run":
-            if e.reason != "duplicate_quote":
+            if e.reason not in ("duplicate_quote", "superseded"):
                 _missed(ctx, session_id, e.reason)
             return
     except Exception as e:  # noqa: BLE001

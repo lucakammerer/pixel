@@ -36,7 +36,7 @@ class Portal:
 
 
 def kinds(ctx):
-    return [r["kind"] for r in ctx.db.execute("SELECT kind FROM events ORDER BY id")]
+    return [r["kind"] for r in ctx.db.execute("SELECT kind FROM events WHERE kind != 'followup.read' ORDER BY id")]
 
 
 @pytest.fixture

@@ -19,6 +19,7 @@ KINDS = (
     "quote.stuck",  # core/watchdog.py: open past its STUCK_AFTER, alerted once
     "quote.checked",  # agents/rfq/check.py: what the last check before sending found
     "customer.accepted", "customer.declined", "customer.excludes",
+    "followup.read",  # agents/rfq/followup.py: a customer's later mail in their thread, its phase, intent and changes
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",
     "tracking.answered",
     "tariff.ingested", "tariff.failed",

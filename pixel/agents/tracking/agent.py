@@ -247,6 +247,14 @@ def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Det
     return out
 
 
+def _own_shipment(ctx: Context, message: Message) -> Shipment | None:
+    """A customer asking in their own thread ("Where is our shipment?") means that thread's shipment."""
+    row = ctx.db.execute("SELECT customer FROM sessions WHERE id = ?", (message.session_id,)).fetchone()
+    if not row or row["customer"] != message.sender:
+        return None
+    return shipments.for_session(ctx, message.session_id)
+
+
 async def question(ctx: Context, message: Message) -> str:
     """Subject, body and the text of every attachment: the reference may stand only in an attached enquiry."""
     attached = await extract._attachments(ctx, message) if message.attachments else []
@@ -258,6 +266,8 @@ async def handle(ctx: Context, message: Message) -> None:
     destination, weight, company) in the CRM and
     answers in the thread from the CRM alone. Says so plainly when we hold no such shipment."""
     found, reference = match(ctx, await question(ctx, message), message.sender)
+    if not found and (own := _own_shipment(ctx, message)):
+        found = [own]
     body = answer(found, reference, message.body, details(ctx, found, message.body), signer=ctx.settings.signer)
     if (language := extract._language(extract._text(message))) != "en":  # answered in the asker's language
         english = body

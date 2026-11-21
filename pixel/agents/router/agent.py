@@ -92,6 +92,9 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
         return MailKind.CUSTOMER_REPLY, "thread:quote"
     if not in_thread and asks:
         return MailKind.CUSTOMER_RFQ, "new_thread"
+    # A colleague writing in the customer's thread before our quote: `followup.read` reads what it says.
+    if in_thread and customer:
+        return MailKind.CUSTOMER_REPLY, "thread:customer_session"
     return None, "new_thread_unclear" if not in_thread else "unknown_thread"
 
 

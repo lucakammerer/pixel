@@ -93,7 +93,10 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
   recovery      unanswered after 150 s or handler exits                quote.recovery
   fallback      watch stored options for a complete price              quote.waiting
                 hard deadline: send available scope or record a miss   quote.fallback | quote.missed
-customer_reply      affirmative booking of a delivered quote → shipment → book by rate id or mail
+customer_reply      followup.read: phase, intent, changes                                  followup.read
+                    change before the acceptance → requote in reply to the change mail   quote.sent
+                    affirmative booking of a delivered quote → shipment → book by rate id or mail
+                    tracking after the acceptance → tracking agent; thank-you → nothing
 booking_confirmation  "Booking … confirmed" → shipment confirmed → customer told         booking.confirmed
 tracking_question   CRM lookup → one identified shipment or a request for its reference   tracking.answered
 tariff              attachments → parse → validate → activate          tariff.ingested | tariff.failed
