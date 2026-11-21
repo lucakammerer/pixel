@@ -70,10 +70,11 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
 
     monkeypatch.setattr(events, "emit", emit)
     airline, pickups, quoted = captured()
-    # with a tracking bonus in the same poll the total rises by 10 more than the request scored
-    ctx = Context(
-        settings(), conn, None, None, None, Board(board(100), board(100), board(D("150.62"), (4, "accepted")))
-    )
+    # tracking points for an older round land in the same poll: the total rises by 10 more than the request scored
+    scored = board(D("150.62"), (4, "accepted"), (3, "accepted"))
+    scored["requests"][1]["points"] = {"tracking": 10.0}
+    earlier = board(100, (3, "accepted"))
+    ctx = Context(settings(), conn, None, None, None, Board(earlier, earlier, scored))
     conn.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (7, 'c@x', 'quoted', ?)", (T0,))
     for o in (airline, *pickups):
         emit(ctx, "option.found", "pricing", session_id=7, payload={"option": o.model_dump(mode="json")})
@@ -89,7 +90,8 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
         ROUND["scorer_trucker"],
         "40.62",
     )
-    assert json.loads(db.get(conn, feedback.STATE))["verdicts"] == {"4": "accepted"}
+    assert payload["hidden"] == "40.62" and quotes.derived_hidden(ctx) == {4: D("40.62")}
+    assert json.loads(db.get(conn, feedback.STATE))["verdicts"] == {"3": "accepted", "4": "accepted"}
     assert feedback.pickup_rule(ctx) == selection.DEFAULT_RULE  # every rule takes this trucker: no lead, no change
 
 
@@ -162,6 +164,47 @@ async def test_first_poll_and_later_updates_feed_scorer_stats(conn):
     assert (stats["accepted"], stats["rejected"]) == (1, 1)
 
     assert await feedback.once(ctx) == 0
-    assert quotes.latest_scores(ctx)[0]["booked"] is True
+    assert {row["round"]: row["booked"] for row in quotes.latest_scores(ctx)}[1] is True
     assert await feedback.once(ctx) == 0
     assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score'").fetchone()[0] == 3
+
+
+async def test_board_total_updates_without_request_changes(conn):
+    first = board(100, (1, "accepted"))
+    first["requests"][0]["cost_points"] = 39.76
+    updated = first | {"total": "110.25"}
+    ctx = Context(settings(), conn, None, None, None, Board(first, updated, updated))
+
+    await feedback.once(ctx)
+    assert quotes.stats(ctx)["points_total"] == 100
+    await feedback.once(ctx)
+    await feedback.once(ctx)
+    stats = quotes.stats(ctx)
+    assert stats["points_total"] == D("110.25")
+    assert stats["points"] == {"cost": D("39.76")}
+    assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score.total'").fetchone()[0] == 2
+
+
+async def test_each_round_earns_its_reported_points_and_the_hidden_change_of_the_total(conn):
+    def me(total, *rows):
+        requests = [{"round_no": n, "verdict": v, "reason": None, "sent_at": T0, "points": p, "total": None,
+                     "cost_pending": v == "accepted" and not p.get("cost")} for n, v, p in rows]  # fmt: skip
+        return {"total": total, "rank": 6, "scores_revealed": False, "requests": requests}
+
+    one = (1, "accepted", {"cost": 39.76, "tracking": 10.0})
+    ctx = Context(settings(), conn, None, None, None, Board(
+        me("109.76", one),
+        me("166.26", one, (2, "accepted", {})),  # round 2 scores 56.50 accuracy + time
+        me("176.26", one, (2, "accepted", {"tracking": 10.0}), (3, "rejected", {})),  # tracking of 2, 3 rejected
+    ))  # fmt: skip
+    for _ in range(3):
+        await feedback.once(ctx)
+
+    rounds = {r["round"]: r for r in quotes.scored_rounds(ctx)}
+    assert rounds[1]["hidden"] is None and rounds[1]["earned"] is None  # before our first poll: unknown
+    assert (rounds[2]["hidden"], rounds[2]["earned"], rounds[2]["hidden_derived"]) == (D("56.50"), D("66.50"), True)
+    assert (rounds[3]["hidden"], rounds[3]["earned"]) == (0, 0)
+    s = quotes.stats(ctx)
+    assert (s["points_total"], s["points_reported"], s["points_unreported"]) == (D("176.26"), D("59.76"), D("116.50"))
+    assert (s["rank"], s["revealed"], s["rounds_unknown"], s["cost_pending"]) == (6, False, 1, 1)
+    assert s["points"] == {"cost": D("39.76"), "tracking": D("20.0")}

@@ -1,6 +1,8 @@
+import json
 import re
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from test_extract import DEADLINE, captured
@@ -71,8 +73,10 @@ def test_reply_subject_name_and_signer():
     subject, body = compose.render(rfq("en"), OPTION, prose, "Machine parts to BBB", SIGNER)
     assert subject == "Re: Machine parts to BBB"
     # The model's opening stands on a line of its own, below the greeting (R31).
-    assert body.startswith(compose.greeting("en", "Anna", 1) + "\n\nHappy to help get the machine parts")
-    # No stock closing line; the signature, then one P.S. (R31).
+    assert body.startswith(
+        compose.greeting("en", "Anna", 1) + "\n\nHappy to help get the machine parts moving quickly."
+    )
+    # The mail ends on the booking sentence and the signature: no stock closing line (R31).
     assert "Have a good day" not in body and f"Best wishes,\nLena\n{compose.COMPANY}\n\nP.S. " in body
     assert compose.reply_subject("AW: Anfrage") == "AW: Anfrage" and compose.reply_subject("") is None
 
@@ -105,9 +109,11 @@ def test_bad_slot_is_dropped(slot, text, language):
 
 
 def test_good_slots_pass_and_the_name_must_be_in_the_mail():
-    raw = {"first_name": "Anna", "intro": "Thanks for the details on the machine parts, we will keep it quick.",
+    raw = {"first_name": "Anna", "hook": "we are in a hurry", "intro": "Understood, I kept speed first on this one.",
            "closing": "Have a good afternoon."}  # fmt: skip
-    assert compose.clean(raw, rfq("en"), message(), SIGNER) == compose.Prose(**raw)
+    assert compose.clean(raw, rfq("en"), message(), SIGNER) == compose.Prose(
+        first_name="Anna", intro=raw["intro"], closing=raw["closing"]
+    )
     assert compose.clean({"first_name": "Maria"}, rfq("en"), message(), SIGNER).first_name is None
     assert compose.clean({"first_name": "Lena"}, rfq("en"), message("Thanks, Lena"), SIGNER).first_name is None
 
@@ -123,13 +129,13 @@ async def test_prose_is_stored_for_the_fallback(ctx, monkeypatch):
 
     async def fake_ask(ctx, **kw):
         calls.append(kw)
-        return LlmResult(data={"first_name": "Anna", "intro": "Happy to keep your machine parts moving fast.",
-                               "closing": "Your 3 boxes are safe with us."},
+        return LlmResult(data={"first_name": "Anna", "hook": "we are in a hurry", "closing": "Your 3 boxes are safe.",
+                               "intro": "Understood, I kept speed first on this one."},
                          model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))  # fmt: skip
 
     monkeypatch.setattr(llm, "ask_json", fake_ask)
     prose = await compose.prose(ctx, rfq("en"), message())
-    assert prose == compose.Prose(first_name="Anna", intro="Happy to keep your machine parts moving fast.")
+    assert prose == compose.Prose(first_name="Anna", intro="Understood, I kept speed first on this one.")
     assert compose.stored(ctx, 1) == prose
     assert calls[0]["purpose"] == "quote.prose" and calls[0]["max_output_tokens"] == 150
     assert compose.customer_subject(ctx, 1) == "Machine parts to BBB"
@@ -247,18 +253,52 @@ def test_the_customers_own_closing_is_answered_in_kind():
     )
     _, body = compose.render(rfq("en"), OPTION, request=request)
     assert "Have a lovely day too!\n\nBest regards to Exampletown,\nLena\n" in body
-    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 7
+    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 6
     assert body.count("1234.57 EUR") == 1 and compose.check(body, rfq("en"), OPTION)
     german = "Guten Tag,\n\nbitte um ein Angebot.\n\nEin schönes Wochenende und Grüße aus Exampletown\nAnna Muster"
     _, body = compose.render(rfq("de"), OPTION, request=german)
     assert "Ihnen auch ein schönes Wochenende!\n\nViele Grüße nach Exampletown\nLena\n" in body
 
 
-def test_an_opening_that_repeats_the_mail_back_is_dropped():
-    echo = "I've noted that the delivery to the airport is arranged by you."
-    two = "Thanks for the machine parts request. We will take good care of it."
-    for intro in (echo, two):
-        assert compose.clean({"intro": intro}, rfq("en"), message(), SIGNER).intro is None
+OPENINGS = json.loads((Path(__file__).parent / "fixtures" / "openings.json").read_text())
+
+
+@pytest.mark.parametrize("case", [c for c in OPENINGS if c["sent"]], ids=lambda c: str(c["session"]))
+def test_no_opening_we_sent_live_would_pass_again(case):
+    """Rounds 1 to 25: every opening that went out thanked for the request or recited the mail. None is better."""
+    assert not compose._sentence_ok(case["sent"], "intro", "en", set())
+
+
+def test_the_opening_answers_a_phrase_from_the_mail_without_its_names_and_varies_per_customer():
+    raw = {"hook": "we are in a hurry", "intro": "Understood, I kept speed first on this one."}
+    assert compose.clean(raw, rfq("en"), message(), SIGNER).intro
+    assert not compose.clean({**raw, "hook": None}, rfq("en"), message(), SIGNER).intro
+    assert not compose.clean({**raw, "hook": "you need it by Friday"}, rfq("en"), message(), SIGNER).intro
+    small_talk = message("Hope your week's going well! Please quote AAA-BBB.\n\nAnna")
+    raw_talk = {"hook": "Hope your week's going well", "intro": "Yes, a good week so far."}
+    assert not compose.clean(raw_talk, rfq("en"), small_talk, SIGNER).intro
+    named = {"hook": "we are in a hurry", "intro": "Understood Anna, I kept speed first."}
+    assert not compose.clean(named, rfq("en"), message(), SIGNER).intro
+    earlier = ("Understood, I will keep it moving.",)
+    assert not compose.clean(raw, rfq("en"), message(), SIGNER, earlier=earlier).intro
+
+
+async def test_the_model_sees_the_openings_this_customer_already_got(ctx, monkeypatch):
+    calls = []
+
+    async def fake_ask(ctx, **kw):
+        calls.append(kw)
+        return LlmResult(data={"first_name": None, "hook": "we are in a hurry", "closing": None,
+                               "intro": "Understood, I kept speed first on this one."},
+                         model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))  # fmt: skip
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask)
+    for session in (1, 2):
+        ctx.db.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (?, 'buyer@example.com', "
+                       "'new', 't')", (session,))  # fmt: skip
+    assert (await compose.prose(ctx, rfq("en", 1), message())).intro
+    assert not (await compose.prose(ctx, rfq("en", 2), message())).intro
+    assert "Understood, I kept speed first on this one." in calls[1]["user"]
 
 
 def test_two_sessions_do_not_read_alike():
@@ -274,7 +314,7 @@ def test_an_english_request_from_a_german_town_is_answered_in_english_throughout
     assert request.language == "en"
     _, body = compose.render(request, OPTION, request=mail.body)
     body = dangerous.with_note(body, "UN1950, Class 2.1", compose.language_of(request), "packing-spec.pdf")
-    assert body.startswith(("Hi Sara", "Hello Sara")) and "shipper's declaration" in body
+    assert body.startswith(compose.greeting("en", "Sara", request.session_id)) and "shipper's declaration" in body
     assert not re.search(r"Guten Tag|Laufzeit|Grüße|Angebot|Gefahrgut", body)
     german = dangerous.with_note(compose.render(rfq("de"), OPTION)[1], "UN1950", "de", "x.pdf")
     assert "Gefahrgut" in german and "One point before we book" not in german and "bei 3 Tage" not in german
@@ -286,27 +326,6 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
     mail = captured("rfq-door-quoted-old-request.json")
     _, body = compose.render(rfq("en"), OPTION, request=mail.body)
     assert body.startswith(compose.greeting("en", "Petra", 1)) and "Best wishes," in body
-
-
-@pytest.mark.parametrize(
-    ("line", "goods"),
-    [
-        ("It’s 12 pieces of printed marketing material, 676 kg gross and 5.79 cbm.", "printed marketing material"),
-        ("The shipment will be ready on 2026-11-25. It is 1 piece of machine parts, with 40 kg.", "machine parts"),
-        ("quote the cheapest option to BBB (Example City, XX) for automotive sensors?", "automotive sensors"),
-        ("- Commodity: maintenance spray cans, 4 pieces", "maintenance spray cans"),
-        ("Our buyer is importing some control units from us in Germany.", "control units"),
-        ("The sports equipment will be ready for pickup on 2026-12-02: 11 pieces", "sports equipment"),
-        ("The cargo is electronic control units, packed in 5 pieces, with 1403 kg.", "electronic control units"),
-        ("The shipment will be ready on 2026-11-25: 4 cartons, each 48 kg gross.", None),
-        ("Please send both lots together for this import shipment to BBB.", None),
-    ],
-)
-def test_the_goods_are_named_in_the_customers_own_words(line, goods):
-    assert compose.goods_of(line) == goods
-    _, body = compose.render(rfq("en"), OPTION, request=f"Hello,\n\n{line}\n\nAnna")
-    opening = body.split("\n\n")[1]
-    assert re.search(rf"the {goods}\b", opening) if goods else ("the shipment" not in body)
 
 
 def test_the_earliest_departure_is_answered_only_when_asked():
@@ -331,4 +350,6 @@ def test_the_customers_small_talk_is_answered_before_the_price(opening, answered
     _, body = compose.render(rfq("en"), OPTION, request=f"Hi there,\n\n{opening}\n\nCheers,\nKlaus")
     paragraph = body.split("\n\n")[1]
     assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]) == answered
+    assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
+    assert ("thank" in paragraph.lower()) == answered  # the opening no longer thanks: the small-talk answer does
     assert body.count("1234.57 EUR") == 1

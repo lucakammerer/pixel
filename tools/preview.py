@@ -346,8 +346,9 @@ def build(path: Path, *, reseed: bool, count: int, seed: int) -> tuple[Context, 
     if path.resolve() == Path(settings().db_path).resolve():
         raise SystemExit(f"refusing to write synthetic data into the configured database {path}")
     if reseed:
-        for p in path.parent.glob(path.name + "*"):
-            p.unlink()
+        # The database and its own journal files only: a prefix glob ("data/pixel") took the live database too.
+        for p in (path, *(path.with_name(path.name + end) for end in ("-wal", "-shm", "-journal"))):
+            p.unlink(missing_ok=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = db.connect(str(path))
     db.init(conn)

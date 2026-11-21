@@ -196,7 +196,7 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     monkeypatch.setattr(llm, "ask_json", model)
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
-    request = mail("c@x", "Please quote AAA-BBB, 100 kg.", session_id=1)
+    request = mail("c@x", "Please quote AAA-BBB, 100 kg, 0.3 cbm.", session_id=1)
     started = datetime.now(UTC)
 
     quote = await agent.handle(ctx, request, deadline(30))
@@ -257,7 +257,7 @@ async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeyp
     async def model(ctx, **kw):
         calls.append(kw["purpose"])
         events.emit(ctx, "llm.call", "llm", session_id=kw["session_id"], payload={}, cost_usd=D("0.0001"))
-        data = {"origin": "AAA", "destination": "BBB", "weight_kg": "100", "volume_cbm": None, "pieces": None,
+        data = {"origin": "AAA", "destination": "BBB", "weight_kg": "100", "volume_cbm": "0.3", "pieces": None,
                 "preference": "cheapest", "door_pickup": False, "pickup_postcode": None, "currency": None,
                 "language": "en", "first_name": "Tom", "intro": intro, "closing": "Call me for 2 minutes."}  # fmt: skip
         return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D("0.0001"))
@@ -268,15 +268,17 @@ async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeyp
     monkeypatch.setattr(llm, "ask_json", model)
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
-    request = mail("c@x", "Some spare parts from our usual airport to the other one, about a hundred kilos.\n\nTom")
+    request = mail("c@x", "Some spare parts from our usual airport to the other one, a hundred kilos, 0.3 cbm.\n\nTom")
 
     quote = await agent.handle(ctx, request, deadline(30))
     assert calls == ["rfq.extract"] and quote.llm_calls == 1
-    assert quote.body.startswith(compose.greeting("en", "Tom", 1) + f"\n\n{intro}") and "2 minutes" not in quote.body
+    # the extraction's opening names no phrase of the mail it answers (`hook`), so the quote opens with the price
+    assert quote.body.startswith(compose.greeting("en", "Tom", 1) + "\n\n") and intro not in quote.body
+    assert "2 minutes" not in quote.body
     assert "260.00 EUR" in quote.body
 
     backup = await agent.fallback(ctx, 1)
-    assert intro in backup.body and len(calls) == 1
+    assert backup.body.startswith(compose.greeting("en", "Tom", 1)) and len(calls) == 1
 
 
 async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
@@ -298,7 +300,7 @@ async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
     started = datetime.now(UTC)
-    quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg."), deadline(30))
+    quote = await agent.handle(ctx, mail("c@x", "Please quote AAA-BBB, 100 kg, 0.3 cbm."), deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 2
     assert quote.body.startswith("Hi there!\n\n") and "260.00 EUR" in quote.body
 
@@ -342,3 +344,11 @@ async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monk
 )
 def test_a_flat_bid_in_other_words_keeps_its_price_and_transit(text, price, days):
     assert bids._price(text, rfq()) == (price, "EUR") and bids._days(text) == days
+
+
+@pytest.mark.parametrize(
+    "text, hours",
+    [("Pickup time: 10.5 hours", 11), ("Abholung in 4,5 Stunden", 5), ("Ready at 09:00 h, pickup time 18 hours", 18)],
+)
+def test_pickup_hours_read_a_decimal_and_skip_a_clock_time(text, hours):
+    assert bids._pickup_hours(text) == hours  # 10.5 read as 5 and 09:00 h as 0 pick the wrong trucker

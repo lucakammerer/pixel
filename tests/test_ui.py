@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal as D
 
 import pytest
 from fastapi import FastAPI
@@ -79,8 +80,20 @@ def test_takeover_edit_send_release(client, pipe):
     page = client.get("/sessions/2").text
     assert "Draft text" in page and "Release to autopilot" in page
 
-    client.post("/sessions/2/send", data={"to": "ops@globex.example", "subject": "Your quote", "body": "Kestrel Airways, 3 days, EUR 370.74 all-in."})
-    assert pipe.sent[-1] == {"to": "ops@globex.example", "subject": "Your quote", "body": "Kestrel Airways, 3 days, EUR 370.74 all-in.", "purpose": "quote"}
+    client.post(
+        "/sessions/2/send",
+        data={
+            "to": "ops@globex.example",
+            "subject": "Your quote",
+            "body": "Kestrel Airways, 3 days, EUR 370.74 all-in.",
+        },
+    )
+    assert pipe.sent[-1] == {
+        "to": "ops@globex.example",
+        "subject": "Your quote",
+        "body": "Kestrel Airways, 3 days, EUR 370.74 all-in.",
+        "purpose": "quote",
+    }
     assert quotes.for_session(pipe.ctx, 2).status == QuoteStatus.SENT
     assert "Draft text" not in client.get("/sessions/2").text
 
@@ -91,9 +104,30 @@ def test_takeover_edit_send_release(client, pipe):
     assert kinds == ["human.takeover", "human.note", "human.release"]
 
 
-def test_dashboard_renders(client):
+def test_dashboard_renders(client, pipe):
+    pipe.emit(pipe.ctx, "score.total", "board", payload={"total": "876.54", "rank": 6, "revealed": False})
+    pipe.emit(pipe.ctx, "score", "board", payload={"round": 1, "verdict": "accepted", "points": {"cost": 39.76}})
+    pipe.emit(
+        pipe.ctx, "score", "board", payload={"round": 2, "verdict": "accepted", "points": {}, "cost_pending": True}
+    )
+    pipe.emit(pipe.ctx, "feedback", "board", payload={"round": 1, "verdict": "accepted", "hidden": "57.10"})
     page = client.get("/dashboard").text
     assert "Spend per accepted quote" in page and "Median response" in page
+    assert "876.54" in page and "rank 6" in page
+    assert "39.76" in page and "57.10" in page and "96.86" in page  # round 1: cost + accuracy and time
+    assert "836.78" in page  # accuracy + time: team total less the reported cost
+    assert "next hour" in page and "hidden" in page  # round 2: cost due, accuracy and time not derivable
+
+
+def test_dashboard_orders_rounds_by_number_after_score_updates(client, pipe):
+    for round_no, verdict in [(23, "accepted"), (9, "accepted"), ("21", "accepted"), ("9", "rejected")]:
+        pipe.emit(pipe.ctx, "score", "feedback", payload={"round": round_no, "verdict": verdict})
+
+    page = client.get("/dashboard").text
+    assert page.index("<tr><td class=num>23</td>") < page.index("<tr><td class=num>21</td>")
+    assert page.index("<tr><td class=num>21</td>") < page.index("<tr><td class=num>9</td>")
+    assert page.count("<tr><td class=num>9</td>") == 1
+    assert "1 rejected" in page
 
 
 def test_crm_lists_customers_quotes_and_shipments(client):
@@ -114,3 +148,28 @@ def test_customer_profile_shows_requests_and_shipments(client):
     assert "Air freight request 1" in page and "BK-AB12CD34" in page and "FRA → JFK" in page
     assert "Air freight request 2" not in page
     assert client.get("/crm/customers/nobody@example.com").status_code == 404
+
+
+def test_dashboard_keeps_tracking_apart_from_the_quote_and_estimates_cost_still_due(client, pipe):
+    hour = "2026-11-20T03:"
+    pipe.emit(pipe.ctx, "score.total", "board", payload={"total": "239.47", "rank": 6, "revealed": False})
+    for n in (21, 22):
+        pipe.emit(pipe.ctx, "score", "board", payload={
+            "round": n, "verdict": "accepted", "sent_at": f"{hour}0{n - 20}:00+00:00", "cost_pending": True,
+            "points": {"accuracy": 45.0, "time": 15.0, "booking": 0.0, "tracking": 10.0}, "total": 70.0})  # fmt: skip
+    pipe.emit(pipe.ctx, "score", "board", payload={
+        "round": 19, "verdict": "accepted", "sent_at": "2026-11-21T16:50:00+00:00",
+        "points": {"accuracy": 45.0, "time": 15.0, "cost": 39.47, "tracking": 0.0}, "total": 99.47})  # fmt: skip
+    pipe.ctx.db.execute(  # 0.004 USD for two accepted quotes in the 03:00 hour: 40 × (1 − 0.002 / 0.10) = 39.20
+        "INSERT INTO events (ts, kind, actor, payload, cost_usd) VALUES (?, 'llm.call', 'llm', '{}', '0.004')",
+        (f"{hour}05:00+00:00",),
+    )
+    rounds = {r["round"]: r for r in quotes.scored_rounds(pipe.ctx)}
+    assert (rounds[21]["quote"], rounds[21]["after"], rounds[21]["earned"]) == (60, 10, 70)
+    assert rounds[21]["cost_estimate"] == D("39.20") and rounds[19]["cost_estimate"] is None
+    assert rounds[19]["quote"] == D("99.47") and rounds[19]["after"] == 0
+    s = quotes.stats(pipe.ctx)
+    assert (s["points_quote"], s["points_after"], s["cost_estimate"]) == (D("219.47"), 20, D("78.40"))
+    assert s["points_projected"] == D("317.87")
+    page = client.get("/dashboard").text
+    assert "Tracking + booking" in page and "After the quote" in page and "≈ 39.20" in page and "317.87" in page

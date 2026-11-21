@@ -48,20 +48,47 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
-  customer (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and the jury picks the
-  mail that reads most human. "Hi Anna!" by the first name they signed with (the model's slot, else `signed_name` by
-  rule); a thank-you on a line of its own (the model's, else one naming the goods in the customer's own words,
-  `goods_of`); the offer with an opinion ("I'd go with …", "Good news: …"): total and currency, carrier, transit, what
-  is included, a short line ("Simple as that."), the chargeable weight only when it is above the gross weight; the
-  validity on our desk's clock ("until 17:22 today") with the booking line; the signature by first name
+  customer, formal or not (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
+  the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
+  model's slot, else `signed_name` by rule); the model's opening on a line of its own when it passed, else none (no
+  stock opening); the offer with an opinion ("I'd go with …", "Good news: …"): total and currency, carrier, transit,
+  what is included, a short line ("Simple as that."), the chargeable weight only when it is above the gross weight;
+  the validity on our desk's clock ("until 17:22 today") with the booking line; the signature by first name
   (`signature`) and a P.S. that only says what we do anyway. At most three smileys, none twice (`_one_each`).
-  "Hope your week's going well" is answered first (`WELL`); `in_kind` answers the customer's own closing: a wish
-  for the day is returned, and the sign-off goes to the town they greet from, or reads "Cheers" or "Viele Grüße"
-  when theirs does. Code formats every number and name; two to three phrasings per sentence, picked by session, so
-  two quotes do not read alike. `check` proves the finished mail holds the total exactly once with its currency,
-  carrier and transit; on failure the mail is rendered without the model's slots (R9, P1).
-  Booking and confirmation mails use the quote's greeting (`compose.greeting`), signature (`compose.signature`) and
-  signer; the booking mail ends on a thank-you (`booking.THANKS`).
+  "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `sign_off` answers
+  the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off goes to the town they
+  greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, "Best wishes". Code formats every
+  number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
+  proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
+  is rendered without the model's slots (R9, P1).
+- `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
+  own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
+  transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
+  when they ask for the earliest departure, one air
+  waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
+- `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
+  `closing`, on `PIXEL_MODEL_PROSE` when set, plus `hook`: the phrase of the customer's mail the opening answers (a
+  friendly remark, an attachment, their buyer, the reason for the request), or null, and then no opening. It also
+  sees the openings this customer already got (`_history`, `notes`). `_opening_ok` keeps the opening only when the
+  hook stands in the mail and is not the small talk `WELL` answers, it has at most `WORDS_MAX` words, no capitalised
+  word of the mail (a name or place), and its first two words differ from every earlier opening to this customer;
+  `ECHO` drops fillers and echoes ("thank you for your request", "inquiry", "regarding", "I've noted", "here is",
+  "cheapest", "pickup", announcing the offer) and a second sentence. A dropped opening is stored in `quote.prose`
+  as `rejected`; `tests/fixtures/openings.json` holds every live request with the opening we sent. The
+  extraction's slots (model path) carry no hook, so those quotes open with the price. The closing slot is no
+  longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a
+  currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German
+  `du`, or is too long; the first name must stand in the customer's mail. The checked slots are stored as
+  `quote.prose`, so the fallback quote and the booking mails use them too.
+- `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
+  Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
+  A delivered offer can be booked even when it went out through the deadline fallback.
+- `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
+  the selected billed weight. A 503 or an option without a rate id goes to the airline by mail. The carrier
+  receives the air purchase price. The customer's booking notice states the accepted quote total, including
+  any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
+  Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
+  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`).
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
@@ -101,10 +128,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - "Pickup from our warehouse" can name no place (rounds 15 to 18 lost). The customer holds the fact back and gives
   it when asked: asked after round 18, Lindqvist answered "51115 Bergisch Gladbach" within 10 s. `extract.py`
   `_town_zone` takes a town on the line that describes the pickup. Otherwise `_ask` sends one short question in the
-  thread for exactly the facts `_unknown` lists (pickup place, origin, destination, weight), never a price, and the
+  thread for exactly the facts `_unknown` lists (pickup place, origin, destination, weight, volume: without one
+  the chargeable weight is the gross weight, too low for bulky goods), never a price, and the
   request is read again with the answer (a town alone maps to its zone). No answer 60 s after the request: the
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
   (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
+- Dimensions in inches ("5 skids 48x40x50 in") were read as centimetres: 0.1 cbm instead of 7.9. A unit of in, inch
+  or inches is converted by code ("in" only before punctuation or the line end: "120x80x150 in total" is cm); no
+  unit is centimetres. Skids, crates, drums, cases, Packstücke and Kisten count
+  as pieces.
 - "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
   weight in kg, the kg wins.
 - A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the
@@ -163,6 +195,18 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   error each give the plain mail, never an exception on the quote or the fallback path.
 - A reasoning model spends its output tokens on reasoning and can return empty slots: set `PIXEL_MODEL_PROSE` to a
   fast non-reasoning model.
+- A labelled field reads the other way round from a sentence: "Service: express", not "express service". A number
+  can use a space for thousands ("1 250 kg"). `tests/fixtures/rfqs/rewrites.jsonl` holds such phrasings; a row with
+  `known_gap` is one the rules read wrong today.
+- A carrier's answer can name the offer's validity in days next to the transit time ("valid for 7 days, transit 3
+  days"); the first number of days is not always the transit. `tests/fixtures/mails/bid_probes.jsonl` holds such
+  answers.
+- The rules' preference and currency are final: no model checks them when the rules read a request.
+  `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
+  separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as
+  strict xfails: speed without a superlative or "urgent" ("next flight out", "shortest transit",
+  "time-sensitive", "AOG", "Express please") reads as cheapest; a currency in words, as a symbol, as "Price:
+  USD" or beside a second currency reads as none and is quoted in EUR.
 
 ## Open
 

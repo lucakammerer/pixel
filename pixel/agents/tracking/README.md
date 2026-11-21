@@ -23,11 +23,15 @@ precedence over a matching zone from a quote whose postcode was missing. Exact w
 rounded matches within 1 kg or 1%, whichever is greater.
 
 With one match, `answer` gives the route, weight, booking status, airline and available reference and transit
-details. The route names the pickup postcode the question asks about, where ours was filled in from an earlier site.
+details. A door-to-port route names the town of the pickup the question asks about (its zone's area in
+`pickup_zones`), where ours was filled in from an earlier site; never a postcode or the customer's address.
 The answer greets the asker by the name they signed with and signs off as the quote did (`compose.in_kind`): to the
 town they greet from, or with their own "Viele Grüße" or "Cheers".
-`details` uses the ready date to calculate the arrival when that date is available. The record beneath
-the prose preserves the fields used by the tracking scorer. If there are several plausible shipments or none,
+`details` uses the ready date to calculate the arrival when that date is available. `VARIANT` picks the answer:
+`scored` (prose, then the record block with the customer's address), `a` (without the address, the pickup by town),
+`b` (the block's facts in the prose, no block), `c` (`b` without its filler sentences). One variant per booked round, measured by the +10 on the board;
+going back is that one line. Every variant carries our reference, the airline's, the airline, "booked and ready to
+ship", transit days, lane and weight. If there are several plausible shipments or none,
 the reply asks for a booking reference and includes no shipment records. The reply goes through the outbox
 in the inbound thread and uses no gateway call.
 

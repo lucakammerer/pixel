@@ -336,3 +336,56 @@ def test_an_acceptance_that_names_a_decline_word_still_books(text):
 )
 def test_a_plain_acceptance_books(text):
     assert booking.intent(text) == "accept"  # since #76 each was "other": no booking, no tracking bonus
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Thank you for your offer, but we have decided not to go ahead.",
+        "We are not going to go ahead with this.",
+        "Thanks, but we'd prefer not to book it.",
+        "No need to book it.",
+        "Bitte buchen Sie nicht.",
+        "Bitte noch nichts buchen.",
+        "Wir sind nicht einverstanden.",
+        "Wir haben den Auftrag anderweitig vergeben.",
+        "This is not what we agreed.",
+        "As agreed, please hold the shipment until further notice.",
+        "We decided to go ahead with a competitor.",
+        "Please go ahead once we confirm pickup.",
+        "Bitte buchen Sie erst nach Freigabe.",
+    ],
+)
+def test_a_negated_or_held_acceptance_never_books(text):
+    assert booking.intent(text) != "accept"  # rounds 9, 10 and 15 were booked on a decline
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Not too expensive, please book.",
+        "We would like to book.",
+        "We'd like to proceed with your offer.",
+        "Please book it and don't forget the AWB.",
+        "Sie können buchen.",
+        "Angebot angenommen.",
+    ],
+)
+def test_more_plain_acceptances_book(text):
+    assert booking.intent(text) == "accept"
+
+
+async def test_an_acceptance_written_below_the_quoted_mail_books(pipe):
+    quotes.save(pipe.ctx, quote(1))
+    pipe.ctx.portal = Portal(None)
+    body = "> If that works for you, just reply and I'll book it right away.\n> Lena\n\nPlease book it.\n\nSara"
+    await booking.handle_reply(pipe.ctx, mail(21, 1, subject="Re: Your quote", body=body))
+    assert pipe.ctx.portal.calls, kinds(pipe.ctx)
+
+
+async def test_a_decline_word_after_the_booking_keeps_the_quote_accepted(pipe, accepted):
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    body = "Thanks! Please cancel our pickup slot request with your colleague."
+    await booking.handle_reply(pipe.ctx, mail(22, 1, subject="Re: Booked", body=body))
+    assert quotes.get(pipe.ctx, "Q-1").status == QuoteStatus.ACCEPTED

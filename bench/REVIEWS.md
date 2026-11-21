@@ -5,6 +5,29 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #117 | lucakammerer | 9ca8e7f | ok | second reviewer's ledger |
+| #116 | lucakammerer | e9630bd | ok, a measured bet | tracking variant a drops the address line; roll back after the first answer without +10 |
+| #115 | lucakammerer | f798435 | ok | asks for a missing volume too; no live request lacked one; Q9 caveat as #86 |
+| #113 | lucakammerer | 40f03be | ok (second reviewer's area) | takes effect only once `/opt/pixel/cd/cd.sh` is installed by hand |
+| #112 | lucakammerer | d9056e6 | ok | closes #107's finding: root runs only hand-installed files (checked on the host) |
+| #111 | lucakammerer | 2e771c1 | ok | formal greeting with the whole signed name |
+| #110 | TripleCF | e9de807 | ok | dashboard shows the scorer's total; a missing total no longer reads as 0 |
+| #109 | lucakammerer | 1f71ea6 | ok (second reviewer's area) | negated acceptances never book; all 17 acceptances of #87 still book |
+| #107 | lucakammerer | 3ecb7f9 | needs follow-up (deploy thread) | a merged cd.sh runs as root untested; every merge is live within a round |
+| #106 | lucakammerer | 1feb72c | ok | two more stiff openers rejected; one-sentence rule kept |
+| #105 | lucakammerer | ba16727 | ok (second reviewer's area) | company token inside a longer word; three-letter tokens can match unrelated words |
+| #103 | lucakammerer | review/currency-from-99 | own | currency part of #99; exchange rate only from the request's own options |
+| #102 | lucakammerer | 97217eb | ok | bench notes only |
+| #101 | TripleCF | 8986943 | ok | score rows sorted by round as a number; read-only |
+| #100 | lucakammerer | a43c003 | ok | wording only |
+| #99 | maxihuang123-svg | eb02390 | currency merged (#103), voice needs author | a stale exchange rate from another session; voice reverses the voice thread's choices |
+| #98 | lucakammerer | 7f563e0 | ok (second reviewer's area) | pickup postcode from the customer's answer |
+| #97 | lucakammerer | review/inches-only-as-unit | own | "120x80x150 in total" read as inches: 70.8 cbm instead of 4.32 (#95) |
+| #95 | lucakammerer | c819a1d | fixed (#97) | bare "in" before a word taken as inches |
+| #94 | Konstantin-mody | 49cca71 | ok, merged | pre-send check only observes; BLOCK alerts (offline: air-only door quotes only) |
+| #93 | lucakammerer | a8898f5 | ok | tracking sign-off reuses `compose.in_kind`: one register reading |
+| #92 | lucakammerer | 6ed8188 | ok | wording only |
+| #91 | lucakammerer | 14136e8 | ok | consistent with #88: names the desk's postcode for a remembered site |
 | #86 | lucakammerer | 3190757 | ok, a bet | one question before the quote when the pickup place is missing: Q9 open, watch the first round it fires |
 | #84 | lucakammerer | ca6080f | ok | small talk answered in code; `compose.check` still guards the total |
 | #80 | lucakammerer | 5f7de3f | ok | bench notes only |
@@ -72,3 +95,22 @@ commit, or a later merge that touches the same function or rule, puts it back in
 | #21 | lucakammerer | f39d2ab | ok | follow-ups #22, #33/#37 |
 | #16 | lucakammerer | b86a121 | ok | alert carries no payload or key; no retry by design |
 | #14 | lucakammerer | — | ok, superseded | default rule replaced by #46 |
+
+## Second review
+
+One pass over how the changes merged up to #92 fit together, on main at 6ed8188 (21.11., 18:15 CET). Every
+captured request was replayed offline (`tools.kpi`): 8 answered at their pinned prices, none lost against main; the
+14 unanswered have no sheet price offline and are unchanged. All 14 live tracking questions of the day and all 61
+customer replies were replayed against the fixed code.
+
+| PRs | Verdict | The finding that mattered |
+| --- | --- | --- |
+| #86 | fixed (#98) | a model-read door request dropped the customer's answer ("it is 51115"): no origin, request lost; in the replay the request itself was read as the answer and the wait ran on wall time, so `tools.kpi` never saw the 60 s |
+| #86 | ok | the question goes out only for a missing place (6 warehouse fixtures, no other), once per session (outbox key and the `question` row), never claims the quote; the answer routes as `other`, also after the fallback; a request with its place waits not a second |
+| #86, #77, #52 | ok | one door request with no place: question at ~1 s, answer ~10 s or guess at 60 s, bids asked then and collected until max(target_at, ask + 45 s) ≈ 106 s, quote ≤ ~114 s with nominal truckers; without a trucker price it waits for one until hard_at (315 s) and sends air-only there; the orchestrator cancels the task at hard_at, so the fallback always leaves before expiry |
+| #59, #68, #76, #87 | fixed (#109, URGENT) | "we have decided not to go ahead", "Bitte buchen Sie nicht", "go ahead with a competitor", "once we confirm pickup" booked at the portal; "We would like to book", "Angebot angenommen" and a reply below the quote did not book; a decline word after the booking set a booked quote declined |
+| #46, #81, #59 | ok | `pickup_rule` cannot switch on one round (RULE_LEAD 2); `_pickup_hours` misreads "10.5 hours" as 5 and "09:00 h" as 0, latent: every captured trucker writes whole hours |
+| #63, #88, #91 | fixed (#105) | "Sonnberg Kaffeeroesterei" never matched sonnberg-roesterei, so any customer's same-lane shipment within 1% could be the answer; 14 of 14 live questions right before and after; no wait, no provisional answer, one answer per question |
+| #67 | ok | every GET only reads; take over, send and release work end to end; customer text escaped everywhere; pages cost ~20 ms at today's size |
+| #64, #78 | ok, superseded by the host CD | the window stays shut over the question, the bid wait and the fallback; the Mac job's rollback could not push an older commit, moot since `deploy/cd.sh` resets the checkout |
+| #107 | fixed (#113) | URGENT was read from the newest merge only: an URGENT fix with any merge on top waited a round; takes effect once `/opt/pixel/cd/cd.sh` is installed by hand |
