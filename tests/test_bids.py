@@ -607,3 +607,16 @@ async def test_a_model_total_the_text_does_not_state_for_the_shipment_never_wins
     await bids.record(ctx, mail("one@air", body))
     [found] = [o["option"] for o in kinds(ctx, "option.found")]
     assert found["total_eur"] == total_eur
+
+
+@pytest.mark.parametrize(
+    ("body", "total"),
+    [
+        ("We can collect your shipment (total 3 euro pallets) in 50978: 165.00 EUR, pickup within 4 hours.", "165.00"),
+        ("Pickup of 4 Euro pallets from 50978 to FRA: 210.00 EUR, collection within 5 hours.", "210.00"),
+        ("Our price for the 2 Euro-Paletten is 145.00 EUR, pickup in 3 hours.", "145.00"),
+    ],
+)
+def test_euro_pallets_are_no_price(body, total):
+    option = bids.parse(mail("t@x", body), rfq(), needs_transit=False)
+    assert option is not None and (option.total, option.currency) == (D(total), "EUR")
