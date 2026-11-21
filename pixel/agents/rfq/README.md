@@ -82,7 +82,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
-- "No pickup needed" contains the pickup word: it is no door pickup.
+- A pickup can be named by its town and no postcode ("from our warehouse in Augsburg"): `extract.py` `_town_zone`
+  takes the zone whose area the mail names, only when it names exactly one (a signature can name another town).
+- "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
+  not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
@@ -91,7 +94,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
 - A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0
   under-prices a light, bulky shipment.
-- "Not urgent" and "no rush" contain the urgency words: they mean cheapest.
+- "Not urgent", "no rush" and "price matters more than speed" contain the urgency words: they mean cheapest. A
+  superlative the customer wrote (fastest, cheapest) decides; without one, a hurry they describe ("as quickly as
+  possible", "time-critical", "speed matters more") means fastest. "Express" counts only as a service, not in a
+  company's name.
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.

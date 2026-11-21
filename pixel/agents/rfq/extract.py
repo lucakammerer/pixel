@@ -58,11 +58,16 @@ PIECES = re.compile(
     r"(\d+)\s*(?:pcs|pieces|pallets?|colli|packages|cartons|boxes|stück|stk|paletten|kartons)\b", re.IGNORECASE
 )
 NOT_URGENT = re.compile(
-    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile)\b",
+    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
+    r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger)\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(
-    r"\b(?:fastest|quickest|urgent\w*|asap|express|as soon as possible|schnellst\w*|eilig\w*|dringend\w*)\b",
+FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*)\b", re.IGNORECASE)
+CHEAPEST = re.compile(r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*)\b", re.IGNORECASE)
+HURRY = re.compile(
+    r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|as soon as possible|as (?:quickly|fast) "
+    r"as possible|quickly|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
+    r"|dringend\w*)\b",
     re.IGNORECASE,
 )
 DOOR = re.compile(
@@ -71,8 +76,9 @@ DOOR = re.compile(
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
-    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b|\bno\s+(?:pick[\s-]?up|collection)\b"
-    r"|\bkeine\s+abholung\b",
+    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b"
+    r"|\bno\s+(?:pick[\s-]?up|collection)\s+(?:is\s+)?(?:needed|required|necessary)\b"
+    r"|\bkeine\s+abholung\s+(?:nötig|notwendig|erforderlich)\b",
     re.IGNORECASE,
 )
 POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)
@@ -277,6 +283,16 @@ def _language(text: str) -> str:
     return "de" if sum(w in GERMAN for w in words) > sum(w in ENGLISH for w in words) else "en"
 
 
+def _preference(text: str) -> Preference:
+    """A superlative the customer wrote decides; without one, a hurry they describe means fastest."""
+    text = NOT_URGENT.sub("", text)
+    if FASTEST.search(text):
+        return Preference.FASTEST
+    if CHEAPEST.search(text) or not HURRY.search(text):
+        return Preference.CHEAPEST
+    return Preference.FASTEST
+
+
 def _text(message: Message) -> str:
     return f"{message.subject}\n\n{message.body}"
 
@@ -286,7 +302,7 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
     text = _text(message)
     lane = _lane(text)
     door, postcode = _pickup(text)
-    if lane is None and door and postcode and (destination := _destination_only(text)):
+    if lane is None and door and (destination := _destination_only(text)):
         lane = ("", destination)  # the origin is the pickup zone's airport, set in `extract`
     lots = _lots(text)
     pieces = lots[2] if lots else _pieces(text)
@@ -305,7 +321,7 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
         weight_kg=weight,
         volume_cbm=volume or Decimal(0),
         pieces=pieces,
-        preference=Preference.FASTEST if FASTEST.search(NOT_URGENT.sub("", text)) else Preference.CHEAPEST,
+        preference=_preference(text),
         door_pickup=door,
         pickup_postcode=postcode,
         pickup_zone=zone_of(postcode) if postcode else None,
@@ -400,6 +416,24 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     )
 
 
+def _plain(text: str) -> str:
+    return text.lower().translate(str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}))
+
+
+def _town_zone(ctx: Context, rfq: Rfq, text: str) -> Rfq:
+    """A pickup named by its town and no postcode ("from our warehouse in Augsburg"): the zone whose area it is."""
+    if not rfq.door_pickup or rfq.pickup_zone:
+        return rfq
+    plain = _plain(text)
+    areas = {_plain(r["area"]): r["zone"] for r in ctx.db.execute("SELECT zone, area FROM pickup_zones")}
+    named = {a for a in areas if re.search(rf"\b{re.escape(a)}\b", plain)}
+    zones = {areas[a] for a in named if not any(a != b and a in b for b in named)}  # "Munich" in "Munich South"
+    if len(zones) != 1:
+        return rfq
+    return rfq.model_copy(update={"pickup_zone": zones.pop(), "missing": tuple(m for m in rfq.missing
+                                                                               if m != "pickup_postcode")})  # fmt: skip
+
+
 def _zone_origin(ctx: Context, rfq: Rfq) -> Rfq:
     """A door-to-port request can name only the pickup address: the origin is then the zone's airport (R16), also
     when the origin read from the mail is an airport no pickup zone trucks to (a model's guess from the town)."""
@@ -437,8 +471,9 @@ async def dangerous_goods(ctx: Context, message: Message) -> tuple[str, str] | N
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     """by_rules, else one `llm.ask_json` call that also drafts the quote's prose slots (`prose.raw`, R31), so the
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
+    text = _text(message)
     rfq, prose = by_rules(message, deadline), None
-    if rfq is not None and not (rfq := _zone_origin(ctx, rfq)).origin:
+    if rfq is not None and not (rfq := _zone_origin(ctx, _town_zone(ctx, rfq, text))).origin:
         rfq = None
     if rfq is None:
         result = await llm.ask_json(
@@ -450,7 +485,7 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             session_id=message.session_id,
             max_output_tokens=500,
         )
-        rfq = _zone_origin(ctx, _from_model(result.data, message, deadline))
+        rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text))
         prose = {k: result.data.get(k) for k in PROSE}
     if dg := await dangerous_goods(ctx, message):
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).

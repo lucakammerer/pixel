@@ -47,7 +47,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`,
-  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`; `bench/RUNS.md`: our results per request;
+  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`; `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what

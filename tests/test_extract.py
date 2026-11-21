@@ -288,6 +288,14 @@ def test_no_pickup_needed_is_no_door_pickup():
     assert rfq.door_pickup is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["Pickup from our site in 61391, no pickup before 9:00 please.", "Abholung in 61391, keine Abholung am Freitag."],
+)
+def test_a_pickup_time_window_keeps_the_door_pickup(text):
+    assert extract._pickup(text) == (True, "61391")
+
+
 def lot(pieces, weight, per_piece=False, unit="kg", cbm=None, dims=None):
     return {"pieces": pieces, "weight": weight, "weight_unit": unit, "weight_per_piece": per_piece,
             "volume_cbm": cbm, "volume_per_piece": False, "dimensions": dims}  # fmt: skip
@@ -315,3 +323,45 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.missing) == (
         Decimal(expected[0]), Decimal(expected[1]), expected[2], ()
     )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "wish, fastest",
+    [
+        ("Speed matters more than price.", True),
+        ("Please ship it as quickly as possible.", True),
+        ("This is time-critical.", True),
+        ("Price matters more than speed, no rush.", False),
+        ("The cheapest option please, ideally urgent.", False),
+        ("Best regards, Nordwind Express GmbH", False),
+        ("Bitte so schnell wie möglich.", True),
+        ("", False),
+    ],
+)
+def test_the_wish_is_read_from_its_wording(wish, fastest):
+    rfq = extract.by_rules(mail(f"AAA to BBB, 300 kg, 1 cbm. {wish}"), DEADLINE)
+    assert (rfq.preference == Preference.FASTEST) is fastest
+
+
+async def test_a_pickup_named_by_its_town_takes_that_zone_and_its_airport(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "80", "area": "Munich", "airport": "AAA"},
+                           {"zone": "81", "area": "Munich South", "airport": "AAA"},
+                           {"zone": "86", "area": "Augsburg", "airport": "AAA"}])  # fmt: skip
+    body = "Please quote the cheapest option to BBB, 300 kg, 1 cbm. Pickup from our warehouse in Munich South."
+    rfq = await extract.extract(ctx, mail(body + "\nRegards, Anna"), DEADLINE)
+    assert (rfq.origin, rfq.pickup_zone, rfq.pickup_postcode, rfq.missing) == ("AAA", "81", None, ())
+
+
+async def test_a_pickup_town_beside_another_zone_town_is_not_guessed(conn, emitted):
+    message = captured("rfq-door-import-two-towns.json")  # "at our site in 24983 (Kiel)", "greetings from Regensburg"
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "24", "area": "Kiel", "airport": "AAA"},
+                           {"zone": "93", "area": "Regensburg", "airport": "CCC"}])  # fmt: skip
+    rfq = extract.by_rules(message.model_copy(update={"body": message.body.replace("24983 ", "")}), DEADLINE)
+    assert extract._town_zone(ctx, rfq, extract._text(message)).pickup_zone is None
+    assert (await extract.extract(ctx, message, DEADLINE)).origin == "AAA"

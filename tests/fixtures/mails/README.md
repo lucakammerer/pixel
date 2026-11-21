@@ -71,3 +71,6 @@ stores the mail without the file). The mail says "general cargo, non-dangerous";
 `rfq-import-no-pickup.json`: the buyer abroad imports, our customer delivers to the airport, "so there's no pickup
 needed". Quoted like any export from the named airport; accepted.
 
+`rfq-door-import-two-towns.json`: door-to-port from 24983 (Kiel), signed "Best greetings from Regensburg", another
+zone's town. Read by the postcode; without one, a pickup town is taken only when the mail names one zone's town.
+
