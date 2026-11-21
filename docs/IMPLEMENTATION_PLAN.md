@@ -95,7 +95,8 @@ customer_reply      accept → crm shipment → portal booking by rate_id → cu
 booking_confirmation  "Booking … confirmed" → shipment confirmed → customer told         booking.confirmed
 tracking_question   crm.shipments.find → answer in the thread          tracking.answered
 tariff              attachments → parse (code, else model) → check → store   tariff.ingested
-board feedback      tools/board_me.py every few minutes                score
+feedback            core/feedback.py every 10 s: points per request, the option the scorer's best price was,
+                    the balanced rule that fits; what needs repair goes to PIXEL_ALERT_URL        feedback
 ```
 
 ### 4.2 Modules

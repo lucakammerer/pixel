@@ -4,13 +4,21 @@
 moment its verdict appears. `explain` works back from the points to the scorer's best price and looks for it among
 the options the session had; the result is a `feedback` event in that session. For a door-to-port request it names
 the trucker the scorer took, and `pickup_rule` picks the balanced rule that agrees with those most often.
+
+What the service cannot correct itself goes out: `attention` lists what went wrong lately, `alert` calls
+PIXEL_ALERT_URL with it, once per kind of issue and deployed commit, so the same fault is reported again only
+after new code had its chance.
 """
 
 import asyncio
 import json
-from datetime import datetime
+import sqlite3
+import subprocess
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+
+import httpx
 
 from pixel.contracts import RateOption
 from pixel.core import db, events
@@ -23,6 +31,11 @@ FULL_S, EXPIRES_S = 120, 360  # R29
 ZERO_AT = Decimal("0.10")  # accuracy reaches 0 at this distance from the best price; fitted on scored requests
 FINAL = {"accepted", "rejected", "no answer"}
 STATE = "feedback.state"
+ALERTED = "feedback.alerted"
+ALERT_MINUTES = 15
+VERSION = subprocess.run(
+    ["git", "rev-parse", "--short", "HEAD"], check=False, capture_output=True, text=True
+).stdout.strip()
 
 
 def time_points(seconds: float) -> Decimal:
@@ -117,10 +130,60 @@ async def once(ctx: Context) -> int:
     return 0 if first else len(new)
 
 
+def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
+    """What went wrong in the last minutes, newest first: missed, rejected and point-losing requests, tracking
+    questions we matched to no shipment, customer replies left to a person, errors."""
+    since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
+    rows = conn.execute(
+        "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
+        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note') ORDER BY id DESC", (since,)
+    ).fetchall()  # fmt: skip
+    issues = []
+    for row in rows:
+        p, issue = json.loads(row["payload"]), None
+        if row["kind"] == "quote.missed":
+            issue = "missed"
+        elif row["kind"] == "feedback" and p.get("verdict") != "accepted":
+            issue = str(p.get("verdict")).replace(" ", "_")
+        elif row["kind"] == "feedback" and Decimal(str(p.get("lost") or 0)) >= 1:
+            issue = "lost_points"
+        elif row["kind"] == "tracking.answered" and not p.get("shipments"):
+            issue = "tracking_unmatched"
+        elif row["kind"] == "error" and p.get("where") != "alert":
+            issue = "error"
+        elif row["kind"] == "human.note" and p.get("note"):
+            issue = "reply_unhandled"
+        if issue:
+            issues.append({"issue": issue, "event": row["id"], "at": row["ts"][:19], "session": row["session_id"],
+                           "detail": p})  # fmt: skip
+    return issues
+
+
+async def alert(ctx: Context) -> int:
+    """Reports issues not yet reported for this commit. Returns how many kinds it reported."""
+    if not ctx.settings.alert_url:
+        return 0
+    sent = json.loads(db.get(ctx.db, ALERTED) or "{}")
+    new = {i["issue"]: i for i in reversed(attention(ctx.db, ALERT_MINUTES)) if f"{i['issue']}@{VERSION}" not in sent}
+    if not new:
+        return 0
+    sent.update({f"{issue}@{VERSION}": i["at"] for issue, i in new.items()})
+    db.put(ctx.db, ALERTED, json.dumps(sent))  # before the call: a hook that fails must not be called every poll
+    body = {"key": "pixel-repair", "version": VERSION,
+            "issues": [{"issue": i["issue"], "session": i["session"], "at": i["at"]} for i in new.values()]}  # fmt: skip
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            (await client.post(ctx.settings.alert_url, json=body)).raise_for_status()
+    except httpx.HTTPError as exc:
+        events.emit(ctx, "error", "board", payload={"where": "alert", "error": type(exc).__name__})
+    return len(new)
+
+
 async def run(ctx: Context) -> None:
     while True:
         try:
             await once(ctx)
+            await alert(ctx)
         except Exception as exc:  # noqa: BLE001  feedback must never take the service down
             events.emit(ctx, "error", "board", payload={"where": "feedback", "error": repr(exc)[:200]})
         await asyncio.sleep(POLL_S)
