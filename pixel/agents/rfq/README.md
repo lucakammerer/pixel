@@ -51,17 +51,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
-- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, in one personal voice for every
-  customer, formal or not (`TEXT[lang]["warm"]`, R31): every team's quote reads like the same clean template, and
-  the jury picks the mail that reads most human. "Hi Anna!" by the first name they signed with (`greeting`: the
-  model's slot, else `signed_name` by rule); the model's opening on a line of its own when it passed, else none (no
-  stock opening); the offer with an opinion ("I'd go with …", "Good news: …"): total and currency, carrier, transit,
-  what is included, a short line ("Simple as that."), the chargeable weight only when it is above the gross weight;
-  the validity on our desk's clock ("until 17:22 today") with the booking line; the signature by first name
-  (`signature`) and a P.S. that only says what we do anyway. At most three smileys, none twice (`_one_each`).
-  "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `sign_off` answers
-  the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off goes to the town they
-  greet from, or reads "Cheers" or "Viele Grüße" when theirs does; without one, "Best wishes". Code formats every
+- `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as a clerk writes to
+  this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
+  "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
+  by the name they signed with (the model's slot, else `signed_name` by rule). "Hope your week's going well" is
+  answered first (`WELL`), then the model's opening when it passed (no stock opening), then the offer: the goods in
+  the customer's words when the mail names them (`goods_of`, "For your machine parts, …"), total and currency,
+  carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
+  our desk's clock ("until 17:22 today") with the booking line; the signature with the signer's full name. No
+  filler line, smiley or P.S.: rounds 29 to 46 carried them to formal and casual mails alike and won no human
+  award. `sign_off` answers the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off
+  goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does. Code formats every
   number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
   proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
   is rendered without the model's slots (R9, P1).
