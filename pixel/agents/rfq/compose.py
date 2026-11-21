@@ -283,14 +283,13 @@ PROSE_SYSTEM = (
     "in the customer's tone (German: always formal Sie). "
     "first_name: the customer's first name only if they signed the mail with it, else null. "
     "hook: copied word for word from the customer's mail, the one phrase a person would react to before giving "
-    "the price: a friendly remark of theirs (thanks for checking, thanks for your help, something they attached, a "
-    "word about their buyer or their own business) or the reason they give for the request (it is urgent, it is "
+    "the price: a friendly remark of theirs (thanks for checking, thanks for your help, a word about their buyer or "
+    "their own business) or the reason they give for the request (it is urgent, it is "
     "an import for their buyer). Never 'hope your week is going well', a formal thank-you line, their sign-off or "
-    "their wish for the day, and never a plain fact such as goods, weight, pieces, route or a date. null when the "
+    "their wish for the day, and never a plain fact such as goods, weight, pieces, route, a date or a file they sent. null when the "
     "mail has none, which is common. "
     "intro: null when hook is null; else one short sentence, at most ten plain words, reacting to the hook the way "
-    "a colleague would, for example: thanks for checking -> no trouble at all; an attachment -> it helped; their "
-    "buyer is importing -> glad to help them get it there. Write your own words, never the hook's. Never announce "
+    "a colleague would, for example: thanks for checking -> no trouble at all; their buyer is importing -> glad to help them get it there. Write your own words, never the hook's. Never announce "
     "the offer, never thank them for the request, inquiry, mail or details, never say you noted, read, received or "
     "understood anything, and never begin the way one of the openings under Our notes begins. "
     "closing: always null. "
@@ -331,7 +330,9 @@ ECHO = re.compile(
     r"e-?mail|message|note|interest)|many thanks|cheapest|fastest|all-in|weight|volume|pick-?up|truck\w*|"
     r"deliver\w*|following|as requested|here is|here's|please find|as follows|previous|offer\w*|provide|options?|"
     r"rates?|prices?|quote|quotation|anfrage|bezüglich|sorgfältig|zur kenntnis|behilflich|günstigst\w*|"
-    r"schnellst\w*|abholung|gewicht|volumen|anbei|wie gewünscht|angebot)\b|[.!?]\s+\S",
+    r"schnellst\w*|abholung|gewicht|volumen|anbei|wie gewünscht|angebot|"
+    # we never say how we read their file: "The voice message was clear" went out unheard (round 65)
+    r"attach\w*|voice|record\w*|anhang|sprachnachricht|aufnahme)\b|[.!?]\s+\S",
     re.IGNORECASE,
 )
 CAPITAL = re.compile(r"\b[A-ZÄÖÜ][\wäöüß-]+")
@@ -416,8 +417,8 @@ GOODS = re.compile(
     r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
     r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
     r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
-    r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
-    r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
+    r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?:some |our )?(?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to | going )"
+    r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to | going )"
     r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
     r"|\b(?:cargo|goods|shipment) (?:is|are|consists? of) (?P<g>[a-z][a-z -]{2,40}?)(?=, packed|,? in \d| packed)"
     r"|\b[Ww]e(?:['’]re| are) (?:shipping|sending) (?P<h>[a-z][a-z -]{2,40}?)(?=[:,.]| with )"
