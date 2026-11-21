@@ -80,6 +80,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A customer's yes comes in many shapes ("Bitte buchen Sie.", "Please book it and send us the AWB once
+  available.", "Could you book it, please?"). `booking.py` `intent` takes an acceptance anywhere in a sentence that
+  is no condition and no question other than one asking us to book; a decline wins first. Read too strictly, a yes
+  goes to a person, nothing is booked and the tracking bonus is lost.
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
   name, register and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
