@@ -24,6 +24,8 @@ rounded matches within 1 kg or 1%, whichever is greater.
 
 With one match, `answer` gives the route, weight, booking status, airline and available reference and transit
 details. The route names the pickup postcode the question asks about, where ours was filled in from an earlier site.
+The answer greets the asker by the name they signed with and signs off as the quote did (`compose.in_kind`): to the
+town they greet from, or with their own "Viele Grüße" or "Cheers".
 `details` uses the ready date to calculate the arrival when that date is available. The record beneath
 the prose preserves the fields used by the tracking scorer. If there are several plausible shipments or none,
 the reply asks for a booking reference and includes no shipment records. The reply goes through the outbox

@@ -32,7 +32,8 @@ TEXT = {
             "Thank you for getting in touch.",
             "Many thanks for your request.",
         ),
-        "well_back": ("All good here, thanks for asking!", "Going well here, thanks!", "All well on our side, thanks!"),
+        # the opening line after it begins with a thank-you, so this one does not
+        "well_back": ("All good here, and I hope yours is too!", "Going well here!", "All well on our side!"),
         "intro_goods": (
             "Thanks for your request, happy to help with the {goods}.",
             "Thanks for the enquiry about the {goods}.",
@@ -154,7 +155,7 @@ TEXT = {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
         "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
-        "well_back": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
+        "well_back": ("Hier läuft alles gut, und ich hoffe, bei Ihnen auch.", "Bei uns ist alles bestens."),
         "intro": (
             "Vielen Dank für Ihre Anfrage, darum kümmere ich mich gerne.",
             "Danke für Ihre Anfrage.",
@@ -341,7 +342,7 @@ WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
 # The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
 GOODS = re.compile(
-    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from )"
+    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
     r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
     r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
     r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"

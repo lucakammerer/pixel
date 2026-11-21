@@ -78,6 +78,16 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the original register, name, sign-off and signer.
 
+- `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
+  the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
+  and the finished text. BLOCK: lane, arithmetic of the parts, chargeable weight, pickup present exactly when asked
+  for (round 15), the lots added up again (round 9), dangerous goods marked by `extract` without the papers
+  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers.
+  WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
+  implausible price per kg, the language, an expired rate. The check never holds or changes a quote; every result
+  is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
+  that raises becomes a WARN finding.
+
 ## Pitfalls
 
 - A customer's yes comes in many shapes ("Bitte buchen Sie.", "Please book it and send us the AWB once
@@ -110,6 +120,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   request is read again with the answer (a town alone maps to its zone). No answer 60 s after the request: the
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
   (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
+- Dimensions in inches ("5 skids 48x40x50 in") were read as centimetres: 0.1 cbm instead of 7.9. A unit of in, inch
+  or inches is converted by code ("in" only before punctuation or the line end: "120x80x150 in total" is cm); no
+  unit is centimetres. Skids, crates, drums, cases, Packstücke and Kisten count
+  as pieces.
 - "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
   weight in kg, the kg wins.
 - A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the

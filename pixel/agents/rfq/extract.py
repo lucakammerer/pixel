@@ -1,11 +1,11 @@
 import asyncio
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from pixel import llm
 from pixel.contracts import Message, Preference, Rfq
-from pixel.core import events, outbox
+from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import store
@@ -42,8 +42,18 @@ VOLUME = (
     re.compile(rf"(?i:\b(?:cbm|volume|volumen)(?:\s*\((?:cbm|m3|m³)\))?)\s*:?\s*{NUM}"),
 )
 DIMS = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\b", re.IGNORECASE
+    r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inch(?:es)?|in(?=\s*(?:$|[^\w\s])))?\b",  # "in total": a word, not inches
+    re.IGNORECASE,
 )
+PER_M = {"mm": Decimal(1000), "cm": Decimal(100), "m": Decimal(1), "in": 1 / Decimal("0.0254")}
+
+
+def _per_m(unit: str | None) -> Decimal:
+    """Units of one metre: dimensions without a unit are centimetres; "48x40x50 in" are inches."""
+    unit = (unit or "cm").lower()
+    return PER_M.get(unit, PER_M["in"])
+
+
 LOT_LINE = r"(?im)^\s*(?:[-*•]\s*(?=\d)|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])"
 LOT = re.compile(
     r"(?im)^\s*(?:[-*•]|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])\s*(\d+)\s+"
@@ -62,7 +72,9 @@ LOT_WEIGHT = re.compile(rf"{MODE}{NUM}\s*(?:kgs?|kilos?)\b(?:\s*(?P<kind>gross|b
 LOT_VOLUME = re.compile(rf"{MODE}{NUM}\s*(?:cbm\b|m3\b|m³)", re.IGNORECASE)
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
-    r"(\d+)\s*(?:pcs|pieces|pallets?|colli|packages|cartons|boxes|stück|stk|paletten|kartons)\b", re.IGNORECASE
+    r"(\d+)\s*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
+    r"|paletten|kartons|kisten)\b",
+    re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
     r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
@@ -242,7 +254,7 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
     if len(dims) != 1:
         return None
     *sides, unit = dims[0]
-    per_m = {"mm": Decimal(1000), "m": Decimal(1)}.get(unit.lower(), Decimal(100))
+    per_m = _per_m(unit)
     volume = Decimal(1)
     for side in sides:
         volume *= number(side, thousands=False) / per_m
@@ -268,7 +280,7 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
             cbm = number(stated.group(3), thousands=False) * (n if stated["each"] else 1)
         else:
             *sides, unit = dims.groups()[2:]
-            per_m = {"mm": Decimal(1000), "m": Decimal(1)}.get((unit or "cm").lower(), Decimal(100))
+            per_m = _per_m(unit)
             cbm = Decimal(1 if dims["all"] else n)
             for side in sides:
                 cbm *= number(side, thousands=False) / per_m
@@ -389,7 +401,7 @@ def _dims_volume(text: str) -> Decimal | None:
     *sides, unit = dims[0]
     volume = Decimal(1)
     for side in sides:
-        volume *= number(side, thousands=False) / {"mm": Decimal(1000), "m": Decimal(1)}.get(unit.lower(), Decimal(100))
+        volume *= number(side, thousands=False) / _per_m(unit)
     return volume
 
 
@@ -563,10 +575,12 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
         )  # fmt: skip
     except Exception:  # noqa: BLE001 - held (dry run, takeover) or failed: the guess takes over
         return None
-    answer = ("SELECT body FROM messages WHERE session_id = ? AND direction = 'in' AND id > ? AND lower(sender) = ?"
-              " ORDER BY id LIMIT 1")  # fmt: skip
-    while not (row := ctx.db.execute(answer, (message.session_id, question.id, message.sender.lower())).fetchone()):
-        if datetime.now(UTC) >= deadline.received_at + timedelta(seconds=ASK_WAIT_S):
+    # Not the request itself: a replay's own mail ids are negative.
+    answer = ("SELECT body FROM messages WHERE session_id = ? AND direction = 'in' AND id > ? AND id != ?"
+              " AND lower(sender) = ? ORDER BY id LIMIT 1")  # fmt: skip
+    asked = (message.session_id, question.id, message.id, message.sender.lower())
+    while not (row := ctx.db.execute(answer, asked).fetchone()):
+        if timing.now() >= deadline.received_at + timedelta(seconds=ASK_WAIT_S):
             return None
         await asyncio.sleep(1)
     return row["body"]
@@ -708,7 +722,17 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         text = "\n\n".join(content for _, content in sources)
         message = mail.model_copy(update={"subject": "", "body": text}) if files else mail
         again = rules()
-        return apply_pickup(again, guess=False) if again is not None else read
+        if (
+            again is None
+            and read.door_pickup
+            and not read.pickup_zone
+            and len(codes := set(POSTCODE.findall(own_words(said)))) == 1
+        ):
+            # The model read the request, so the rules cannot read it again: the place comes from the answer alone.
+            code = codes.pop()
+            again = read.model_copy(update={"pickup_postcode": code, "pickup_zone": zone_of(code),
+                                            "missing": tuple(m for m in read.missing if m != "pickup_postcode")})  # fmt: skip
+        return apply_pickup(again or read, guess=False)
 
     rfq, prose = rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
