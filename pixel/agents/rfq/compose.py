@@ -480,7 +480,7 @@ DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\
 READY = re.compile(
     r"\b(?:ready|bereit|available|verfügbar|prête?s?)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE
 )
-WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
+WAREHOUSE = re.compile(r"\b(warehouse|factory|plant|facility)\b", re.IGNORECASE)
 PICKUP_ASK = re.compile(r"earliest (?:\w+ )?pick-?up|frühest\w* Abholung", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug|premier départ", re.IGNORECASE)
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
@@ -610,8 +610,8 @@ def reply_subject(subject: str | None) -> str | None:
 
 # The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
 GOODS = re.compile(
-    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
-    r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
+    r"\b(?:pallets?|cartons?|boxes?|crates?|pkgs?|colli|pieces?) of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
+    r"|\b(?:Commodity|Cargo):\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n]|$)"
     r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
     r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?:some |our )?(?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to | going )"
     r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to | going )"
@@ -619,8 +619,13 @@ GOODS = re.compile(
     r"|\b(?:cargo|goods|shipment) (?:is|are|consists? of) (?P<g>[a-z][a-z -]{2,40}?)(?=, packed|,? in \d| packed)"
     r"|\b[Ww]e(?:['’]re| are) (?:shipping|sending) (?P<h>[a-z][a-z -]{2,40}?)(?=[:,.]| with )"
 )
-NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
-             "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
+NOT_GOODS = {
+    "shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
+    "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both",
+    "pallets", "pallet", "cartons", "carton", "boxes", "box", "crates", "crate", "packages", "package", "pkgs", "colli",
+    "me", "rate", "rates", "offer",
+    "firma", "company", "industries", "gmbh", "ag", "ltd", "inc", "corp", "corporation",
+}
 
 
 def goods_of(request: str) -> str | None:
@@ -628,8 +633,15 @@ def goods_of(request: str) -> str | None:
     words it another way."""
     for found in GOODS.finditer(request):
         goods = next(g for g in found.groups() if g).strip(" -")
-        if not set(goods.split()) & NOT_GOODS:
-            return goods
+        words = goods.split()
+        if any(len(w) == 3 and w.isupper() for w in words):
+            continue
+        lower_words = {w.lower() for w in words}
+        if lower_words & NOT_GOODS:
+            continue
+        if len(goods) < 3:
+            continue
+        return goods.lower()
     return None
 
 
@@ -775,7 +787,7 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     offer = [_sentence(prose.intro)] if prose.intro and not air_only else []
     if WELL.search(request):
         offer.insert(0, pick(t["well_back"]))
-    site = "warehouse" if WAREHOUSE.search(request) else "site"
+    site = match.group(1).lower() if (match := WAREHOUSE.search(request)) else "site"
     offer += [price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
         offer.append(pick(t["bulky"]).format(chargeable=weight(option.chargeable_kg, lang)))
