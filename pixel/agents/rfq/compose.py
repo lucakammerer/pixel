@@ -552,11 +552,11 @@ def translated_ok(english: str, translated: str, option: RateOption) -> bool:
 
 def kept(english: str, translated: str, names: tuple[str, ...]) -> bool:
     """A follow-up's translation keeps every name and reference in `names` and every figure of the English mail, and
-    adds no figure (a short one, a month or a day, may differ)."""
-    figures = {n for n in NUMBER.findall(english) if len(n) > 2}
-    return all(name in translated for name in names if len(name or "") > 1) and figures == {
-        n for n in NUMBER.findall(translated) if len(n) > 2
-    }
+    adds no figure; short ones too: "3 days" turned "4 days", a day of the month or a weight under 100 kg."""
+    figures = set(NUMBER.findall(english))
+    return all(name in translated for name in names if len(name or "") > 1) and figures == set(
+        NUMBER.findall(translated)
+    )
 
 
 async def translate(ctx: Context, rfq: Rfq, option: RateOption, body: str, wait: float) -> str:
