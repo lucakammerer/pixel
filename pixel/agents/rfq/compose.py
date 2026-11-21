@@ -39,7 +39,7 @@ TEXT = {
                     "all-in, with {transit} in transit."
                 ),
                 (
-                    "As you asked for the most economical option, I would go with {carrier} from {origin} to "
+                    "For the best price I would go with {carrier} from {origin} to "
                     "{destination}: {total} {currency} all-in, {transit} in transit."
                 ),
                 (
