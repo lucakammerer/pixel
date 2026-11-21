@@ -602,3 +602,21 @@ async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(c
 
 def test_in_before_a_word_is_no_inch():
     assert extract._volume("3 pallets 120x80x150 in total, 900 kg", 3) == Decimal("4.32")  # not 70.8 cbm in inches
+
+
+async def test_a_request_without_a_volume_asks_for_it_and_reads_the_answer(conn, monkeypatch):
+    ctx = Context(settings(), conn, None, None, None, None)
+    request = poller.ingest(ctx, mail("Please quote AAA to BBB, 4 pallets, 600 kg, cheapest.").model_copy(
+        update={"id": 9100, "session_id": 9100, "sender": "buyer@hackloop.mail"}))  # fmt: skip
+    asked = []
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        asked.append(body)
+        reply = request.model_copy(update={"id": 9102, "body": "Sorry, it is 4 pallets of 120 x 80 x 150 cm.",
+                                           "in_reply_to": 9101, "references": (9100, 9101)})  # fmt: skip
+        poller.ingest(ctx, reply)
+        return request.model_copy(update={"id": 9101, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert "volume" in asked[0] and (rfq.weight_kg, rfq.volume_cbm) == (Decimal(600), Decimal("5.76"))

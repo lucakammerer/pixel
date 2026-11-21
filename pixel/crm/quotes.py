@@ -48,9 +48,17 @@ def latest_scores(ctx: Context) -> list[dict[str, Any]]:
     """The newest `score` event per round, newest round first."""
     rows = ctx.db.execute(
         "SELECT payload FROM events WHERE id IN (SELECT MAX(id) FROM events WHERE kind = 'score'"
-        " GROUP BY json_extract(payload, '$.round')) ORDER BY id DESC"
+        " GROUP BY CAST(json_extract(payload, '$.round') AS INTEGER))"
+        " ORDER BY CAST(json_extract(payload, '$.round') AS INTEGER) DESC"
     ).fetchall()
     return [json.loads(r["payload"]) for r in rows]
+
+
+def board_total(ctx: Context) -> Decimal | None:
+    row = ctx.db.execute(
+        "SELECT json_extract(payload, '$.total') FROM events WHERE kind = 'score.total' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return Decimal(row[0]) if row else None
 
 
 def stats(ctx: Context, now: datetime | None = None) -> dict[str, Any]:
@@ -103,7 +111,7 @@ def stats(ctx: Context, now: datetime | None = None) -> dict[str, Any]:
         "won": status.get(QuoteStatus.ACCEPTED, 0),  # by the customer
         "lost": status.get(QuoteStatus.DECLINED, 0) + status.get(QuoteStatus.EXPIRED, 0),
         "points": points,
-        "points_total": sum(points.values(), Decimal(0)),
+        "points_total": board_total(ctx),
         "spend_hour_usd": spend_hour,
         "spend_per_accepted_usd": (spend_hour / accepted_hour).quantize(Decimal("0.0001")) if accepted_hour else None,
         "median_response_s": round(statistics.median(seconds)) if seconds else None,

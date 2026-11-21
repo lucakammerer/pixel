@@ -227,7 +227,8 @@ def test_reads_like_a_clerk_in_the_customers_register():
     option = OPTION.model_copy(update={"valid_until": datetime(2026, 11, 21, 16, 22, tzinfo=UTC)})
     _, body = compose.render(rfq("en"), option, request=request)
     # Named from the signature without a model slot, formal like her mail, validity on our clock, no date stamp.
-    assert body.startswith("Dear Petra,") and "Kind regards,\nLena Berger" in body
+    # Round 25: "Dear Jonas," to a formal mail; the whole signed name keeps it formal without guessing Mr or Ms.
+    assert body.startswith("Dear Petra Hofmann,") and "Kind regards,\nLena Berger" in body
     assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
     _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
     assert casual.startswith("Hi Tom,") and "Cheers,\nLena Berger" in casual
@@ -255,7 +256,10 @@ def test_the_customers_own_closing_is_answered_in_kind():
 def test_an_opening_that_repeats_the_mail_back_is_dropped():
     echo = "I've noted that the delivery to the airport is arranged by you."
     two = "Thanks for the machine parts request. We will take good care of it."
-    for intro in (echo, two):
+    # rounds 19 and 21: stiff openers that passed; the goods line by rule reads better
+    details = "Thank you for the details on your machine parts shipment."
+    regarding = "Thank you for your inquiry regarding the machine parts shipment."
+    for intro in (echo, two, details, regarding):
         assert compose.clean({"intro": intro}, rfq("en"), message(), SIGNER).intro is None
 
 
@@ -296,6 +300,8 @@ def test_a_forwarded_old_mail_below_the_request_gives_neither_name_nor_tone():
         ("Our buyer is importing some control units from us in Germany.", "control units"),
         ("The sports equipment will be ready for pickup on 2026-12-02: 11 pieces", "sports equipment"),
         ("The cargo is electronic control units, packed in 5 pieces, with 1403 kg.", "electronic control units"),
+        ("We’ll have 10 pieces of laboratory glassware ready for pickup on 2026-11-25.", "laboratory glassware"),
+        ("We are shipping spare parts for packaging machines: 8 pieces, 1708 kg.", "spare parts for packaging machines"),
         ("The shipment will be ready on 2026-11-25: 4 cartons, each 48 kg gross.", None),
         ("Please send both lots together for this import shipment to BBB.", None),
     ],
@@ -328,4 +334,5 @@ def test_the_customers_small_talk_is_answered_before_the_price(opening, answered
     _, body = compose.render(rfq("en"), OPTION, request=f"Hi there,\n\n{opening}\n\nCheers,\nKlaus")
     paragraph = body.split("\n\n")[1]
     assert any(paragraph.startswith(w) for w in compose.TEXT["en"]["well_back"]) == answered
+    assert paragraph.lower().count("thank") <= 1  # round 24: "Going well here, thanks! Thanks for your request"
     assert body.count("1234.57 EUR") == 1

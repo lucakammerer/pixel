@@ -100,3 +100,32 @@ def to_eur(amount: Decimal, currency: str, fx_eur: Decimal | None) -> Decimal:
     if fx_eur is None:
         raise ValueError(f"no exchange rate for {currency}")
     return money(amount * fx_eur)
+
+
+def in_currency(option: RateOption, currency: str, fx_eur: Decimal | None = None) -> RateOption:
+    """Convert a selected option while preserving its EUR valuation."""
+    if currency == option.currency:
+        return option
+    source_fx = Decimal(1) if option.currency == "EUR" else option.fx_eur
+    if source_fx is None:
+        return option
+    if currency == "EUR":
+        target_fx = Decimal(1)
+        total = option.total_eur
+        fx_eur = None
+    else:
+        if fx_eur is None or not fx_eur.is_finite() or fx_eur <= 0:
+            return option
+        target_fx = fx_eur
+        total = money(option.total_eur / target_fx)
+    return option.model_copy(
+        update={
+            "freight": money(option.freight * source_fx / target_fx),
+            "fuel": money(option.fuel * source_fx / target_fx),
+            "security": money(option.security * source_fx / target_fx),
+            "pickup": money(option.pickup * source_fx / target_fx),
+            "currency": currency,
+            "fx_eur": fx_eur,
+            "total": total,
+        }
+    )

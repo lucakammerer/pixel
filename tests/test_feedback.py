@@ -162,6 +162,22 @@ async def test_first_poll_and_later_updates_feed_scorer_stats(conn):
     assert (stats["accepted"], stats["rejected"]) == (1, 1)
 
     assert await feedback.once(ctx) == 0
-    assert quotes.latest_scores(ctx)[0]["booked"] is True
+    assert {row["round"]: row["booked"] for row in quotes.latest_scores(ctx)}[1] is True
     assert await feedback.once(ctx) == 0
     assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score'").fetchone()[0] == 3
+
+
+async def test_board_total_updates_without_request_changes(conn):
+    first = board(100, (1, "accepted"))
+    first["requests"][0]["cost_points"] = 39.76
+    updated = first | {"total": "110.25"}
+    ctx = Context(settings(), conn, None, None, None, Board(first, updated, updated))
+
+    await feedback.once(ctx)
+    assert quotes.stats(ctx)["points_total"] == 100
+    await feedback.once(ctx)
+    await feedback.once(ctx)
+    stats = quotes.stats(ctx)
+    assert stats["points_total"] == D("110.25")
+    assert stats["points"] == {"cost": D("39.76")}
+    assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score.total'").fetchone()[0] == 2

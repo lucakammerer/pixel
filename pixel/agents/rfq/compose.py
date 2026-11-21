@@ -32,7 +32,8 @@ TEXT = {
             "Thank you for getting in touch.",
             "Many thanks for your request.",
         ),
-        "well_back": ("All good here, thanks for asking!", "Going well here, thanks!", "All well on our side, thanks!"),
+        # the opening line after it begins with a thank-you, so this one does not
+        "well_back": ("All good here, and I hope yours is too!", "Going well here!", "All well on our side!"),
         "intro_goods": (
             "Thanks for your request, happy to help with the {goods}.",
             "Thanks for the enquiry about the {goods}.",
@@ -154,7 +155,7 @@ TEXT = {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
         "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
-        "well_back": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
+        "well_back": ("Hier läuft alles gut, und ich hoffe, bei Ihnen auch.", "Bei uns ist alles bestens."),
         "intro": (
             "Vielen Dank für Ihre Anfrage, darum kümmere ich mich gerne.",
             "Danke für Ihre Anfrage.",
@@ -304,8 +305,9 @@ INFORMAL_DE = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer|eure\w*)\b", re.IGNO
 NAME = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]{1,19}")
 LIMITS = {"intro": 140, "closing": 140}
 # An opening that hands the customer's mail back to them, or runs past one sentence, reads like a machine.
-ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|bezüglich|sorgfältig|"
-                  r"zur Kenntnis)\b|[.!?]\s+\S", re.IGNORECASE)  # fmt: skip
+ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|(?:inquiry|enquiry|"
+                  r"request) regarding|the details (?:on|of) your|bezüglich|sorgfältig|zur Kenntnis)\b|[.!?]\s+\S",
+                  re.IGNORECASE)  # fmt: skip
 FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
 CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
@@ -341,13 +343,14 @@ WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
 # The goods in the customer's own words, wherever a request names them; lower case only, so no code or name.
 GOODS = re.compile(
-    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from )"
+    r"\bpieces? of (?P<a>[a-z][a-z -]{2,40}?)(?=[,.?;:\n]| with | for | to | from | ready | will | are )"
     r"|\bCommodity:\s*(?P<b>[a-z][a-z -]{2,40}?)(?=[,.;\n])"
     r"|\bimporting (?:some |our )?(?P<c>[a-z][a-z -]{2,40}?) from\b"
     r"|\boption (?:to [A-Z]{3} \([^)]*\) )?for (?P<d>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
     r"|\bfor (?:our|some) (?P<e>[a-z][a-z -]{2,40}?)(?=[?.,]| from | to )"
     r"|\bThe (?P<f>[a-z][a-z -]{2,40}?) (?:will be|is|are) ready\b"
     r"|\b(?:cargo|goods|shipment) (?:is|are|consists? of) (?P<g>[a-z][a-z -]{2,40}?)(?=, packed|,? in \d| packed)"
+    r"|\b[Ww]e(?:['’]re| are) (?:shipping|sending) (?P<h>[a-z][a-z -]{2,40}?)(?=[:,.]| with )"
 )
 NOT_GOODS = {"shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
              "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both"}  # fmt: skip
@@ -480,16 +483,23 @@ def register(request: str) -> str:
     return "formal" if FORMAL.search(request) else "casual" if CASUAL.search(request) else "neutral"
 
 
-def signed_name(request: str, signer: str = "") -> str | None:
-    """The first name the customer signed with, read by rule from the mail's last block: the greeting keeps the
-    name also when the model's slot is missing (a failed call, the fallback quote)."""
+def signed_name(request: str, signer: str = "", full: bool = False) -> str | None:
+    """The first name the customer signed with (the whole signed name with `full`), read by rule from the mail's
+    last block: the greeting keeps the name also when the model's slot is missing (a failed call, the fallback)."""
     blocks = [b for b in re.split(r"\n\s*\n", request.strip()) if b.strip()]
     for line in blocks[-1].splitlines() if blocks else []:
         line = line.strip().rstrip(",")
         if SIGNED.match(line) and not NOT_SIGNED.search(line):
             first = line.split()[0]
-            return None if first.casefold() in signer.casefold().split() else first
+            return None if first.casefold() in signer.casefold().split() else line if full else first
     return None
+
+
+def addressed(name: str | None, request: str, signer: str, tone: str) -> str | None:
+    """The name in the greeting: "Dear Jonas Kessler" to a formal mail, as signed, without guessing Mr or Ms; the
+    first name otherwise."""
+    whole = signed_name(request, signer, full=True) if tone == "formal" and name else None
+    return whole if whole and " " in whole and whole.split()[0] == name else name
 
 
 def _until(rfq: Rfq, option: RateOption, t: dict) -> str:
@@ -537,7 +547,7 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     name = prose.first_name or signed_name(request, signer)
     wish, bye = in_kind(request, lang, tone, name)
     lines = [
-        t["hello_name"][tone].format(name=name) if name else t["hello"],
+        t["hello_name"][tone].format(name=addressed(name, request, signer, tone)) if name else t["hello"],
         "",
         " ".join(offer),
         "",

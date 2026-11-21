@@ -103,6 +103,36 @@ Three lines per scenario: what we tried, what changed, what is next.
   answer. The tracking answer signed "Best regards" where Lena's quote and booking to the same customer said "Viele
   Grüße" or "Best regards to Regensburg"; it now signs off as the quote did, every fact and the record block
   unchanged. Next: the tracking total after the next question, the human column.
+- 21.11. 18:25 CET: round 24 accepted (60) and booked; round 23's tracking answer went out signed "Best regards to
+  Regensburg" with every fact as before. The quote read "Going well here, thanks! Thanks for your request, happy to
+  help with the laboratory glassware ready.": the small-talk answer no longer thanks (the opening line does), and
+  the goods stop before "ready". Next: the tracking total, the human column.
+- 21.11. 18:30 CET: total 1437.66 with 15 accepted at 18:10, 1577.66 with 17 accepted at 18:30: +140 = 2 x 60 +
+  2 x 10. Both tracking answers in between scored, the second (round 22's, "53088 to SGN") already signed "Best
+  regards to Regensburg" (#93): the sign-off in kind keeps the +10. Human: PIXEL 0, no award to any team since
+  round 16. Next: the human column; no more tracking changes while it scores.
+- 21.11. 18:40 CET: reviewed #99's voice part against today's live slots. Taken: stiff openers that passed `clean`
+  ("Thank you for your inquiry regarding …", "Thank you for the details on your … shipment", rounds 19 and 21) are
+  dropped, the goods line by rule takes their place. Not taken: two-sentence openings (every one today recited the
+  mail), the closing slot (today: "Wishing you a wonderful day ahead.", "I appreciate your trust in our service …"),
+  example lines in the prompt (copied into every quote). Next: the human column.
+- 21.11. 18:45 CET: the tracking answer and the quote's opening sentence went to two threads of their own; I sent
+  them what I know and keep the rest of the mail. Round 25 accepted (60) and booked. Jonas wrote "Dear Air Freight
+  Team … Kind regards" and got "Dear Jonas,": a formal mail is now greeted with the whole signed name ("Dear Jonas
+  Kessler,", no guessed Mr or Ms), in quote and booking mails. Next: the human column.
+- 21.11. 18:50 CET: round 26 accepted (60) and booked. "We are shipping spare parts for packaging machines: 8 pieces"
+  gave no goods, so the stock opening went out; `goods_of` now reads it. Next: the human column.
+
+### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
+
+One variant per booked round, smallest first. Measured as our total on `GET /v1/board` before the answer and 60 s
+after: +10 keeps it, no +10 sets `VARIANT` back at once.
+
+| Variant | Live since | Question | Board before | Board 60 s after | Result |
+| --- | --- | --- | --- | --- | --- |
+| `scored`: prose, record block with "Customer: <address>", "from <postcode> via <airport>" | 21.11. | 17 answers | | | +10 on every right first answer |
+| `a`: no address line, "from your site in Bremen, flying HAM to EZE" | | | | | pending |
+| `b`: the block's facts in the prose, no block | | | | | not yet tried |
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 

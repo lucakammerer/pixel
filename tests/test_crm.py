@@ -123,7 +123,8 @@ def test_stats_keep_scorer_and_customer_apart(pipe):
     s = quotes.stats(ctx, now=now)
     assert (s["requests"], s["quoted"], s["fallback"], s["missed"]) == (3, 2, 1, 1)
     assert (s["accepted"], s["rejected"], s["won"], s["lost"]) == (1, 1, 1, 1)
-    assert s["points_total"] == 90
+    assert s["points_total"] is None
+    assert s["points"] == {"accuracy": 45, "cost": 30, "time": 15}
     assert s["spend_per_accepted_usd"] == Decimal("0.0020")
     assert s["median_response_s"] == 90
 

@@ -542,6 +542,7 @@ FACTS = {
     "origin": ("the airport the goods leave from", "den Abflughafen"),
     "destination": ("the destination airport", "den Zielflughafen"),
     "weight": ("the gross weight in kg", "das Bruttogewicht in kg"),
+    "volume": ("the volume or the dimensions of the pieces", "das Volumen oder die Maße der Packstücke"),
 }
 ASK = {
     "en": "Hello,\n\nthank you for your request. Could you tell us {facts}? As soon as we have it, you will receive "
@@ -554,13 +555,17 @@ ASK = {
 def _unknown(rfq: Rfq) -> list[str]:
     """The facts a price still needs that the request did not give."""
     facts = ["pickup"] if rfq.door_pickup and not rfq.pickup_zone else ["origin"] if not rfq.origin else []
-    return facts + ["destination"] * (not rfq.destination) + ["weight"] * (rfq.weight_kg <= 0)
+    # Without a volume the chargeable weight is the gross weight, too low for bulky goods.
+    missing = ["destination"] * (not rfq.destination) + ["weight"] * (rfq.weight_kg <= 0)
+    return facts + missing + ["volume"] * (rfq.volume_cbm <= 0)
 
 
 async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadline: Deadline) -> str | None:
     """One short mail in the customer's thread asking for exactly the missing facts, never a price; their answer if
     it comes within ASK_WAIT_S of the request. A customer held back the pickup and gave it at once when asked (round
     18). Asked once per request."""
+    if ctx is None:
+        return None
     if ctx.db.execute("SELECT 1 FROM messages WHERE session_id = ? AND purpose = 'question'",
                       (message.session_id,)).fetchone():  # fmt: skip
         return None

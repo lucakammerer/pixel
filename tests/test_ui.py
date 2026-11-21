@@ -91,9 +91,24 @@ def test_takeover_edit_send_release(client, pipe):
     assert kinds == ["human.takeover", "human.note", "human.release"]
 
 
-def test_dashboard_renders(client):
+def test_dashboard_renders(client, pipe):
+    pipe.emit(pipe.ctx, "score.total", "board", payload={"total": "876.54"})
+    pipe.emit(pipe.ctx, "score", "board", payload={"round": 1, "points": {"cost": 39.76}})
     page = client.get("/dashboard").text
     assert "Spend per accepted quote" in page and "Median response" in page
+    assert "876.54" in page and "Team total from the scorer" in page
+    assert "39.8" in page and "Subtotal reported per request" in page
+
+
+def test_dashboard_orders_rounds_by_number_after_score_updates(client, pipe):
+    for round_no, verdict in [(23, "accepted"), (9, "accepted"), ("21", "accepted"), ("9", "rejected")]:
+        pipe.emit(pipe.ctx, "score", "feedback", payload={"round": round_no, "verdict": verdict})
+
+    page = client.get("/dashboard").text
+    assert page.index("<tr><td class=num>23</td>") < page.index("<tr><td class=num>21</td>")
+    assert page.index("<tr><td class=num>21</td>") < page.index("<tr><td class=num>9</td>")
+    assert page.count("<tr><td class=num>9</td>") == 1
+    assert "1 rejected" in page
 
 
 def test_crm_lists_customers_quotes_and_shipments(client):

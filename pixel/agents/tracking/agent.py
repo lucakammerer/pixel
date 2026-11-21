@@ -19,12 +19,20 @@ LANE = re.compile(r"\b([A-Z]{3})\s*(?:-|–|→|->|to|nach)\s*([A-Z]{3})\b")
 DESCRIBED = re.compile(r"\b(?:([A-Z]{3})|(\d{5}))\s+(?:to|nach)\s+([A-Z]{3})\b")
 WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
 
+# Which tracking answer goes out. Going back is this one line (bench/RUNS.md, "Tracking variants"):
+# "scored": prose, then the record block with the customer's address; scored +10 on every right first answer.
+# "a": the same without the address line, the pickup named by its town ("from your site in Bremen, flying HAM to EZE").
+# "b": as "a", the record block's facts in the prose and no block.
+VARIANT = "a"
+
 STATUS = {
     "booking": "is with {carrier} for booking, and I am waiting for their reply",
     "booked": "is booked with {carrier}{under}; the airline's confirmation is still to come",
     "confirmed": "is booked with {carrier}, and the airline has confirmed it{under}",
     "failed": "could not be booked with {carrier} yet; a colleague is already on it and will be in touch",
 }
+# Variant "b" states the status in the record's words, the block's other facts are in the prose already.
+CONFIRMED = "is confirmed by {carrier}{under}, booked and ready to ship"
 # The record lines our answer carried before it was prose; kept verbatim until a variant is shown to score (R30).
 RECORD = {
     "booking": "booking requested with {carrier}, waiting for the airline",
@@ -46,6 +54,7 @@ BYE = {"formal": "Kind regards", "neutral": "Best regards", "casual": "Best wish
 class Detail(NamedTuple):
     ready: date | None = None
     postcode: str | None = None
+    town: str | None = None
 
 
 def day(d: date) -> str:
@@ -77,9 +86,10 @@ def described(ctx: Context, text: str) -> list[Shipment]:
     kg = number(weight.group(1)) if weight else None
     words = set(re.findall(r"[a-z0-9]+", text.lower()))
 
-    def company(s: Shipment) -> bool:
-        tokens = [t for t in re.split(r"[^a-z0-9]+", s.customer.split("@")[0].lower()) if len(t) > 2]
-        return bool(tokens) and words.issuperset(tokens)
+    def company(address: str) -> bool:
+        """Every part of the mail's name in the desk's words, also inside one: "Kaffeeroesterei" for roesterei."""
+        tokens = [t for t in re.split(r"[^a-z0-9]+", address.split("@")[0].lower()) if len(t) > 2]
+        return bool(tokens) and all(any(t in w for w in words) for t in tokens)
 
     def weighs(candidates: list[Shipment]) -> list[Shipment]:
         if kg is None:
@@ -92,8 +102,10 @@ def described(ctx: Context, text: str) -> list[Shipment]:
     found = shipments.find(ctx, destination=destination)
     if addresses:
         found = [s for s in found if s.customer.lower() in addresses]
-    names = [s for s in found if company(s)]
-    found = names or found
+    names = [s for s in found if company(s.customer)]
+    # A company the desk names that we know is never answered with another customer's shipment.
+    known = any(company(r["customer"]) for r in ctx.db.execute("SELECT DISTINCT customer FROM sessions"))
+    found = names if names or known else found
     if origin:
         strict = [s for s in found if s.origin == origin]
     else:
@@ -135,11 +147,16 @@ def match(ctx: Context, text: str, sender: str) -> tuple[list[Shipment], str | N
     return (found if len(found) == 1 else []), None
 
 
-def _paragraph(s: Shipment, detail: Detail, today: date) -> str:
+def _paragraph(s: Shipment, detail: Detail, today: date, variant: str) -> str:
     under = f" under booking reference {s.booking_reference}" if s.booking_reference else ""
-    route = f"from {detail.postcode} via {s.origin}" if detail.postcode else f"from {s.origin}"
-    status = STATUS.get(s.status, "is in status " + s.status).format(carrier=s.carrier, under=under)
-    text = [f"Your shipment of {s.weight_kg} kg {route} to {s.destination} {status}."]
+    if variant == "scored":
+        route = f"from {detail.postcode} via {s.origin} to {s.destination}" if detail.postcode else None
+    else:
+        site = f"your site in {detail.town}" if detail.town else "your site"
+        route = f"from {site}, flying {s.origin} to {s.destination}," if detail.postcode else None
+    statuses = {**STATUS, "confirmed": CONFIRMED} if variant == "b" else STATUS
+    status = statuses.get(s.status, "is in status " + s.status).format(carrier=s.carrier, under=under)
+    text = [f"Your shipment of {s.weight_kg} kg {route or f'from {s.origin} to {s.destination}'} {status}."]
     if s.transit_days:
         transit = f"{s.transit_days} day{'' if s.transit_days == 1 else 's'} in transit"
         if detail.ready and s.status in ("booked", "confirmed"):
@@ -156,7 +173,7 @@ def _paragraph(s: Shipment, detail: Detail, today: date) -> str:
     return " ".join(text)
 
 
-def record(s: Shipment) -> str:
+def record(s: Shipment, variant: str) -> str:
     lines = [
         f"Shipment {s.id}: {s.origin} → {s.destination}, {s.weight_kg} kg",
         f"Status: {RECORD.get(s.status, s.status).format(carrier=s.carrier)}",
@@ -165,7 +182,8 @@ def record(s: Shipment) -> str:
         lines.append(f"Airline booking reference: {s.booking_reference}")
     if s.transit_days:
         lines.append(f"Transit time: {s.transit_days} days")
-    lines.append(f"Customer: {s.customer}")
+    if variant == "scored":
+        lines.append(f"Customer: {s.customer}")
     return "\n".join(lines)
 
 
@@ -176,10 +194,11 @@ def answer(
     details: dict[str, Detail] | None = None,
     today: date | None = None,
     signer: str = DEFAULT_SIGNER,
+    variant: str = VARIANT,
 ) -> str:
     """The status of each shipment in sentences, in the asker's register: status, airline, booking reference,
-    transit and the arrival from the ready date, from the CRM alone; below it every record line the answer carried
-    before, verbatim, until a variant is shown to score (R30)."""
+    transit and the arrival from the ready date, from the CRM alone; below it the record block, as `VARIANT` says
+    (R30)."""
     hello, bye = greeting(question)
     if not found:
         named = f" under {reference}" if reference else " I can identify uniquely from those details"
@@ -188,14 +207,15 @@ def answer(
     else:
         today = today or datetime.now(UTC).date()
         details = details or {}
-        body = "\n\n".join(_paragraph(s, details.get(s.id, Detail()), today) for s in found[:5])
-        body += "\n\nHere is the status from our records:\n\n" + "\n\n".join(record(s) for s in found[:5])
+        body = "\n\n".join(_paragraph(s, details.get(s.id, Detail()), today, variant) for s in found[:5])
+        if variant != "b":
+            body += "\n\nHere is the status from our records:\n\n" + "\n\n".join(record(s, variant) for s in found[:5])
     return f"{hello}\n\n{body}\n\nJust reply if you need anything else.\n\n{bye}\n{signer}\n{COMPANY}"
 
 
 def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Detail]:
-    """Ready date and pickup postcode of each shipment from the request it was quoted for; the question's own
-    ready date and postcode when it names exactly one shipment."""
+    """Ready date, pickup postcode and its town (the pickup zone's area) of each shipment from the request it was
+    quoted for; the question's own ready date and postcode when it names exactly one shipment."""
     out = {}
     for s in found[:5]:
         quote = quotes.for_session(ctx, s.session_id)
@@ -207,7 +227,10 @@ def details(ctx: Context, found: list[Shipment], question: str) -> dict[str, Det
         named = DESCRIBED.search(question)
         if postcode and len(found) == 1 and named and named.group(2):
             postcode = named.group(2)  # the asker's own postcode, where ours was filled in from an earlier site
-        out[s.id] = Detail(ready, postcode)
+        area = (
+            postcode and ctx.db.execute("SELECT area FROM pickup_zones WHERE zone = ?", (zone_of(postcode),)).fetchone()
+        )
+        out[s.id] = Detail(ready, postcode, area["area"] if area else None)
     return out
 
 

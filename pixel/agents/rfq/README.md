@@ -48,7 +48,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose the way a
-  clerk would: greeting in the customer's register (`register`: formal "Dear", neutral "Hello", casual "Hi") with
+  clerk would: greeting in the customer's register (`register`: formal "Dear" with the whole signed name, `addressed`, neutral
+  "Hello", casual "Hi") with
   the first name they signed with (the model's slot, else `signed_name` by rule), one paragraph that opens with a
   short line (the model's, else a thank-you naming the goods in the customer's own words, `goods_of`) and gives the quoted total and its currency, carrier, transit, what is included and the chargeable
   weight only when it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with
@@ -116,7 +117,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - "Pickup from our warehouse" can name no place (rounds 15 to 18 lost). The customer holds the fact back and gives
   it when asked: asked after round 18, Lindqvist answered "51115 Bergisch Gladbach" within 10 s. `extract.py`
   `_town_zone` takes a town on the line that describes the pickup. Otherwise `_ask` sends one short question in the
-  thread for exactly the facts `_unknown` lists (pickup place, origin, destination, weight), never a price, and the
+  thread for exactly the facts `_unknown` lists (pickup place, origin, destination, weight, volume: without one
+  the chargeable weight is the gross weight, too low for bulky goods), never a price, and the
   request is read again with the answer (a town alone maps to its zone). No answer 60 s after the request: the
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
   (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
