@@ -85,8 +85,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
-- A pickup can be named by its town and no postcode ("from our warehouse in Augsburg"): `extract.py` `_town_zone`
-  takes the zone whose area the mail names, only when it names exactly one (a signature can name another town).
+- A pickup can name no postcode (rounds 15, 16: "from our warehouse", one rejected too low, one missed; both customers
+  had named their site in an earlier request). `extract.py` `_town_zone` takes, in this order: a town on the line
+  that describes the pickup, the postcode this customer gave before (`rfq.extracted` events), any single zone town
+  in the mail such as the signature's.
 - "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
   weight in kg, the kg wins.
 - A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the
