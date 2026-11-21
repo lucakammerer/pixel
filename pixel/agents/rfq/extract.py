@@ -509,8 +509,19 @@ async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
             guessed = by_rules(message, deadline, guess=True)
             if guessed is None or not (guessed := _zone_origin(ctx, _town_zone(ctx, guessed, text))).origin:
                 raise
-            events.emit(ctx, "error", "rfq", session_id=message.session_id, message_id=message.id,
-                        payload={"where": "rfq_extract_model", "error": f"{type(e).__name__}: {e}", "default": "guess"})  # fmt: skip
+            events.emit(
+                ctx,
+                "error",
+                "rfq",
+                session_id=message.session_id,
+                message_id=message.id,
+                payload={
+                    "where": "rfq_extract_model",
+                    "error": type(e).__name__,
+                    "status": getattr(e, "status", None),
+                    "default": "guess",
+                },
+            )  # fmt: skip  never the gateway's text: it can quote the OpenAI key
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
             rfq = _zone_origin(ctx, _town_zone(ctx, _from_model(result.data, message, deadline), text))
