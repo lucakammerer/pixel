@@ -131,7 +131,7 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
    `.github/`, is a top-level `.md` file or belongs to the deploy job itself, it moves the live checkout without a
    restart. Otherwise it tests the commit in the clone (`uv sync --locked`, `uv run pytest -q`, `uv run ruff check .`);
    red is refused for good and sent to `PIXEL_ALERT_URL`. Green waits for `tools/window.py`, at most one restart per
-   round unless the newest merge has `URGENT` in its title, then moves the live checkout, `uv sync --locked --no-dev`,
+   round unless a merge since the live commit has `URGENT` in its title, then moves the live checkout, `uv sync --locked --no-dev`,
    installs `deploy/pixel.service` if it changed, restarts and checks that the UI answers; if not, it goes back to the
    previous commit and alerts. One line per decision in `/opt/pixel/cd/cd.log`; `touch /opt/pixel/cd/PAUSE` pauses
    it. A fix for a round we just lost may go live from its branch first (pause the job, `tools/deploy.sh`); it is
