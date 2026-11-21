@@ -34,8 +34,12 @@ Decimal only; a model never computes, compares or writes a price (P1).
 ## Choosing (`selection.select`)
 
 - Cheapest: lowest total in EUR; fastest: fewest transit days. Ties: cheaper, then faster, then carrier name.
-- Carrier bids first pick one winner by `selection.balanced` (R15): price and transit days min-max scaled over the
-  bids, 0.5 × price + 0.5 × days, lowest wins. Only that winner competes with sheets, portal and the rate desk.
+- Carrier bids first pick one winner by `selection.balanced` (R15): each bid scores its share of the best price
+  and its share of the best speed (best / own), equal weights, highest sum wins. Speed is transit days for an
+  airline and pickup hours for a trucker. A door-to-port quote adds the balanced trucker's price, not the
+  cheapest (`engine.combine`). Evidence: `tests/fixtures/pickup-bids.json` holds the trucker bids of two scored
+  requests and the bid the scorer's best price contained; this formula picks both, min-max scaling and ranks
+  pick the wrong one in the first. Only that winner competes with sheets, portal and the rate desk.
 
 ## Assumptions until 5U answers (plan §0)
 
@@ -44,6 +48,6 @@ Each lives in one place; change it there.
 | Q | Assumption | Where |
 | --- | --- | --- |
 | Q4 | The best price is the all-in total of the option the customer asked for, pickup included | `engine.combine` |
-| Q6 | Balanced = min-max scaled price and days, equal weights, among bids only; the winner then competes by the customer's wish | `selection.balanced`, `selection.select` |
+| Q6 | Balanced = share of the best price plus share of the best speed, equal weights, among bids only (fits two scored requests; the exact formula is unconfirmed); the winner then competes by the customer's wish | `selection.balanced`, `selection.select` |
 | Q7 | We quote in the chosen rate's own currency and compare in EUR with the rate's exchange rate | `selection.select`, `compose.render` |
 | Q13 | The pickup zone is the first two digits of the postcode | `pickup.zone_of` |

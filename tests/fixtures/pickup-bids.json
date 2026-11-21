@@ -1,0 +1,11 @@
+{
+  "note": "Trucker bids of two scored door-to-port requests of 21.11.2026 as (trucker, EUR, pickup hours), and the bid the scorer's best price contained, derived from our accuracy points for that request.",
+  "requests": [
+    {"bids": [["Spessart Spedition", "299.03", 25], ["Westfalenroute", "266.03", 23], ["Hansekogge Trucking", "245.02", 23],
+              ["Nordlicht Haulage", "152.01", 30], ["Bodenseefracht", "119.01", 30]],
+     "scorer": "Bodenseefracht"},
+    {"bids": [["Elbkante Logistik", "115.98", 29], ["Westfalenroute", "187.97", 11], ["Maintal Transport Logistik", "192.97", 13],
+              ["Bodenseefracht", "226.96", 12]],
+     "scorer": "Westfalenroute"}
+  ]
+}

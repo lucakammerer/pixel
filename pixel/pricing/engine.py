@@ -4,7 +4,7 @@ from pixel.contracts import RateOption, Rfq, Source
 from pixel.core import events
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import bids, calc, pickup, portal_rates, store
+from pixel.pricing import bids, calc, pickup, portal_rates, selection, store
 
 
 def _found(ctx: Context, rfq: Rfq, option: RateOption) -> None:
@@ -27,14 +27,19 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
 
 
 def combine(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
-    """Airline options, each with the cheapest pickup added for door-to-port (Q4: the best price includes it).
+    """Airline options, each with the balanced pickup added for door-to-port (Q4: the best price includes it).
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all."""
     airline = [o for o in options if o.trucker is None]
     pickups = [o for o in options if o.trucker is not None]
     if not (rfq.door_pickup and pickups):
         return airline
-    best = min(pickups, key=lambda o: (o.total_eur, o.carrier))
-    return [calc.with_pickup(o, best.total_eur, best.trucker) for o in airline]
+    # Truckers are carrier bids too (R15): the balanced one, by price and pickup time. Without times, the cheapest.
+    if all(o.pickup_hours is not None for o in pickups):
+        best = selection.balanced(pickups, speed=lambda o: o.pickup_hours)
+    else:
+        best = min(pickups, key=lambda o: (o.total_eur, o.carrier))
+    return [calc.with_pickup(o, best.total_eur, best.trucker).model_copy(update={"pickup_hours": best.pickup_hours})
+            for o in airline]  # fmt: skip
 
 
 async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption]:

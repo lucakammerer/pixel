@@ -3,6 +3,7 @@
 Ties: cheaper (in EUR) first, then faster, then the carrier name, so the same options always give the same quote.
 """
 
+from collections.abc import Callable
 from decimal import Decimal
 
 from pixel.contracts import Preference, RateOption, Rfq, Source
@@ -18,22 +19,22 @@ def _fastest(o: RateOption) -> tuple:
     return (o.transit_days, o.total_eur, o.carrier)
 
 
-def _scaled(value: Decimal, low: Decimal, high: Decimal) -> Decimal:
-    return Decimal(0) if high == low else (value - low) / (high - low)
+def _share(best: Decimal, value: Decimal) -> Decimal:
+    """How close a value comes to the best one: 1 for the best, 0.5 for twice as much."""
+    return Decimal(1) if value == best else (best / value if value else Decimal(0))
 
 
-def balanced(bids: list[RateOption]) -> RateOption:
-    """Among carrier bids: price and speed weigh 50/50 (R15). Q6 assumption: price (EUR) and transit days are
-    min-max scaled over the bids, the lowest equal-weight sum wins."""
-    prices = [b.total_eur for b in bids]
-    days = [Decimal(b.transit_days) for b in bids]
+def balanced(bids: list[RateOption], speed: Callable[[RateOption], int] = lambda b: b.transit_days) -> RateOption:
+    """Among carrier bids: price and speed weigh 50/50 (R15). Each bid scores its share of the best price and its
+    share of the best speed (best / own), the highest equal-weight sum wins. `speed` is transit days for an airline,
+    pickup hours for a trucker. Why this formula and not min-max scaling: docs/calc.md."""
+    cheapest = min(b.total_eur for b in bids)
+    quickest = min(Decimal(speed(b)) for b in bids)
 
     def score(b: RateOption) -> Decimal:
-        price = _scaled(b.total_eur, min(prices), max(prices))
-        speed = _scaled(Decimal(b.transit_days), min(days), max(days))
-        return HALF * price + HALF * speed
+        return HALF * _share(cheapest, b.total_eur) + HALF * _share(quickest, Decimal(speed(b)))
 
-    return min(bids, key=lambda b: (score(b), *_cheapest(b)))
+    return min(bids, key=lambda b: (-score(b), *_cheapest(b)))
 
 
 def select(rfq: Rfq, options: list[RateOption]) -> RateOption:

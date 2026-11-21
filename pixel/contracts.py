@@ -126,6 +126,7 @@ class RateOption(Model):
     security: Decimal = Decimal(0)
     pickup: Decimal = Decimal(0)
     trucker: str | None = None
+    pickup_hours: int | None = None  # the trucker's pickup time, when the bid states one
     total: Decimal  # all-in, in `currency`
     currency: str
     fx_eur: Decimal | None = None  # EUR per 1 unit of `currency`, only when not EUR
