@@ -165,11 +165,15 @@ def test_dashboard_keeps_tracking_apart_from_the_quote_and_estimates_cost_still_
         (f"{hour}05:00+00:00",),
     )
     rounds = {r["round"]: r for r in quotes.scored_rounds(pipe.ctx)}
-    assert (rounds[21]["quote"], rounds[21]["after"], rounds[21]["earned"]) == (60, 10, 70)
+    # the cost still due counts in the round's quote and total; tracking stays apart; booking never scores
+    assert (rounds[21]["quote"], rounds[21]["scored"], rounds[21]["earned"]) == (D("99.20"), 70, D("109.20"))
     assert rounds[21]["cost_estimate"] == D("39.20") and rounds[19]["cost_estimate"] is None
-    assert rounds[19]["quote"] == D("99.47") and rounds[19]["after"] == 0
+    assert rounds[19]["quote"] == rounds[19]["earned"] == D("99.47")
     s = quotes.stats(pipe.ctx)
-    assert (s["points_quote"], s["points_after"], s["cost_estimate"]) == (D("219.47"), 20, D("78.40"))
+    assert (s["points_quote"], s["points"]["tracking"], s["cost_estimate"]) == (D("219.47"), 20, D("78.40"))
+    assert s["points_rows"] == s["points_total"] + s["cost_estimate"]
     assert s["points_projected"] == D("317.87")
     page = client.get("/dashboard").text
-    assert "Tracking + booking" in page and "After the quote" in page and "≈ 39.20" in page and "317.87" in page
+    assert "39.20" in page and "≈" not in page and "109.20" in page and "317.87" in page
+    assert "Booking" not in page and "Human writing" in page and "none awarded yet" in page
+    assert "= team total 239.47 + cost still due 78.40" in page

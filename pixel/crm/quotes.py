@@ -9,8 +9,8 @@ from pixel.contracts import Quote, QuoteStatus
 from pixel.core.context import Context
 
 HIDDEN = ("accuracy", "time")  # the board may leave these out of each row until the scores are revealed
-QUOTE = ("accuracy", "time", "cost", "humanity")  # what the quote itself earns
-AFTER = ("tracking", "booking")  # what the shipment earns after the quote (R30)
+QUOTE = ("accuracy", "time", "cost")  # what the quote itself earns (R26 to R29)
+# humanity (a reply the scorer finds human-written) and tracking (R30) come on top; the board's `booking` is always 0
 COST_POINTS, COST_ZERO_USD = Decimal(40), Decimal("0.10")  # R28
 
 
@@ -139,10 +139,11 @@ def cost_estimates(ctx: Context, scores: list[dict[str, Any]]) -> dict[datetime,
 
 def scored_rounds(ctx: Context) -> list[dict[str, Any]]:
     """`latest_scores` with what each round earned, split the way the scorer adds it up:
-    `quote` (accuracy + time + cost + humanity: what the quote itself earned; None while accuracy and time are
-    unknown), `after` (tracking + booking: what came after the quote), `hidden` (accuracy + time: from the row, else
+    `quote` (accuracy + time + cost, the cost estimated while the scorer's is due; None while accuracy and time are
+    unknown), `hidden` (accuracy + time: from the row, else
     derived from the change of the team total, `hidden_derived`), `cost_estimate` (while the scorer's cost is due),
-    `reported` (the points the row lists) and `earned` (the row's total, else reported + derived; None if unknown)."""
+    `reported` (the points the row lists), `scored` (the row's total from the scorer, else reported + derived; None if
+    unknown) and `earned` (`scored` plus the cost estimate)."""
     revealed = board_summary(ctx)["revealed"]
     derived = derived_hidden(ctx)
     scores = latest_scores(ctx)
@@ -170,11 +171,11 @@ def scored_rounds(ctx: Context) -> list[dict[str, Any]]:
             estimate = estimates.get(_hour(score.get("sent_at")))
         quote = None
         if hidden is not None:
-            quote = hidden + sum((points.get(k, Decimal(0)) for k in QUOTE if k not in HIDDEN), Decimal(0))
+            quote = hidden + (points["cost"] if "cost" in points else estimate or Decimal(0))
         out.append(score | {
             "points": points, "reported": reported, "hidden": hidden, "hidden_derived": from_total and hidden is not None,
-            "quote": quote, "after": sum((points.get(k, Decimal(0)) for k in AFTER), Decimal(0)),
-            "cost_estimate": estimate, "earned": total,
+            "quote": quote, "cost_estimate": estimate, "scored": total,
+            "earned": total + estimate if total is not None and estimate is not None else total,
         })  # fmt: skip
     return out
 
@@ -242,7 +243,6 @@ def stats(ctx: Context, now: datetime | None = None) -> dict[str, Any]:
         "points_total": total,  # the board's team total
         "points_unreported": unreported,  # accuracy + time the rows leave out, until the reveal
         "points_quote": sum((points.get(k, Decimal(0)) for k in QUOTE), Decimal(0)) + (unreported or 0),
-        "points_after": sum((points.get(k, Decimal(0)) for k in AFTER), Decimal(0)),
         "cost_estimate": estimate,  # cost points the scorer has not added yet, from our own spend
         "points_projected": total + estimate if total is not None else None,
         "points_rows": sum(known, Decimal(0)),

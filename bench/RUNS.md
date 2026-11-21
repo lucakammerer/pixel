@@ -154,7 +154,7 @@ round closing at the same time.
 | `scored`: prose, record block with "Customer: <address>", "from <postcode> via <airport>" | 21.11. | round 24, 17:31:42 UTC | 1647.66 (18 accepted) | 1657.66 (18 accepted) | +10, round 24 `tracking` 10 |
 | `a`: no address line, "from your site in Stuttgart, flying STR to EZE" (#116) | 17:35:32 UTC, f76a979 | round 25, 17:37:51 UTC, "70498 to EZE" | 1657.66 (19 accepted, round 26's 60 not yet in) | 1727.66 (19 accepted) | +10, round 25 `tracking` 10: kept |
 | `b`: the block's facts in the prose, no block (#126) | 17:42:27 UTC, f4f4c64 | round 26, 17:43:52 UTC, "81617 to BKK" | | | +10, round 26 `tracking` 10: kept |
-| `c`: `b` without "It has not left yet:" and "in case you need it", every fact kept | | | | | pending |
+| `c`: `b` without "It has not left yet:" and "in case you need it", every fact kept (#129) | 17:48:30 UTC, 6728aba | round 27, 17:49:55 UTC, "24489 to EZE" | | | 0, round 27 `tracking` 0: no test of the wording. Meridian's reply to our booking request by mail (BK-43VLF40X, "Status: booked") was routed as a carrier bid (`sender:carrier`), so the shipment stayed at `booking` and the answer named no airline reference; `b` would have said the same. Kept, measured on the next confirmed shipment |
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
