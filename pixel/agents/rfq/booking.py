@@ -18,17 +18,28 @@ from pixel.pricing import calc, portal_rates
 ACCEPT = re.compile(
     r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+that)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
     r"|(?:offer|quote) accepted|confirm\s+(?:the|this|our)\s+booking|go ahead|book\s+(?:it|this|the\s+shipment|with)\b"
-    r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|agreed"
-    r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|auftrag|einverstanden|nehmen\s+(?:ihr|das)\s+angebot\s+an)",
+    r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|(?<!as )agreed"
+    r"|(?:would|['’]d)\s+like\s+to\s+(?:book|proceed)|arrange\s+the\s+booking"
+    r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag|einverstanden"
+    r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen)",
     re.IGNORECASE,
 )
 DECLINE = re.compile(
     r"\b(decline|no thanks|(?<!not )too (?:low|high)|not competitive|pass on (?:this|it|that|your offer)|not interested|"
-    r"too expensive|went with|"
+    r"(?<!not )too expensive|went with|"
     r"another (?:offer|forwarder)|"
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:yet\s+)?(?:go ahead|accept(?:ed)?|book(?:ed)?|proceed|confirm(?:ed)?|take it|move forward|be moving forward)|"
     r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
+    re.IGNORECASE,
+)
+# In the clause of the accept phrase: "we have decided not to go ahead", "Bitte buchen Sie nicht", "go ahead with a
+# competitor", "go ahead once we confirm pickup" decline or hold; rounds 9, 10 and 15 were booked on such a reply.
+# An English negation counts before the phrase only: "book it and don't forget the AWB" still books.
+NEGATED = re.compile(r"\b(?:not|no need|never)\b|n['’]t\b", re.IGNORECASE)
+HOLD = re.compile(
+    r"\b(?:nicht|nichts|kein\w*|erst|hold|competitor|other (?:quote|offer|forwarder)|anderweitig|storniert"
+    r"|once (?:we|our|you have)|only after|sobald|nach\s+(?:unserer|der)\s+freigabe|next week)\b",
     re.IGNORECASE,
 )
 CONDITION = re.compile(
@@ -51,15 +62,18 @@ def intent(text: str) -> str:
     for sentence in re.findall(r"[^.!?\n]+[.!?]?", text):
         if CONDITION.search(sentence) or (sentence.rstrip().endswith("?") and not ASKS_TO_BOOK.search(sentence)):
             continue
-        if ACCEPT.search(sentence):
-            return "accept"
+        for clause in re.split(r"[,;:]|\s[-–]\s|\bbut\b", sentence):
+            if (m := ACCEPT.search(clause)) and not NEGATED.search(clause[: m.start()]) and not HOLD.search(clause):
+                return "accept"
     return "other"
 
 
 async def handle_reply(ctx: Context, message: Message) -> None:
     """The customer answered our quote: acceptance -> book; decline -> quote declined; else a person answers."""
     quote = quotes.for_session(ctx, message.session_id)
-    own = extract.HISTORY.split(message.body, maxsplit=1)[0].strip()
+    # A reply written below the quoted mail keeps its own lines after the quote.
+    unquoted = "\n".join(line for line in message.body.splitlines() if not line.lstrip().startswith(">"))
+    own = extract.HISTORY.split(unquoted, maxsplit=1)[0].strip()
     subject = "" if extract.REPLY_SUBJECT.match(message.subject) else message.subject
     said = intent(own or subject)
     if quote is not None and quote.sent_at is None and quote.status == QuoteStatus.DRAFT:
@@ -72,6 +86,12 @@ async def handle_reply(ctx: Context, message: Message) -> None:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
             payload={"note": "Customer reply needs a person", "intent": said, "has_quote": quote is not None},
+        )  # fmt: skip
+        return
+    if said == "decline" and quote.status == QuoteStatus.ACCEPTED:  # booked already: a person cancels, not a rule
+        events.emit(
+            ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
+            payload={"note": "Customer reply after the booking reads as a decline", "intent": said},
         )  # fmt: skip
         return
     if said == "decline":
