@@ -146,6 +146,9 @@ PORTUGUESE = {"não", "você", "obrigado", "obrigada", "olá", "nosso", "nossa",
 DUTCH = {"het", "een", "voor", "wij", "graag", "zending", "groeten", "bedankt", "onze", "naar", "ophalen",
          "offerte", "prijs", "alvast", "vriendelijke", "hartelijk", "kunt", "jullie", "ons"}  # fmt: skip
 LANGUAGES = {"en": ENGLISH, "de": GERMAN, "fr": FRENCH, "es": SPANISH, "it": ITALIAN, "pt": PORTUGUESE, "nl": DUTCH}
+# One of their words alone turns up in an English mail ("per kg", a "Saludos" sign-off): two are needed, else the
+# quote is translated for a customer who wrote English.
+TWO_WORDS = {"es", "it", "pt", "nl"}
 # A script other than Latin names the language by itself; the model's code can refine it (Cyrillic: uk, not ru).
 SCRIPTS = {"CJK": "zh", "HIRAGANA": "ja", "KATAKANA": "ja", "HANGUL": "ko", "CYRILLIC": "ru", "GREEK": "el",
            "ARABIC": "ar", "HEBREW": "he", "THAI": "th", "DEVANAGARI": "hi"}  # fmt: skip
@@ -382,6 +385,7 @@ def _language(text: str, said: object = None) -> str:
     if script := _script(text):
         return own or script
     counts = words_of(text)
+    counts = {lang: n for lang, n in counts.items() if n >= 2 or lang not in TWO_WORDS}
     best = max(counts, key=lambda lang: (counts[lang], lang == "en"))
     if own and counts[best] * 5 < len(re.findall(r"[^\W\d_]+", text)):
         return own
