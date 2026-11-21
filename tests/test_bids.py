@@ -509,3 +509,22 @@ def test_generated_bids_never_take_another_amount_for_the_price(text, price):
 def test_two_labelled_transit_times_are_no_transit():
     text = "Note: our rate to CAI last week was EUR 900.00, with a transit time of 5 days.\nTransit time: 2 days"
     assert bids._days(text) is None  # the first one, another lane's, was quoted
+
+
+async def test_a_mail_price_beside_an_unreadable_photo_still_reaches_the_model(ctx, monkeypatch):
+    class Files:
+        async def attachment(self, message_id, attachment_id):
+            return b"\xff\xd8"
+
+    async def model(ctx, *, user, **kw):
+        data = {"offer": True, "total": "165.70", "components": [], "currency": "EUR", "transit_days": None,
+                "eur_per_unit": None, "pickup_hours": 24}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
+    photo = Attachment(id=1, filename="loading-point.jpg", content_type="image/jpeg", size=10)
+    body = "Hello,\npickup at your customer and delivery to AAA airport: 165,70 Euro.\nPhoto of the loading point attached."
+    message = mail("a@truck", body).model_copy(update={"attachments": (photo,)})
+    await bids.record(replace(ctx, mailbox=Files()), message)
+    assert [r["priced"] for r in kinds(ctx, "bid.received")] == [True]

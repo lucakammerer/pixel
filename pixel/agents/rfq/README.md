@@ -282,7 +282,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A file no code reads (a video, an image outside a tariff mail, an unknown type, a pdf without text) is a deliberate
   `attachment.unreadable` with its name and type (`tariffs/agent.py` `attachment_lines`, not downloaded when its type
   has no reader), never an `error`, and the mail goes on as if it held nothing: a carrier who answered only in one
-  is answered and unpriced (`bid.received` with `unread`, no model call when no price stands in the text), a request
+  is answered and unpriced (`bid.received` with `unread`, no model call when no price stands in the text; "165,70 Euro" is one, `WRITTEN_PRICE`), a request
   whose facts sit in one has them missing and asks the one question. A file of a readable type that breaks its
   reader (a corrupt pdf, an mp3 the decoder refuses) is still an `error`. The gateway takes no audio (text and
   `image_url` only, no audio model listed), so a voice message is read by the local transcript or not at all.

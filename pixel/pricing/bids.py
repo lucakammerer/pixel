@@ -30,6 +30,9 @@ SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
 PRICED = re.compile(
     rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£])(?![A-Za-z])"
 )
+# A price the rules do not read but a model can: "165,70 Euro", "EUR one hundred". Beside an unread file it is still
+# worth the model call; a mail with no price at all is not.
+WRITTEN_PRICE = re.compile(r"\d[.,]\d\d\b|\b(?:euros?|dollars?|pounds?|franken|francs?)\b", re.IGNORECASE)
 # A pdf wraps "for 256.85" and "EUR." onto two lines: amount and currency are joined again.
 UNWRAP = re.compile(
     rf"(?<=[.,]\d\d)[ \t]*\n[ \t]*(?=(?:{CURRENCY}|[€$£])(?![A-Za-z]))"
@@ -461,7 +464,7 @@ async def record(ctx: Context, message: Message) -> None:
         and option is None
         and kind != "ratedesk"
         and not DECLINE.search(_own_text(message.body))
-        and not (unread and not PRICED.search(message.body))
+        and not (unread and not (PRICED.search(message.body) or WRITTEN_PRICE.search(message.body)))
     ):
         read_by = "model"
         try:
