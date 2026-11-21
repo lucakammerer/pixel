@@ -256,7 +256,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   days and no new figure; else the English quote goes out and an `error` event says why.
 - The persona's sign-off stays English or German whatever language the mail is in ("Thanks and regards" under a
   Polish line). `_language` reads the words above it first (`_unsigned`, `SIGN_OFF`), then the attachment or voice
-  message when the mail says nothing else, the sign-off last. A quoted older mail is cut in the customer's
+  message only when the mail holds at most two words besides codes (a German packing list once made "new request
+  attached, FRA-JFK" German), the sign-off last. A quoted older mail is cut in the customer's
   language too ("El jue … escribió:", "-----原始邮件-----", "发件人: …@…": `HISTORY`). `tests/fixtures/rfqs/
   languages.jsonl` holds one probe per case.
 - A request's attachment (packing list, letter of instruction) can declare dangerous goods while the mail says

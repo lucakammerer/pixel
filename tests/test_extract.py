@@ -915,6 +915,17 @@ def test_the_language_is_read_from_the_customers_own_words(case):
     assert extract._language(text, None, case.get("attachment", "")) == case["language"]
 
 
+@pytest.mark.parametrize(
+    "body, attached, language",
+    [
+        ("Hello,\n\nnew request attached, FRA-JFK.\n\nThanks,\nAnna", "Packliste\nGewicht: 300 kg, die Ware ist nicht gefährlich", "en"),
+        ("Hallo,\n\nanbei unsere Anfrage, FRA-JFK.\n\nViele Grüße\nAnna", "Packing list\nThe goods are not dangerous", "de"),
+    ],
+)  # fmt: skip
+def test_a_mail_with_words_of_its_own_is_not_decided_by_its_attachment(body, attached, language):
+    assert extract._language(extract._text(mail(body, "Air freight request")), None, attached) == language
+
+
 async def test_a_question_for_a_missing_fact_is_asked_in_the_customers_language(conn, monkeypatch):
     ctx = Context(settings(), conn, None, None, None, None)
     request = poller.ingest(ctx, mail("Hola, necesitamos una cotización AAA-BBB, 4 cajas, 600 kg. Gracias.").model_copy(

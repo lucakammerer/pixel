@@ -454,3 +454,12 @@ def test_adaptive_facility_naming():
     _, body = compose.render(rfq("en"), trucker_option, request="Please pick up from our plant in Munich.")
     assert "pickup at your plant by Example Trucking" in body
 
+
+def test_a_translated_follow_up_keeps_short_figures_too():
+    english = "Hello,\n\nPX-ABC123 lands on 24 November, 3 days in transit, 76 kg."
+    assert compose.kept(english, "Hola:\n\nPX-ABC123 llega el 24 de noviembre, 3 días, 76 kg.", ("PX-ABC123",))
+    assert not compose.kept(english, "Hola:\n\nPX-ABC123 llega el 24 de noviembre, 4 días, 76 kg.", ("PX-ABC123",))
+    assert not compose.kept(english, "Hola:\n\nPX-ABC123 llega el 25 de noviembre, 3 días, 76 kg.", ("PX-ABC123",))
+    assert compose.kept(
+        english, "您好，\n\nPX-ABC123 于11月24日到达，运输3天，76 kg。", ("PX-ABC123",)
+    )  # a month as figure
