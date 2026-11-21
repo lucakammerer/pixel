@@ -997,7 +997,11 @@ def _shipment_sources(sources: list[tuple[str, str]]) -> list[tuple[str, str]]:
 
 def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal | None]:
     """Explicit corrections in the mail first; then what the eligible attachments state (`_document_facts`) over
-    the mail's own figures, unless the mail says to use its own; the mail's figures where no document states one."""
+    the mail's own figures, unless the mail says to use its own; the mail's figures where no document states one.
+    A forwarded mail (`FORWARDED`) is history, no document of this shipment: it fills a figure the mail lacks, never
+    beats one."""
+    from pixel.agents.tariffs.agent import FORWARDED
+
     clauses = [part.strip() for part in CARGO_CLAUSE.split(sources[0][1])]
     directives = [
         re.split(r"\b(?:not|instead of|rather than)\b", match[1], maxsplit=1, flags=re.IGNORECASE)[0]
@@ -1017,6 +1021,7 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal 
         sources = [sources[0], *named]
     lots = [_lots(text) for _, text in sources]
     stated = [None, *(_document_facts(text) for _, text in sources[1:])]
+    forwarded = [text.startswith(FORWARDED) for _, text in sources]
     facts, evidence = {}, {}
     document_weight = None
 
@@ -1030,7 +1035,11 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal 
     def documents_win(field: str, mail: object) -> bool:
         if mail is not None and any(CARGO_FIELDS[field].search(fields) for fields in mail_fields):
             return False
-        found = [(name, s[field]) for (name, _), s in zip(sources, stated, strict=True) if s and field in s]
+        found = [
+            (name, s[field])
+            for (name, _), s, old in zip(sources, stated, forwarded, strict=True)
+            if s and field in s and not old
+        ]
         if len(values := {v for _, v in found}) != 1:
             return False
         facts[field], evidence[field] = values.pop(), [name for name, _ in found]
@@ -1066,7 +1075,9 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict, Decimal 
         if documents_win(field, readings[0]) and field == "weight_kg":
             document_weight = facts[field]
     mail_destination = (_lane(sources[0][1]) or (None, _destination_only(sources[0][1])))[1]
-    destinations = {d for _, text in sources[1:] if (d := _document_destination(text))}
+    destinations = {
+        d for _, text in sources[1:] if not text.startswith(FORWARDED) and (d := _document_destination(text))
+    }
     if mail_destination and len(destinations) == 1 and (destination := destinations.pop()) != mail_destination:
         facts["destination"] = destination
         evidence["destination"] = [name for name, text in sources[1:] if _document_destination(text) == destination]

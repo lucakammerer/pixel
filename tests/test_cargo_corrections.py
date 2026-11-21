@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 
 from pixel.agents.rfq import extract
+from pixel.agents.tariffs import agent
 
 PACKING = "Total gross weight: 950 kg\nLength (cm) Width (cm) Height (cm) Pieces Gross weight (kg)\n100 80 50 2 950"
 
@@ -40,3 +41,13 @@ def test_correction_of_volume_leaves_corroborated_weight_in_place():
     assert facts["volume_cbm"] == Decimal("1.5")
     assert evidence["volume_cbm"] == ["mail"]
     assert document_weight == facts["weight_kg"]
+
+
+@pytest.mark.parametrize("name", ["old.eml", "old"])
+def test_a_forwarded_older_request_never_overrides_the_mails_cargo(name):
+    """#239 read a forwarded .eml as a document: last week's 900 kg beat the mail's own 300 kg."""
+    old = (b"From: anna@example.com\r\nSubject: Air freight request FRA to JFK\r\nMIME-Version: 1.0\r\n\r\n"
+           b"Please quote FRA to JFK, 8 pieces, 900 kg, 4.5 cbm.\r\n")  # fmt: skip
+    mail = "FRA to JFK: 3 pieces, 300 kg, 1.2 cbm. Last week's request attached."
+    facts, _, document_weight = extract._cargo_sources([("mail", mail), (name, "\n".join(agent._lines(name, old)))])
+    assert (facts["weight_kg"], facts["volume_cbm"], document_weight) == (Decimal(300), Decimal("1.2"), None)
