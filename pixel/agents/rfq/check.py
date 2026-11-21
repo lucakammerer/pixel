@@ -21,7 +21,7 @@ from pixel.agents.rfq import compose
 from pixel.agents.rfq.extract import DG_DOCUMENTS, number, own_words
 from pixel.contracts import Preference, Quote, RateOption, Source
 from pixel.pricing.calc import CBM_KG
-from pixel.pricing.selection import TRUST, implausible
+from pixel.pricing.selection import TRUST, allowed, implausible
 
 BLOCK, WARN = "block", "warn"
 CENTS = Decimal("0.03")  # parts are rounded one by one; the total once (docs/calc.md)
@@ -128,11 +128,10 @@ def _best_price(q: Quote, request: str, options: list[RateOption], files: tuple[
     5% above it is rejected when the scorer takes that one (round 16: the fastest trucker instead of the cheapest).
     WARN, not BLOCK: which trucker the scorer takes is learned from feedback (`pricing/selection.py`)."""
     o, r = q.option, q.rfq
-    airlines = [a for a in options if a.trucker is None and a.total_eur > 0 and not implausible(a, options)
+    peers = allowed(r, options) or options
+    airlines = [a for a in options if a.trucker is None and a.total_eur > 0 and not implausible(a, peers)
                 and (a.origin, a.destination) == (r.origin, r.destination)]  # fmt: skip
-    pickups = [
-        p.total_eur for p in options if p.trucker is not None and p.total_eur > 0 and not implausible(p, options)
-    ]
+    pickups = [p.total_eur for p in options if p.trucker is not None and p.total_eur > 0 and not implausible(p, peers)]
     if not airlines or (r.door_pickup and not pickups):
         return []
     if r.preference == Preference.FASTEST:
@@ -156,7 +155,7 @@ def _implausible(q: Quote, request: str, options: list[RateOption], files: tuple
             or (p.trucker is None and (p.source, p.carrier) == (o.source, o.carrier))]  # fmt: skip
     return [Finding("implausible_bid", BLOCK, f"{p.trucker or p.carrier} at {p.total_eur} EUR is below {TRUST} times "
                                               "the cheapest other price of its kind")
-            for p in held if implausible(p, options)][:1]  # fmt: skip
+            for p in held if implausible(p, allowed(q.rfq, options) or options)][:1]  # fmt: skip
 
 
 def _per_kg(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:

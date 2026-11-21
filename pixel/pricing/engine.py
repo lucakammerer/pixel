@@ -89,7 +89,8 @@ def combine(
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all. A bid
     `selection.implausible` distrusts takes no part; with `ctx` it is recorded."""
     matching = [o for o in options if session.on_lane(o, rfq)]
-    distrusted = [o for o in matching if selection.implausible(o, matching)]
+    peers = selection.allowed(rfq, matching) or matching  # an airline the customer ruled out is no yardstick
+    distrusted = [o for o in matching if selection.implausible(o, peers)]
     for option in distrusted if ctx is not None else ():
         _distrusted(ctx, rfq, option)
     matching = [o for o in matching if o not in distrusted]
