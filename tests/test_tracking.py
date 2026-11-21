@@ -149,3 +149,12 @@ async def test_the_answer_names_the_pickup_postcode_the_desk_asked_about(pipe):
 def test_the_tracking_answer_signs_off_as_the_quote_did(closing, bye):
     body = agent.answer([], None, f"Hello,\n\nwhere is it now?\n\n{closing}")
     assert body.endswith(f"\n\n{bye}\nAir Export, PIXEL Air Freight")
+
+
+def test_a_company_inside_a_compound_word_is_recognised_and_never_answered_with_another_customer(pipe):
+    ours = shipped(pipe.ctx, 1, "sonnberg-roesterei@hackloop.mail", "FRA", "JFK", 1233)  # question 921
+    assert agent.described(pipe.ctx, "Sonnberg Kaffeeroesterei GmbH, HHN to JFK, 1233 kg") == [ours]
+    shipped(pipe.ctx, 2, "rheintal-elektronik@hackloop.mail", "CGN", "ORD", 679, postcode="51896")
+    pipe.ctx.db.execute("INSERT INTO sessions (id, customer, state, received_at, deadline_at) VALUES "
+                        "(3, 'lindqvist-medtech@hackloop.mail', 'open', '', '')")  # fmt: skip
+    assert agent.described(pipe.ctx, "Lindqvist Medtech GmbH | 51447 to ORD | 676 kg") == []

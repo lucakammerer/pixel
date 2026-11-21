@@ -77,9 +77,10 @@ def described(ctx: Context, text: str) -> list[Shipment]:
     kg = number(weight.group(1)) if weight else None
     words = set(re.findall(r"[a-z0-9]+", text.lower()))
 
-    def company(s: Shipment) -> bool:
-        tokens = [t for t in re.split(r"[^a-z0-9]+", s.customer.split("@")[0].lower()) if len(t) > 2]
-        return bool(tokens) and words.issuperset(tokens)
+    def company(address: str) -> bool:
+        """Every part of the mail's name in the desk's words, also inside one: "Kaffeeroesterei" for roesterei."""
+        tokens = [t for t in re.split(r"[^a-z0-9]+", address.split("@")[0].lower()) if len(t) > 2]
+        return bool(tokens) and all(any(t in w for w in words) for t in tokens)
 
     def weighs(candidates: list[Shipment]) -> list[Shipment]:
         if kg is None:
@@ -92,8 +93,10 @@ def described(ctx: Context, text: str) -> list[Shipment]:
     found = shipments.find(ctx, destination=destination)
     if addresses:
         found = [s for s in found if s.customer.lower() in addresses]
-    names = [s for s in found if company(s)]
-    found = names or found
+    names = [s for s in found if company(s.customer)]
+    # A company the desk names that we know is never answered with another customer's shipment.
+    known = any(company(r["customer"]) for r in ctx.db.execute("SELECT DISTINCT customer FROM sessions"))
+    found = names if names or known else found
     if origin:
         strict = [s for s in found if s.origin == origin]
     else:
