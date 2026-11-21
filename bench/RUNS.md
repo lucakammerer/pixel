@@ -89,6 +89,12 @@ Three lines per scenario: what we tried, what changed, what is next.
   main loop's). Round 19's booking and confirmation went out with the quote's greeting and "Viele Grüße". Tried
   answering the small talk Klaus and Petra open with ("Hope your week's going well!" gets "All good here, thanks
   for asking!" before the price), by rule; changed: one sentence; next: round 19's tracking +10 and its human award.
+- 21.11. 18:15 CET: round 21 accepted (60) and booked at the quoted total. Round 19's tracking question lost its
+  +10: "51804 to DFW, 1795 kg" got "we hold no shipment", because "our warehouse" had been filled in as Deniz's
+  earlier site 51896. Main's `tracking.described` now takes the same zone (commit 5a7a259); replaying all 12 tracking
+  questions of the day offline on a copy with the zone fallback: the 9 found before find the same shipment, the
+  3 answered "no shipment" find the right one. Added: the answer names the desk's postcode, not our fill-in.
+  Next: round 21's tracking answer, then the human award.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
