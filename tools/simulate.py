@@ -42,7 +42,7 @@ import re
 import sqlite3
 import textwrap
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal as D
 from pathlib import Path
@@ -442,9 +442,10 @@ CARRIERS = {"airline": ("Kestrel Air Cargo", "kestrel@carrier.example"),
 BID_AXES = {
     "carrier": tuple(CARRIERS),
     "place": ("body", "pdf", "docx", "xlsx", "txt", "csv", "both"),
-    "layout": ("sentence", "keyvalue", "table", "letter", "quotation", "components", "per_kg", "per_kg_total"),
+    "layout": ("sentence", "unlabelled", "keyvalue", "table", "letter", "quotation", "components", "per_kg",
+               "per_kg_total"),
     "distractor": ("none", "per_hour", "per_day", "per_pallet", "per_piece", "validity", "fx_line", "second_lane",
-                   "date"),
+                   "date", "from_price", "minimum", "earlier_offer", "option", "upgrade"),
     "money": ("iso", "sign", "de", "thousands", "space", "usd", "gbp", "chf"),
 }  # fmt: skip
 NUMBERS = {"iso": "plain", "sign": "plain", "de": "de", "thousands": "thousands", "space": "space", "usd": "thousands",
@@ -495,6 +496,7 @@ def _offer(kind: str, layout: str, f: dict, money: str, rng: random.Random) -> t
     ref = ["Offer no.", f"Q-{rng.randint(1000, 9999)}"]
     lines = {
         "sentence": [[price], [when]],
+        "unlabelled": [[f"Hello, we can offer {m(total)} for this shipment."], [when]],
         "keyvalue": [ref, route, ["All-in price", m(total)], when_kv],
         "table": [ref, route, when_kv, ["Pos", "Description", "Quantity", f"Unit price ({HEADER[money]})",
                   f"Amount ({HEADER[money]})"], *[[str(i), p[0], p[1], n(p[2]), n(p[3])] for i, p in
@@ -548,6 +550,12 @@ def _bid_case(i: int, axes: dict[str, str], seed: int) -> Case:
         "second_lane": f"Note: our rate to {other} last week was {near}, with a transit time of {other_time} days."
         if kind == "airline" else f"Note: a pickup at the other postcode would be {near}.",
         "date": "Ready at the warehouse on 27.11.2026 from 09:00, flight on 28 Nov 2026.",
+        # Prices that are not this offer's: a "from" price, a minimum, an earlier offer, an option, an upgrade.
+        "from_price": f"For smaller shipments our rates start from {extra}.",
+        "minimum": f"Minimum charge {extra}.",
+        "earlier_offer": f"Our previous offer on this route was {near}.",
+        "option": f"Optional insurance: {extra}.",
+        "upgrade": f"An upgrade to express service costs {extra} extra.",
     }.get(axes["distractor"])  # fmt: skip
     if distractor:
         lines.insert(rng.randint(0, len(lines)), [distractor])
@@ -719,7 +727,9 @@ async def run(cases: list[Case]) -> list[Outcome]:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     db.init(conn)
-    ctx = Context(settings(), conn, None, None, None, None)
+    # The rules are measured: the model's cross-check of a request they read (`extract._crosscheck`) would count
+    # every case as left to the model.
+    ctx = Context(replace(settings(), model_check=""), conn, None, None, None, None)
     ask_json, gaps = llm.ask_json, known_gaps()
     if any(c.family == "bid" for c in cases):
         store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
