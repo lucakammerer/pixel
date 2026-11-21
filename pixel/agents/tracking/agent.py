@@ -23,7 +23,7 @@ WEIGHT = re.compile(r"(\d[\d.,']*)\s*kg\b", re.IGNORECASE)
 # "scored": prose, then the record block with the customer's address; scored +10 on every right first answer.
 # "a": the same without the address line, the pickup named by its town ("from your site in Bremen, flying HAM to EZE").
 # "b": as "a", the record block's facts in the prose and no block.
-VARIANT = "a"
+VARIANT = "b"
 
 STATUS = {
     "booking": "is with {carrier} for booking, and I am waiting for their reply",
