@@ -144,7 +144,7 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
 @pytest.mark.parametrize(
     "name, expected",
     [
-        ("rfq-port-to-port.json", ("DUS", "JFK", "1540", "5.90", None, False, None)),
+        ("rfq-port-to-port.json", ("DUS", "JFK", "1540", "5.90", 1, False, None)),
         ("rfq-door-no-origin.json", ("", "ORD", "676", "5.79", 12, True, "51447")),
         ("rfq-door-trucking.json", ("", "JFK", "1233", "10.78", 6, True, "61018")),
         ("rfq-door-ready-for-pickup.json", ("", "ORD", "679", "4.19", 6, True, "51896")),
@@ -534,3 +534,16 @@ async def test_a_customer_with_one_known_site_is_still_asked_and_a_town_answer_g
     request = poller.ingest(ctx, request)  # round 20: Weidner had named 61391 before, which was wrong
     rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
     assert (rfq.origin, rfq.pickup_zone, rfq.pickup_postcode, rfq.extracted_by) == ("AAA", "86", None, "rules")
+
+
+@pytest.mark.parametrize(
+    "body, cbm, pieces",
+    [
+        ("AAA to BBB, 2,400 lbs, 5 skids 48x40x50 in, cheapest.", 5 * 48 * 40 * 50 * Decimal("0.0254") ** 3, 5),
+        ("AAA nach BBB: 6 Packstücke, 300 kg, je 120 x 80 x 100 cm.", Decimal("5.76"), 6),
+        ("AAA to BBB, 1 piece, 300 kg, 1200 x 800 x 1000 mm.", Decimal("0.96"), 1),
+    ],
+)
+def test_dimensions_in_inches_and_more_piece_words(body, cbm, pieces):
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert (round(rfq.volume_cbm, 6), rfq.pieces) == (round(cbm, 6), pieces)
