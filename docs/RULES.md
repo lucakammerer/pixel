@@ -14,7 +14,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | R3 | `references` lists a thread's mail ids from the first mail to the parent. Attachments are listed on the mail and downloaded one by one | API | `api/mailbox.py` `to_message` (the sender's address without a display name), `attachment`; `core/poller.py` `session_of` | done |
 | R4 | A quote counts only as a reply (`in_reply_to`) in a thread a customer started, and only our first quote in a thread counts. `in_reply_to` must be a mail we sent or received, else 404 | API, Brief | `core/outbox.py` `send_quote`, `repair_receipts`, `reconcile_reply` (one claim for operator, agent and fallback) | done |
 | R5 | We may write to customers, the airlines and truckers of the carrier list, `ratedesk@hackloop.mail` and `tracking@hackloop.mail`. Any other address gets 422 | API | `core/outbox.py` `allowed` | done |
-| R6 | Attachments: at most 5 per mail, 10 MB each; pdf, xlsx, xls, csv, txt, png, jpg, docx; seen live also mp3 voice messages | API | `api/mailbox.py` `check_attachments`; `agents/tariffs/agent.py` `_lines` (an mp3 by `_transcribe`) | done |
+| R6 | Attachments: at most 5 per mail, 10 MB each; pdf, xlsx, xls, csv, txt, png, jpg, docx; seen live also mp3 voice messages | API | `api/mailbox.py` `check_attachments`; `agents/tariffs/agent.py` `_lines` (an mp3 by `_transcribe`; also html, a forwarded mail, a zip and a file without a suffix, by `_kind`) | done |
 | R7 | 60 mails per minute per key, then 429. Limits may be tuned | API | `core/outbox.py` `_deliver` | done |
 | R8 | Only mail that 5U's agents start is scored. Mail between teams changes nothing | Brief | — | n/a |
 
