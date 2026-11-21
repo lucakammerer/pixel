@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import re
 from dataclasses import replace
@@ -226,6 +227,29 @@ def test_rules_read_the_captured_airline_bid_and_pickup_bid():
     assert (labelled.total, labelled.currency, labelled.transit_days) == (D("586.80"), "EUR", 6)
     pickup = bids.parse(captured("bid-pickup-priced.json"), rfq(), needs_transit=False)
     assert (pickup.total, pickup.currency) == (D("182.62"), "EUR")
+
+
+async def test_a_pickup_price_in_an_attached_offer_is_read(ctx, monkeypatch):
+    """Round 63: every trucker priced the pickup in an attachment (pdf, docx, mp3); the body says only "see the
+    attachment". Read without the file, no pickup was priced and the airport-only fallback was rejected as too low."""
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "bid-pickup-in-attachment.json").read_text())
+
+    class Files:
+        async def attachment(self, message_id, attachment_id):
+            return base64.b64decode(raw["attachments"][0]["content_base64"])
+
+    async def model(ctx, *, user, **kw):
+        offer = "Total 165.70" in user
+        data = {"offer": offer, "total": "165.70" if offer else None, "components": [], "currency": "EUR",
+                "transit_days": None, "eur_per_unit": None}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
+    message = to_message(raw, "in").model_copy(update={"session_id": 1, "sender": "a@truck"})
+    await bids.record(replace(ctx, mailbox=Files()), message)
+    [found] = [o["option"] for o in kinds(ctx, "option.found")]
+    assert (found["pickup"], found["trucker"], found["pickup_hours"]) == ("165.70", "Truck A", 29)
 
 
 async def test_the_captured_rate_desk_answer_gives_one_option_per_priced_airline_without_a_model(ctx, monkeypatch):

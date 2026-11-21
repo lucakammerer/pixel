@@ -376,6 +376,21 @@ def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool
     return None, all(tuple(lane) == current for lane in lanes)
 
 
+async def _with_attachments(ctx: Context, message: Message) -> str:
+    """The carrier's own words and the text of every attachment code can read: truckers send their offer as a pdf
+    or docx and write only "see the attachment" in the mail."""
+    from pixel.agents.tariffs.agent import _lines
+
+    parts = [_own_text(message.body)]
+    for attachment in message.attachments:
+        try:
+            parts += _lines(attachment.filename, await ctx.mailbox.attachment(message.id, attachment.id))
+        except Exception as e:  # noqa: BLE001  an unreadable file (a voice message) must not lose the body
+            events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
+                        payload={"where": "bid_attachment", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+    return "\n".join(parts)
+
+
 async def record(ctx: Context, message: Message) -> None:
     """Called by the orchestrator for every bid or desk answer: parse (model only if `parse` gives None),
     emit `bid.received` and `option.found`."""
@@ -392,6 +407,8 @@ async def record(ctx: Context, message: Message) -> None:
                     payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
                              "ignored": "different or ambiguous lane"})  # fmt: skip
         return
+    if message.attachments:
+        message = message.model_copy(update={"body": await _with_attachments(ctx, message)})
     listed = parse_desk(message, rfq) if kind == "ratedesk" else []
     option, read_by = None if listed else parse(message, rfq, needs_transit=not pickup), "rules"
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call.
