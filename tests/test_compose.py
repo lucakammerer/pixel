@@ -227,7 +227,8 @@ def test_reads_like_a_clerk_in_the_customers_register():
     option = OPTION.model_copy(update={"valid_until": datetime(2026, 11, 21, 16, 22, tzinfo=UTC)})
     _, body = compose.render(rfq("en"), option, request=request)
     # Named from the signature without a model slot, formal like her mail, validity on our clock, no date stamp.
-    assert body.startswith("Dear Petra,") and "Kind regards,\nLena Berger" in body
+    # Round 25: "Dear Jonas," to a formal mail; the whole signed name keeps it formal without guessing Mr or Ms.
+    assert body.startswith("Dear Petra Hofmann,") and "Kind regards,\nLena Berger" in body
     assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
     _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
     assert casual.startswith("Hi Tom,") and "Cheers,\nLena Berger" in casual
