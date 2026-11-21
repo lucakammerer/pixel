@@ -5,7 +5,7 @@ from pixel.contracts import RateOption, Rfq, Source
 from pixel.core import events, feedback, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import bids, calc, pickup, portal_rates, selection, session, store
+from pixel.pricing import bids, calc, exclusions, pickup, portal_rates, selection, session, store
 
 PORTAL_HEAD_START_S = 1.0
 
@@ -45,10 +45,16 @@ def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
     return bool(down) and not asked
 
 
-def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE) -> list[RateOption]:
+def combine(
+    rfq: Rfq,
+    options: list[RateOption],
+    rule: str = selection.DEFAULT_RULE,
+    *,
+    excluded: exclusions.Exclusions | None = None,
+) -> list[RateOption]:
     """Airline options, each with the balanced pickup added for door-to-port (Q4: the best price includes it).
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all."""
-    matching = [o for o in options if session.on_lane(o, rfq)]
+    matching = [o for o in options if session.on_lane(o, rfq) and (excluded is None or excluded.allows(o))]
     airline = [o for o in matching if o.trucker is None]
     pickups = [o for o in matching if o.trucker is not None]
     if not (rfq.door_pickup and pickups):
@@ -65,10 +71,13 @@ def combine(rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_R
 async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption]:
     """Every priced option for the request: sheets (instant), portal and bids in parallel, pickup added for
     door-to-port. Emits `option.found` per option as it arrives, so the fallback always has the best so far."""
-    sheets = sheet_options(ctx, rfq)
+    excluded = exclusions.for_request(ctx, rfq)
+    sheets = [o for o in sheet_options(ctx, rfq) if excluded.allows(o)]
     carriers = store.carriers(ctx, "airline", rfq.destination)
     priced = {o.carrier.casefold() for o in sheets}
-    candidates = [(name, email) for name, email in carriers if name.casefold() not in priced]
+    candidates = [
+        (name, email) for name, email in carriers if name.casefold() not in priced and not excluded.names(name)
+    ]
     offers = []
     async with asyncio.TaskGroup() as group:
         pickup_task = group.create_task(pickup.options(ctx, rfq, deadline))
@@ -87,7 +96,7 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
                 offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
         pickups = await pickup_task
         offers = [o for o in offers if o.source in (Source.BID, Source.RATEDESK)]
-        published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL]
+        published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL and excluded.allows(o)]
         if (sheets or offers or published) and (not rfq.door_pickup or pickups) and not portal_task.done():
             await asyncio.wait({portal_task}, timeout=max(0.0, (deadline.target_at - timing.now()).total_seconds()))
             if not portal_task.done():
@@ -96,4 +105,4 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     # Also reuse same-lane bids published before recovery or while another price source was still running.
     carried = [o for o in session.for_request(ctx, rfq) if o.source in (Source.PORTAL, Source.BID, Source.RATEDESK)]
     all_options = dict.fromkeys(sheets + portal + offers + pickups + carried)
-    return combine(rfq, list(all_options), feedback.pickup_rule(ctx))
+    return combine(rfq, list(all_options), feedback.pickup_rule(ctx), excluded=excluded)

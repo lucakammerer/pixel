@@ -10,7 +10,7 @@ from pixel.core import events, feedback, outbox, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.crm import quotes
-from pixel.pricing import calc, engine, portal_rates, selection, session, store
+from pixel.pricing import calc, engine, exclusions, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
@@ -207,7 +207,9 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
     rfq = session.rfq(ctx, session_id)
     if rfq is None:
         return None
-    options = engine.combine(rfq, session.for_request(ctx, rfq), feedback.pickup_rule(ctx))
+    options = engine.combine(
+        rfq, session.for_request(ctx, rfq), feedback.pickup_rule(ctx), excluded=exclusions.for_request(ctx, rfq)
+    )
     if rfq.door_pickup and not allow_partial:
         options = [o for o in options if o.trucker]
     if not options:
