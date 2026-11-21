@@ -79,6 +79,12 @@ Three lines per scenario: what we tried, what changed, what is next.
   mail of ours before the jury, board unchanged for us. Tried the customer's word for the place ("your warehouse"
   when they write warehouse, else "your site"); changed: one word; next: unchanged, the first accepted round with
   #71 to #73 live.
+- 21.11. 17:55 CET: round 19 accepted (60 points), our first quote in the new wording: the goods named, "your
+  warehouse", the arrival "in Dallas", "Viele Grüße" back to Deniz. Board after it: human START Milan 4, AEIOU 4,
+  MAKEANOTHERMD 1, Austrian Power 1, TALOS 1, PIXEL 0; the human award for round 19 was not out yet. Its booking
+  mail said "booked at 5819.38 EUR all-in" after a quote of 6175.48 (the portal prices the flight without our
+  pickup, as in 8 of 16 bookings today); main's `booking._notify_booked` now states the quoted total. Next: the
+  human column once round 19's award is out, then the German wording on a German request.
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
