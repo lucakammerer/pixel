@@ -99,6 +99,8 @@ tracking_question   CRM lookup → one identified shipment or a request for its 
 tariff              attachments → parse → validate → activate          tariff.ingested | tariff.failed
 feedback            core/feedback.py every 10 s: points per request, the option the scorer's best price was,
                     the balanced rule that fits; what needs repair goes to PIXEL_ALERT_URL        feedback
+watchdog            core/watchdog.py every 5 s: a request without our quote 90 s after it was stored
+                    goes once to PIXEL_ALERT_URL with its age and the step it hangs in   quote.stuck
 ```
 
 ### 4.2 Modules

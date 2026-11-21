@@ -195,12 +195,12 @@ async def once(ctx: Context) -> int:
 
 
 def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
-    """What went wrong in the last minutes, newest first: missed, rejected and point-losing requests, tracking
+    """What went wrong in the last minutes, newest first: missed, stuck, rejected and point-losing requests, tracking
     questions we matched to no shipment, customer replies left to a person, errors, bids read implausibly low."""
     since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
     rows = conn.execute(
         "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
-        " ('quote.missed', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'option.failed')"
+        " ('quote.missed', 'quote.stuck', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'option.failed')"
         " ORDER BY id DESC",
         (since,)
     ).fetchall()  # fmt: skip
@@ -209,6 +209,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
         p, issue = json.loads(row["payload"]), None
         if row["kind"] == "quote.missed":
             issue = "missed"
+        elif row["kind"] == "quote.stuck":
+            issue = "stuck"
         elif row["kind"] == "feedback" and p.get("verdict") != "accepted":
             issue = str(p.get("verdict")).replace(" ", "_")
         elif row["kind"] == "feedback" and Decimal(str(p.get("lost") or 0)) >= 1:
@@ -240,14 +242,18 @@ async def alert(ctx: Context) -> int:
         return 0
     sent.update({f"{issue}@{VERSION}": i["at"] for issue, i in new.items()})
     db.put(ctx.db, ALERTED, json.dumps(sent))  # before the call: a hook that fails must not be called every poll
-    body = {"key": "pixel-repair", "version": VERSION,
-            "issues": [{"issue": i["issue"], "session": i["session"], "at": i["at"]} for i in new.values()]}  # fmt: skip
+    await post(ctx, [{"issue": i["issue"], "session": i["session"], "at": i["at"]} for i in new.values()])
+    return len(new)
+
+
+async def post(ctx: Context, issues: list[dict[str, Any]]) -> None:
+    """Calls PIXEL_ALERT_URL, which starts a repair run; also used by `watchdog`."""
+    body = {"key": "pixel-repair", "version": VERSION, "issues": issues}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             (await client.post(ctx.settings.alert_url, json=body)).raise_for_status()
     except httpx.HTTPError as exc:
         events.emit(ctx, "error", "board", payload={"where": "alert", "error": type(exc).__name__})
-    return len(new)
 
 
 async def run(ctx: Context) -> None:
