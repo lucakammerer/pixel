@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from pixel.config import Settings
-from pixel.contracts import MailKind, Message
+from pixel.contracts import MailKind, Message, Quote
 from pixel.core import outbox
 from pixel.core.context import Context
 from pixel.core.events import emit
 
 EXPIRES_AFTER = timedelta(minutes=6)
+FALLBACK_POLL_S = 2.0
 
 
 @dataclass(frozen=True)
@@ -83,8 +84,8 @@ def _open_session(ctx: Context, message: Message, deadline: Deadline) -> None:
 
 async def quote_with_deadline(ctx: Context, message: Message) -> None:
     """Runs rfq.agent.handle as a task. If no quote is sent by `hard_at`, sends rfq.agent.fallback's quote and
-    cancels the task; if that has no price either, emits `quote.missed`. The deadline runs from the mail's stored
-    time, not from when we polled it (R1)."""
+    cancels the task; if that has no price either, it keeps looking until `hard_at`, then emits `quote.missed`.
+    The deadline runs from the mail's stored time, not from when we polled it (R1)."""
     from pixel.agents.rfq import agent as rfq
 
     deadline = deadline_for(message.sent_at, ctx.settings)
@@ -106,17 +107,13 @@ async def quote_with_deadline(ctx: Context, message: Message) -> None:
 
 
 async def _fallback(ctx: Context, message: Message, deadline: Deadline) -> None:
-    from pixel.agents.rfq import agent as rfq
-
     session_id = message.session_id
     if now() >= deadline.expires_at:
         _missed(ctx, session_id, "expired")
         return
-    try:
-        quote = await rfq.fallback(ctx, session_id)
-    except Exception as e:  # noqa: BLE001
-        _error(ctx, "fallback", e, message)
-        quote = None
+    quote = await _first_price(ctx, message, deadline)
+    if outbox.quoted(ctx, session_id):
+        return
     if quote is None:
         _missed(ctx, session_id, "no_price")
         return
@@ -133,6 +130,31 @@ async def _fallback(ctx: Context, message: Message, deadline: Deadline) -> None:
         return
     emit(ctx, "quote.fallback", "orchestrator", session_id=session_id,
          payload={"quote": quote.id, "total": str(quote.total), "currency": quote.currency})  # fmt: skip
+
+
+async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Quote | None:
+    """rfq.agent.fallback until it has a price, a person has quoted, or `hard_at` passes. An agent that gave up
+    early leaves minutes on the clock in which a late bid, a rate desk answer or a person can still price the
+    request: a miss is final, a late quote only costs time points (R1, R29)."""
+    from pixel.agents.rfq import agent as rfq
+
+    loop = asyncio.get_running_loop()
+    until = loop.time() + max(0.0, (deadline.hard_at - now()).total_seconds())
+    failed = waiting = False
+    while True:
+        try:
+            quote = await rfq.fallback(ctx, message.session_id)
+        except Exception as e:  # noqa: BLE001
+            if not failed:
+                _error(ctx, "fallback", e, message)
+            failed, quote = True, None
+        if quote is not None or loop.time() >= until or outbox.quoted(ctx, message.session_id):
+            return quote
+        if not waiting:
+            waiting = True
+            emit(ctx, "quote.waiting", "orchestrator", session_id=message.session_id,
+                 payload={"reason": "no_price", "until": deadline.hard_at.isoformat()})  # fmt: skip
+        await asyncio.sleep(min(FALLBACK_POLL_S, until - loop.time()))
 
 
 def _missed(ctx: Context, session_id: int, reason: str) -> None:

@@ -48,6 +48,28 @@ async def test_missed_when_there_is_no_price(conn, monkeypatch):
     assert kinds(ctx)[-1] == "quote.missed"
 
 
+async def test_an_agent_that_gives_up_early_still_quotes_a_price_that_arrives_before_hard_at(conn, monkeypatch):
+    ctx = make_ctx(conn)
+    rfq = ingest_rfq(ctx)
+    fake_clock(monkeypatch, rfq, ctx, before_hard_s=1.0)
+    monkeypatch.setattr(orchestrator, "FALLBACK_POLL_S", 0.01)
+    calls = []
+
+    async def handle(ctx, message, deadline):
+        return None  # no price yet: a late bid is still on its way
+
+    async def fallback(ctx, session_id):
+        calls.append(session_id)
+        return make_quote(rfq, "Q-late") if len(calls) >= 3 else None
+
+    monkeypatch.setattr(rfq_agent, "handle", handle)
+    monkeypatch.setattr(rfq_agent, "fallback", fallback)
+    await asyncio.wait_for(orchestrator.quote_with_deadline(ctx, rfq), timeout=1)
+    assert len(ctx.mailbox.sent) == 1
+    assert "quote.missed" not in kinds(ctx)
+    assert kinds(ctx).count("quote.waiting") == 1
+
+
 async def test_one_quote_when_the_agent_answers_in_time(conn, monkeypatch):
     ctx = make_ctx(conn)
     rfq = ingest_rfq(ctx)
