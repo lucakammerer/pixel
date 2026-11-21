@@ -305,8 +305,9 @@ INFORMAL_DE = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer|eure\w*)\b", re.IGNO
 NAME = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]{1,19}")
 LIMITS = {"intro": 140, "closing": 140}
 # An opening that hands the customer's mail back to them, or runs past one sentence, reads like a machine.
-ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|bezüglich|sorgfältig|"
-                  r"zur Kenntnis)\b|[.!?]\s+\S", re.IGNORECASE)  # fmt: skip
+ECHO = re.compile(r"\b(?:noted|providing|provided|shipment details|carefully|regarding your|(?:inquiry|enquiry|"
+                  r"request) regarding|the details (?:on|of) your|bezüglich|sorgfältig|zur Kenntnis)\b|[.!?]\s+\S",
+                  re.IGNORECASE)  # fmt: skip
 FORMAL = re.compile(r"\b(?:dear|sehr geehrte|kind regards|yours sincerely|mit freundlichen)", re.IGNORECASE)
 CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
