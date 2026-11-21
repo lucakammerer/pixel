@@ -5,6 +5,15 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #147 | lucakammerer | ea24ee8 | ok (mine) | `REFUSED`: an airline's refusal in our booking thread is no confirmation |
+| #146, #139 | lucakammerer | ae6a3a0, 77e4db1 | ok | RUNS notes only |
+| #145 | lucakammerer | b462562 | ok (mine) | router test for #142's two probes; fails before #142 |
+| #144 | lucakammerer | 9c41871 | ok | "1 250 kg" is 1250 (was 250); "3 120 kg pallets" reads 3120, wrong before too (120) |
+| #143 | lucakammerer | 704ec0c | fixed (#147) | "could not be confirmed" in our booking thread routed as a confirmation and marked the booking confirmed |
+| #142 | lucakammerer | c1166d4 | ok | confirmation needs an airline on the carrier list or `PX-`: 23 of 23 live confirmations from listed airlines; no test read the probes (#145) |
+| #141 | TripleCF | 8777f83 | ok | cost estimate only while the scorer's is due, no double count; dashboard only |
+| #138 | lucakammerer | 46268de | ok, voice owner's call | passes `check.run`, prices unchanged; "Dear Jonas Kessler" (#111) gone, German Sie mails open "Hallo Jonas!" |
+| #137 | lucakammerer | 7651e64 | ok | a booking by mail found by the `PX-` reference its confirmation names |
 | #136 | lucakammerer | 29fa7fd | ok (mine) | plan Q6 states the live bid rule |
 | #135 | lucakammerer | 5048723 | ok | round 28 test reads its options from a fixture, no carrier names in tests |
 | #133 | lucakammerer | 77c435c | ok | round 28 lost too_high: cheapest asked, only the balanced airline bid competed and the 390.45 bid never did; now every airline bid competes by the wish, truckers stay balanced; the only live session with two airline bids |
