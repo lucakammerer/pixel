@@ -148,7 +148,7 @@ async def sessions(request: Request, q: str = "", state: str = ""):
 
     bar = tabs(
         [(href(""), "All", not state, len(matching))]
-        + [(href(f), f.capitalize(), state == f, counts[f]) for f in FILTERS if counts.get(f) or state == f],
+        + [(href(f), f.capitalize(), state == f, counts.get(f, 0)) for f in FILTERS if counts.get(f) or state == f],
         live_id="tabs",
     )
     body = (

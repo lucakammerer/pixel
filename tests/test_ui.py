@@ -50,6 +50,32 @@ def test_list_finds_session_by_customer_lane_reference(client, q):
     assert 'href="/sessions/1"' in page and 'href="/sessions/2"' not in page
 
 
+def test_list_filter_with_zero_matching_sessions_returns_200(client, pipe):
+    # Regression for live 500 KeyError when ?state=tariff or ?state=quoted matches 0 sessions.
+    for params, tab_label in (
+        ({"state": "tariff"}, "Tariff"),
+        ({"state": "quoted", "q": "globex"}, "Quoted"),
+        ({"state": "missed"}, "Missed"),
+    ):
+        resp = client.get("/", params=params)
+        assert resp.status_code == 200
+        assert "No request matches." in resp.text and tab_label in resp.text
+
+    # Empty database: every valid filter tab returns 200 without KeyError.
+    pipe.ctx.db.execute("DELETE FROM events")
+    for state in ("tariff", "quoted", "open"):
+        resp = client.get("/", params={"state": state})
+        assert resp.status_code == 200 and "No request matches." in resp.text
+
+
+def test_a_filter_no_session_matches_still_renders(client, pipe):
+    """Live 500: ?state=tariff with no matching session raised KeyError on the tab counts."""
+    pipe.ctx.db.execute("DELETE FROM events")
+    for state in ("tariff", "quoted", "open", "missed"):
+        resp = client.get("/", params={"state": state})
+        assert resp.status_code == 200 and "No request matches." in resp.text
+
+
 def test_session_view_shows_mail_options_and_model_cost(client):
     page = client.get("/sessions/1").text
     assert "Air freight request 1" in page and "Kestrel Airways" in page and "EUR 370.74" in page
