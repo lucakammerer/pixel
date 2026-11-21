@@ -272,11 +272,13 @@ async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeyp
 
     quote = await agent.handle(ctx, request, deadline(30))
     assert calls == ["rfq.extract"] and quote.llm_calls == 1
-    assert quote.body.startswith(f"Hello Tom,\n\n{intro}") and "2 minutes" not in quote.body
+    # the extraction's opening names no phrase of the mail it answers (`hook`), so the quote opens with the price
+    assert quote.body.startswith("Hello Tom,\n\nFor the best price") and intro not in quote.body
+    assert "2 minutes" not in quote.body
     assert "260.00 EUR" in quote.body
 
     backup = await agent.fallback(ctx, 1)
-    assert intro in backup.body and len(calls) == 1
+    assert backup.body.startswith("Hello Tom,") and len(calls) == 1
 
 
 async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):

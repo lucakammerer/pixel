@@ -51,7 +51,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   clerk would: greeting in the customer's register (`register`: formal "Dear" with the whole signed name, `addressed`, neutral
   "Hello", casual "Hi") with
   the first name they signed with (the model's slot, else `signed_name` by rule), one paragraph that opens with a
-  short line (the model's, else a thank-you naming the goods in the customer's own words, `goods_of`) and gives the quoted total and its currency, carrier, transit, what is included and the chargeable
+  short line (the model's, else none: no stock opening) and gives the quoted total and its currency, carrier, transit, what is included and the chargeable
   weight only when it is above the gross weight, then the validity on our desk's clock ("until 17:22 today") with
   the booking sentence, and a person's signature (`PIXEL_SIGNER`). "Hope your week's going well" is answered first (`WELL`, "All good here, thanks for asking!"); `in_kind` answers the customer's own closing:
   a wish for the day is returned, and the sign-off goes to the town they greet from, or reads "Cheers" or "Viele
@@ -65,8 +65,16 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   when they ask for the earliest departure, one air
   waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model writes three slots, `first_name`, `intro` and
-  `closing`, on `PIXEL_MODEL_PROSE` when set. The intro is one short sentence; `clean` drops it when it repeats the mail back ("I've noted", "the details you
-  provided") or runs past one sentence. The closing slot is no longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a
+  `closing`, on `PIXEL_MODEL_PROSE` when set, plus `hook`: the phrase of the customer's mail the opening answers (a
+  friendly remark, an attachment, their buyer, the reason for the request), or null, and then no opening. It also
+  sees the openings this customer already got (`_history`, `notes`). `_opening_ok` keeps the opening only when the
+  hook stands in the mail and is not the small talk `WELL` answers, it has at most `WORDS_MAX` words, no capitalised
+  word of the mail (a name or place), and its first two words differ from every earlier opening to this customer;
+  `ECHO` drops fillers and echoes ("thank you for your request", "inquiry", "regarding", "I've noted", "here is",
+  "cheapest", "pickup", announcing the offer) and a second sentence. A dropped opening is stored in `quote.prose`
+  as `rejected`; `tests/fixtures/openings.json` holds every live request with the opening we sent. The
+  extraction's slots (model path) carry no hook, so those quotes open with the price. The closing slot is no
+  longer rendered. `clean` drops each slot that holds a digit, a three-letter code, a
   currency symbol, a URL, a weekday or month, a carrier's name, a greeting or sign-off, the wrong language, German
   `du`, or is too long; the first name must stand in the customer's mail. The checked slots are stored as
   `quote.prose`, so the fallback quote and the booking mails use them too.
