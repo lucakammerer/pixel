@@ -187,3 +187,12 @@ async def test_a_question_in_spanish_is_answered_in_spanish(pipe, monkeypatch):
                                       body="Hola, ¿dónde está la reserva BK-AB12CD34? Muchas gracias."))  # fmt: skip
     (sent,) = pipe.sent
     assert sent["body"].startswith("Hola:") and s.id in sent["body"] and "BK-AB12CD34" in sent["body"]
+
+
+def test_etd_eta_is_no_lane(pipe):
+    medtech = shipped(pipe.ctx, 1, "lindqvist-medtech@hackloop.mail", "CGN", "ORD", 676, postcode="51447")
+    acme = shipped(pipe.ctx, 2, "buyer@acme.example", "FRA", "JFK", 300)
+    text = "Please send the ETD/ETA for Lindqvist Medtech GmbH | 51447 to ORD | 676 kg"
+    assert agent.match(pipe.ctx, text, "tracking@hackloop.mail")[0] == [medtech]
+    text = "Our customer buyer@acme.example asks for the ETD/ETA of FRA - JFK."
+    assert agent.match(pipe.ctx, text, "tracking@hackloop.mail")[0] == [acme]
