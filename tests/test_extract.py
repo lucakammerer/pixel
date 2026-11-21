@@ -256,6 +256,20 @@ async def test_a_dangerous_goods_request_lists_the_documents_as_missing(conn, em
     ]
 
 
+@pytest.mark.parametrize(
+    "line, declared",
+    [
+        ("Please quote 300 kg of non-dangerous goods, AAA to BBB.", None),
+        ("General cargo, no dangerous goods.", None),
+        ("Keine Gefahrgut-Sendung, bitte AAA nach BBB.", None),
+        ("Dangerous goods: UN1133, Class 3", "UN1133, Class 3"),
+        ("Dangerous goods | Adhesives, Class 3", "Adhesives, Class 3"),
+    ],
+)
+def test_only_a_declaration_is_dangerous_goods(line, declared):
+    assert extract._declared([line]) == declared
+
+
 async def test_the_language_is_codes_reading_not_the_models(monkeypatch, emitted):
     async def as_the_model_read_it(ctx, **kw):
         data = {"origin": "AAA", "destination": "BBB", "weight_kg": "300", "volume_cbm": None, "pieces": None,
