@@ -78,3 +78,7 @@ an old one, which is quoted below it with its own lane and weight (ZRH to MEL, 3
 guessed origin CGN; zone 42 is DUS, no airline flew CGN-PEK, the request was missed.
 Our reply takes the name, the tone and the ready date from the customer's own words only
 (`pixel/agents/rfq/compose.py` `own_text`): the old mail below says "Dear team".
+
+`synthetic-rfq-facts-in-attachment.json`: round 10's request with its weight sentence replaced by "All details are
+in the attached packing specification". Weight and volume stand only in the attachment.
+
