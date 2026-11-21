@@ -1,19 +1,20 @@
 """From the customer's acceptance to the airline's confirmation (R22–R24). Every step is an event; mail leaves
 through `core.outbox` only."""
 
+import asyncio
 import re
 from datetime import UTC, datetime
 
 import httpx
 
-from pixel.agents.rfq import compose, extract
+from pixel.agents.rfq import compose, extract, followup
 from pixel.api.client import ApiError
 from pixel.api.portal import BookingUnavailable, PortalBooking, RateExpired
-from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus
+from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus, Rfq
 from pixel.core import db, events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
-from pixel.pricing import calc, portal_rates
+from pixel.pricing import calc, portal_rates, session
 
 ACCEPT = re.compile(
     r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+(?:that|no|any)\b)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
@@ -59,6 +60,7 @@ CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
 AIRLINE_REFERENCE = re.compile(r"\bbooking reference:?\s*(\S+)", re.IGNORECASE)
 OURS = re.compile(r"\byour reference:?\s*(\S+?)[.,;]?\s*$", re.IGNORECASE | re.MULTILINE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+REQUEST_WAIT_S, REQUEST_POLL_S = 20.0, 0.5
 
 
 def intent(text: str) -> str:
@@ -76,32 +78,9 @@ def intent(text: str) -> str:
     return "other"
 
 
-def _own(message: Message) -> str:
-    # A reply written below the quoted mail keeps its own lines after the quote.
-    unquoted = "\n".join(line for line in message.body.splitlines() if not line.lstrip().startswith(">"))
-    return extract.HISTORY.split(unquoted, maxsplit=1)[0].strip()
-
-
-def changed_cargo(quote: Quote, message: Message) -> dict:
-    """Weight, volume and pieces the reply's own words state when weight or volume differ from the quoted cargo;
-    our own chargeable or billed weight quoted back is no change."""
-    own = _own(message)
-    lots = extract._lots(own)
-    pieces = lots[2] if lots else extract._pieces(own)
-    weight = lots[0] if lots else extract._weight(own, pieces)
-    volume = lots[1] if lots else extract._volume(own, pieces)
-    rfq, ours = quote.rfq, {quote.option.chargeable_kg, quote.option.billed_kg}
-    if weight in ours:
-        weight = None
-    if (weight is None or weight == rfq.weight_kg) and (volume is None or volume == rfq.volume_cbm):
-        return {}
-    found = {"weight_kg": weight, "volume_cbm": volume, "pieces": pieces}
-    return {k: v for k, v in found.items() if v is not None}
-
-
 async def reply_intent(ctx: Context, message: Message) -> str:
     """The reply's own words decide; only when they say nothing does an attachment (a signed offer, a letter)."""
-    own = _own(message)
+    own = followup.own_words(message)
     subject = "" if extract.REPLY_SUBJECT.match(message.subject) else message.subject
     said = intent(own or subject)
     # A reply that asks something ("Bleibt der Preis gleich?") wants a person, whatever its attachment says.
@@ -111,28 +90,42 @@ async def reply_intent(ctx: Context, message: Message) -> str:
 
 
 async def handle_reply(ctx: Context, message: Message) -> None:
-    """The customer answered our quote: acceptance -> book; decline -> quote declined; else a person answers."""
+    """The customer wrote in their thread, before or after our quote (`followup.read`): a change of the request
+    before the acceptance is priced again and answered (R4 lets the answer to the change mail count, round 86); an
+    acceptance books; a decline closes; a tracking question after the acceptance is answered from the CRM; a
+    thank-you needs nobody; anything else a person answers."""
     quote = quotes.for_session(ctx, message.session_id)
     said = await reply_intent(ctx, message)
+    sent = quote if quote is not None and quote.sent_at is not None else None
+    rfq = await _request(ctx, message.session_id, quote)
+    read = await followup.read(ctx, message, sent, rfq, said)
+    if read.intent == "change" and read.phase in followup.PRICED_AGAIN and rfq is not None:
+        from pixel.agents.rfq import agent  # agent imports core.poller, which imports this module
+
+        await agent.requote(ctx, message, rfq.model_copy(update=read.changes))
+        return
+    if read.intent == "tracking":
+        from pixel.agents.tracking import agent as tracking
+
+        await tracking.handle(ctx, message)
+        return
+    if read.intent == "thanks" and sent is not None:
+        return
     if quote is not None and quote.sent_at is None and quote.status == QuoteStatus.DRAFT:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
             payload={"note": "Customer replied to an unsent draft", "intent": said, "quote_id": quote.id},
         )  # fmt: skip
         return
-    if quote is not None and quote.status != QuoteStatus.ACCEPTED and (changes := changed_cargo(quote, message)):
-        from pixel.agents.rfq import agent  # agent imports core.poller, which imports this module
-
-        await agent.requote(ctx, message, quote.rfq.model_copy(update=changes))
-        return
-    if quote is None or said == "other":
+    if quote is None or said == "other" or read.intent == "change":
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
-            payload={"note": "Customer reply needs a person", "intent": said, "has_quote": quote is not None},
+            payload={"note": "Customer reply needs a person", "intent": read.intent, "phase": read.phase,
+                     "changes": {k: str(v) for k, v in read.changes.items()}, "has_quote": quote is not None},
         )  # fmt: skip
         return
     if said == "decline" and quote.status == QuoteStatus.ACCEPTED:
-        if CANCELS.search(_own(message)):
+        if CANCELS.search(followup.own_words(message)):
             await cancel(ctx, quote, message)
         else:
             events.emit(
@@ -156,6 +149,18 @@ async def handle_reply(ctx: Context, message: Message) -> None:
         quotes.set_status(ctx, quote.id, QuoteStatus.ACCEPTED)
         events.emit(ctx, "customer.accepted", "crm", session_id=quote.session_id, message_id=message.id)
     await book(ctx, quote.id, reply_to=message.id)
+
+
+async def _request(ctx: Context, session_id: int, quote: Quote | None) -> Rfq | None:
+    """The request as the session knows it now: the newest reading (a change priced again moves it), else the quote's.
+    Before our quote the request can still be in reading: a change that arrives then waits for it."""
+    for _ in range(int(REQUEST_WAIT_S / REQUEST_POLL_S)):
+        if found := session.rfq(ctx, session_id) or (quote.rfq if quote else None):
+            return found
+        if quote is not None:
+            return None
+        await asyncio.sleep(REQUEST_POLL_S)
+    return None
 
 
 async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resume: bool = False) -> Booking:

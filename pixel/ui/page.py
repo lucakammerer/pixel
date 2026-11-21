@@ -282,7 +282,7 @@ LABELS = {
     "customer.accepted": "Customer accepted", "customer.declined": "Customer declined",
     "booking.requested": "Booking requested", "booking.booked": "Booked", "booking.confirmed": "Airline confirmed",
     "booking.failed": "Booking failed", "tracking.answered": "Tracking answered", "tariff.ingested": "Tariff loaded",
-    "tariff.failed": "Tariff failed", "llm.call": "Model call", "score": "Scored", "human.note": "Sent by a person",
+    "tariff.failed": "Tariff failed", "followup.read": "Reply read", "llm.call": "Model call", "score": "Scored", "human.note": "Sent by a person",
     "human.takeover": "Taken over", "human.release": "Back on autopilot", "error": "Error",
     "rfq.dangerous_goods": "Dangerous goods", "quote.prose": "Quote text written", "prose.raw": "Model text",
     "feedback": "Scorer feedback", "bid.skipped": "Bid skipped", "carrier.lanes": "Lanes learned",

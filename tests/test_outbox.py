@@ -13,7 +13,7 @@ from pixel.api.client import ApiError
 from pixel.api.mailbox import RATEDESK, to_message
 from pixel.config import settings
 from pixel.contracts import Quote, RateOption, Rfq, Source
-from pixel.core import outbox, poller
+from pixel.core import db, outbox, poller
 from pixel.core.context import Context
 from pixel.core.outbox import NotSent
 
@@ -97,6 +97,21 @@ async def test_two_racing_quotes_send_one(conn):
     with pytest.raises(NotSent, match="duplicate_quote"):
         await outbox.send_quote(ctx, make_quote(rfq, "Q-3"))
     assert conn.execute("SELECT state FROM sessions").fetchone()[0] == "quoted"
+
+
+async def test_while_a_change_is_priced_again_the_older_quote_is_held_and_the_answer_to_the_change_leaves(conn):
+    ctx = make_ctx(conn)
+    rfq = ingest_rfq(ctx)
+    db.put(conn, f"requote:{rfq.session_id}", "77")
+    assert outbox.quoted(ctx, rfq.session_id)
+    with pytest.raises(NotSent, match="superseded"):
+        await outbox.send_quote(ctx, make_quote(rfq, "Q-1"))
+    change = poller.ingest(ctx, to_message({"id": 77, "from": rfq.sender, "to": "us@x", "subject": "Re: x",
+                                            "body": "320 kg now", "in_reply_to": rfq.id, "references": [rfq.id],
+                                            "created_at": datetime.now(UTC).isoformat()}, "in"))  # fmt: skip
+    await outbox.send_quote(ctx, make_quote(rfq, "Q-2"), reply_to=change.id)
+    conn.execute("DELETE FROM kv WHERE key = ?", (f"requote:{rfq.session_id}",))
+    assert len(ctx.mailbox.sent) == 1 and outbox.quoted(ctx, rfq.session_id)
 
 
 async def test_the_quote_goes_out_with_itself_as_a_pdf(conn):

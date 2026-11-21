@@ -22,6 +22,9 @@ evidence and origin airport or pickup postcode. A postcode requires a door-picku
 precedence over a matching zone from a quote whose postcode was missing. Exact weights take precedence over
 rounded matches within 1 kg or 1%, whichever is greater.
 
+A customer asking in their own thread ("Where is our shipment?", routed here by `agents/rfq/followup.py`) means
+that thread's shipment (`_own_shipment`) when nothing else identifies one.
+
 With one match, `answer` gives the route, weight, booking status, airline and available reference and transit
 details. A door-to-port route names the town of the pickup the question asks about (its zone's area in
 `pickup_zones`), where ours was filled in from an earlier site; never a postcode or the customer's address.

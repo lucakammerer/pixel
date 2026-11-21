@@ -12,7 +12,8 @@ flowchart TD
     R -->|customer request| O[orchestrator<br/>deadline per request]
     R -->|carrier bid, desk answer| BID[pricing: bids]
     R -->|tariff mail| T[tariff agent]
-    R -->|acceptance, booking confirmation| BK[booking]
+    R -->|customer's later mail, booking confirmation| BK[booking<br/>followup: change, accept, decline, track]
+    BK -->|change before the acceptance| RFQ
     R -->|tracking question| TR[tracking agent]
 
     O --> RFQ[RFQ agent<br/>extract: rules, else one model call]
@@ -55,7 +56,8 @@ uv run pytest -q
 ## How it scores
 
 Up to 100 points per accepted quote: 45 for price accuracy, 40 for low model cost, 15 for response time. A quote is
-accepted only within 5% of the best price, and only as our first reply within 6 minutes. Code calculates the price.
+accepted only within 5% of the best price, and only as our first reply within 6 minutes; when the customer changes the
+request, our answer to the change mail is the one scored (round 86). Code calculates the price.
 A request normally uses one small gateway call.
 
 If the normal handler ends without a quote, or the request is still unanswered 2 minutes 30 seconds after receipt,

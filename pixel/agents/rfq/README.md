@@ -85,11 +85,21 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
-- A reply to a sent, not yet accepted quote whose own words give another weight or volume (`booking.py`
-  `changed_cargo`; our chargeable or billed weight quoted back is no change) is priced again: `agent.py` `requote`
-  runs `engine.options` at the new cargo, selects only from options found for it, and sends a quote with its PDF in
-  reply to the change mail (`outbox.send_quote(reply_to=...)`, its own claim). Round 86: the scorer scored our
-  answer to the change mail, not the first quote.
+- Every customer mail later in the thread goes through `followup.py` `read`, by rules and without a model call: the
+  phase it meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `declined`), its intent
+  (`change`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states differently
+  (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup postcode;
+  beside a word of change the preference or currency; never a hypothetical question, our own chargeable or billed
+  weight quoted back, or a signature's postcode). A `followup.read` event records each. `booking.py` `handle_reply`
+  acts on it: a change, or a plain ask for an updated offer, in phase `open`, `quoted` or `declined` is priced again
+  on the session's newest reading (`session.rfq`) with the changes applied; a change wins over an acceptance ("book
+  it, but it is 320 kg now"); a change after the acceptance goes to a person with what changed; a tracking question
+  after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
+- `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
+  from the best the session holds, R1), and sends a quote with its PDF in reply to the change mail
+  (`outbox.send_quote(reply_to=...)`, its own claim). While it prices, `outbox.quoted` is true and a quote of the
+  older facts is held as `superseded`, also when the change came before our first quote. Round 86: the scorer scored
+  our answer to the change mail, not the first quote.
 - `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
   the selected billed weight. A 503 or an option without a rate id goes to the airline by mail. The carrier
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
