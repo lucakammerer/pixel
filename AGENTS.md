@@ -44,7 +44,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/llm.py`: the only gateway caller
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
-- `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`,
+- `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`,
   `board_me.py`, `set_openai_key.py`; `bench/RUNS.md`: our results per request; `data/start-kit/`: the kit as
   downloaded
 
@@ -87,6 +87,7 @@ uv run pytest -q                                # seconds, no network
 uv run ruff check . && uv run ruff format .
 uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored mail through the pipeline
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
+uv run python -m tools.kpi                      # answered, price and model calls per replayed request, as JSON
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
@@ -103,8 +104,10 @@ Everything else runs dry or on replayed mail.
 
 Foundation: `a/<topic>`, `b/<topic>`, `c/<topic>` from `main`. Afterwards: `accuracy/<topic>`, `speed/<topic>`,
 `cost/<topic>`. Rebase on `main` before merging; `uv run pytest -q` and `uv run ruff check .` pass on every commit
-that reaches `main`; `.github/workflows/ci.yml` runs both on every push to `main` and every pull request. Small
-commits, the subject says what changed, no trailers.
+that reaches `main`; `.github/workflows/ci.yml` runs both on every push to `main` and every pull request. On a pull
+request it also replays the mail fixtures on the base and on the branch (`tools/kpi.py`) and posts the comparison
+as a comment: answered requests, model calls, and every request whose price or carrier changed. Small commits, the
+subject says what changed, no trailers.
 
 ## Glossary
 

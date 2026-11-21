@@ -114,7 +114,7 @@ board feedback      tools/board_me.py every few minutes                score
 | `pixel/crm/` | `quotes.py`, `bookings.py`, `shipments.py`, `schema.py` |
 | `pixel/ui/` | `routes.py` (sessions list, session view, event stream, step in), `dashboard.py` |
 | `pixel/llm.py` | The only module that calls the gateway; counts tokens and cost |
-| `tools/` | `replay.py`, `board_me.py`, `set_openai_key.py` |
+| `tools/` | `replay.py`, `kpi.py` (KPIs on replayed requests, compared with the base in every pull request), `board_me.py`, `set_openai_key.py` |
 
 ### 4.3 Sessions and the event log
 
@@ -346,4 +346,5 @@ Generalization and Frontend work in files that cannot break a quote; a pipeline 
 Everyone takes a night shift at the dashboard.
 
 Every pull request states what it changes in accepted rate, response time or spend per quote, measured on replayed
-fixtures or on `/v1/board/me`, and may not make another KPI worse without saying so.
+fixtures or on `/v1/board/me`, and may not make another KPI worse without saying so. The replayed part is posted
+by CI: `tools/kpi.py` `report`, run by `.github/workflows/ci.yml` on the base and on the branch.
