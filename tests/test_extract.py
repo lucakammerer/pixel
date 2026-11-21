@@ -170,6 +170,66 @@ def test_a_lot_whose_figures_are_not_certain_is_left_to_the_model():
     assert extract._lots("Lot 1: 2 crates, each 50 kg, each 100 x 100 x 100 cm") is None  # one lot is no lot list
 
 
+WRAPPED_LOTS = (
+    "Hello, please quote AAA to BBB for our machine parts.\n"
+    "We have 4 drums weighing 730 kg in total, 1.68 cbm altogether, then 4 cartons at 48 kg\n"
+    "gross each (110 x 110 x 52 cm), and finally 5 cases at 206 kg each, each 120 x 100 x 8 cm."
+)
+
+
+def model_reply(**fields) -> dict:
+    data = {"origin": "AAA", "destination": "BBB", "weight_kg": "1750", "volume_cbm": "3.36", "pieces": 13,
+            "preference": "cheapest", "door_pickup": False, "pickup_postcode": None, "currency": None,
+            "language": "en"}  # fmt: skip
+    return data | fields
+
+
+def lot(pieces, kg, each, cbm=None, cbm_each=False, dims=None) -> dict:
+    return {"pieces": pieces, "weight_kg": kg, "weight_per_piece": each, "volume_cbm": cbm,
+            "volume_per_piece": cbm_each, "dims_cm": dims}  # fmt: skip
+
+
+def test_lots_the_model_read_are_added_up_by_code_never_by_the_model():
+    assert extract._lots(extract._text(mail(WRAPPED_LOTS))) is None  # prose: no lot list for the rules
+    lots = [lot(4, "730", False, "1.68"), lot(4, "48", True, dims=["110", "110", "52"]),
+            lot(5, "206", True, dims=["120", "100", "8"])]  # fmt: skip
+    rfq = extract._from_model(model_reply(lots=lots), mail(WRAPPED_LOTS), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(1952), Decimal("4.6768"), 13)
+    assert "weight_kg" not in rfq.missing
+
+
+def test_model_lots_with_decimal_commas_and_per_piece_volume_are_exact():
+    lots = [lot(3, "1.234,5", False, "0,4", cbm_each=True), lot(2, "12,25", True, "0.333")]
+    rfq = extract._from_model(model_reply(weight_kg=None, lots=lots), mail(WRAPPED_LOTS), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal("1259.0"), Decimal("1.533"), 5)
+    assert "weight_kg" not in rfq.missing
+
+
+def test_model_lots_without_a_volume_keep_the_weight_and_take_the_stated_volume():
+    lots = [lot(2, "100", True), lot(1, "50", False, "0.5")]
+    rfq = extract._from_model(model_reply(volume_cbm="1.2", lots=lots), mail(WRAPPED_LOTS), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(250), Decimal("1.2"), 3)
+
+
+@pytest.mark.parametrize("lots", [None, [], [lot(0, "10", True)], [lot(2, "", True)], ["4 drums"]])
+def test_no_or_uncertain_model_lots_leave_the_models_figures(lots):
+    rfq = extract._from_model(model_reply(lots=lots), mail(WRAPPED_LOTS), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(1750), Decimal("3.36"), 13)
+
+
+def test_a_lot_list_the_rules_read_wins_over_the_models_lots(conn):
+    raw = json.loads((Path(__file__).parent / "fixtures" / "mails" / "rfq-door-three-lots.json").read_text())
+    message = to_message(raw, "in")
+    rfq = extract._from_model(model_reply(lots=[lot(1, "999", False, "9")]), message, DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(1952), Decimal("4.6768"), 13)
+
+
+def test_the_schema_asks_for_lots_and_leaves_room_for_them():
+    assert "lots" in extract.SCHEMA["required"]
+    assert extract.SCHEMA["properties"]["lots"]["items"] is extract.LOT_SCHEMA
+    assert set(extract.LOT_SCHEMA["required"]) == set(extract.LOT_SCHEMA["properties"])
+
+
 class Attachments:
     """The mailbox's attachment download, from files kept in memory."""
 

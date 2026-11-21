@@ -23,7 +23,9 @@ import httpx
 from pixel.contracts import RateOption
 from pixel.core import db, events
 from pixel.core.context import Context
+from pixel.crm import quotes
 from pixel.pricing import selection, session
+from tools.board_me import normalize
 
 POLL_S = 10
 ACCURACY, TIME, BONUS = Decimal(45), Decimal(15), Decimal(10)
@@ -71,20 +73,23 @@ def explain(points: Decimal, seconds: float, quoted: RateOption, options: list[R
 
 
 def pickup_rule(ctx: Context) -> str:
-    """The balanced rule (`selection.RULES`) that picks the scorer's trucker in the most explained requests."""
+    """Switch rules only when at least two explained requests support a rule that beats the default."""
     rows = ctx.db.execute(
         "SELECT session_id, json_extract(payload, '$.trucker') AS trucker FROM events"
-        " WHERE kind = 'feedback' AND json_extract(payload, '$.trucker') IS NOT NULL"
+        " WHERE id IN (SELECT MAX(id) FROM events WHERE kind = 'feedback' AND session_id IS NOT NULL"
+        " AND json_extract(payload, '$.trucker') IS NOT NULL GROUP BY session_id)"
     ).fetchall()
     hits = dict.fromkeys(selection.RULES, 0)
+    default = next(iter(selection.RULES))
     try:
         for row in rows:
             bids = [o for o in session.options(ctx, row["session_id"]) if o.trucker and o.pickup_hours is not None]
             for rule in selection.RULES if len(bids) > 1 else ():
                 hits[rule] += selection.balanced(bids, lambda o: o.pickup_hours, rule).trucker == row["trucker"]
     except Exception:  # noqa: BLE001  a stored option we cannot read must not cost the quote: keep the default rule
-        return next(iter(selection.RULES))
-    return max(hits, key=lambda rule: hits[rule])
+        return default
+    best = max(hits, key=lambda rule: hits[rule])
+    return best if hits[best] >= 2 and hits[best] > hits[default] else default
 
 
 def _session(ctx: Context, sent_at: str) -> int | None:
@@ -95,6 +100,9 @@ def _session(ctx: Context, sent_at: str) -> int | None:
 
 
 def _quoted(ctx: Context, session_id: int) -> RateOption | None:
+    quote = quotes.for_session(ctx, session_id)
+    if quote and quote.sent_at is not None:
+        return quote.option
     row = ctx.db.execute(
         "SELECT payload FROM events WHERE session_id = ? AND kind = 'quote.drafted' ORDER BY id DESC LIMIT 1",
         (session_id,),
@@ -118,12 +126,19 @@ def _round(ctx: Context, row: dict[str, Any], delta: Decimal | None) -> None:
 
 
 async def once(ctx: Context) -> int:
-    """One poll: a `feedback` event for every request whose verdict is new. Returns how many."""
+    """Store finalized score updates and return the number of new verdicts processed for feedback."""
     data = await ctx.board.me()
+    requests = [r for r in data.get("requests", []) if r.get("verdict") in FINAL]
+    stored = {str(score["round"]): score for score in quotes.latest_scores(ctx)}
+    for row in requests:
+        score = json.loads(json.dumps(normalize(row) | {"round": row["round_no"]}, default=str))
+        if stored.get(str(score["round"])) != score:
+            events.emit(ctx, "score", "board", payload=score)
+            stored[str(score["round"])] = score
+
     state = json.loads(db.get(ctx.db, STATE) or '{"total": null, "verdicts": {}}')
     total = Decimal(str(data.get("total") or 0))
-    new = [r for r in data.get("requests", []) if r.get("verdict") in FINAL
-           and state["verdicts"].get(str(r["round_no"])) != r["verdict"]]  # fmt: skip
+    new = [r for r in requests if state["verdicts"].get(str(r["round_no"])) != r["verdict"]]
     first = state["total"] is None  # nothing to compare the total with: remember the verdicts, explain nothing
     for row in [] if first else new:
         _round(ctx, row, total - Decimal(state["total"]) if len(new) == 1 else None)

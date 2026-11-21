@@ -8,7 +8,8 @@ from pixel.config import settings
 from pixel.contracts import RateOption, Source
 from pixel.core import db, events, feedback
 from pixel.core.context import Context
-from pixel.pricing import calc
+from pixel.crm import quotes
+from pixel.pricing import calc, selection
 
 ROUND = json.loads((Path(__file__).parent / "fixtures" / "feedback-rounds.json").read_text())
 T0 = "2026-11-21T15:19:13+00:00"
@@ -89,7 +90,38 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
         "40.62",
     )
     assert json.loads(db.get(conn, feedback.STATE))["verdicts"] == {"4": "accepted"}
-    assert feedback.pickup_rule(ctx) in ("share_of_best", "share_of_worst")  # min-max takes the same trucker here
+    assert feedback.pickup_rule(ctx) == "share_of_best"
+
+
+def test_pickup_rule_requires_two_distinct_explained_requests(conn, monkeypatch):
+    ctx = Context(settings(), conn, None, None, None, None)
+    pickups = [option(name, eur, 0, trucker=name, hours=hours)
+               for name, eur, hours in [("Slow", 100, 20), ("Fast", 200, 10), ("Other", 1000, 20)]]  # fmt: skip
+    monkeypatch.setattr(feedback.session, "options", lambda ctx, session_id: pickups)
+    default = next(iter(selection.RULES))
+    assert selection.balanced(pickups, lambda o: o.pickup_hours, default).trucker == "Slow"
+    for session_id in (1, 1):
+        events.emit(ctx, "feedback", "board", session_id=session_id, payload={"trucker": "Fast"})
+        assert feedback.pickup_rule(ctx) == default
+    events.emit(ctx, "feedback", "board", session_id=2, payload={"trucker": "Fast"})
+    assert feedback.pickup_rule(ctx) == "share_of_worst"
+
+
+async def test_first_poll_and_later_updates_feed_scorer_stats(conn):
+    first = board(100, (1, "accepted"), (2, "rejected"))
+    updated = board(110, (1, "accepted"), (2, "rejected"))
+    updated["requests"][0]["booked"] = True
+    ctx = Context(settings(), conn, None, None, None, Board(first, updated, updated))
+
+    assert await feedback.once(ctx) == 0
+    assert {row["round"]: row["verdict"] for row in quotes.latest_scores(ctx)} == {1: "accepted", 2: "rejected"}
+    stats = quotes.stats(ctx)
+    assert (stats["accepted"], stats["rejected"]) == (1, 1)
+
+    assert await feedback.once(ctx) == 0
+    assert quotes.latest_scores(ctx)[0]["booked"] is True
+    assert await feedback.once(ctx) == 0
+    assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'score'").fetchone()[0] == 3
 
 
 async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch):
