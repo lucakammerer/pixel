@@ -206,7 +206,9 @@ def _weight(q: Quote, request: str, options: list[RateOption], files: tuple[str,
 # "4 cartons, each 48 kg" as 48 kg, a lot left out of the sum. It makes no model call and changes no price.
 
 MASS_UNIT = r"(?P<unit>kgs?|kilo(?:gram(?:m|s)?|s)?|lbs?|pounds?|t(?![-\w])|tons?|tonnes?|tonnen)"
-MASS = re.compile(rf"(?P<num>\d[\d.,']*\d|\d)\s*{MASS_UNIT}(?![\w])", re.IGNORECASE)
+MASS = re.compile(
+    rf"(?P<num>\d{{1,3}}(?:[ \u00a0\u202f]\d{{3}})+(?![\d.,])|\d[\d.,']*\d|\d)\s*{MASS_UNIT}(?![\w])", re.IGNORECASE
+)
 MASS_LABEL = re.compile(  # "Gross weight: 480" without a unit is read as kg by the rules; read it the same way here
     r"\b(?:gross\s+weight|weight|gewicht|bruttogewicht)(?:\s*\(kgs?\))?\s*:\s*(?P<num>\d[\d.,']*\d|\d)(?![\d.,']*\s*[a-z])",
     re.IGNORECASE,
@@ -259,7 +261,8 @@ def masses(text: str) -> list[Mass]:
             u = unit.lower()
             factor = TO_KG["lb"] if u.startswith(("lb", "pound")) else TO_KG["t"] if u.startswith("t") else Decimal(1)
             raw = m.group("num")
-            readings = {v * factor for t in (True, False) if (v := number(raw, t)) is not None and v > 0}
+            parts = {raw, raw.split()[-1]} if raw.split()[1:] else {raw}  # "1 250 kg" is 1250, or "1" then 250
+            readings = {v * factor for r in parts for t in (True, False) if (v := number(r, t)) is not None and v > 0}
             if not readings:
                 continue
             per_piece = None

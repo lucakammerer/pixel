@@ -361,3 +361,26 @@ def test_every_captured_request_read_by_the_rules_is_explained(name):
 def test_a_mail_without_any_weight_only_warns():
     assert accounting("FRA to ORD, details in the packing list", "500", ("packing.pdf",)) == [check.WARN]
     assert accounting("", "500") == [check.WARN]
+
+
+def _written_weights() -> list[tuple[str, str, str]]:
+    """Every hand-written request with the gross weight its author says it states (fixtures README: not generated
+    from the code under review)."""
+    fixtures, cases = Path(__file__).parent / "fixtures", []
+    for name in ("rfqs/rewrites.jsonl", "rfqs/partial_cases.jsonl"):
+        for line in (fixtures / name).read_text().splitlines():
+            row = json.loads(line)
+            mail = row.get("message") or {}
+            text = row.get("text") or f"{mail.get('subject', '')}\n\n{mail.get('body', '')}"
+            if weight := (row.get("expected") or {}).get("weight_kg"):
+                cases.append((row["case_id"], text, weight))
+    variants = json.loads((fixtures / "request-variants.json").read_text())
+    for v in variants["variants"]:
+        weight = (v.get("expect") or {}).get("weight_kg", variants["base"]["weight_kg"])
+        cases.append((f"variant-{v['name']}", f"{v.get('subject', '')}\n\n{v['body']}", weight))
+    return cases
+
+
+@pytest.mark.parametrize("case, text, weight", _written_weights(), ids=[c[0] for c in _written_weights()])
+def test_no_hand_written_request_with_its_true_weight_is_blocked(case, text, weight):
+    assert check.BLOCK not in accounting(text, weight)
