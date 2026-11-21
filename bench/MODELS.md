@@ -5,6 +5,34 @@ mails written for the tool (German with dimensions and pickup, pounds, a terse o
 city names, one without the facts), the production extraction prompt and its limit of 200 output tokens, seven
 fields per mail. Prices are OpenAI's list prices; "points" is what one call costs of the 40 cost points (R28).
 
+## 21.11.2026, round 73: scored live requests
+
+Is a larger model or reading every request by the model worth it? Measured on the live host: the 44 accepted
+requests without attachments of rounds 1 to 72, whose final `rfq.extracted` the scorer bore out. Each read by the
+rules, and by the production prompt through `extract._from_model`. Origin left out: for a door pickup code sets it
+from the pickup zone after either reader. The run spent about 0.17 USD in one window.
+
+| Reader | Requests fully right | Tokens in / out | Seconds | USD per call (list price) | Language field right |
+| --- | --- | --- | --- | --- | --- |
+| rules | 42/44 | - | 0 | 0 | (code) |
+| gpt-4.1-mini | 42/44 | 723 / 137 | 1.4 | 0.0005 | 22/44 |
+| gpt-4.1 | 42/44 | 723 / 120 | 1.2 | 0.0024 | 43/44 |
+
+The same two requests failed for all three (round 3 pieces, round 19 postcode). On the request shapes we have seen
+the model reads no better than the rules, and gpt-4.1 no better than gpt-4.1-mini, at five times the price. Our
+losses were elsewhere: attachments, carrier and trucker answers, pickup places, a new language. gpt-4.1-mini names
+German for half of the English mails (German towns, a German company), so the language stays code's reading where
+its word lists know the language.
+
+The whole quote written by the model from facts code wrote, checked by code (every number one of the facts' or the
+mail's, the total once, carrier, currency, transit), on 14 accepted quotes: gpt-4.1-mini passed 13, gpt-4.1 10
+(it left out the transit time three times); about 0.0004 USD and 1.3 seconds each. One passing letter was in German
+for an English mail signed "Viele Grüße": a model that picks the language itself can lose a quote as wrong_language.
+The letters were no more personal than our template (no goods, no arrival date). Decision: the template stays, and
+a language we have no text for is translated from it (`compose.translate`).
+
+gpt-4.1 is not in `llm.PRICES`: the host logs it at `PIXEL_LLM_PRICE_IN`/`_OUT`. Add it before using it.
+
 ## 21.11.2026, before the first request
 
 | Model | Mails fully right | Fields right | No answer | Tokens in / out | Seconds | USD per call | Points per call |

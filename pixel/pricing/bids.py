@@ -26,9 +26,9 @@ CURRENCY = (
     "EUR|USD|GBP|CHF|JPY|CNY|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|PLN|CZK|HUF|TRY|AED|SAR|QAR|ILS|INR|KRW|TWD|THB|MYR|"
     "IDR|PHP|VND|ZAR|EGP|KES|NGN|BRL|MXN|ARS|CLP|COP|PEN"
 )
-SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP"}
+SYMBOLS = {"€": "EUR", "$": "USD", "£": "GBP", "euro": "EUR", "euros": "EUR"}
 PRICED = re.compile(
-    rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£])(?![A-Za-z])"
+    rf"(?<![A-Za-z])(?P<c1>{CURRENCY}|[€$£])\s?(?P<n1>{AMOUNT})|(?P<n2>{AMOUNT})\s?(?P<c2>{CURRENCY}|[€$£]|[Ee]uros?)(?![A-Za-z])"
 )
 # A pdf wraps "for 256.85" and "EUR." onto two lines: amount and currency are joined again, only when the next line
 # holds the currency alone ("Rate per kg: 2.80" over "EUR 300.00 all-in" stays two prices).
@@ -52,8 +52,12 @@ PRICE_IS = re.compile(
 )
 # An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none. The nearest
 # header above the total counts: "Chargeable weight (kg)" or "per kg (EUR)" over it is no price in that currency.
-HEADER_UNIT = re.compile(rf"\((?P<u>{CURRENCY}|kgs?|lbs?|cbm|m3|pcs)\)", re.IGNORECASE)
-TOTAL_LINE = re.compile(rf"^\s*{TOTAL_LABEL}[\s:,-]*(?P<n>{AMOUNT})\s*$", re.IGNORECASE)
+HEADER_UNIT = re.compile(rf"\((?P<u>{CURRENCY}|[€$£]|kgs?|lbs?|cbm|m3|pcs)\)", re.IGNORECASE)
+# The total row as offers write it: "Total", "Grand total", "Sum", "Total amount", "Total EUR   104.62".
+TOTAL_LINE = re.compile(
+    rf"^\s*(?:grand\s+)?(?:{TOTAL_LABEL}(?:\s+(?:amount|sum))?|sum|summe)(?:\s+(?P<c>{CURRENCY}))?[\s:,-]*(?P<n>{AMOUNT})\s*$",
+    re.IGNORECASE,
+)
 KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
 KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
@@ -135,13 +139,14 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
     header = None  # "": the nearest header names a unit that is no currency
     text = UNWRAP.sub(lambda m: f"{m.group(1) or ''} ", text)
     for line in FX.sub("", text).splitlines():
-        if units := {m.group("u").upper() for m in HEADER_UNIT.finditer(line)}:
+        if units := {SYMBOLS.get(m.group("u"), m.group("u").upper()) for m in HEADER_UNIT.finditer(line)}:
             money = units & set(CURRENCY.split("|"))
             header = money.pop() if len(money) == 1 and not re.search(KG_BASIS, line, re.IGNORECASE) else ""
-        if (m := TOTAL_LINE.match(line)) and header is None:  # no header names its unit
+        currency = (m.group("c") or "").upper() or header if (m := TOTAL_LINE.match(line)) else ""
+        if m and currency is None:  # no header names its unit
             unsure = True
-        elif m and header:
-            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), header)
+        elif m and currency:
+            price = (calc.bid_charge(_amount(m.group("n")), False, rfq), currency)
             found.add(price)
             labelled.add(price)
         prices = list(PRICED.finditer(line))
@@ -155,7 +160,7 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
             raw = m.group("n1") or m.group("n2")
             amount = _amount(raw, unit_rate=per_kg)
             currency = m.group("c1") or m.group("c2")
-            price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency, currency))
+            price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency.lower(), currency))
             found.add(price)
             if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after) or PRICE_IS.search(before):
                 labelled.add(price)
