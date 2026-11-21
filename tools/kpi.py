@@ -5,9 +5,9 @@ uv run python -m tools.kpi --online --db data/pixel.sqlite3       # the requests
 uv run python -m tools.kpi --report branch.json --base base.json  # both results as Markdown for the pull request
 
 A request is replayed with `tools/replay.py` `run`: a mail fixture on a database that holds the start kit, or with
-`--db` a stored request and the carriers' answers to it on a copy of that database. The customer's later mails are
-left out, because an acceptance books at the portal. Its price is the one code picks from every option the mails
-left behind (`agents/rfq/agent.py` `fallback`).
+`--db` a stored request and the carriers' answers to it on a copy of that database, `as_live`: we wait for the
+answers as we do live and they arrive as long after the request as they did. The customer's later mails are left
+out, because an acceptance books at the portal. Price and time are those of the quote that goes out.
 
 Offline there are sheet prices only and every model call fails: a request that needs the model is missed, cost and
 speed are not measured. `--online` reads the real portal and spends through the real gateway (R28), mail stays dry.
@@ -26,12 +26,10 @@ from pathlib import Path
 
 import httpx
 
-from pixel.agents.rfq import agent as rfq
 from pixel.agents.tariffs.agent import ingest_folder
 from pixel.app import build_context
 from pixel.config import settings
 from pixel.contracts import Event, MailKind
-from pixel.core.context import Context
 from tools import replay
 
 ROOT = Path(__file__).parent.parent
@@ -64,20 +62,18 @@ def _stored(db: str) -> dict[str, list[dict]]:
     return requests
 
 
-async def _row(ctx: Context, evs: list[Event], request: str) -> dict | None:
-    routed = next((e for e in evs if e.kind == "route" and e.payload.get("kind") == MailKind.CUSTOMER_RFQ.value), None)
-    if routed is None:
+def _row(request: str, evs: list[Event]) -> dict | None:
+    if not any(e.kind == "route" and e.payload.get("kind") == MailKind.CUSTOMER_RFQ.value for e in evs):
         return None
-    quoted_at = next((e.ts for e in evs if e.kind == "quote.drafted"), None)
-    quote = await rfq.fallback(ctx, routed.session_id)
-    option = quote.option if quote else None
+    drafted = [e for e in evs if e.kind == "quote.drafted"]
+    answered = bool(drafted) and not any(e.kind == "quote.missed" for e in evs)
+    option = drafted[-1].payload["option"] if answered else {}
     return {
-        "request": request, "answered": quote is not None,
-        "total": option and str(option.total), "currency": option and option.currency,
-        "eur": option and str(option.total_eur), "carrier": option and option.carrier,
+        "request": request, "answered": answered, "total": option.get("total"), "currency": option.get("currency"),
+        "eur": option.get("total_eur"), "carrier": option.get("carrier"),
         "model_calls": sum(e.kind == "llm.call" for e in evs),
         "usd": str(sum((e.cost_usd for e in evs), Decimal(0))),
-        "seconds": quoted_at and round((quoted_at - evs[0].ts).total_seconds(), 1),
+        "seconds": round((drafted[-1].ts - evs[0].ts).total_seconds(), 1) if answered else None,
     }  # fmt: skip
 
 
@@ -86,7 +82,7 @@ async def measure(fixtures: Path, db: str | None, online: bool) -> dict:
     source = db or await _kit()
     rows = []
     for request, raws in requests.items():
-        row = await _row(*await replay.run(raws, online, source), request)
+        row = _row(request, await replay.run(raws, online, source, as_live=True))
         if row:
             rows.append(row)
     return {"online": online, "requests": rows}
@@ -175,10 +171,7 @@ def report(branch: dict, base: dict | None) -> str:
         out.append("No request changed its answer, price, carrier or model calls.")
     out += ["", "Accuracy has no points here: the best price is the scorer's."]
     if online:
-        out[-1] += (
-            " Speed is our own time to the quote: no carrier answers a replay, so a door-to-port request waits"
-            " for its truckers until the target."
-        )
+        out[-1] += " Speed counts the carriers' answers as late as they came to the stored request."
     return "\n".join(out)
 
 
