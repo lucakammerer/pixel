@@ -47,7 +47,7 @@ TEXT = {
                     "{transit} in transit."
                 ),
                 (
-                    "I've compared the airlines on {origin} to {destination}, and {carrier} comes out best at {total} "
+                    "I've compared the airlines from {origin} to {destination}, and {carrier} comes out best at {total} "
                     "{currency} all-in, with {transit} in transit."
                 ),
             ),
@@ -69,7 +69,7 @@ TEXT = {
                     "all-in."
                 ),
                 (
-                    "I've compared the airlines on {origin} to {destination}, and {carrier} is the quickest: "
+                    "I've compared the airlines from {origin} to {destination}, and {carrier} is the quickest: "
                     "{transit} in transit, {total} {currency} all-in."
                 ),
             ),
@@ -115,6 +115,7 @@ TEXT = {
         "days": "days",
         "arrival": "With the cargo ready on {ready}, the earliest arrival {where} would be {arrive}.",
         "arrival_pickup": "With pickup on {ready}, the earliest arrival {where} would be {arrive}.",
+        "pickup_first": "We can collect on {ready}, the day it is ready, and the earliest arrival {where} would be {arrive}.",
         "arrival_air_only": (
             "If you deliver the cargo to {origin} on {ready}, the earliest arrival {where} would be {arrive}."
         ),
@@ -225,6 +226,7 @@ TEXT = {
         "days": "Tage",
         "arrival": "Ist die Ware am {ready} bereit, wäre sie frühestens am {arrive} {where}.",
         "arrival_pickup": "Mit Abholung am {ready} wäre die Ware frühestens am {arrive} {where}.",
+        "pickup_first": "Wir können am {ready} abholen, sobald die Ware bereit ist, und sie wäre frühestens am {arrive} {where}.",
         "arrival_air_only": (
             "Wenn Sie die Ware am {ready} in {origin} anliefern, wäre sie frühestens am {arrive} {where}."
         ),
@@ -342,6 +344,7 @@ SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 READY = re.compile(r"\b(?:ready|bereit|available|verfügbar)\b[^\n]{0,100}?(" + DATE.pattern + ")", re.IGNORECASE)
 WAREHOUSE = re.compile(r"\bwarehouse\b", re.IGNORECASE)
+PICKUP_ASK = re.compile(r"earliest (?:\w+ )?pick-?up|frühest\w* Abholung", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug", re.IGNORECASE)
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
@@ -422,6 +425,8 @@ def answers(rfq: Rfq, option: RateOption, request: str) -> str:
             city = city_of(request, option.destination)
             where = t["in_city" if city else "at_airport"].format(place=city or option.destination)
             arrival = "arrival_pickup" if option.trucker else "arrival_air_only" if rfq.door_pickup else "arrival"
+            if option.trucker and PICKUP_ASK.search(request):
+                arrival = "pickup_first"
             said.append(
                 t[arrival].format(ready=_day(ready, t), arrive=_day(arrive, t), origin=option.origin, where=where)
             )

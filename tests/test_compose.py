@@ -220,6 +220,9 @@ def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
     _, body = compose.render(rfq("en"), pickup, request=request)
     assert "Wednesday 25 November" in body and "Sunday 29 November" in body  # 3 days transit, a day to the airport
     assert "single air waybill" in body and body.count("1234.57 EUR") == 1
+    # Round 27 asked for "the earliest available pickup" too: answered as a pickup date, not only implied.
+    _, body = compose.render(rfq("en"), pickup, request=request + " Please confirm the earliest available pickup.")
+    assert "We can collect on Wednesday 25 November" in body and "Sunday 29 November" in body
 
 
 def test_a_date_the_request_does_not_call_ready_gives_no_arrival():

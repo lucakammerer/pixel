@@ -126,6 +126,11 @@ Three lines per scenario: what we tried, what changed, what is next.
   customer's small talk thanks them again ("All good here, thanks for asking!"), and `goods_of` is gone, as nothing
   called it any more. Read three fixtures without a model opening: the mail goes straight to the offer and reads as
   one person. Next: the first live quotes after #124, `quote.prose` `rejected` beside them.
+- 21.11. 18:55 CET: board after round 28: human awards START Milan 4, AEIOU 4, MAKEANOTHERMD 1, Austrian Power 1,
+  TALOS 1, PIXEL 0. The first quotes after #124 open on the offer (the model's "I'm happy to assist with your shipment
+  needs." was dropped, as it should be). Read rounds 23 to 28 as a clerk: "compared the airlines on HAM to EZE" is
+  not English, and round 27 asked for "the earliest available pickup", which we only implied. Changed: "from HAM to
+  EZE", and the pickup date said outright when asked; next: round 27's tracking answer, the first in variant b.
 
 ### Tracking variants (R30, `agents/tracking/agent.py` `VARIANT`)
 
