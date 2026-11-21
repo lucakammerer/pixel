@@ -93,7 +93,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
-  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`).
+  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`), except to a formal customer.
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
