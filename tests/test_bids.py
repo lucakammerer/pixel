@@ -134,6 +134,7 @@ def test_rules_refuse_what_they_cannot_read(body):
 
 
 async def test_unpriced_destination_is_mailed_and_door_to_port_adds_the_cheapest_pickup(ctx, monkeypatch):
+    ctx.settings = replace(ctx.settings, model_check="")  # the rules alone: the model reads only Air Two
     request = rfq(door_pickup=True, pickup_postcode="12345", pickup_zone="12")
     events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
 
@@ -526,3 +527,28 @@ def test_two_labelled_transit_times_are_no_transit():
 def test_a_surcharge_or_a_per_kg_rate_is_never_the_offer_price(text, wrong):
     price = bids._price(text, rfq())
     assert price is None or price[0] != wrong
+
+
+async def test_the_model_cross_checks_a_bid_the_rules_read_and_its_total_wins(ctx, monkeypatch):
+    """Round 67: the rules read a waiting-time line (45.00 EUR) as the trucker's offer; the model read 181.96."""
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
+    said = {"offer": True, "total": "181.96 EUR", "components": [], "currency": "EUR", "transit_days": None,
+            "eur_per_unit": None}  # fmt: skip
+
+    async def model(ctx, **kw):
+        return LlmResult(data=said, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    await bids.record(ctx, mail("a@truck", "Pickup EUR 45.00"))
+    [found] = [o["option"] for o in kinds(ctx, "option.found")]
+    assert (found["pickup"], kinds(ctx, "bid.crosscheck")) == (
+        "181.96",
+        [{"rules": "45.00 EUR", "model": "181.96 EUR"}],
+    )
+
+    async def down(ctx, **kw):
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(llm, "ask_json", down)
+    await bids.record(ctx, mail("b@truck", "Pickup EUR 90.00"))
+    assert [o["option"]["pickup"] for o in kinds(ctx, "option.found")] == ["181.96", "90.00"]

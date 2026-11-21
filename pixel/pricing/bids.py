@@ -369,6 +369,28 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
     return _option(rfq, message, total, currency, fx, transit or 0)
 
 
+CHECK_WAIT_S = 6
+
+
+async def _crosscheck(
+    ctx: Context, message: Message, rfq: Rfq, option: RateOption, *, needs_transit: bool
+) -> tuple[RateOption, str]:
+    """The rules' reading of an answer checked by the model's (`_read_with_model`, code adds the charges up). Where the
+    totals differ the model's wins: in round 67 the rules read a waiting-time line (45.00 EUR) as the offer, the model
+    read 181.96; on 359 answers of rounds 9 to 72 both read the same. On any failure the rules' reading stands."""
+    try:
+        read = await asyncio.wait_for(_read_with_model(ctx, message, rfq, needs_transit), CHECK_WAIT_S)
+    except Exception as exc:  # noqa: BLE001  the rules' reading stands
+        events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
+                    payload={"where": "bid.crosscheck", "error": type(exc).__name__})  # fmt: skip
+        return option, "rules"
+    if read is None or (read.total, read.currency) == (option.total, option.currency):
+        return option, "rules"
+    events.emit(ctx, "bid.crosscheck", "pricing", session_id=message.session_id, message_id=message.id,
+                payload={"rules": f"{option.total} {option.currency}", "model": f"{read.total} {read.currency}"})  # fmt: skip
+    return read, "model"
+
+
 def _postcode(rfq: Rfq) -> str:
     """Truckers price by zone but quote only with a five-digit postcode ("To quote we need: the pickup postcode"):
     a pickup known by its town alone is asked with the zone's first one."""
@@ -521,6 +543,8 @@ async def record(ctx: Context, message: Message) -> None:
         message = message.model_copy(update={"body": body})
         listed, option = by_rules(message)
     read_by = "rules"
+    if option is not None and ctx.settings.model_check:
+        option, read_by = await _crosscheck(ctx, message, rfq, option, needs_transit=not pickup)
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call. An offer
     # only in a file code cannot read leaves no price in the text for a model to copy either.
     if (
