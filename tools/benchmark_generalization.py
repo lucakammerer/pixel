@@ -84,7 +84,7 @@ from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
 from pixel.crm import quotes, shipments
-from pixel.pricing import bids
+from pixel.pricing import bids, store
 from pixel.pricing.calc import chargeable_kg, price_tariff
 from pixel.pricing.pickup import zone_of
 from tools import document_conflicts, simulate
@@ -512,9 +512,44 @@ class Followup:
     known_gap: str | None = None
 
 
+class _Files:
+    """The mailbox of one captured mail: its embedded attachments."""
+
+    def __init__(self, raw: dict) -> None:
+        self.files = {a["id"]: base64.b64decode(a["content_base64"]) for a in raw.get("attachments") or []
+                      if a.get("content_base64")}  # fmt: skip
+
+    async def attachment(self, message_id: int, attachment_id: int) -> bytes:
+        return self.files[attachment_id]
+
+
+def _read_with_answer(raw: dict, answer: str, deadline) -> Rfq | None:
+    """`extract.read_request` on a captured request whose one question the customer answers with `answer`: no model
+    (it fails as an unreachable gateway does), the start kit's pickup zones."""
+    conn = db.connect(":memory:")
+    db.init(conn)
+    ctx = Context(settings(), conn, _Files(raw), None, None, None)
+    with (START_KIT / "pickup_zones.csv").open() as f:
+        store.save_zones(ctx, list(csv.DictReader(f)))
+
+    async def asked(*args, **kwargs) -> str:
+        return answer
+
+    async def no_model(*args, **kwargs):
+        raise RuntimeError("no model in the benchmark")
+
+    with patch.object(extract, "_unknown", lambda rfq: ["volume"]), patch.object(extract, "_ask", asked), \
+            patch.object(llm, "ask_json", no_model):  # fmt: skip
+        try:
+            return asyncio.run(extract.read_request(ctx, to_message(raw, "in"), deadline))[0]
+        except RuntimeError:
+            return None
+
+
 def audit_followups() -> list[Followup]:
-    """Each captured request with each answer of `rfqs/followup-answers.json`; {other} is the next captured request's
-    destination that differs from this one's, so no airport is written here."""
+    """Each captured request, asked one question that the customer answers with each answer of
+    `rfqs/followup-answers.json`; {other} is the next captured request's destination that differs from this one's,
+    so no airport is written here. Beside the row's fields, {other} is never the origin or the destination."""
     rows = [r for r in _jsonl(RFQ_FIXTURES / "live.jsonl") if (MAILS / r["fixture"]).exists()]
     data = json.loads((RFQ_FIXTURES / "followup-answers.json").read_text())
     answers, gaps = data["answers"], data.get("known_gaps", {})
@@ -527,10 +562,12 @@ def audit_followups() -> list[Followup]:
         if not dest or not other or row.get("known_gap") or UNREAD in exp.values():
             continue
         for name, answer in answers.items():
-            body = f"{raw['body']}\n\n{extract.own_words(answer.format(dest=dest, other=other))}"
-            rfq = _rules_with_attachments(raw | {"body": body}, deadline)
+            rfq = _read_with_answer(raw, answer.format(dest=dest, other=other), deadline)
             wrong = [f"{k}: {_live_value(rfq, k)} != {v}" for k, v in exp.items()
                      if rfq and _live_value(rfq, k) != _live_want(k, v)]  # fmt: skip
+            wrong += [
+                f"{k}: {other} from the answer" for k in ("origin", "destination") if rfq and getattr(rfq, k) == other
+            ]
             outcome = "model" if rfq is None else "wrong" if wrong else "right"
             results.append(
                 Followup(row["fixture"], name, outcome, "; ".join(wrong), gaps.get(f"{name}:{row['fixture']}"))
