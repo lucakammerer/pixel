@@ -38,40 +38,26 @@ async def test_restart_before_a_slot_keeps_the_rfq_eligible(conn, monkeypatch):
     assert quotes.for_session(ctx, message.id).sent_at
 
 
-async def test_lost_receipt_is_recovered_from_the_customer_reply(conn):
-    class LostReceipt(FakeMailbox):
+@pytest.mark.parametrize("error", [ApiError(0, "ReadTimeout"), ApiError(503, "unavailable")])
+async def test_a_quote_whose_send_failed_never_blocks_the_next_quote(conn, error):
+    """A lost or refused quote must leave the fallback free to answer (R1); a second quote is harmless (R4)."""
+
+    class Failing(FakeMailbox):
+        failed = False
+
         async def send(self, *args):
-            self.receipt = await super().send(*args)
-            raise ApiError(0, "ReadTimeout")
+            if not self.failed:
+                self.failed = True
+                raise error
+            return await super().send(*args)
 
-        async def get(self, message_id):
-            assert message_id == self.receipt.id
-            return self.receipt
-
-    ctx = make_ctx(conn, LostReceipt())
+    ctx = make_ctx(conn, Failing())
     msg = ingest_rfq(ctx)
     with pytest.raises(ApiError):
-        await outbox.send_quote(ctx, make_quote(msg, fallback=True))
-    with pytest.raises(outbox.NotSent, match="duplicate_quote"):
-        await outbox.send_quote(ctx, make_quote(msg, "Q-second"))
-    assert len(ctx.mailbox.sent) == 1
-    reply = to_message(
-        {
-            "id": 6001,
-            "from": msg.sender,
-            "to": "us@x",
-            "subject": "Re: quote",
-            "body": "Yes",
-            "in_reply_to": ctx.mailbox.receipt.id,
-            "received_at": timing.now().isoformat(),
-        },
-        "in",
-    )
-    restored = await outbox.reconcile_reply(ctx, poller.ingest(ctx, reply))
-    assert restored.session_id == msg.id
-    quote = quotes.for_session(ctx, msg.id)
-    assert quote.sent_message_id == ctx.mailbox.receipt.id and quote.status == QuoteStatus.SENT
-    assert conn.execute("SELECT COUNT(*) FROM events WHERE kind='quote.sent'").fetchone()[0] == 1
+        await outbox.send_quote(ctx, make_quote(msg))
+    assert not outbox.quoted(ctx, msg.id)
+    await outbox.send_quote(ctx, make_quote(msg, "Q-fallback", fallback=True))
+    assert len(ctx.mailbox.sent) == 1 and outbox.quoted(ctx, msg.id)
 
 
 async def test_fallback_receipt_can_be_booked_once(conn, monkeypatch):

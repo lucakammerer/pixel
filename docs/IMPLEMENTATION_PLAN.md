@@ -136,7 +136,8 @@ classified tracking question, bid or booking reply whose handler was interrupted
 outgoing message, event and the sent quote together. A definite rejection releases the claim. If the process loses
 the response after submitting a mail, the claim stays pending to prevent a duplicate. A later reply that names the
 missing parent can confirm delivery through `outbox.reconcile_reply`. Without a matching receipt, delivery remains
-unconfirmed.
+unconfirmed. A quote is the exception: any failed send releases its claim, so the fallback still answers (R1); only
+the first quote counts (R4), so a second one after a lost receipt is harmless.
 
 Every step appends an `Event` (`core/events.py` `KINDS`). Tables other than `events` hold current state for fast
 queries (`sessions`, `quotes`, `bookings`, `shipments`, `tariffs`); the log is what the UI shows and what
