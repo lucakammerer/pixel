@@ -17,17 +17,22 @@ shipment it matched, or that it matched none.
 ## Implementation
 
 `agent.py` `handle`: `match` looks for references in the mail (`BK-…` from the airline, `PX-…` ours) and finds the
-shipment with `crm/shipments.py` `find`; without a reference it tries a customer address and a lane (`FRA to JFK`,
-`FRA-JFK`). `answer` writes status, airline, lane, weight, booking reference and transit time from the stored
+shipment with `crm/shipments.py` `find`. Without a reference, `described` reads the desk's description of the
+shipment (origin airport or pickup postcode, destination, weight, company name) and narrows the shipments to that
+destination by each of them; last it tries a customer address and a lane (`FRA to JFK`, `FRA-JFK`). `answer` writes status, airline, lane, weight, booking reference and transit time from the stored
 shipment, for up to five matches. No gateway call at all. Unknown shipment: we say we hold none under that
 reference and ask for the booking reference. The reply goes to the sender, in the thread, through `core.outbox`.
 
 ## Pitfalls
 
+- The tracking desk names no reference. It writes the shipment as the customer requested it: for a door-to-port
+  request `<pickup postcode> to <destination>`, with the weight and the company name. The company is matched against
+  the customer's address, the postcode against the request the shipment was quoted for.
 - The status words come from the shipment (`booking`, `booked`, `confirmed`, `failed`); never promise a flight or a
   delivery date we do not hold.
 
 ## Open
 
-- Q11: what the tracking agent asks and what makes an answer correct. Adjust `REFERENCE`, `LANE` and `answer` from
-  the first real mails.
+- Q11: what makes an answer correct is still unknown; the answer gives status, airline, lane, weight and both
+  references.
+- No tracking question for a port-to-port shipment has been captured yet; that test uses a written mail.
