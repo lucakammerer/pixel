@@ -48,7 +48,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`,
-  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`; `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`, `preview.py`; `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -96,6 +96,7 @@ uv run python -m tools.board_me                 # our results from /v1/board/me 
 uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
+uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
 tools/deploy.sh                                 # the checked-out commit to the live host, restarts the service
 ```
