@@ -32,6 +32,7 @@ TEXT = {
             "Thank you for getting in touch.",
             "Many thanks for your request.",
         ),
+        "well_back": ("All good here, thanks for asking!", "Going well here, thanks!", "All well on our side, thanks!"),
         "intro_goods": (
             "Thanks for your request, happy to help with the {goods}.",
             "Thanks for the enquiry about the {goods}.",
@@ -153,6 +154,7 @@ TEXT = {
         "subject": "Angebot {origin} nach {destination}, {weight} kg",
         "hello_name": {"formal": "Guten Tag {name},", "neutral": "Hallo {name},", "casual": "Hallo {name},"},
         "hello": "Guten Tag,",
+        "well_back": ("Danke der Nachfrage, hier läuft alles gut.", "Danke, bei uns ist alles bestens."),
         "intro": (
             "Vielen Dank für Ihre Anfrage, darum kümmere ich mich gerne.",
             "Danke für Ihre Anfrage.",
@@ -312,6 +314,12 @@ NOT_SIGNED = re.compile(
     r"Shipping|Purchasing|Sales|Export|Import|Manager|Coordinator|Office|Desk|GmbH|AG|Ltd|Inc)\b"
 )
 # What a clerk answers in kind: a wish for the day, greetings from the customer's town, "Cheers".
+# "Hope your week's going well!": a clerk answers it before the business.
+WELL = re.compile(
+    r"\bhope (?:your (?:week|day)\S* (?:is |going )|you(?:['’]re| are) (?:doing )?|all is |this finds you )\w*\s*well"
+    r"|\bhoffe,? (?:es geht Ihnen gut|Ihre Woche läuft gut)",
+    re.IGNORECASE,
+)
 WISH = {
     "en": re.compile(
         r"\bhave a ((?:lovely|nice|great|good|wonderful|pleasant) (?:day|afternoon|evening|weekend|week))\b",
@@ -514,6 +522,8 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
         intro = pick(t["intro_goods"]).format(goods=goods)
     else:
         intro = pick(t["intro"])
+    if WELL.search(request):
+        intro = f"{pick(t['well_back'])} {intro}"
     site = "warehouse" if WAREHOUSE.search(request) else "site"
     offer = [intro, price_line, basis.format(trucker=option.trucker, site=site)]
     if option.chargeable_kg > rfq.weight_kg:
