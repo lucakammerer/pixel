@@ -21,7 +21,8 @@ kind, `by` (`rules` or `model`) and the rule that decided.
 1. Sender is `tracking@hackloop.mail`: `tracking_question`. Sender is `ratedesk@hackloop.mail`: `ratedesk_reply`.
 2. A mail in a customer thread from that thread's customer (`sessions.customer`): `customer_reply`; when it answers
    our question for a missing fact (`messages.purpose` `question`): `other`, the request's handler reads it.
-3. Subject `Booking <reference> confirmed` from anyone else: `booking_confirmation`.
+3. Subject with "booking" and "confirm" in either order, from an airline on the carrier list or naming our team
+   reference (`PX-`): `booking_confirmation`.
 4. It answers one of our mails sent with purpose `bid_request` (`messages.purpose`, set by `core/outbox.py` `send`):
    `carrier_bid`.
 5. It has an attachment of a tariff file type and comes from a carrier of the carrier list or starts a thread:
@@ -43,7 +44,7 @@ call fails, a new thread becomes `customer_rfq` (a missed request costs the whol
 - Every captured request (`tests/fixtures/mails/rfq-*.json`) must be placed by the rules: `tests/test_router.py`
   checks each one. A request can give its weight in pounds or tonnes and its places as city names.
 - Subject words are weak evidence: a customer can write "booking" and "confirmed" in a new request, and an airline
-  can word its confirmation differently from the API's example. `tests/fixtures/mails/routing_probes.jsonl` holds
+  can word its confirmation differently from the API's example. The sender or our team reference decides. `tests/fixtures/mails/routing_probes.jsonl` holds
   such mails; `tools/benchmark_generalization.py` section 6 checks them.
 
 ## Open

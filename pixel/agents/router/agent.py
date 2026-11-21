@@ -7,7 +7,8 @@ from pixel.core.events import emit
 
 TARIFF_FILES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "jpeg", "docx")
 TARIFF_NAME = re.compile(r"tariff|tarif|rate|preis|price")
-BOOKING_CONFIRMED = re.compile(r"\bbooking\b.+\bconfirmed\b", re.IGNORECASE)
+BOOKING_CONFIRMED = re.compile(r"\bbook(ing)?\b.*\bconfirm|\bconfirm\w*\b.*\bbook", re.IGNORECASE)
+TEAM_REFERENCE = re.compile(r"\bPX-[0-9A-F]{6}\b")  # crm/shipments.py, sent with every booking
 WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³|lbs?|pounds?|t|tons?|tonnes?|tonnen)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
 
@@ -56,7 +57,9 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
         if _answers(ctx, message)[:1] == ["question"]:
             return MailKind.OTHER, "thread:question"
         return MailKind.CUSTOMER_REPLY, "thread:customer"
-    if sender != customer and BOOKING_CONFIRMED.search(message.subject):
+    # A customer may write "booking" and "confirmed" too; a confirmation comes from an airline or names our reference.
+    confirms = _carrier_kind(ctx, sender) or TEAM_REFERENCE.search(message.body)
+    if sender != customer and BOOKING_CONFIRMED.search(message.subject) and confirms:
         return MailKind.BOOKING_CONFIRMATION, "subject:booking_confirmed"
     purposes = _answers(ctx, message)
     if any(p.startswith("bid") for p in purposes):
