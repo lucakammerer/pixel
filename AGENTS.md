@@ -96,7 +96,7 @@ uv run python -m tools.attention --minutes 30   # what went wrong lately: where 
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
-tools/deploy.sh                                 # the checked-out commit to the live host, restarts the service
+tools/deploy.sh --after-quote                   # main to the live host once our answer to the current request is out
 ```
 
 Only one process may run with `PIXEL_DRY_RUN=0` against the real mailbox: the `pixel` service on the live host
