@@ -44,6 +44,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 ## Pitfalls
 
+- A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
+  730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
+  code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
 - A door-to-port request names the destination and the pickup address, not the origin airport.
 - A request in German writes `1.250 kg` for 1250 kg and `12,5 kg` for 12.5 kg.
 - Two weights in one mail (per piece and total) make the rules unsure: the model reads it.

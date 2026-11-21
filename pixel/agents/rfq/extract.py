@@ -34,6 +34,13 @@ VOLUME = (
 DIMS = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\b", re.IGNORECASE
 )
+LOT = re.compile(r"(?im)^\s*(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-]\s*(\d+)\s+[^\W\d](.+)$")
+EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
+ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
+MODE = rf"(?:\b(?P<each>{EACH})|\b(?P<all>{ALL}))?\s*"
+LOT_WEIGHT = re.compile(rf"{MODE}{NUM}\s*(?:kgs?|kilos?)\b(?:\s*(?P<kind>gross|brutto|net|netto))?", re.IGNORECASE)
+LOT_VOLUME = re.compile(rf"{MODE}{NUM}\s*(?:cbm\b|m3\b|m³)", re.IGNORECASE)
+LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)\s*(?:pcs|pieces|pallets?|colli|packages|cartons|boxes|stück|stk|paletten|kartons)\b", re.IGNORECASE
 )
@@ -145,6 +152,37 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
     return volume * (pieces or 1)
 
 
+def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
+    """Gross weight, volume and pieces of a request that lists its shipment lot by lot ("Lot 2: 4 cartons, each
+    48 kg gross, each 110 x 110 x 52 cm"). Each lot states its figures per piece or for the lot; code adds them
+    up. None unless there are several lots and every one is certain."""
+    lots = LOT.findall(text)
+    weight, volume, pieces = Decimal(0), Decimal(0), 0
+    for count, rest in lots:
+        n = int(count)
+        weights = [m for m in LOT_WEIGHT.finditer(rest) if (m["kind"] or "").lower() not in ("net", "netto")]
+        stated, dims = LOT_VOLUME.search(rest), LOT_DIMS.search(rest)
+        if len(weights) != 1 or not (stated or dims) or not (weights[0]["each"] or weights[0]["all"] or n == 1):
+            return None
+        kg = number(weights[0].group(3))
+        if stated:
+            if not (stated["each"] or stated["all"] or n == 1):
+                return None
+            cbm = number(stated.group(3), thousands=False) * (n if stated["each"] else 1)
+        else:
+            *sides, unit = dims.groups()[2:]
+            per_m = {"mm": Decimal(1000), "m": Decimal(1)}.get((unit or "cm").lower(), Decimal(100))
+            cbm = Decimal(1 if dims["all"] else n)
+            for side in sides:
+                cbm *= number(side, thousands=False) / per_m
+        if kg is None or cbm is None:
+            return None
+        weight += kg * (n if weights[0]["each"] else 1)
+        volume += cbm
+        pieces += n
+    return (weight, volume, pieces) if len(lots) > 1 else None
+
+
 def _pickup(text: str) -> tuple[bool, str | None]:
     if not DOOR.search(text):
         return False, None
@@ -170,10 +208,11 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
     """Regex and lookup tables. None unless origin, destination and weight are certain."""
     text = _text(message)
     lane = _lane(text)
-    weight = _unique(WEIGHT, text, thousands=True)
+    lots = _lots(text)
+    weight = lots[0] if lots else _unique(WEIGHT, text, thousands=True)
     if lane is None or weight is None:
         return None
-    pieces = _pieces(text)
+    pieces = lots[2] if lots else _pieces(text)
     door, postcode = _pickup(text)
     return Rfq(
         session_id=message.session_id,
@@ -182,7 +221,7 @@ def by_rules(message: Message, deadline: Deadline) -> Rfq | None:
         origin=lane[0],
         destination=lane[1],
         weight_kg=weight,
-        volume_cbm=_volume(text, pieces) or Decimal(0),
+        volume_cbm=lots[1] if lots else _volume(text, pieces) or Decimal(0),
         pieces=pieces,
         preference=Preference.FASTEST if FASTEST.search(text) else Preference.CHEAPEST,
         door_pickup=door,
@@ -216,6 +255,9 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     volume = number(data.get("volume_cbm") or "", thousands=False)
     if volume is None or volume < 0:
         volume = _volume(text, pieces) or Decimal(0)
+    if lots := _lots(text):  # the sums of a lot list are arithmetic: code's, not the model's
+        weight, volume, pieces = lots
+        missing = [m for m in missing if m != "weight_kg"]
     door = bool(data.get("door_pickup"))
     postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
     postcode = postcode if len(postcode) == 5 else None
