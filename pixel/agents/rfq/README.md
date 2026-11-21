@@ -232,9 +232,12 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "transit", "Laufzeit" or "T/T", else the first one no "valid", "gültig" or "good" stands before.
   `tests/fixtures/mails/bid_probes.jsonl` holds such answers.
 - A trucker can put the whole offer in an attachment (pdf letter, pdf table, docx) and write only "see the
-  attachment" (round 63: all four did, one as an mp3). `pricing/bids.py` `record` reads the body together with
-  every attachment code can read (`_with_attachments`); an unreadable file is an `error` event, the others still
-  count.
+  attachment" (round 63: all four did, one as an mp3; round 65: three of four as a voice message).
+  `pricing/bids.py` `record` reads the body together with every attachment code can read (`_with_attachments`,
+  in a thread: a transcript takes seconds); an unreadable file is an `error` event, the others still count.
+- A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
+  packing list, and a spoken "please collect the goods" or "arrange the truck" is a door pickup (`DOOR`). Unread,
+  we had to ask the customer for every fact.
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as

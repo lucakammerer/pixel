@@ -398,7 +398,7 @@ Columns: **Ex.** = the one-factor mutation · **Live** = round · **Code** · **
 | f5 | Conditional price | "subject to space", "+EUR 50 if…" | – | PARTIAL (read as price) | none | L | 60 |
 | f6 | Declines, soft declines | – | 14:13 | YES | bench 7 | M | – |
 | f7 | **Bid in a new thread** (no in_reply_to) | – | – | **NO**: router says carrier_bid, but `poller.session_of` returns a new session id, and `bids.record` gives "bid for a session without an RFQ"; lost (bench 6 checks only the kind) | bench 6 (kind only) | M | 60 |
-| f8 | Bid as PDF attachment | "offer attached" | – | YES: `_with_attachments` adds pdf, docx, txt text; rules read letter, table and quotation layouts; audio still unread | `tests/test_bids.py` offer layouts | M | 60 |
+| f8 | Bid as PDF attachment | "offer attached" | – | YES: `_with_attachments` adds pdf, docx, txt text; rules read letter, table, quotation and voice message (local transcript) layouts | `tests/test_bids.py` offer layouts | M | 60 |
 | f9 | Trucker pickup time as date/day | "pickup tomorrow 08:00", "next working day" | – | PARTIAL: `_pickup_hours` None, so the balanced pick is replaced by cheapest (`engine.combine`) | test_bids | M | 60 |
 | f10 | Trucker asks for postcode / declines zone | – | r15 | YES (zone first postcode) | test_bids | M | 60 |
 | f11 | Trucker extra fees | "+ waiting time EUR 40", "tail-lift +25" | – | PARTIAL (multiple prices give None, then the model's sum) | bid_probes breakdown | M | 60 |
