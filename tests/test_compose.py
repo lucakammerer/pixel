@@ -228,7 +228,26 @@ def test_reads_like_a_clerk_in_the_customers_register():
     assert body.startswith("Dear Petra,") and "Kind regards,\nLena Berger" in body
     assert "17:22 today" in body and "21.11.2026" not in body and "chargeable" not in body
     _, casual = compose.render(rfq("en", 2), option, request="Hi,\n\nquote AAA to BBB please.\n\nCheers,\nTom")
-    assert casual.startswith("Hi Tom,") and "Best wishes," in casual
+    assert casual.startswith("Hi Tom,") and "Cheers,\nLena Berger" in casual
+    _, both = compose.render(
+        rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Gruesse / Many greetings\nDeniz"
+    )
+    assert "Viele Grüße,\nLena Berger" in both
+
+
+def test_the_customers_own_closing_is_answered_in_kind():
+    """Rounds 12 to 16: every customer closes in a voice of their own; ours answered all of them alike."""
+    request = (
+        "Hi there,\n\nplease quote to BBB (Example City, XX), ready on 2026-11-25.\n\n"
+        "Thanks a lot and have a lovely day!\nBest greetings from Exampletown\nPetra Hofmann\nExport Desk"
+    )
+    _, body = compose.render(rfq("en"), OPTION, request=request)
+    assert "Have a lovely day too!\n\nBest regards to Exampletown,\nLena Berger" in body
+    assert "arrival in Example City would be Saturday 28 November" in body and body.count("\n\n") == 5
+    assert body.count("1234.57 EUR") == 1 and compose.check(body, rfq("en"), OPTION)
+    german = "Guten Tag,\n\nbitte um ein Angebot.\n\nEin schönes Wochenende und Grüße aus Exampletown\nAnna Muster"
+    _, body = compose.render(rfq("de"), OPTION, request=german)
+    assert "Ihnen auch ein schönes Wochenende!\n\nViele Grüße nach Exampletown\nLena Berger" in body
 
 
 def test_an_opening_that_repeats_the_mail_back_is_dropped():

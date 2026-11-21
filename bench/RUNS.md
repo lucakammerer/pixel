@@ -56,6 +56,15 @@ Three lines per scenario: what we tried, what changed, what is next.
   by rule when the model gives none, one short opening (an echo of the mail is dropped), validity as "17:22 today",
   chargeable weight only when above gross, no closing line, 3 to 4 phrasings per sentence; changed: wording only,
   same total, carrier, timing and one model call; next: the `human` column for the first round it is live.
+- 21.11. 17:35 CET: board after round 16: human awards START Milan 4, AEIOU 4, MAKEANOTHERMD 1, Austrian Power 1,
+  TALOS 1, PIXEL 0. Our accepted quotes of rounds 12 to 14 went out in the clerk's voice and won none; rounds 15
+  and 16 were rejected (`too_low`, `too_high`), so no mail of ours was read.
+- 21.11. 17:55 CET: tried answering the customer's own closing in kind (`compose.in_kind`: "have a lovely day"
+  returned, "Best regards to <their town>", "Cheers" and "Viele Grüße" mirrored, the arrival "in <the city they
+  wrote>"), the opening line joined to the offer and the validity to the booking sentence, one phrasing that shows
+  the comparison done; changed: wording only, the model's opening was dropped in every live quote since round 12 so
+  the stock line stays the default; next: the `human` column after the first accepted round with it live, then the
+  model's opening line (the extraction's prompt asks for two sentences, `clean` drops them).
 
 ### Tracking scores: +10 for a right first answer (established 21.11., times UTC)
 
