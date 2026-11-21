@@ -704,10 +704,60 @@ def _document_volume(text: str, pieces: int | None) -> Decimal | None:
     return stated
 
 
+DOCUMENT_AIRPORT = re.compile(
+    r"(?m)^[ \t]*(?P<label>(?i:origin|departure|destination|abgangsflughafen|zielflughafen))"
+    r"(?i:[ \t]+airport)?[ \t]*:[ \t]*(?P<code>[A-Z]{3})\b"
+)
+CARGO_CLAUSE = re.compile(r"[\n;]|(?<=[.!?])\s+")
+USE_CARGO = re.compile(r"^(?:please\s+)?(?:use|quote\s+(?:with|using))\s+(.+)", re.IGNORECASE)
+MAIL_CARGO = re.compile(r"^(.+?)\s+(?:in|from)\s+(?:this|my|our|the)\s+(?:e-?mail|message|body)\b", re.IGNORECASE)
+NEW_MEASUREMENT = re.compile(
+    r"^(?:the\s+)?(?:corrected|revised|updated)\s+(?P<field>(?:gross\s+)?weight|volume|dimensions)"
+    r"\s*(?:is\b|are\b|:)\s*(?P<value>.+)",
+    re.IGNORECASE,
+)
+ORIGIN_FIELDS = {"origin", "departure", "abgangsflughafen"}
+CARGO_FIELDS = {
+    "weight_kg": re.compile(r"\b(?:weight|measurements|figures)\b", re.IGNORECASE),
+    "volume_cbm": re.compile(r"\b(?:volume|dimensions|measurements|figures)\b", re.IGNORECASE),
+}
+
+
+def _shipment_sources(sources: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Exclude attachments that explicitly name a different airport for this shipment."""
+    if len(sources) == 1:
+        return sources
+    mail = sources[0][1]
+    origin, destination = _lane(mail) or (None, _destination_only(mail))
+    kept = sources[:1]
+    for name, text in sources[1:]:
+        airports = (
+            (m["code"], origin if m["label"].lower() in ORIGIN_FIELDS else destination)
+            for m in DOCUMENT_AIRPORT.finditer(text)
+            if _airport(m["code"])
+        )
+        if not any(wanted and listed != wanted for listed, wanted in airports):
+            kept.append((name, text))
+    return kept
+
+
 def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
-    """Resolve each shipment figure independently. Customer text takes precedence over a packing document, except
-    for a volume or gross weight the document states and its own table bears out (round 33: the mail's 2.78 cbm
-    lost to the attached spec's 1.92 cbm; round 35: 2644 kg to 1751 kg). Several documents must agree before their figure can be used by rule."""
+    """Use explicit corrections, then corroborated measurements from the eligible attachments."""
+    clauses = [part.strip() for part in CARGO_CLAUSE.split(sources[0][1])]
+    directives = [
+        re.split(r"\b(?:not|instead of|rather than)\b", match[1], maxsplit=1, flags=re.IGNORECASE)[0]
+        for clause in clauses
+        if (match := USE_CARGO.match(clause))
+    ]
+    mail_fields = [match[1] for directive in directives if (match := MAIL_CARGO.match(directive))]
+    corrections = [match for clause in clauses if (match := NEW_MEASUREMENT.match(clause))]
+    named = [
+        (name, text)
+        for name, text in sources[1:]
+        if any(re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w-]|\.\w)", item, re.IGNORECASE) for item in directives)
+    ]
+    if len(named) == 1:
+        sources = [sources[0], *named]
     lots = [_lots(text) for _, text in sources]
     facts, evidence = {}, {}
 
@@ -721,21 +771,30 @@ def _cargo_sources(sources: list[tuple[str, str]]) -> tuple[dict, dict]:
     counts = [group[2] if group else _pieces(text) for (_, text), group in zip(sources, lots, strict=True)]
     take("pieces", counts)
     for field, index, reader in (("weight_kg", 0, _weight), ("volume_cbm", 1, _volume)):
-        take(
-            field,
-            [
-                group[index] if group else reader(text, count or facts.get("pieces"))
-                for (_, text), group, count in zip(sources, lots, counts, strict=True)
-            ],
-        )
-    documents = [(name, _document_volume(text, facts.get("pieces"))) for name, text in sources[1:]]
-    if len(corroborated := {v for _, v in documents if v is not None}) == 1:
-        facts["volume_cbm"] = corroborated.pop()
-        evidence["volume_cbm"] = [name for name, v in documents if v is not None]
-    documents = [(name, _document_weight(text)) for name, text in sources[1:]]
-    if len(corroborated := {v for _, v in documents if v is not None}) == 1:
-        facts["weight_kg"] = corroborated.pop()
-        evidence["weight_kg"] = [name for name, v in documents if v is not None]
+        field_pattern = CARGO_FIELDS[field]
+        corrected = {
+            value
+            for match in corrections
+            if field_pattern.search(match["field"])
+            and (value := reader(match["value"], facts.get("pieces"))) is not None
+        }
+        if len(corrected) == 1:
+            facts[field], evidence[field] = corrected.pop(), [sources[0][0]]
+            continue
+        readings = [
+            group[index] if group else reader(text, count or facts.get("pieces"))
+            for (_, text), group, count in zip(sources, lots, counts, strict=True)
+        ]
+        take(field, readings)
+        if readings[0] is not None and any(field_pattern.search(fields) for fields in mail_fields):
+            continue
+        if field == "weight_kg":
+            documents = [(name, _document_weight(text)) for name, text in sources[1:]]
+        else:
+            documents = [(name, _document_volume(text, facts.get("pieces"))) for name, text in sources[1:]]
+        if len(corroborated := {v for _, v in documents if v is not None}) == 1:
+            facts[field] = corroborated.pop()
+            evidence[field] = [name for name, v in documents if v is not None]
     return facts, evidence
 
 
@@ -783,11 +842,16 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     quote still costs one call. Emits `rfq.extracted` with `extracted_by`."""
     files = await _attachments(ctx, message) if message.attachments else []
     mail = message
-    sources = [("mail", _text(mail)), *((name, own_words("\n".join(lines))) for name, lines in files)]
+    documents = [(name, own_words("\n".join(lines))) for name, lines in files]
+
+    def source_inputs() -> tuple[list[tuple[str, str]], str, Message]:
+        selected = _shipment_sources([("mail", _text(mail)), *documents])
+        combined = "\n\n".join(content for _, content in selected)
+        combined_mail = mail.model_copy(update={"subject": "", "body": combined}) if files else mail
+        return selected, combined, combined_mail
+
+    sources, text, message = source_inputs()
     cargo, evidence = _cargo_sources(sources) if files else ({}, {})
-    text = "\n\n".join(content for _, content in sources)
-    if files:
-        message = mail.model_copy(update={"subject": "", "body": text})
 
     def rules(guess: bool = False) -> Rfq | None:
         if not files:
@@ -805,14 +869,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
 
     async def ask(read: Rfq) -> Rfq:
         """Asks once for the facts still missing and reads the request again with the customer's answer."""
-        nonlocal mail, message, sources, text
+        nonlocal mail, message, sources, text, cargo, evidence
         read = apply_pickup(read, guess=False)
         if not (facts := _unknown(read)) or (said := await _ask(ctx, mail, read, facts, deadline)) is None:
             return read
         mail = mail.model_copy(update={"body": f"{_body(mail)}\n\n{own_words(said)}"})
-        sources = [("mail", _text(mail)), *sources[1:]]
-        text = "\n\n".join(content for _, content in sources)
-        message = mail.model_copy(update={"subject": "", "body": text}) if files else mail
+        sources, text, message = source_inputs()
+        cargo, evidence = _cargo_sources(sources) if files else ({}, {})
         again = rules()
         if (
             again is None
@@ -870,8 +933,9 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         for key in ("origin", "destination"):
             if named := [name for name, content in sources if names_code(content, getattr(rfq, key))]:
                 evidence[key] = named
+        excluded = [name for name, content in documents if (name, content) not in sources]
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
-                    payload={"sources": evidence})  # fmt: skip
+                    payload={"sources": evidence, "attachment_route_conflicts": excluded})  # fmt: skip
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
