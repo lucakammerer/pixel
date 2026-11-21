@@ -308,6 +308,21 @@ async def test_a_pickup_price_in_an_attached_offer_is_read(ctx, monkeypatch):
     assert (found["pickup"], found["trucker"], found["pickup_hours"]) == ("165.70", "Truck A", 29)
 
 
+PER_KG_TABLE = "\n".join(
+    "  ".join(row)
+    for row in [
+        ["Portal rates AAA-BBB, 340.0 kg, 1.2 cbm"],
+        ["Airline", "Code", "Rate per kg (EUR)", "Total (EUR)", "Transit (days)", "Rate id", "Valid until (UTC)"],
+        ["Polaris Air Logistics", "PL", "2.80", "952.00", "4", "R-C5nfsmcn3aSHlsgp", "21 Nov 2026 14:38"],
+    ]
+)
+
+
+def test_a_rate_per_kg_column_is_never_the_desk_total():
+    found = bids.parse_desk(mail("ratedesk@hackloop.mail", f"Please find the rates attached.\n\n{PER_KG_TABLE}"), rfq())
+    assert {o.total for o in found} <= {D("952.00")}
+
+
 async def test_a_trucker_who_answers_only_in_a_file_no_code_reads_is_answered_unpriced_without_an_error(
     ctx, monkeypatch
 ):
