@@ -5,6 +5,21 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #86 | lucakammerer | 3190757 | ok, a bet | one question before the quote when the pickup place is missing: Q9 open, watch the first round it fires |
+| #84 | lucakammerer | ca6080f | ok | small talk answered in code; `compose.check` still guards the total |
+| #80 | lucakammerer | 5f7de3f | ok | bench notes only |
+| #78 | lucakammerer | fa8ac11 | ok | deploy window shut in a request's first two minutes and until the answer is out |
+| #77 | lucakammerer | 0441f6a | ok | bid wait from our ask, bounded by `hard_at` |
+| #75 | lucakammerer | 3e6c45a | ok | wording only |
+| #74 | lucakammerer | 575d3c5 | ok | bench notes only |
+| #73 | lucakammerer | 2ff1bb6 | ok | booking mails greet as the quote did (kept through #59's merge) |
+| #72 | lucakammerer | 4cf7c61 | ok | goods in the customer's words, lower case only: no code or name copied |
+| #71 | lucakammerer | 34e4d7c | ok | wording only |
+| #70 | lucakammerer | be11ec1 | ok | fixture only |
+| #69 | lucakammerer | 9baf0fe | superseded by #86 | an earlier site was right once and wrong twice: now asked, not guessed |
+| #66 | lucakammerer | a192a4d | ok | truckers asked with the zone's first postcode |
+| #65 | lucakammerer | 40efca1 | ok | a figure the mail does not write is replaced by code's reading (P1) |
+| #64 | lucakammerer | 1188447 | ok | deploy waits for `tools.window` |
 | #88 | lucakammerer | review/tracking-relaxed | own | tracking lost shipments with a remembered site postcode or a replaced origin (#76) |
 | #87 | lucakammerer | review/acceptances | own | "Bitte buchen Sie", "We accept the quote", "Please go ahead" read as other: no booking (#76) |
 | #85 | lucakammerer | 2b7b594 | own | "3 working days" and "EUR 850.00 per shipment" dropped a priced bid (#76) |
