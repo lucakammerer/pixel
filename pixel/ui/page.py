@@ -21,7 +21,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-app
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .top{height:52px;display:flex;align-items:stretch;gap:28px;padding:0 24px;background:var(--surface);
 border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
-.brand{display:flex;align-items:center;font-weight:650;letter-spacing:.02em;color:var(--ink)}
+.brand{display:flex;align-items:center}
+.brand img{display:block;border-radius:3px}
 .top nav{display:flex;gap:22px}
 .top nav a{display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
 .top nav a:hover{color:var(--ink);text-decoration:none}.top nav a.on{color:var(--ink);border-color:var(--ink)}
@@ -117,6 +118,7 @@ font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
 @media (max-width:900px){.split{grid-template-columns:1fr}.split>aside{position:static}.search{width:100%;margin:0}
 .top{gap:18px;padding:0 16px}main{padding:20px 16px 60px}.hide-sm{display:none}
 .ev{grid-template-columns:56px minmax(0,1fr)}.ev .kind{display:none}}
+@media (max-width:420px){.top{gap:10px;padding:0 10px}.top nav{gap:10px}}
 """
 
 LIVE_JS = """
@@ -155,7 +157,8 @@ def layout(title: str, body: str, *, nav: str = "", script: str = "") -> str:
     return (
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · PIXEL</title>'
-        f'<style>{CSS}</style></head><body><header class=top><a class=brand href="/">PIXEL</a><nav>{links}</nav>'
+        f'<style>{CSS}</style></head><body><header class=top><a class=brand href="/">'
+        f'<img src="/assets/pixel-logo.png" alt="PIXEL" width="104" height="20"></a><nav>{links}</nav>'
         f"<span class=live id=live><i></i><span>Connecting</span></span></header>"
         f"<main>{body}</main><script>{LIVE_JS}{script}</script></body></html>"
     )

@@ -2,10 +2,11 @@
 
 import asyncio
 import json
+from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, urlencode
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 
 from pixel.agents.rfq import compose
 from pixel.contracts import Event, QuoteStatus
@@ -29,6 +30,12 @@ from pixel.ui.page import (
 )  # fmt: skip
 
 router = APIRouter()
+
+
+@router.get("/assets/pixel-logo.png", include_in_schema=False)
+def pixel_logo() -> FileResponse:
+    return FileResponse(Path(__file__).with_name("logo.png"), media_type="image/png")
+
 
 STATUS = (  # first match wins: (event kind, label, css class)
     ("booking.confirmed", "confirmed", "ok"), ("booking.booked", "booked", "ok"),
