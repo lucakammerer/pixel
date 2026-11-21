@@ -134,9 +134,10 @@ async def test_a_captured_door_request_takes_the_zones_airport_over_an_origin_no
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
     assert (rfq.origin, rfq.destination, rfq.extracted_by, rfq.missing) == ("AAA", "YYZ", "model", ())
 
-    store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])  # an airport a zone trucks to
+    # Round 14: CGN is a zone's airport too, yet not the pickup zone's, and no airline flew CGN-PEK.
+    store.save_zones(ctx, [{"zone": "00", "area": "Elsewhere", "airport": "XFW"}])
     rfq = await extract.extract(ctx, captured("rfq-door-model-names-unserved-origin.json"), DEADLINE)
-    assert rfq.origin == "XFW"
+    assert rfq.origin == "AAA"
 
 
 @pytest.mark.parametrize(
@@ -393,3 +394,44 @@ def test_a_negated_superlative_or_a_quick_reply_is_no_wish_for_speed(text):
 )
 def test_code_converts_pounds_and_tonnes(body, kg):
     assert extract.by_rules(mail(body), DEADLINE).weight_kg == kg
+
+
+async def test_a_gateway_that_refuses_the_model_still_gives_a_reading(monkeypatch, emitted):
+    async def refused(ctx, **kw):
+        raise RuntimeError("model not allowed")
+
+    monkeypatch.setattr(llm, "ask_json", refused)
+    body = "AAA to BBB, 2 boxes: one 40 kg, one 60 kg, 100 kg in total, 0.3 cbm and 0.5 cbm"
+    rfq = await extract.extract(None, mail(body), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.extracted_by) == (Decimal(100), Decimal("0.5"), "guess")
+    assert emitted[0][1]["payload"]["where"] == "rfq_extract_model"
+    assert "model not allowed" not in str(emitted[0][1]["payload"])  # the gateway's text can quote the OpenAI key
+    with pytest.raises(RuntimeError):  # nothing to guess from
+        await extract.extract(None, mail("Could you help us with a shipment next week?"), DEADLINE)
+
+
+def test_an_older_mail_quoted_below_the_request_is_not_read():
+    message = captured("rfq-door-quoted-old-request.json")  # "RE: FW: ZURICH AIRPORT - MEL / 87 PLT 3,459 KGS"
+    rfq = extract.by_rules(message, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode) == (
+        "", "PEK", Decimal(1081), Decimal("8.03"), "42401"
+    )  # fmt: skip
+
+
+async def test_facts_given_only_in_the_attached_packing_list_are_read_from_it(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures" / "mails" / "synthetic-rfq-facts-in-attachment.json").read_text()
+    )
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    store.save_zones(ctx, [{"zone": zone_of("61391"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("AAA", "GRU", Decimal(715), Decimal("2.65"))
+    assert extract.DG_DOCUMENTS in rfq.missing
+    assert ("rfq.dangerous_goods", {"declared": "UN1133, Class 3, Adhesives", "source": "PL_53839.xlsx"}) in [
+        (kind, kw["payload"]) for kind, kw in emitted
+    ]

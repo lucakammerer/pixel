@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -145,3 +146,10 @@ async def test_german_customer_gets_a_german_mail_with_the_total_written_once(pi
     (told,) = pipe.sent
     assert told["body"].startswith("Guten Tag,") and "370.74 EUR all-in" in told["body"]
     assert "Viele Grüße" in told["body"] and "Decimal" not in told["body"]
+
+
+async def test_a_dry_run_never_books_at_the_portal(pipe, accepted):
+    pipe.ctx.settings = dataclasses.replace(pipe.ctx.settings, dry_run=True)
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    assert pipe.ctx.portal.calls == []

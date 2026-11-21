@@ -11,7 +11,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from pixel import llm
-from pixel.agents.rfq.extract import ENGLISH, GERMAN
+from pixel.agents.rfq.extract import ENGLISH, GERMAN, own_words
 from pixel.contracts import Message, Preference, RateOption, Rfq
 from pixel.core import events
 from pixel.core.context import Context
@@ -420,6 +420,7 @@ def render(
     customer's, answered with `Re:`. When the finished mail fails `check` or the slots break the rendering, it is
     rendered again without slots."""
     lang = language_of(rfq)
+    request = own_words(request)
     title = reply_subject(subject) or TEXT[lang]["subject"].format(
         origin=option.origin, destination=option.destination, weight=weight(rfq.weight_kg, lang)
     )

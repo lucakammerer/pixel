@@ -75,11 +75,19 @@ events in the live database shows it:
 What follows:
 
 - The record answer ("Shipment PX-…: AAA → BBB, n kg / Status: confirmed by <airline>, booked and ready to ship /
-  Airline booking reference / Transit time / Customer") earned +10 six times out of six. The prose answer with that
-  record block below it (#20, #27, live since 16:07) is untested: if the +10 does not arrive within three minutes
-  of our answer, put the old answer back (branch `voice/tracking-old-answer`) and have the main thread deploy it.
+  Airline booking reference / Transit time / Customer") earned +10 six times out of six.
+- The prose answer with that record block below it (#20, #27) scores too: question "Status of our shipment FRA to
+  DOH, 102 kg" stored 16:18:25, our answer 16:18:25, total 970.31 at 16:14:46 and 980.31 at 16:18:47, with no round
+  closing in between and our `human` still 0. Seven of seven right first answers scored. The old answer alone is
+  kept on the local branch `voice/tracking-old-answer`, in case a later answer stops scoring.
 - No variants on tracking. Keep the facts and the first-answer-is-right rule; wording only while the +10 keeps
   arriving.
 - A question comes about 11 minutes after the request of a booked round. None comes for a round that was rejected
   or not booked (9, 10, and 11 where the customer still owes the dangerous-goods documents): that is the main loop's
   and the generalization loop's ground, not wording.
+- 21.11. 18:45, round 14 missed: a "RE: FW:" request quoted an old one (ZRH-MEL, 3,459 kg) below it; the model read
+  it and guessed CGN for a Wuppertal pickup (zone DUS). #55: quoted history and a reply's subject are not read, and
+  the zone's airport wins unless the mail names the origin. #48: a refused model gives a guess, not a miss. Open for
+  others: `rfq.currency` is read but used nowhere (a USD request gets an EUR quote); booking `intent` books "we will
+  not go ahead". Next: replay every live request of the day offline after each round.
+

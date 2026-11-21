@@ -62,13 +62,16 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `team_reference`), one portal booking by `rate_id`; a lost connection is retried once (the portal answers 200 with
   the same booking), 410 fetches a fresh rate and books that, 503 or a quote without `rate_id` books by mail with the
   airline (address from the 503 message, else the carrier list), 404 and 409 are `booking.failed`. A second
-  acceptance books nothing twice. The customer mails (booked, confirmed) are in the customer's language, with
+  acceptance books nothing twice. A dry run (`PIXEL_DRY_RUN=1`) and every replay never book at the portal: the
+  booking falls through to the booking mail, which the outbox holds. The customer mails (booked, confirmed) are in the customer's language, with
   money and weight formatted by `compose`, the stored first name and the same signer, without a model call.
   `handle_confirmation`: "Booking <reference> confirmed" marks booking and shipment
   confirmed and tells the customer once.
 
 ## Pitfalls
 
+- A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
+  name, register and answers come from the customer's own words only (`extract.py` `own_words`, the same cut pricing reads).
 - A request can carry a packing specification or a shipper's letter of instruction that declares dangerous goods
   ("Dangerous goods: UN…, Class …") while the mail calls the goods non-dangerous. `extract.py`
   `dangerous_goods` reads them and marks the request; `agent.py` `_noted` then names the goods in the quote and asks
@@ -90,6 +93,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   takes the zone whose area the mail names, only when it names exactly one (a signature can name another town).
 - "Gross weight: 480 lbs" was read as 480 kg. Weights in pounds or tonnes alone are converted by code; beside a
   weight in kg, the kg wins.
+- A gateway that refuses the model or fails left a request without an `Rfq`: nothing to quote, not even by the
+  fallback. `extract` then takes `by_rules(guess=True)`, the largest gross weight and volume the mail names,
+  `extracted_by: guess`, and emits `error`; with no lane at all it still raises.
+- A request can come as a reply or forward with an older request quoted below it ("-----Original Message-----"),
+  and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
+  to the model.
+- A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
+  the pickup zone's airport unless the mail names the origin code itself.
+- A request can leave its weight to the attached packing list ("Total gross weight (kg): 715"): when the mail names
+  no weight, `extract` reads the attachments' text with it, for the rules and the model. A document number ("No.
+  53839") is no postcode.
 - "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
   not a veto.
 - The same guess can hit a request without a pickup zone, or a destination (a city code, a nearby airfield): no
