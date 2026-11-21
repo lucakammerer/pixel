@@ -71,8 +71,9 @@ DOOR = re.compile(
     re.IGNORECASE,
 )
 OWN_DELIVERY = re.compile(
-    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b|\bno\s+(?:pick[\s-]?up|collection)\b"
-    r"|\bkeine\s+abholung\b",
+    r"\b(?:deliver|bring|drop)\w*\b[^.\n]{0,60}\b(?:ourselves|selbst)\b"
+    r"|\bno\s+(?:pick[\s-]?up|collection)\s+(?:is\s+)?(?:needed|required|necessary)\b"
+    r"|\bkeine\s+abholung\s+(?:nötig|notwendig|erforderlich)\b",
     re.IGNORECASE,
 )
 POSTCODE = re.compile(r"(?<![\d.,])(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE)

@@ -288,6 +288,14 @@ def test_no_pickup_needed_is_no_door_pickup():
     assert rfq.door_pickup is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["Pickup from our site in 61391, no pickup before 9:00 please.", "Abholung in 61391, keine Abholung am Freitag."],
+)
+def test_a_pickup_time_window_keeps_the_door_pickup(text):
+    assert extract._pickup(text) == (True, "61391")
+
+
 def lot(pieces, weight, per_piece=False, unit="kg", cbm=None, dims=None):
     return {"pieces": pieces, "weight": weight, "weight_unit": unit, "weight_per_piece": per_piece,
             "volume_cbm": cbm, "volume_per_piece": False, "dimensions": dims}  # fmt: skip

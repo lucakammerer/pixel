@@ -78,7 +78,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
   flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
   airport instead of an origin that is not the airport of any pickup zone.
-- "No pickup needed" contains the pickup word: it is no door pickup.
+- "No pickup needed" contains the pickup word: it is no door pickup. "No pickup before 9:00" is a time window,
+  not a veto.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
