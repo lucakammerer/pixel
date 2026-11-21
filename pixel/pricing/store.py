@@ -112,3 +112,7 @@ def carrier_by_email(ctx: Context, email: str) -> tuple[str, str] | None:
 def airport_of(ctx: Context, zone: str) -> str | None:
     row = ctx.db.execute("SELECT airport FROM pickup_zones WHERE zone = ?", (zone,)).fetchone()
     return row["airport"] if row else None
+
+
+def zone_airports(ctx: Context) -> set[str]:
+    return {row["airport"] for row in ctx.db.execute("SELECT DISTINCT airport FROM pickup_zones")}

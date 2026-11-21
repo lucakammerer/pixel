@@ -33,7 +33,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and one weight are found.
 - `extract.py` `extract`: `by_rules`, else exactly one `llm.ask_json` (`rfq.extract`); code validates the answer and
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
-  airport of the pickup zone as its origin (R16); when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
+  airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
+  pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English or German, written as prose: greeting
   with the customer's first name when they signed with it, an intro, one offer paragraph with the all-in total and
   its currency, carrier, transit, chargeable weight, what is included and the validity, a call to book, a closing
@@ -65,6 +66,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
 - A door-to-port request names the destination and the pickup address, not the origin airport. The rules read it
   when it names one destination and a pickup postcode; the origin is the zone's airport.
+- A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
+  flies from: every carrier declined and the request was missed. `extract.py` `_zone_origin` takes the zone's
+  airport instead of an origin that is not the airport of any pickup zone.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
