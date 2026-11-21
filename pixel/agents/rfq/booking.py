@@ -16,11 +16,11 @@ from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import calc, portal_rates
 
 ACCEPT = re.compile(
-    r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+that)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
+    r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+(?:that|no|any)\b)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
     r"|(?:offer|quote) accepted|confirm\s+(?:the|this|our)\s+booking|go ahead|book\s+(?:it|this|the\s+shipment|with)\b"
     r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|(?<!as )agreed"
     r"|(?:would|['’]d)\s+like\s+to\s+(?:book|proceed)|arrange\s+the\s+booking"
-    r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag|einverstanden"
+    r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag\b|einverstanden"
     r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen)",
     re.IGNORECASE,
 )
@@ -77,7 +77,8 @@ async def reply_intent(ctx: Context, message: Message) -> str:
     own = extract.HISTORY.split(unquoted, maxsplit=1)[0].strip()
     subject = "" if extract.REPLY_SUBJECT.match(message.subject) else message.subject
     said = intent(own or subject)
-    if said == "other" and message.attachments:
+    # A reply that asks something ("Bleibt der Preis gleich?") wants a person, whatever its attachment says.
+    if said == "other" and message.attachments and "?" not in own:
         said = intent("\n".join(line for _, lines in await extract._attachments(ctx, message) for line in lines))
     return said
 

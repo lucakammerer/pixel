@@ -127,6 +127,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   table's currency only from the nearest header above it that names one, never under a "(kg)" or "per kg" header.
   A header may name it as "(€)", the total row may be "Grand total", "Sum", "Total amount" or "Total EUR   104.62",
   an amount may say "euros"; the benchmark's `PICKUP_CHANGES` writes every captured offer each of these ways.
+  "The fuel (security, waiting) rate is" never labels the offer's price (`PRICE_IS`), and an amount at a line's end
+  joins the next line's currency only when that line holds the currency alone (`UNWRAP`).
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
   selection and records it (`option.failed`, `error: implausible`); `check.py` `_implausible` blocks a quote that
   still holds one. Evidence and limits: `docs/calc.md`, when a bid is not trusted.
@@ -139,7 +141,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   goes to a person, nothing is booked and the tracking bonus is lost.
 - The yes, the no or the airline's confirmation can stand only in an attachment (a signed letter, a confirmation
   sheet) under a body that says "see attached". `booking.py` `reply_intent` reads every attachment code can read
-  when the reply's own words say nothing; `confirmed_references` reads both references from the body and every
+  when the reply's own words say nothing and ask nothing ("Anbei die Packliste. Bleibt der Preis gleich?" goes to a
+  person); "Auftragsnummer" and "we accept no liability" in a document are no yes. `confirmed_references` reads both references from the body and every
   attachment. A scan, a voice message, and an attachment that disagrees with the mail are open cells of the
   channel matrix (`tests/fixtures/channel-gaps.json`).
 - A request can sit above a forwarded or quoted older mail with its own greeting, name and dates: the reply's
