@@ -19,6 +19,8 @@ kind, `by` (`rules` or `model`) and the rule that decided.
 `agent.py` `rules`, first match wins:
 
 1. Sender is `tracking@hackloop.mail`: `tracking_question`. Sender is `ratedesk@hackloop.mail`: `ratedesk_reply`.
+   A new thread from an address that differs from an earlier customer's only by dots, dashes, underscores or `+`
+   (`_lookalike`): `other`, no reply at all, so no price leaves to an impostor.
 2. A mail in a customer thread from that thread's customer (`sessions.customer`): `customer_reply`, before or after
    our quote; `agents/rfq/followup.py` reads what it says. When it answers our question for a missing fact
    (`messages.purpose` `question`): `other`, the request's handler reads it.

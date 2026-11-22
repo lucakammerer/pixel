@@ -51,6 +51,19 @@ def _customer_of(ctx: Context, session_id: int) -> str | None:
     return row["customer"] if row else None
 
 
+def _lookalike(ctx: Context, sender: str, before: int) -> bool:
+    """Round 105: "our mailbox is down, send the price to this address" from nordlicht.audio@ beside the customer
+    nordlicht-audio@. An address that differs from a known customer's only by its dots, dashes or underscores is not
+    that customer: it gets no mail from us, neither a question nor a price."""
+    def plain(address: str) -> str:
+        local, _, domain = address.lower().partition("@")
+        return re.sub(r"[.\-_+]", "", local) + "@" + domain
+
+    known = ctx.db.execute("SELECT DISTINCT sender FROM messages WHERE kind = ? AND sender <> ? AND id < ?",
+                           (MailKind.CUSTOMER_RFQ.value, sender, before)).fetchall()  # fmt: skip
+    return any(plain(row[0]) == plain(sender) for row in known)
+
+
 def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
     """The kind and the rule that decided, or (None, why) when the rules cannot place the mail."""
     sender = message.sender
@@ -60,6 +73,8 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
         return MailKind.TRACKING_QUESTION, "sender:tracking"
     if sender == RATEDESK:
         return MailKind.RATEDESK_REPLY, "sender:ratedesk"
+    if not in_thread and _lookalike(ctx, sender, message.id):
+        return MailKind.OTHER, "sender:lookalike"
     if in_thread and customer and sender == customer:
         # The answer to our question for a missing fact is read by the request's own handler, which waits for it.
         if _answers(ctx, message)[:1] == ["question"]:
