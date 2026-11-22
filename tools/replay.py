@@ -21,10 +21,12 @@ import json
 import selectors
 import sqlite3
 import tempfile
+from collections.abc import Callable
 from contextvars import copy_context
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -89,15 +91,20 @@ def _recorded(portal: dict):
                 for (a, b), airlines in lanes.items()]})  # fmt: skip
         if path == "/v1/portal/rates":
             kg = calc.chargeable_kg(Decimal(q["weight_kg"]), Decimal(q["volume_cbm"]))
-            for o in rates:
-                if (o["origin"], o["destination"], o["carrier_code"]) == (q["origin"], q["destination"], q["airline"]) \
-                        and Decimal(o["billed_kg"]) == kg:  # fmt: skip
-                    return httpx.Response(200, json={
-                        "rate_id": o["rate_id"], "airline": o["carrier"], "airline_code": o["carrier_code"],
-                        "origin": o["origin"], "destination": o["destination"], "chargeable_weight_kg": o["billed_kg"],
-                        "total": o["total"], "currency": o["currency"], "fx_eur_per_usd": o["fx_eur"],
-                        "transit_days": o["transit_days"], "valid_until": o["valid_until"],
-                        "dataset_version": o["dataset_version"]})  # fmt: skip
+            lane = (q["origin"], q["destination"], q["airline"])
+            read = [o for o in rates if (o["origin"], o["destination"], o["carrier_code"]) == lane]
+            # exact, else rate times weight from a read within 1 % (a reading rounded since): no minimum in a bracket
+            o = next((o for o in read if Decimal(o["billed_kg"]) == kg), None) or next(
+                (o for o in read if abs(Decimal(o["billed_kg"]) - kg) <= Decimal(o["billed_kg"]) / 100), None
+            )
+            if o is not None:
+                total = calc.money(Decimal(o["total"]) * kg / Decimal(o["billed_kg"]))
+                return httpx.Response(200, json={
+                    "rate_id": o["rate_id"], "airline": o["carrier"], "airline_code": o["carrier_code"],
+                    "origin": o["origin"], "destination": o["destination"], "chargeable_weight_kg": str(kg),
+                    "total": str(total), "currency": o["currency"], "fx_eur_per_usd": o["fx_eur"],
+                    "transit_days": o["transit_days"], "valid_until": o["valid_until"],
+                    "dataset_version": o["dataset_version"]})  # fmt: skip
         return _offline(request)
 
     return answer
@@ -176,30 +183,36 @@ class _ReplayLoop(asyncio.SelectorEventLoop):
         return future
 
 
-def _offline_run(raws: list[dict], db: str | None, as_live: bool, portal: dict) -> list[Event]:
+def _offline_run(raws: list[dict], db: str | None, as_live: bool, portal, late_s: float) -> list[Event]:
     with asyncio.Runner(loop_factory=_ReplayLoop) as runner:
         loop = runner.get_loop()
         start, baseline = to_message(raws[0], "in").sent_at, loop.time()
         token = timing.clock.set(lambda: start + timedelta(seconds=loop.time() - baseline))
         try:
             # Runner snapshots its context when get_loop initializes it.
-            return runner.run(_run(raws, False, db, as_live, portal), context=copy_context())
+            return runner.run(_run(raws, False, db, as_live, portal, late_s), context=copy_context())
         finally:
             timing.clock.reset(token)
 
 
 async def run(
-    raws: list[dict], online: bool, db: str | None = None, as_live: bool = False, portal: dict | None = None
+    raws: list[dict],
+    online: bool,
+    db: str | None = None,
+    as_live: bool = False,
+    portal: dict | Callable[[httpx.Request], Any] | None = None,
+    late_s: float = 0,
 ) -> list[Event]:
     """Offline replay advances an isolated timer clock, preserving the order of bids and deadlines. `portal`: the
-    rates a captured session was given, served offline (`_recorded`)."""
+    rates a captured session was given, served offline (`_recorded`), or the handler of every API call (an outage
+    drill, `tools/outage_drill.py`). `late_s`: each mail is seen that long after it was stored."""
     if not online:
-        return await asyncio.to_thread(_offline_run, raws, db, as_live, portal or {})
+        return await asyncio.to_thread(_offline_run, raws, db, as_live, portal or {}, late_s)
     return await _run(raws, True, db, as_live)
 
 
 async def _run(
-    raws: list[dict], online: bool, db: str | None, as_live: bool, portal: dict | None = None
+    raws: list[dict], online: bool, db: str | None, as_live: bool, portal=None, late_s: float = 0
 ) -> list[Event]:
     config = dataclasses.replace(
         settings(), dry_run=not as_live, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3")
@@ -207,7 +220,7 @@ async def _run(
     last_event = _copy(db, config.db_path, raws) if db else 0
     ctx = build_context(config)
     original = ctx.mailbox.client
-    handler = _recorded(portal) if portal else _offline
+    handler = portal if callable(portal) else _recorded(portal) if portal else _offline
     client = original if online else httpx.AsyncClient(base_url=config.api_base, transport=httpx.MockTransport(handler))
     ctx.mailbox = OfflineMailbox(client, _files(raws))
     # Captured replies arrive on schedule. The offline clock also exercises the full production deadline.
@@ -221,7 +234,7 @@ async def _run(
         message = to_message(raw, "in")
         if wait:
             await asyncio.sleep((message.sent_at - first).total_seconds())
-        stored = poller.ingest(ctx, message.model_copy(update={"sent_at": timing.now()}))
+        stored = poller.ingest(ctx, message.model_copy(update={"sent_at": timing.now() - timedelta(seconds=late_s)}))
         if stored:
             await orchestrator.dispatch(ctx, stored)
 
