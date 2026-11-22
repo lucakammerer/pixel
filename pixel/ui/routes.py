@@ -406,24 +406,83 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
     return layout(f"Request {session_id}", body, nav="sessions", script=script)
 
 
+# The Call panel's own styles: rows, the live call bar and the transcript (`voice/call.js` fills them).
+CALL_CSS = (
+    "#voice-calls .vc-intro{padding:12px 18px;color:var(--muted);border-bottom:1px solid var(--line)}"
+    "#voice-calls .vc-row{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line)}"
+    "#voice-calls .vc-row:last-of-type{border-bottom:0}"
+    "#voice-calls .vc-row>.grow,#voice-calls .vc-live>.grow{flex:1 1 auto;min-width:0}"
+    "#voice-calls{margin-bottom:24px}"
+    "#voice-calls .btn:disabled{opacity:.45;cursor:default}"
+    "#voice-calls .vc-avatar{width:34px;height:34px;border-radius:50%;flex:none;display:grid;place-items:center;"
+    "font-weight:600;font-size:12px;color:var(--accent);background:var(--sunk)}"
+    "#voice-calls .vc-name{font-weight:500;color:var(--ink);overflow-wrap:anywhere}"
+    "#voice-calls .vc-role{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:11px;"
+    "font-weight:500;color:var(--ink-2);background:var(--sunk);vertical-align:1px}"
+    "#voice-calls .vc-why{color:var(--muted);margin-top:2px}"
+    "#voice-calls .vc-row .btn{gap:6px;margin:0}#voice-calls .vc-row .btn svg{width:14px;height:14px}"
+    "#voice-calls .vc-row.on{background:var(--sunk)}"
+    "#voice-calls [hidden]{display:none!important}"
+    "#voice-calls .vc-live{display:flex;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid var(--line);"
+    "background:var(--sunk)}"
+    "#voice-calls .vc-dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none;"
+    "box-shadow:0 0 0 0 rgba(23,128,79,.5);animation:vc-pulse 1.6s ease-out infinite}"
+    "#voice-calls .vc-live.idle .vc-dot{background:var(--line-2);animation:none}"
+    "@keyframes vc-pulse{to{box-shadow:0 0 0 8px rgba(23,128,79,0)}}"
+    "#voice-calls .vc-timer{font-variant-numeric:tabular-nums;color:var(--muted)}"
+    "#voice-calls .vc-hangup{margin:0;border-color:var(--bad);color:var(--bad)}"
+    "#voice-calls .vc-status{padding:10px 18px;border-top:1px solid var(--line)}"
+    "#voice-calls .vc-status.ok{color:var(--ok)}#voice-calls .vc-status.bad{color:var(--bad)}"
+    "#voice-calls .vc-log{display:flex;flex-direction:column;gap:6px;padding:12px 18px;max-height:260px;"
+    "overflow-y:auto;border-top:1px solid var(--line)}"
+    "#voice-calls .vc-msg{max-width:80%;padding:7px 11px;border-radius:12px;line-height:1.4}"
+    "#voice-calls .vc-msg.agent{align-self:flex-start;background:var(--sunk)}"
+    "#voice-calls .vc-msg.user{align-self:flex-end;background:var(--accent);color:#fff}"
+    "@media (max-width:600px){#voice-calls .vc-row{flex-wrap:wrap}#voice-calls .vc-row .btn{margin-left:46px}}"
+)
+PHONE = (
+    "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' "
+    "stroke-linejoin='round' aria-hidden='true'><path d='M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 "
+    "19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 "
+    "9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z'/></svg>"
+)
+
+
 def _calls_panel(ctx: Context, session_id: int) -> str:
     """Call a carrier whose bid is late or the customer our question waits for (`voice/calls.py`). What they say
     reaches the thread as an answer by mail would; shown only while it can still change the quote."""
     targets = voice.targets(ctx, session_id) if voice.configured(ctx) else []
     if not targets:
         return ""
-    rows = "".join(
-        f"<div class='pad' style='display:flex;gap:12px;align-items:center'><div class=grow><b>{esc(t.name)}</b>"
-        f"<div class=muted>{'Customer: our question is unanswered' if t.party == 'customer' else 'Pickup bid' if t.pickup else 'Airline bid'}"
-        f"{' · ' + esc(', '.join(t.missing)) if t.missing else ' · not answered yet'}</div></div>"
-        f"<button type=button class=btn data-call-email='{esc(t.email)}' data-call-name='{esc(t.name)}'>Call</button></div>"
-        for t in targets
-    )  # fmt: skip
+
+    def row(t: voice.Target) -> str:
+        name = names.who(ctx, t.email).name if t.party == "customer" else t.name
+        initials = "".join(w[0] for w in name.split()[:2]).upper() or "?"
+        role = "Customer" if t.party == "customer" else "Trucker" if t.pickup else "Airline"
+        if t.party == "customer":
+            why = f"Hasn’t answered our question · needs {esc(', '.join(t.missing) or 'details')}"
+        else:
+            why = "Pickup price requested · no reply yet" if t.pickup else "Bid requested · no reply yet"
+        return (
+            f"<div class=vc-row data-row='{esc(t.email)}'><div class=vc-avatar>{esc(initials)}</div>"
+            f"<div class=grow><div><span class=vc-name>{esc(name)}</span><span class=vc-role>{role}</span></div>"
+            f"<div class=vc-why>{why}</div></div>"
+            f"<button type=button class='btn primary' data-call-email='{esc(t.email)}' data-call-name='{esc(name)}'>"
+            f"{PHONE}Call</button></div>"
+        )
+
     return (
+        f"<style>{CALL_CSS}</style>"
         f"<h2 id=calls>Call<span class=count>{len(targets)}</span></h2>"
-        f"<div class=panel id=voice-calls data-session='{session_id}'>{rows}"
-        "<div class=pad><div id=call-status role=status hidden></div>"
-        "<button type=button class=btn id=call-hang-up hidden>Hang up</button></div><div id=call-log></div></div>"
+        f"<div class=panel id=voice-calls data-session='{session_id}'>"
+        "<div class=vc-intro>Our voice assistant asks for what’s missing. The answer goes into this request "
+        "like an emailed reply.</div>"
+        + "".join(row(t) for t in targets)
+        + "<div class=vc-live id=call-live hidden><span class=vc-dot></span>"
+        "<div class=grow><b id=call-with></b> <span class=vc-timer id=call-timer>0:00</span></div>"
+        "<button type=button class='btn vc-hangup' id=call-hang-up>Hang up</button></div>"
+        "<div class=vc-status id=call-status role=status hidden></div>"
+        "<div class=vc-log id=call-log hidden aria-live=polite></div></div>"
         "<script type=module src='/voice/call.js'></script>"
     )
 
