@@ -16,6 +16,11 @@ from pixel.crm import quotes
 
 MAILS_PER_MINUTE = 60  # R7
 HUMAN = "human"  # purpose of mail a person sends from the UI: passes a takeover
+# A quote or no-price reply the mailbox refused with a 5xx, or whose POST never got an answer, is sent again for this
+# long: a 503 lasting seconds took the agent's send and the fallback's alike (R1). The caller's deadline cuts it short.
+RESEND_S = 60.0
+RESEND_BACKOFF_S = (0.5, 1.0, 2.0, 4.0)
+RESENT = ("no_price",)  # besides quotes: the one answer a request without a price gets
 
 
 class NotSent(Exception):
@@ -231,6 +236,7 @@ async def _deliver(
     else:
         key = hashlib.sha256(key.encode()).hexdigest()
     payload = {"to": to, "subject": subject, "body": body, "in_reply_to": parent, "purpose": purpose}
+    resend_until, resends = asyncio.get_running_loop().time() + RESEND_S, 0
     while True:
         if sent := _claimed(ctx, key, quote is not None):
             return sent
@@ -267,6 +273,16 @@ async def _deliver(
                 ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))
             if e.status == 429:
                 await asyncio.sleep(e.retry_after or 1.0)
+                continue
+            if e.status == 503 and quote is None:
+                ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))  # a 503 is an answer: not sent
+            pause = RESEND_BACKOFF_S[min(resends, len(RESEND_BACKOFF_S) - 1)]
+            resend = quote is not None or (purpose in RESENT and e.status == 503)
+            if resend and (e.status >= 500 or e.status == 0) and asyncio.get_running_loop().time() + pause < resend_until:
+                resends += 1
+                emit(ctx, "mail.resend", "outbox", session_id=sid,
+                     payload={"purpose": purpose, "status": e.status, "try": resends + 1})  # fmt: skip
+                await asyncio.sleep(pause)
                 continue
             if attachments and 400 <= e.status < 500:  # refused with its PDF: the quote matters more (R1)
                 emit(ctx, "error", "outbox", session_id=sid,
