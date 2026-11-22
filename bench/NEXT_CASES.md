@@ -215,10 +215,10 @@ Measured right: two, three and four shipments, a door pickup for all, bullets, G
 another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.
 
-## Axis R: the scorer's checks (22.11.2026, live database to round 187)
+## Axis R: the scorer's checks (22.11.2026, live database to round 190)
 
-What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (180 rounds,
-8 to 187: 130 accepted, 44 rejected and 6 with no answer) and the requests and replies behind the losses.
+What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (183 rounds,
+8 to 190: 133 accepted, 44 rejected and 6 with no answer) and the requests and replies behind the losses.
 
 ### The rubric, as far as the verdicts prove it
 
@@ -259,7 +259,7 @@ from then on **combined** with older ones: 156 is Korean + an "import" by the bu
 pounds and cubic feet + an arrival deadline + the buyer's "import" + PDF. Price levers move the same way from endpoint
 to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123).
 
-### Wishes we recognised and only noted (every `rfq.novelty` through round 187)
+### Wishes we recognised and only noted (every `rfq.novelty` through round 190)
 
 13 distinct sessions, 112 to 186, with a nonempty `mapped.conditions` or `mapped.documents`. Each row compares
 the first offer and stored attachment receipt with the request and verdict. A session can appear in several rows.
@@ -285,6 +285,15 @@ Ranked predictions of `not_what_was_asked` from the kinds only noted, each stepp
 | N3 | the offer PDF ask becomes a request for the customer to send a document | stubs `["PDF", "견적서"]`, `["shipper's declaration", "PDF"]`, and empty. The carrier's bid PDF supplies sourcing data. A customer's real DGD in PDF form still needs to be requested when required | wrong content, accepted twice. Empty stub produces no request | give the note the direction of each document request | Checklist |
 | N4 | a wish no option can meet | offline `agent._quote` with both a required airline and an impossible arrival gives both alternative notes when the RFQ carries the fields. The same inputs stubbed in novelty's `only_airlines` and `arrive_by` give neither note. A compatible airline and date correctly give neither note | model-only alternative disclosure open | check the selected option against the same requirements used for selection | Checklist (review thread merges) |
 | N5 | one air waybill or separate air waybills | the answer renderer confirms English "One AWB for all lots". Korean round 167 gets a note only and French "une seule LTA" gets no sentence. The opposite "two separate air waybills" triggers a one-AWB promise | wrong confirmation for the opposite case. Korean and French confirmation missing | `compose.ONE_AWB` | Checklist |
+
+Arrival was explicitly requested in 52 of the 179 first mails through round 186. In the offline replay of 186,
+stubbing its recorded ready date and using the corrected fastest option gives an estimated arrival of 28 November.
+The current composer leaves out that date. A candidate that uses `rfq.ready_on` also gives the same estimate in
+the reply and PDF when the date is written out in the body, supplied only in an attachment, or supplied in an
+attachment that supersedes the mail date. A reply-by date alone still produces no estimate. The quote's
+translation remains model-dependent. A translation stub that keeps the price and transit but drops the date
+passes `compose.translated_ok`. Changes to the ready date in a later mail are owned by Axis B
+(`followup.changes` reads cargo and routing changes but no schedule fields).
 
 ### The 20 most likely next checks
 
