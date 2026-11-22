@@ -15,7 +15,7 @@ from pixel.api.mailbox import RATEDESK
 from pixel.api.portal import Portal
 from pixel.contracts import LaneTariff, Preference, Source
 from pixel.core import events, timing
-from pixel.pricing import bids, engine, selection, store
+from pixel.pricing import bids, engine, portal_rates, selection, store
 from tests.test_bids import ctx, deadline, kinds, mail, rfq  # noqa: F401  ctx is the fixture
 
 BASE = "https://portal.test"
@@ -196,3 +196,39 @@ async def test_only_the_requested_airline_gets_a_bid_enquiry(ctx, offline):  # n
     request = rfq(required_carriers=("Air Two",))
     await engine.options(ctx, request, deadline(0.1))
     assert [bid["email"] for bid in kinds(ctx, "bid.requested")] == ["two@air"]
+
+
+async def test_a_rate_that_answered_503_is_read_again_before_the_quote(ctx, offline, monkeypatch):  # noqa: F811
+    """Rounds 120 and 121: the rate API answered 503 at the first read and the sheet airline was quoted; the first
+    outage ended mid-round. A second read inside the desk wait prices the faster airline."""
+    offline.get("/v1/portal/ports").respond(200, json=PORTS)
+    reads: dict[str, int] = {}
+
+    def rate(request: httpx.Request) -> httpx.Response:
+        code = request.url.params["airline"]
+        reads[code] = reads.get(code, 0) + 1
+        if reads[code] == 1:
+            return httpx.Response(503, json={"detail": "The rate API is unavailable."})
+        names = {"A1": "Air One", "A2": "Air Two"}
+        return httpx.Response(200, json={**RATE, "airline_code": code, "airline": names[code]})
+
+    offline.get("/v1/portal/rates").mock(side_effect=rate)
+    monkeypatch.setattr(bids, "DESK_CUTOFF_S", 0.6)
+    monkeypatch.setattr(bids, "POLL_S", 0.01)
+    monkeypatch.setattr(portal_rates, "REREAD_AT_S", 0.3, raising=False)
+    ctx.settings = replace(ctx.settings, bid_wait_s=0)
+    request = rfq(preference=Preference.FASTEST)
+    today = request.received_at.date()
+    store.upsert(ctx, [LaneTariff(
+        carrier="Air Three", origin=request.origin, destination=request.destination, currency="EUR",
+        valid_from=today, valid_to=today, version="test", transit_days=5, minimum=D(400),
+        breaks=((D(0), D(4)),), fuel_per_kg=D(0), security_per_kg=D(0), source="test",
+    )])  # fmt: skip
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    started = timing.now()
+    window = replace(deadline(2), received_at=started, target_at=started + timedelta(seconds=0.15))
+    found = await engine.options(ctx, request, window)
+    best = selection.select(request, found)
+    assert (best.source, best.rate_id, best.transit_days) == (Source.PORTAL, "R-portal", 3)
+    assert reads == {"A1": 2, "A2": 2}
+    assert timing.now() < started + timedelta(seconds=1.5)

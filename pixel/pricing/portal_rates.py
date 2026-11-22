@@ -1,4 +1,7 @@
 import asyncio
+import contextlib
+import json
+from datetime import timedelta
 from decimal import Decimal
 
 import httpx
@@ -6,12 +9,15 @@ import httpx
 from pixel.api.client import ApiError
 from pixel.api.portal import Lane, NotOnPortal, RateLimited
 from pixel.contracts import RateOption, Rfq
-from pixel.core import events
+from pixel.core import events, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import calc, selection
 
 LANES_TTL_S = 600
+# Rounds 120 and 121: a rate read that answered 503 is read once more before the quote, inside the desk wait (115 s):
+# the outage of 00:19 to 00:56 ended mid-round and the faster airline was lost to the sheet's.
+REREAD_AT_S = 105
 _lanes: tuple[object, float, list[Lane]] | None = None
 _breaks: dict[tuple[str, str], tuple[int, ...]] = {}
 
@@ -64,6 +70,30 @@ async def _read(ctx: Context, rfq: Rfq, deadline: Deadline, code: str, name: str
     events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
     return option
+
+
+async def reread(ctx: Context, rfq: Rfq, deadline: Deadline, now: asyncio.Event) -> None:
+    """Reads once more, at REREAD_AT_S after the mail or as soon as `now` is set, every selectable airline of the
+    lane whose rate read answered 503 and that no portal rate priced since. A rate found is an `option.found` like
+    any other; a second 503 is one more `option.failed`. Never waits for the rate limit (`_read`)."""
+    at = deadline.received_at + timedelta(seconds=REREAD_AT_S)
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(now.wait(), max(0.0, (at - timing.now()).total_seconds()))
+    rows = ctx.db.execute(
+        "SELECT payload FROM events WHERE session_id=? AND kind IN ('option.failed','option.found') ORDER BY id",
+        (rfq.session_id,),
+    ).fetchall()
+    down: set[str] = set()
+    for row in rows:
+        payload = json.loads(row["payload"])
+        if payload.get("source") == "portal" and payload.get("error") == "RatesUnavailable":
+            down.add(payload.get("carrier"))
+        elif (option := payload.get("option")) and option.get("source") == "portal":
+            down.discard(option.get("carrier"))
+    lane = next((x for x in await lanes(ctx) if (x.origin, x.destination) == (rfq.origin, rfq.destination)), None)
+    todo = [(c, n) for c, n in (lane.airlines if lane else ()) if n in down and selection.requested_carrier(rfq, n, c)]
+    remaining = ctx.portal.rate_remaining
+    await asyncio.gather(*(_read(ctx, rfq, deadline, c, n) for c, n in todo[: None if remaining is None else remaining]))
 
 
 async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption]:
