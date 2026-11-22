@@ -446,10 +446,12 @@ def desk_files() -> list[tuple[str, str, str, bytes]]:
     # A pdf table as pdfplumber gives it: one text line per row, its cells one space apart. simulate's own pdf puts
     # each cell at a fixed x, too narrow for six columns: its text overlaps, which no real pdf does, so only the
     # desk's own lines (one cell per line) are written that way.
-    writers = simulate.WRITERS | {"pdf, rows as lines": lambda rows: simulate._pdf([[" ".join(r)] for r in rows])}
+    writers = simulate.WRITERS | {"pdf, rows as lines": lambda rows: simulate._pdf([[" ".join(r)] for r in rows]),
+                                  "mp3, spoken": simulate._spoken_file}  # fmt: skip
+    own = ("pdf", "mp3, spoken")  # one line per cell, and a voice message says its lines, never a table
     return [(layout, fmt, f"portal-rates.{fmt.split(',')[0]}", write(rows))
             for layout, rows in layouts.items() for fmt, write in writers.items()
-            if fmt != "pdf" or layout == "its own lines"]  # fmt: skip
+            if fmt not in own or layout == "its own lines"]  # fmt: skip
 
 
 def audit_desk_attachments() -> list[DeskRead]:
@@ -465,7 +467,8 @@ def audit_desk_attachments() -> list[DeskRead]:
         body = (
             f"Hello,\n\nthe portal rates for your request are in the attached file ({name}).\n\nBest regards\nRate Desk"
         )
-        text = "\n".join([bids._own_text(body), *(_readable(name, content) or [])])
+        with patch.object(agent, "_transcribe", lambda c: c.decode().splitlines()):  # the speech model offline
+            text = "\n".join([bids._own_text(body), *(_readable(name, content) or [])])
         found = bids.parse_desk(to_message(raw | {"body": text}, "in"), rfq)
         got = [(o.carrier_code, str(o.total), o.transit_days, o.rate_id) for o in found]
         outcome = "right" if got == want else "none" if not got else "wrong"
