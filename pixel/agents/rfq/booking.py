@@ -71,12 +71,14 @@ HOLD = re.compile(
 )
 CONDITION = re.compile(
     r"\b(?:if|unless|whether|falls|wenn|ob|haven['’]t|hasn['’]t|have not|has not|didn['’]t|did not"
-    r"|indien|als\s+(?:u|jullie|het|de|we|wij|ze))\b"
+    r"|indien|als\s+(?:u|jullie|het|de|we|wij|ze)|mits|op\s+voorwaarde|siempre\s+que|con\s+tal\s+(?:de\s+)?que"
+    r"|a\s+condici[óo]n\s+de\s+que|purch[ée]|a\s+condizione\s+che|desde\s+que|contanto\s+que)\b"
     # A clause opener or an inline condition on the offer. Reflexives such as "la marchandise se trouve" can
     # accompany an acceptance without qualifying it.
     r"|(?:^|[,;:]|\b(?:offre|oferta|offerta|tarifa|tariffa|devis|r[ée]server|reservar|prenotare"
     r"|acceptons|aceptamos|accettiamo|aceitamos)\b)\s*"
-    r"(?:(?:solo|só|somente|apenas)\s+)?(?:si|se|caso|qualora)\b",
+    # "Si, aceptamos" is an unaccented yes, "si prega di procedere" a polite form: neither a condition.
+    r"(?:(?:solo|só|somente|apenas)\s+)?(?:si|se|caso|qualora)\b(?!\s*[,!.]|\s+preg)",
     re.IGNORECASE,
 )
 ASKS_TO_BOOK = re.compile(
