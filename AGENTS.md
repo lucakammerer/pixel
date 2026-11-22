@@ -125,13 +125,22 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
 
 1. **The gate is local.** Update the branch once with `origin/main`, then run `uv run pytest -q`,
    `uv run ruff check .` and `uv run python -m tools.kpi` (the mail fixtures replayed offline: sheet prices only, no
-   model). Green means: push, open the pull request, merge it at once (`gh pr merge --merge`). Do not wait for CI on
-   the pull request or for a review, and never leave a green pull request open.
+   model). Green means: push and open the pull request. Then:
+   - **It changes how a request is read, priced, selected or answered** (`pixel/pricing/`, `pixel/agents/rfq/`
+     except `compose.py`, `pixel/agents/router/`, `pixel/core/`, `pixel/api/`, `pixel/contracts.py`): leave it open.
+     The review thread checks it against the current `main` with a repro and merges it, or fixes it on the branch
+     itself; it closes only what is superseded or has no evidence. Never merge these yourself. On 22.11. two such
+     pull requests, each green alone, turned `main` red together (#304, #305), and a reply-by date read as a
+     latest arrival priced 41 % too high (#306): no CI or deploy check catches that, only a repro does.
+   - **Everything else** (`docs/`, `bench/`, `tests/`, fixtures, `pixel/ui/`, `compose.py` wording, `tools/`): merge it
+     at once (`gh pr merge --merge`); the review follows after the merge.
+   - **`URGENT`** (a round is being lost now): merge at once whatever it touches; the review thread checks it within
+     the round.
 2. **CI runs on `main`** (`.github/workflows/ci.yml`). Whoever merged watches that run and fixes forward or reverts
    within the same round if it fails.
 3. Update with `main` once, right before the local run. No second rebase unless GitHub reports a conflict.
-4. **Reviews happen after the merge** and never hold a pull request. A finding becomes a follow-up pull request
-   under the same rule.
+4. **Reviews of everything else happen after the merge.** A finding becomes a follow-up pull request under the same
+   rule.
 5. **The host deploys itself, no model and no Mac:** `pixel-cd.timer` runs `deploy/cd.sh` every 30 s as root on
    the live host. It fetches `origin/main` into its own clone `/opt/pixel/cd/repo` (read-only deploy key of the user
    pixel) and always takes the newest commit, never one that does not hold the live commit: a commit deployed by hand
