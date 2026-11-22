@@ -125,12 +125,13 @@ async def _hold(ctx: Context, session_id: int, until: datetime) -> None:
         await asyncio.sleep(min(HOLD_POLL_S, left))
 
 
-async def settle(ctx: Context, quote: Quote, request: str, deadline: Deadline, inspect: Inspect) -> Quote:
+async def settle(ctx: Context, quote: Quote, request: str, deadline: Deadline, by: datetime, inspect: Inspect) -> Quote:
     """The quote to send: `quote`, or `quote` with its wording asks met. Emits `quote.unmet`; an ask left open
-    alerts, one of `HELD` also holds the quote until `deadline.target_at`. One call per session, at most `WAIT_S`;
-    never raises."""
+    alerts, one of `HELD` also holds the quote until `deadline.target_at`. Reading and holding end by `by`, before
+    the orchestrator takes the request over. One call per session, at most `WAIT_S`; never raises."""
     mode = ctx.settings.unmet
-    wait = min(WAIT_S, (deadline.hard_at - timing.now()).total_seconds())
+    until = min(deadline.target_at, by)
+    wait = min(WAIT_S, (by - timing.now()).total_seconds())
     if mode == "off" or wait <= 0 or _asked(ctx, quote.session_id):
         return quote
     try:
@@ -143,10 +144,10 @@ async def settle(ctx: Context, quote: Quote, request: str, deadline: Deadline, i
     for ask in asks:
         ask["met"] = sent is not quote and _addable(ask, request, quote.body)
     left = sorted({a["class"] for a in asks if not a["met"]})
-    held = mode == "on" and any(c in HELD for c in left) and timing.now() < deadline.target_at
+    held = mode == "on" and any(c in HELD for c in left) and timing.now() < until
     events.emit(ctx, "quote.unmet", "rfq", session_id=quote.session_id,
                 payload={"quote": quote.id, "mode": mode, "asks": asks, "open": left,
-                         "hold_until": deadline.target_at.isoformat() if held else None})  # fmt: skip
+                         "hold_until": until.isoformat() if held else None})  # fmt: skip
     if mode != "on":
         return quote
     if sent is not quote:
@@ -156,7 +157,7 @@ async def settle(ctx: Context, quote: Quote, request: str, deadline: Deadline, i
                                                "at": timing.now().isoformat()[:19], "classes": left,
                                                "held": held}]))  # fmt: skip
     if held:
-        await _hold(ctx, quote.session_id, deadline.target_at)
+        await _hold(ctx, quote.session_id, until)
     return sent
 
 

@@ -311,12 +311,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   reply do not hold (`_addable`), and keeps the new text only when `check.run` on it blocks on no rule the old
   text passed (the total once and no other amount, the language, the PDF); else the original leaves. `price`,
   `selection`, `scope` (`HELD`) are never guessed: the quote waits until `target_at` (`_hold`; a takeover or a
-  quote sent by a person ends it) and then leaves as it is. Every ask left open goes to `PIXEL_ALERT_URL` at once
+  quote sent by a person ends it) and then leaves as it is. Reading and holding end by `repair_by`, before the
+  orchestrator takes the request over. Every ask left open goes to `PIXEL_ALERT_URL` at once
   (`unmet_ask`: the classes and whether the quote is held, never text) and shows in `feedback.attention`. One
   call per session (`_asked`), never in the fallback or a requote; a failed, late or malformed answer is an
-  `error` event and the quote leaves as it was. It runs on every request: about 0.002 USD, 0.8 of the 40 cost
-  points of a quote (about 800 tokens in, estimated from the prompt's length; `tools.bench_unmet` prints the
-  measured figure), and about 2 s of the 85 s a quote has left to full time points. `PIXEL_UNMET`: `on`, `log`
+  `error` event and the quote leaves as it was. It runs on every request: 0.002 to 0.0025 USD, about 1 of the 40
+  cost points of a quote (about 820 tokens in on the stored rounds, estimated from the prompt's length, and up to
+  100 out; `tools.bench_unmet` prints the measured figure), and about 2 s of the 85 s a quote has left to full time points. `PIXEL_UNMET`: `on`, `log`
   (read and record, no change, hold or alert; the default until `tools.bench_unmet` has scored the prompt on the
   lost first rounds and accepted rounds of the same kinds in `tests/fixtures/unmet-asks.json`) or `off`.
 

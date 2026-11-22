@@ -47,9 +47,10 @@ def deadline(target_s: float = 30) -> Deadline:
     return Deadline(now, now + timedelta(seconds=target_s), now + timedelta(seconds=300), now + timedelta(seconds=360))
 
 
-async def settle(ctx, request: str = REQUEST, target_s: float = 30):
+async def settle(ctx, request: str = REQUEST, target_s: float = 30, by_s: float = 60):
     drafted = quote(rfq(), OPTION)
-    sent = await unmet.settle(ctx, drafted, request, deadline(target_s), lambda q: check.run(q, request, [OPTION]))
+    by = timing.now() + timedelta(seconds=by_s)
+    sent = await unmet.settle(ctx, drafted, request, deadline(target_s), by, lambda q: check.run(q, request, [OPTION]))
     await asyncio.gather(*ctx.tasks)
     return drafted, sent
 
@@ -96,6 +97,22 @@ async def test_an_ask_that_moves_the_price_is_never_guessed_it_alerts_by_code_an
     assert posted[0] | {"at": ""} == {"issue": "unmet_ask", "session": 1, "at": "", "classes": ["price"], "held": True}
     assert recorded(conn)["hold_until"] and recorded(conn)["asks"][0]["sentence"] == INSURANCE
     assert [i["issue"] for i in feedback.attention(conn, 5)] == ["unmet_ask"]
+
+
+async def test_reading_and_holding_end_before_the_orchestrator_takes_the_request_over(conn, monkeypatch):
+    _, posted = model(monkeypatch, ask("price", INSURANCE))
+    started = timing.now()
+    await settle(make_ctx(conn, unmet="on", alert_url="http://alert"), f"{PLAIN}\n{INSURANCE}", target_s=20, by_s=0.5)
+    assert (timing.now() - started).total_seconds() < 2 and posted[0]["held"]
+
+    async def hangs(ctx, **kw):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(llm, "ask_json", hangs)
+    conn.execute("DELETE FROM events")
+    started = timing.now()
+    drafted, sent = await settle(make_ctx(conn, unmet="on"), target_s=20, by_s=0.5)
+    assert sent == drafted and (timing.now() - started).total_seconds() < 2
 
 
 async def test_a_person_who_takes_the_session_over_ends_the_hold(conn, monkeypatch):
