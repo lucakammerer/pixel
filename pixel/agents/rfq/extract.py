@@ -86,8 +86,13 @@ EACH_WEIGHT = re.compile(
     re.IGNORECASE,
 )
 EACH_VOLUME = re.compile(rf"{PER_PIECE}\s*{NUM}\s*(?:cbm|m3|m³)|{NUM}\s*(?:cbm|m3|m³)\s+{PER_PIECE}", re.IGNORECASE)
-LOT_WEIGHT = re.compile(rf"{MODE}{NUM}\s*(?:kgs?|kilos?)\b(?:\s*(?P<kind>gross|brutto|net|netto))?", re.IGNORECASE)
-LOT_VOLUME = re.compile(rf"{MODE}{NUM}\s*(?:cbm\b|m3\b|m³)", re.IGNORECASE)
+LOT_WEIGHT = re.compile(
+    rf"{MODE}{NUM}\s*(?P<unit>kgs?|kilos?|kilograms?|lbs?|pounds?|tonnes?|tons?|tonnen|t(?![-\w]))\b(?:\s*(?P<kind>gross|brutto|net|netto))?",
+    re.IGNORECASE,
+)
+LOT_VOLUME = re.compile(
+    rf"{MODE}{NUM}\s*(?P<unit>cbm\b|m3\b|m³|{FEET3.removeprefix(r'\s*')}|{LITRE.removeprefix(r'\s*')})", re.IGNORECASE
+)
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
@@ -333,6 +338,15 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
     return volume * (pieces or 1)
 
 
+def _per_kg(unit: str) -> Decimal:
+    unit = unit.lower()
+    return LB if unit.startswith(("lb", "pound")) else Decimal(1000) if unit.startswith("t") else Decimal(1)
+
+
+def _per_cbm(unit: str) -> Decimal:
+    return FT3 if re.fullmatch(FEET3, unit) else Decimal("0.001") if re.fullmatch(LITRE, unit) else Decimal(1)
+
+
 def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     """Gross weight, volume and pieces of a request that lists its shipment lot by lot ("Lot 2: 4 cartons, each
     48 kg gross, each 110 x 110 x 52 cm"). A figure is per piece with "each", else for the whole lot ("9 pieces,
@@ -347,9 +361,11 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
         stated, dims = LOT_VOLUME.search(rest), LOT_DIMS.search(rest)
         if len(weights) != 1 or not (stated or dims):
             return None
-        kg = number(weights[0].group(3))
+        per_kg = _per_kg(weights[0]["unit"])
+        kg = number(weights[0].group(3), thousands=per_kg < 1000)  # "1.234 t" is 1234 kg, not 1234 t
+        kg = kg and kg * per_kg
         if stated:
-            cbm = number(stated.group(3), thousands=False) * (n if stated["each"] else 1)
+            cbm = number(stated.group(3), thousands=False) * (n if stated["each"] else 1) * _per_cbm(stated["unit"])
         else:
             *sides, unit = dims.groups()[2:]
             per_m = _per_m(unit)

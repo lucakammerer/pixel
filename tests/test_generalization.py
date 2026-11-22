@@ -203,6 +203,9 @@ def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
     cases = [*simulate.document_cases(step=7), *simulate.mail_cases(), *simulate.bid_cases(step=11)]
     outcomes = asyncio.run(simulate.run(cases))
     assert [f"{o.case.family} {o.case.axes}: {o.wrong}" for o in outcomes if o.verdict == "wrong" and not o.gap] == []
+    assert [
+        o.case.axes for o in outcomes if o.case.family == "mail" and o.verdict == "model"
+    ] == []  # rules read every unit
     assert simulate.stale_gaps(outcomes) == []
 
 
