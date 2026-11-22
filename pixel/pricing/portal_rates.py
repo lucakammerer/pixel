@@ -82,7 +82,8 @@ async def _read(
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                     payload={"source": "portal", "carrier": name, "error": type(exc).__name__, "hint": str(exc)}
                     | ({"page": exc.page} if getattr(exc, "page", None) else {}))  # fmt: skip
-        return _card(ctx, rfq, code) if _outage(exc) else None
+        # a 429 that outlasts the deadline prices from the card too: every read 429 lost 56 of 60 drilled rounds
+        return _card(ctx, rfq, code) if _outage(exc) or isinstance(exc, RateLimited) else None
     events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
     return option
