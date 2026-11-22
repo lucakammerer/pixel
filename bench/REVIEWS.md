@@ -137,3 +137,35 @@ customer replies were replayed against the fixed code.
 | #67 | ok | every GET only reads; take over, send and release work end to end; customer text escaped everywhere; pages cost ~20 ms at today's size |
 | #64, #78 | ok, superseded by the host CD | the window stays shut over the question, the bid wait and the fallback; the Mac job's rollback could not push an older commit, moot since `deploy/cd.sh` resets the checkout |
 | #107 | fixed (#113) | URGENT was read from the newest merge only: an URGENT fix with any merge on top waited a round; takes effect once `/opt/pixel/cd/cd.sh` is installed by hand |
+
+## The pre-send check against the scorer
+
+`uv run python -m tools.check_precision <database>` on the live log of 22.11., 06:43 UTC: every finding of
+`agents/rfq/check.py` since 21.11. 17:27 UTC (162 `quote.checked` events in 124 sessions, 110 without a finding)
+against the verdict of its round. A round marked * had the finding only on a quote that was not scored (152: the
+requote after the customer's change).
+
+| Rule | Level | Fired | Accepted rounds | Not accepted, by the scorer's reason |
+| --- | --- | --- | --- | --- |
+| `language_sent` | block | 1 | 131 | — |
+| `pickup` | block | 3 | — | too_low: 63, 64, 65 |
+| `text_amounts` | block | 2 | 92, 127 | — |
+| `total` | block | 1 | 92 | — |
+| `volume_unexplained` | block | 4 | 152*, 153 | — |
+| `weight_unexplained` | block | 4 | 57, 152* | one_of_two: 113 |
+| `best_price` | warn | 40 | 25, 38, 41, 46, 49, 50, 53, 66, 71, 80, 84, 88, 92, 100, 101, 106, 128, 132, 136, 140, 143, 148, 152*, 155 | no_pdf_offer: 76; one_of_two: 150; too_high: 28, 130; too_low: 93, 120 |
+| `volume_unexplained` | warn | 2 | 143 | — |
+| `weight_unexplained` | warn | 6 | 103, 114, 117 | too_low: 63, 64, 65 |
+
+A BLOCK alerts `PIXEL_ALERT_URL` (`feedback.attention`, `quote_doubtful`) and `repair.settle` acts on it where
+`REPAIRS` has an entry. The 12 blocking events fell on 10 rounds, 6 of them accepted:
+
+- Right: `pickup` on rounds 63 to 65 (the fallback without a trucker price, `too_low`; it has no repair) and
+  `weight_unexplained` on 113 (one of two shipments priced; not repaired). `language_sent` on 131 was right about
+  the mail, a Turkish request answered in English: the repair's translation dropped a figure and was not kept, the
+  English mail left and was accepted.
+- False: `weight_unexplained` on 57 (the packing list's weight) and 152, `volume_unexplained` on 152 and 153,
+  `total` and `text_amounts` on 92 (the insurance premium), `text_amounts` on 127 (a further shipment's price). On
+  153 the false block spent a `repair.critic` call (0.0014 USD, 0.8 s) on picking another volume for a right
+  quote; only its unreadable answer kept the price.
+- `best_price` warned on 30 rounds, 24 of them accepted and 2 rejected as `too_high`.
