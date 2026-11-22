@@ -1272,6 +1272,12 @@ def _from_answer(read: Rfq, said: str, facts: list[str]) -> Rfq | None:
         update |= {"door_pickup": True, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode)}
     elif "origin" in facts and (lane := _lane(said)) and lane[1] == read.destination:
         update["origin"] = lane[0]
+    if "destination" in facts and len(codes := {c for c in re.findall(r"(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])", said) if _airport(c)}) == 1:
+        # Round 156: "도착 공항은 MIA입니다" answered the destination the model had read as the origin of an import
+        # trucked from a German postcode; the pickup zone then gives the origin (`_zone_origin`).
+        update["destination"] = codes.pop()
+        if read.origin == update["destination"]:
+            update["origin"] = ""
     lots = _lots(said)
     pieces = lots[2] if lots else _pieces(said)
     if "weight" in facts and (weight := lots[0] if lots else _weight(said, pieces)):
