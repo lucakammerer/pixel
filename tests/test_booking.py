@@ -470,6 +470,8 @@ def test_a_plain_acceptance_books(text):
         "We'll go with the airline we used last time.",  # "go with" someone else's offer
         "We will go with the slower option from our usual forwarder.",
         "We'll go with the cheaper carrier this time, thanks anyway.",
+        "We'll go with this one from DHL instead.",
+        "We will go with it next month, not now.",
     ],
 )
 def test_a_negated_or_held_acceptance_never_books(text):

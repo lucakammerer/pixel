@@ -31,6 +31,8 @@ ACCEPT = re.compile(
     r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen"
     # "go with" books only our offer: "go with it/this/your quote" or "the rate you quoted", never "the airline we used"
     r"|(?:let['’]s|we['’]ll|we\s+will)\s+go\s+with\s+(?:(?:it|this|that|your)\b|the\b[^.\n]{0,40}?\byou\s+(?:quoted|offered|proposed)\b)"
+    # ... unless the clause puts it off or names someone else: "instead", "not now", "next month", "from DHL"
+    r"(?![^.!?;\n]*\b(?:instead|not\s+now|later|next\s+(?:week|month|time)|from\s+\w))"
     r"|merci\s+de\s+r[ée]server|veuillez\s+r[ée]server|nous\s+acceptons|r[ée]servez)",
     re.IGNORECASE,
 )
