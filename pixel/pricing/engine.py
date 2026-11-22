@@ -145,10 +145,12 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
             unpriced.append(("Rate desk", RATEDESK))
         mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
         pending_desk = (desk_id or _desk_enquiry(ctx, rfq)) if down and selection.requested_options(rfq, sheets) else None
-        if pending_desk is not None and pending_desk not in mailed:
-            mailed.append(pending_desk)
-        if mailed:
+        if pending_desk is not None:
+            if pending_desk not in mailed:
+                mailed.append(pending_desk)
             offers = await bids.collect(ctx, rfq.session_id, deadline, mailed, pending_desk=pending_desk)
+        elif mailed:
+            offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
         pickups = await pickup_task
         offers = [o for o in offers if o.source in (Source.BID, Source.RATEDESK)]
         published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL]
