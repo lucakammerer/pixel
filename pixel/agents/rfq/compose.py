@@ -585,8 +585,9 @@ def translated_ok(english: str, translated: str, option: RateOption) -> bool:
         return False
     if any(name not in translated for name in (option.currency, option.carrier, option.trucker) if name):
         return False
-    figures = set(NUMBER.findall(english))
-    return all(n in figures for n in NUMBER.findall(translated) if len(n) > 2)
+    # Digits only beside the total: a language writes its own separators ("1.997,32 kg", session 38898).
+    figures = _figures(english)
+    return all(n in figures for n in _figures(translated) if len(n) > 2)
 
 
 def kept(english: str, translated: str, names: tuple[str, ...]) -> bool:
