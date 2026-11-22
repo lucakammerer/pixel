@@ -44,16 +44,22 @@ def _fx_for(currency: str, options: list[RateOption]) -> Decimal | None:
     return next((o.fx_eur for o in options if o.currency == currency and o.fx_eur and o.fx_eur > 0), None)
 
 
-async def _with_shipments(quote: Quote, others: list[Rfq], pricing: list[asyncio.Task], deadline: Deadline) -> Quote:
-    """The mail's further shipments, each priced and selected like the first, in the same quote (R4). One that has
-    no price by `target_at` is left out, and with it the sum of all."""
+async def _with_shipments(
+    ctx: Context, quote: Quote, others: list[Rfq], pricing: list[asyncio.Task], deadline: Deadline
+) -> Quote:
+    """The mail's further shipments, each priced and selected like the first, in the same quote (R4). A pricing task
+    still running at `target_at` gives the prices it stored so far (round 150: TLV's were all in at 30 s, its task
+    waited on a rate read for the next break, and TLV was left out: one_of_two). One without a price is left out, and
+    with it the sum of all."""
     wait = max((deadline.target_at - timing.now()).total_seconds(), 0.0)
     done, _ = await asyncio.wait(pricing, timeout=wait)
     priced = []
     for rfq, task in zip(others, pricing, strict=True):
-        if task not in done or task.exception():
-            continue
-        options = [o for o in task.result() if o.trucker or not rfq.door_pickup]
+        if task in done and not task.exception():
+            found = task.result()
+        else:
+            found = engine.combine(rfq, session.for_request(ctx, rfq), feedback.pickup_rule(ctx), ctx)
+        options = [o for o in found if o.trucker or not rfq.door_pickup]
         if not options or (rfq.required_carriers and not selection.requested_options(rfq, options)):
             continue
         option = calc.in_currency(selection.select(rfq, options), quote.currency, _fx_for(quote.currency, options))
@@ -456,7 +462,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     if task is not None and task.done() and not others and ctx.settings.second_read != "off":
         rfq, options = await _read_again(ctx, rfq, options, message, text, deadline, repair_by)
     await _followup_wait(ctx, rfq, repair_by)
-    extend = (lambda q: _with_shipments(q, others, pricing, deadline)) if others else None
+    extend = (lambda q: _with_shipments(ctx, q, others, pricing, deadline)) if others else None
     quote = await _settled(ctx, rfq, options, prose, fallback=False, translate_by=deadline.hard_at,
                            repair_by=repair_by, extend=extend)  # fmt: skip
     sent = await outbox.send_quote(ctx, quote)
