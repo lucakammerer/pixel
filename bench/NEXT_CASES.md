@@ -385,7 +385,7 @@ still require inspection.
 Does a mail get the kind of answer it should: a quote, or a plain answer without a price (or none for a mail that
 asks for nothing)? Round 177 priced a sea freight request as air (`out_of_scope_quoted`); rounds 96, 104 and 122 sent
 a request we could have priced the answer without a price (`declined_in_scope`). The scorer tests both directions,
-so half the cases are the in-scope side. 78 mails in `tests/fixtures/next-cases/scope/`; the expected answer of each,
+so half the cases are the in-scope side. 84 mails in `tests/fixtures/next-cases/scope/`; the expected answer of each,
 written by hand from the challenge text and the domain, with how sure it is (`live`: seen scored, `text`: follows
 from the challenge text, `guess`), and the step it was taken from (Luca's "look in every direction": language,
 script, channel, moment, unit, two at once) in `tests/fixtures/next-cases/scope.json`. No test reads either.
@@ -397,7 +397,8 @@ nearest airports, as round 177's model did), and `blank`, a reading that names n
 router asks the model. A case is right only when every plausible answer leads to the right kind, `split` when it
 depends on the answer. `no_price late` means more than 60 seconds elapsed in the replay. The no-price reply may
 be the deadline fallback or a scope decline delayed by a question. A question for a missing fact is allowed
-before a quote. A request outside our scope should get the decline as its first reply.
+before a quote. A request outside our scope should get the decline as its first reply. Cases marked `decline`
+require a reply. `no_price` also permits silence for a mail that asks for nothing.
 
 The causes, all owned by this thread unless the row says otherwise:
 
@@ -413,6 +414,8 @@ The causes, all owned by this thread unless the row says otherwise:
 - **G7**: router rule `new_thread` makes every new thread a request; a complaint, an invoice query, a newsletter, an
   out-of-office reply gets a question and a price.
 - **G8**: the mode rule reads subject and body, not an attachment.
+- **G9**: when a customer puts the full flight details in an attachment, the router can classify the message as
+  `other`. The customer then gets no reply even when extraction could read the attached lane.
 - **G10**: `orchestrator.NOT_AIR` matches a mode said in passing ("by ship" for the inbound leg, "rail freight" in
   the goods' name, "our sea freight team"); an in-scope request is declined.
 
@@ -424,6 +427,11 @@ reports the count of previously accepted quotes that now get a scope decline or 
 On the snapshot through round 187, main replayed 113 of 129 previously accepted quotes as quotes. The remaining
 16 were unpriced in replay, with zero scope declines and zero missing replies. Round 159 was accepted as a scope
 decline live and still declines. Round 177, rejected for quoting sea freight, now declines.
+The review candidate (#513) gives the same live-snapshot outcomes. On these fixtures it declines both written
+imports, including the German request with imperial units, while the matched export still quotes. The attachment
+import declines when routed as an RFQ. The possible silence on that request belongs to G9.
+The two newly accepted requests in rounds 188 and 189 also replayed as quotes on main and #513. Across the 131
+previously accepted quotes checked, there were zero scope declines and zero missing replies on the candidate.
 
 The class fix (next pull requests, read path, for the review thread): decide scope before the question (G1), then
 one scope reading: a rule that only notices a mode, service or non-request word in any language (subject, body and
@@ -510,8 +518,14 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 | `sea-import` | direction | two at once: import and sea | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it; the lane is an import but the model's reading asks first (G1) |
 | `all-lookalikes-at-once` | lookalike | two at once: company, port words, FOB, container | quote (text) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 | `air-chinese` | lookalike | script of no-mode-german | quote (guess) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `import-written-german-imperial` | direction | language and units of import-implicit | decline (text) | quote | wrong | scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it |
+| `export-written-german-imperial` | direction | opposite of import-written-german-imperial | quote (text) | quote | right |  |
+| `import-written-in-attachment` | direction | channel of import-implicit | decline (text) | air: quote; blank: quote; routed other: none | wrong | scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it; scope (G9): the router can label the request other when the flight details are in an attachment |
+| `export-written-in-attachment` | direction | opposite of import-written-in-attachment | quote (text) | air: quote; blank: quote; routed other: none | split | scope (G9): the router can label the request other when the flight details are in an attachment |
+| `export-with-import-history` | direction | moment of import-implicit: older request quoted in a new RFQ | quote (text) | quote | right |  |
+| `import-lane-in-carrier-reply` | direction | party of import-implicit: airline | no_price (text) | none | right |  |
 
-78 cases: 27 right, 2 late, 16 split, 33 wrong.
+84 cases: 30 right, 2 late, 17 split, 35 wrong.
 
 
 ## Axis T: supply

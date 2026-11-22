@@ -752,5 +752,62 @@
       "volume_cbm": "1.9"
     },
     "known_gap": "generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price)"
+  },
+  "import-written-german-imperial": {
+    "branch": "direction",
+    "expected": "decline",
+    "sure": "text",
+    "why": "The written flight goes from abroad into our export origin.",
+    "step": "language and units of import-implicit",
+    "known_gap": "scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it"
+  },
+  "export-written-german-imperial": {
+    "branch": "direction",
+    "expected": "quote",
+    "sure": "text",
+    "why": "Same cargo in the export direction.",
+    "step": "opposite of import-written-german-imperial"
+  },
+  "import-written-in-attachment": {
+    "branch": "direction",
+    "expected": "decline",
+    "sure": "text",
+    "why": "The attached instructions supply the flight direction.",
+    "step": "channel of import-implicit",
+    "known_gap": "scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it; scope (G9): the router can label the request other when the flight details are in an attachment",
+    "air": {
+      "origin": "PVG",
+      "destination": "FRA",
+      "weight_kg": "220",
+      "volume_cbm": "1.1"
+    }
+  },
+  "export-written-in-attachment": {
+    "branch": "direction",
+    "expected": "quote",
+    "sure": "text",
+    "why": "The attached instructions describe the export direction.",
+    "step": "opposite of import-written-in-attachment",
+    "air": {
+      "origin": "FRA",
+      "destination": "PVG",
+      "weight_kg": "220",
+      "volume_cbm": "1.1"
+    },
+    "known_gap": "scope (G9): the router can label the request other when the flight details are in an attachment"
+  },
+  "export-with-import-history": {
+    "branch": "direction",
+    "expected": "quote",
+    "sure": "text",
+    "why": "Old correspondence gives the reverse direction.",
+    "step": "moment of import-implicit: older request quoted in a new RFQ"
+  },
+  "import-lane-in-carrier-reply": {
+    "branch": "direction",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "An airline's offer in a bid thread should not trigger a customer quote.",
+    "step": "party of import-implicit: airline"
   }
 }
