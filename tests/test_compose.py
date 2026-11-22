@@ -463,3 +463,12 @@ def test_a_translated_follow_up_keeps_short_figures_too():
     assert compose.kept(
         english, "您好，\n\nPX-ABC123 于11月24日到达，运输3天，76 kg。", ("PX-ABC123",)
     )  # a month as figure
+
+
+def test_a_breakdown_asked_for_lists_the_parts_and_the_rate_per_kg_but_not_the_total_again():
+    option = OPTION.model_copy(update={"security": Decimal("34.00"), "total": Decimal("1234.00")})
+    request = "Please break the price down into air freight, fuel and security surcharge.\n\nBest regards\nDr. Eva Huber\nOperations"
+    _, body = compose.render(rfq("en"), option, request=request)
+    assert "air freight 1000.00 EUR, fuel surcharge 200.00 EUR, security surcharge 34.00 EUR" in body
+    assert "1.03 EUR per kg" in body and body.count("1234.00") == 1
+    assert body.startswith("Hello Eva,")

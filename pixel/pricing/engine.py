@@ -36,9 +36,9 @@ def _fx_eur(ctx: Context, tariff: LaneTariff) -> Decimal | None:
     return Decimal(str(stated[0])) if stated else None
 
 
-def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
+def _priced(ctx: Context, rfq: Rfq, tariffs: list[LaneTariff], emit: bool = True) -> list[RateOption]:
     found = []
-    for tariff in store.lookup(ctx, rfq.origin, rfq.destination, calc.ready_day(rfq)):
+    for tariff in tariffs:
         try:
             fx = None if tariff.currency == "EUR" else _fx_eur(ctx, tariff)
             option = calc.price_tariff(tariff, rfq, fx)
@@ -46,17 +46,38 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
             events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                         payload={"source": "sheet", "carrier": tariff.carrier, "error": str(exc)})  # fmt: skip
             continue
-        _found(ctx, rfq, option)
+        if emit:
+            _found(ctx, rfq, option)
         found.append(option)
     return found
 
 
+def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
+    return _priced(ctx, rfq, store.lookup(ctx, rfq.origin, rfq.destination, calc.ready_day(rfq)))
+
+
+def expired_sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
+    """The last resort for a cargo ready after its sheets run out (next case 5): today's sheet of each carrier that
+    has none valid on the ready day, priced but not logged. A price beats no answer (R1), so `options` and
+    `agents/rfq/agent.py` `fallback` take these only when nothing else has a price; logged earlier, they would count
+    their airlines as priced and keep the bids from being asked."""
+    day, today = calc.ready_day(rfq), rfq.received_at.date()
+    if day <= today:
+        return []
+    valid = {t.carrier.casefold() for t in store.lookup(ctx, rfq.origin, rfq.destination, day)}
+    tariffs = [t for t in store.lookup(ctx, rfq.origin, rfq.destination, today) if t.carrier.casefold() not in valid]
+    return _priced(ctx, rfq, tariffs, emit=False)
+
+
 def _portal_down(ctx: Context, rfq: Rfq) -> bool:
-    return ctx.db.execute(
-        "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.source')='portal'"
-        " AND json_extract(payload,'$.error')='RatesUnavailable'",
-        (rfq.session_id,),
-    ).fetchone() is not None
+    return (
+        ctx.db.execute(
+            "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.source')='portal'"
+            " AND json_extract(payload,'$.error')='RatesUnavailable'",
+            (rfq.session_id,),
+        ).fetchone()
+        is not None
+    )
 
 
 def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
@@ -149,7 +170,9 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         if desk_id is None and (down or not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
         mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
-        pending_desk = (desk_id or _desk_enquiry(ctx, rfq)) if down and selection.requested_options(rfq, sheets) else None
+        pending_desk = (
+            (desk_id or _desk_enquiry(ctx, rfq)) if down and selection.requested_options(rfq, sheets) else None
+        )
         if pending_desk is not None:
             if pending_desk not in mailed:
                 mailed.append(pending_desk)
@@ -167,4 +190,9 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     # Also reuse same-lane bids published before recovery or while another price source was still running.
     carried = [o for o in session.for_request(ctx, rfq) if o.source in (Source.PORTAL, Source.BID, Source.RATEDESK)]
     all_options = dict.fromkeys(sheets + portal + offers + pickups + carried)
-    return combine(rfq, list(all_options), feedback.pickup_rule(ctx), ctx)
+    found = combine(rfq, list(all_options), feedback.pickup_rule(ctx), ctx)
+    if found or not (expired := expired_sheet_options(ctx, rfq)):
+        return found
+    for option in expired:
+        _found(ctx, rfq, option)
+    return combine(rfq, list(dict.fromkeys(expired + pickups + carried)), feedback.pickup_rule(ctx), ctx)

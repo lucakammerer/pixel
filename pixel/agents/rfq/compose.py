@@ -144,6 +144,8 @@ TEXT = {
         "departure": "That is with a departure from {origin} on {depart}.",
         "one_awb": "All lots travel together as one consignment under a single air waybill, as you asked.",
         "reference": "Your reference {ref} is on the offer.",
+        "breakdown": "The breakdown: {parts}; all-in that is {per_kg} {currency} per kg chargeable weight.",
+        "parts": ("air freight", "fuel surcharge", "security surcharge", "pickup"),
         "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
         "as soon as I have it.",
         "months": (
@@ -255,6 +257,8 @@ TEXT = {
         "departure": "Der Abflug ab {origin} wäre dann am {depart}.",
         "one_awb": "Alle Positionen reisen wie gewünscht zusammen als eine Sendung unter einem Luftfrachtbrief.",
         "reference": "Ihre Referenz {ref} steht auf dem Angebot.",
+        "breakdown": "Aufgeschlüsselt: {parts}; all-in sind das {per_kg} {currency} pro kg frachtpflichtiges Gewicht.",
+        "parts": ("Luftfracht", "Treibstoffzuschlag", "Sicherheitszuschlag", "Abholung"),
         "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
         "weiter, sobald ich ihn habe.",
         "months": (
@@ -363,6 +367,8 @@ TEXT = {
         "one_awb": "Comme demandé, tous les lots voyagent ensemble en une seule expédition, sous une seule lettre de "
         "transport aérien.",
         "reference": "Votre référence {ref} figure sur l'offre.",
+        "breakdown": "Le détail : {parts} ; tout compris, cela fait {per_kg} {currency} par kg de poids taxable.",
+        "parts": ("fret aérien", "surcharge carburant", "surcharge sûreté", "enlèvement"),
         "cutoff": "L'heure limite exacte de dépôt à {origin} vient avec la réservation de la compagnie ; je vous la "
         "transmets dès que je l'ai.",
         "months": (
@@ -432,8 +438,10 @@ CASUAL = re.compile(r"^\s*(?:hi|hey|hallo|moin)\b|\bcheers\b", re.IGNORECASE)
 SIGNED = re.compile(r"^[A-ZÄÖÜ][a-zäöüß'’-]+(?: [A-ZÄÖÜ][a-zäöüß'’-]+){0,2}$")
 NOT_SIGNED = re.compile(
     r"\b(?:Thanks|Thank|Regards|Cheers|Best|Kind|Many|Greetings|Danke|Viele|Beste|Team|Department|Logistics|"
-    r"Shipping|Purchasing|Sales|Export|Import|Manager|Coordinator|Office|Desk|GmbH|AG|Ltd|Inc)\b"
+    r"Shipping|Purchasing|Procurement|Operations|Administration|Dispatch|Sales|Export|Import|Manager|Coordinator|"
+    r"Office|Desk|GmbH|AG|Ltd|Inc)\b"
 )
+TITLE = re.compile(r"^(?:Dr|Prof|Mag|Ing)\.\s*(?:(?:Dr|Ing)\.\s*)?")  # "Dr. Eva Huber" signs as Eva Huber
 # What a clerk answers in kind: a wish for the day, greetings from the customer's town, "Cheers".
 # "Hope your week's going well!": a clerk answers it before the business.
 WELL = re.compile(
@@ -466,6 +474,11 @@ WAREHOUSE = re.compile(r"\b(warehouse|factory|plant|facility)\b", re.IGNORECASE)
 PICKUP_ASK = re.compile(r"earliest (?:\w+ )?pick-?up|frühest\w* Abholung", re.IGNORECASE)
 DEPARTURE = re.compile(r"earliest (?:\w+ )?departure(?! airport)|frühest\w* Abflug|premier départ", re.IGNORECASE)
 ONE_AWB = re.compile(r"air ?waybill|\bAWB\b|(?:one|single) consignment|Luftfrachtbrief", re.IGNORECASE)
+BREAKDOWN = re.compile(
+    r"break(?:ing)?\s+(?:\w+\s+){0,3}down|breakdown|cost split|itemi[sz]e|aufschlüssel\w*|aufgeschlüsselt|aufstellung"
+    r"|ventilation|détail(?:ler|lé)?\s+(?:le|du)\s+prix",
+    re.IGNORECASE,
+)
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
 MORE_EN = {"i", "it", "this", "that", "will", "be", "are", "in", "on", "have", "good", "great", "day", "thank",
@@ -695,6 +708,8 @@ def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> st
             if DEPARTURE.search(request):
                 depart = arrive - timedelta(days=option.transit_days)
                 said.append(t["departure"].format(origin=option.origin, depart=_day(depart, t)))
+        if BREAKDOWN.search(request) and (split := breakdown(option, t)):
+            said.append(split)
         if ONE_AWB.search(request):
             said.append(t["one_awb"])
         if CUTOFF.search(request):
@@ -702,6 +717,15 @@ def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> st
         return " ".join(said)
     except Exception:  # noqa: BLE001  an extra answer must never cost the quote
         return ""
+
+
+def breakdown(option: RateOption, t: dict) -> str:
+    """The all-in in its parts and per kg, when the parts add up to it. Never the total itself: it stands once."""
+    amounts = (option.freight, option.fuel, option.security, option.pickup)
+    if sum(amounts) != option.total or sum(1 for a in amounts if a) < 2:
+        return ""
+    parts = ", ".join(f"{name} {money(a)} {option.currency}" for name, a in zip(t["parts"], amounts, strict=True) if a)
+    return t["breakdown"].format(parts=parts, per_kg=money(calc.per_kg(option)), currency=option.currency)
 
 
 def city_of(request: str, airport: str) -> str | None:
@@ -734,7 +758,7 @@ def signed_name(request: str, signer: str = "", full: bool = False) -> str | Non
     last block: the greeting keeps the name also when the model's slot is missing (a failed call, the fallback)."""
     blocks = [b for b in re.split(r"\n\s*\n", request.strip()) if b.strip()]
     for line in blocks[-1].splitlines() if blocks else []:
-        line = line.strip().rstrip(",")
+        line = TITLE.sub("", line.strip().rstrip(","))
         if SIGNED.match(line) and not NOT_SIGNED.search(line):
             first = line.split()[0]
             return None if first.casefold() in signer.casefold().split() else line if full else first

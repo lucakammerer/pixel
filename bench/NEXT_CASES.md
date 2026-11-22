@@ -25,11 +25,11 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | 4 | `max-transit-days` | "Transit time must not exceed 3 days" | **pass**: Vega 1685.10 (3 d) | Vega 1685.10 (3 d) | `extract.schedule`, `selection.meets_schedule` | — |
 | 5 | `ready-after-tariff-validity` | "ready on 4 December 2026" (sheets valid to 30.11.) | **pass**: November sheets excluded | a portal rate, bid or sheet valid on the ready date | `engine.sheet_options`, `session.for_request` | — |
 | 6 | `customer-reference-in-quote` | "Please quote our purchase order reference PO-2026-4471 in your offer" | done | the reference in the quote and PDF | `compose.answers`, `pdf.reference` | S |
-| 7 | `reply-in-other-language` | English mail: "Please reply in German, our shipping office does not read English" | English | German (R37's cousin) | `extract.py` language: an explicit ask wins | S |
+| 7 | `reply-in-other-language` | English mail: "Please reply in German, our shipping office does not read English" | **pass**: German | German (R37's cousin) | `extract.ASKED_LANGUAGE` | — |
 | 8 | `door-to-door-dap` | "Terms are DAP … please include delivery from DXB airport to the door" | **pass**: HAM-DXB Orion 1029.00; the note on delivery at destination only from `novelty` (live) | HAM-DXB Orion 1029.00, says that delivery at destination is not included | — | — |
 | 9 | `departure-airport-forced` | pickup 65189 Wiesbaden, "please route via Munich (MUC), not Frankfurt" | FRA, Elbflug 1140.00 | MUC, Helix 1635.00 + pickup to MUC | `extract.py` named departure airport wins over the zone; `pricing/pickup.py` | M |
 | 10 | `incoterm-exw-implies-pickup` | "on EXW terms, ex works our plant at … 80809 München" | **pass**: door pickup 80809, MUC, Helix 1635.00 + pickup | door pickup 80809, MUC, Helix 1635.00 + pickup | `extract.DOOR` | — |
-| 11 | `cost-breakdown-required` | "break the price down into air freight, fuel surcharge and security surcharge … all-in rate per kg" | total only; greets "Hello Operations" | 1042.20 + 399.60 + 59.40 = 1501.20, 2.78/kg | `compose.render` from the option's parts; `compose.greeting` name vs role line | S |
+| 11 | `cost-breakdown-required` | "break the price down into air freight, fuel surcharge and security surcharge … all-in rate per kg" | **pass**: parts and 2.78 EUR per kg; greets "Hello Eva" | 1042.20 + 399.60 + 59.40 = 1501.20, 2.78/kg | `compose.breakdown`, `compose.signed_name` | — |
 | 12 | `quote-validity-requested` | "the offer must be valid for at least 7 days. Please state how long your price is valid" | **pass**: "until 23:59 on Monday 30 November" | validity stated (sheet to 30.11.) | `calc.price_tariff` `valid_until` | — |
 | 13 | `insurance-requested` | "goods are worth EUR 180,000. Please include cargo insurance" | silent | priced, or plainly not included | `compose.render`: answer every service asked that the price does not hold | S |
 | 14 | `export-customs-included` | "Please include export customs clearance (EAD/ATLAS filing)" | silent | same | same as 13 | with 13 |
@@ -52,4 +52,4 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 
 ## What the replay showed beyond the predictions
 
-- The greeting took "Operations", a role line in the signature, as the name (11).
+- The greeting took "Operations", a role line in the signature, as the name (11); fixed.

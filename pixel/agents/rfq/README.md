@@ -64,7 +64,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
-- `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names.
+- `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names ("<airline> only",
+  "nur mit ...", and "no airline other than ...", "keine andere Airline als ...", which `excluded_airlines` no longer
+  reads as ruling that airline out).
   `pricing/selection.py` `select` prefers compliant prices and `pricing/bids.py` `request` limits airline enquiries to
   the requested carriers. If recovery reaches the deadline with only another airline's price, `novelty.py`
   `with_note` identifies that price as an alternative.
@@ -74,6 +76,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and `novelty.py` `with_note` identifies the available alternative if it misses the requested timing.
   `pricing/engine.py` `sheet_options` prices only sheet versions valid on the ready date.
   `pricing/session.py` `for_request` applies the same rule to stored sheet prices.
+- `pricing/engine.py` `expired_sheet_options`: when the cargo is ready after its sheets run out and nothing else has a
+  price (no portal rate, no bid, no sheet valid on the ready day), `engine.options` and `agent.py` `fallback` quote
+  today's sheet rather than no answer (R1). It is logged only then, so it never counts its airline as priced before
+  the bids are asked.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English, German or French, written as a clerk writes to
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
@@ -94,7 +100,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
   when they ask for the earliest departure, the pickup date said outright when they ask for the earliest pickup
   (`PICKUP_ASK`), one air
-  waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
+  waybill for all lots, that the drop-off cut-off follows with the airline's booking, and the all-in in its parts
+  with the rate per kg chargeable weight when they ask for a breakdown (`breakdown`, only when the parts add up to the
+  total, `calc.per_kg`). Any doubt gives "". A signed "Dr. Eva Huber" is greeted as Eva (`TITLE`), never as the
+  role line under her name.
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model reads the customer's signed first name
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
@@ -305,7 +314,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
 - A request can come in French (round 70: « l'option la plus rapide », signed "Cheers") or Chinese (round 72,
-  signed "Thanks a lot and have a lovely day!"; the model said "en" too). `extract.py` `_language` takes the
+  signed "Thanks a lot and have a lovely day!"; the model said "en" too). A language the customer asks us to
+  answer in wins over all of it ("Please reply in German, our shipping office does not read English",
+  `ASKED_LANGUAGE`). Otherwise `extract.py` `_language` takes the
   script's language when most of the mail is not Latin (`_script`, `SCRIPTS`), else counts each language's common
   words (`LANGUAGES`; every language but English, German and French needs two of its words, `TWO_WORDS`: "per kg" or a
   "Saludos" sign-off alone made an English mail Italian or Spanish and its quote was translated); the model's ISO code counts only for a language those lists do not know, in a script that
