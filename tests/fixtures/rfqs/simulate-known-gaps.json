@@ -2,6 +2,13 @@
   {
     "family": "bid",
     "axes": {
+      "expiry": ["absolute", "other-party", "attached", "hours", "minutes", "german-offset", "arabic-script", "combined"]
+    },
+    "note": "A carrier offer's stated validity is dropped when rules record the price, so its expiry cannot be checked. Owner: supply."
+  },
+  {
+    "family": "bid",
+    "axes": {
       "carrier": "airline",
       "distractor": "second_lane"
     },

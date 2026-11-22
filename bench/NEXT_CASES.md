@@ -483,3 +483,24 @@ booking. The open variations still need opposite cases, pickup and air, arrival 
 it or after booking, body and file and later correction, another language and script, another unit, and a
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
+
+### Bid validity variants
+
+The next snapshot, through event 19080 and round 181, adds four inbound census rows, three portal events and two
+sent quotes. It adds no tariff versions and shows no further candidate for a newer sheet or later bid before
+send. All 158 stored start-kit lanes match the offline source reading for dates, rate breaks, currency, transit,
+minimum and surcharges. The 20 hand-worked kit prices agree. The two emailed tariff files still need their
+original attachments. Owner: supply.
+
+| Variant | Hand expectation | Observed offline | Status |
+| --- | --- | --- | --- |
+| T1a. UTC deadline, airline body, trucker body, airline DOCX | Keep 17:00 UTC with the stated total and transit or pickup | All three keep the amount and lead time, and drop the deadline | Wrong. Owner: supply. |
+| T1b. One hour and 45 minutes from a 16:00 UTC offer | Keep 17:00 and 16:45 UTC respectively | Both keep the amount and transit, and drop the deadline | Wrong. Owner: supply. |
+| T1c. German timestamp with offset, Arabic duration, French duration in a trucker's DOCX | Normalize to 17:00, 17:00 and 16:30 UTC | All three keep the amount and lead time, and drop the deadline | Wrong. Owner: supply. |
+| T1d. Departure time or an old expiry quoted below the new offer | Keep the offer without an expiry | Both keep the new total without an expiry | Right. |
+| T3a. Desk offer in 22 attachment layouts | Keep the per-airline amount, currency, transit, rate ID and 14:38 UTC expiry | All 22 preserve those fields with the RFQ supplied | Right for reading. Thread correlation and expiry before reuse remain open. Owner: supply. |
+| T7a. Missing portal dataset version | Carry the source's dataset version when it supplies one | Four options in round 100 lack it, including the one used in an accepted quote. The raw response is unavailable. | Unknown whether the source supplied the version. Owner: supply. |
+
+The validity probes run through the real bid recorder with no gateway, using `rfqs/bid-validity.json`. These
+findings verify the read separately from availability before send. Reuse before, at and after expiry, competing
+later replies and the same cases after a booking remain open. Owner: supply. No change to accepted quote rate.

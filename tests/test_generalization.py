@@ -207,7 +207,7 @@ def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
     shipments in one mail of `tools/simulate.py`: read right or left to the model, unless
     `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now must lose its note."""
     cases = [*simulate.document_cases(step=7), *simulate.mail_cases(), *simulate.bid_cases(step=11),
-             *simulate.shipments_cases(draws=1)]  # fmt: skip
+             *simulate.bid_validity_cases(), *simulate.shipments_cases(draws=1)]  # fmt: skip
     outcomes = asyncio.run(simulate.run(cases))
     assert [f"{o.case.family} {o.case.axes}: {o.wrong}" for o in outcomes if o.verdict == "wrong" and not o.gap] == []
     assert [

@@ -687,6 +687,30 @@ def bid_cases(seed: int = 13, step: int = 1) -> list[Case]:
     return [_bid_case(i, dict(zip(BID_AXES, v, strict=True)), seed) for i, v in enumerate(grid) if not i % step]
 
 
+def bid_validity_cases() -> list[Case]:
+    """Stated expiry separated from transit and pickup time, including quoted old terms and attachment-only offers."""
+    fixture = json.loads((FIXTURES / "bid-validity.json").read_text())
+    request = dict(fixture["request"])
+    for name in ("weight_kg", "volume_cbm"):
+        request[name] = D(request[name])
+    cases = []
+    for row in fixture["cases"]:
+        carrier, place = row["carrier"], row.get("place", "body")
+        reading = dict(fixture[carrier])
+        lines = [reading.pop("price"), reading.pop("lead"), row["text"]]
+        body, files = "\n".join(lines), []
+        if place != "body":
+            body = "Our offer is in the attached document."
+            files = [(f"offer.{place}", WRITERS[place]([[line] for line in lines]))]
+        axes = {k: v[0] for k, v in BID_AXES.items()}
+        axes.update(carrier=carrier, place=place, expiry=row["id"])
+        want = reading | {"total": D(reading["total"]), "valid_until": datetime.fromisoformat(row["until"])
+                          if row["until"] else None}  # fmt: skip
+        cases.append(Case("bid", axes, "Re: Rate enquiry", body, files, want,
+                          "airline_bid" if carrier == "airline" else "pickup_bid", request))  # fmt: skip
+    return cases
+
+
 ZONES = Path(__file__).resolve().parent.parent / "data" / "start-kit" / "pickup_zones.csv"
 # One factor changed at a time from the base (each factor's first value), three draws of figures per cell.
 SHIPMENT_AXES = {
@@ -858,7 +882,7 @@ def gap_of(case: Case, gaps: list[dict]) -> str | None:
     """The known gap a case falls in: every axis the gap names has the case's value (a list: one of them)."""
     for gap in gaps:
         if gap["family"] == case.family and all(
-            case.axes[k] in (v if isinstance(v, list) else [v]) for k, v in gap["axes"].items()
+            case.axes.get(k) in (v if isinstance(v, list) else [v]) for k, v in gap["axes"].items()
         ):
             return gap["note"]
     return None
@@ -1085,10 +1109,11 @@ def report(outcomes: list[Outcome]) -> None:
                 tally[cell(o.case)][("right", "model", "wrong").index(o.verdict)] += 1
             print("\n".join(f"  {c:28} {r}/{m}/{w}" for c, (r, m, w) in tally.items()))
             continue
-        for axis in mine[0].case.axes:
+        for axis in dict.fromkeys(axis for o in mine for axis in o.case.axes):
             tally = defaultdict(lambda: [0, 0, 0])
             for o in mine:
-                tally[o.case.axes[axis]][("right", "model", "wrong").index(o.verdict)] += 1
+                if axis in o.case.axes:
+                    tally[o.case.axes[axis]][("right", "model", "wrong").index(o.verdict)] += 1
             print(f"  {axis:8} " + "  ".join(f"{v}={r}/{m}/{w}" for v, (r, m, w) in tally.items()))
     print("\n  (each value: right/model/wrong)")
 
@@ -1100,7 +1125,8 @@ def main() -> int:
     parser.add_argument("--seed", type=int, help="draw other figures for the same grid (default: 7, 11, 13 and 17)")
     args = parser.parse_args()
     seeds = {} if args.seed is None else {"seed": args.seed}
-    every = (*document_cases(**seeds), *mail_cases(**seeds), *bid_cases(**seeds), *shipments_cases(**seeds))
+    every = (*document_cases(**seeds), *mail_cases(**seeds), *bid_cases(**seeds), *bid_validity_cases(),
+             *shipments_cases(**seeds))  # fmt: skip
     cases = [c for c in every if args.family in (None, c.family)]
     outcomes = asyncio.run(run(cases))
     report(outcomes)
