@@ -265,32 +265,61 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
 
 async def cancel(ctx: Context, quote: Quote, message: Message) -> None:
     """The customer withdrew after the booking (round 88: "please cancel booking BK-…"): the portal cancels it, the
-    CRM marks booking and shipment cancelled, the customer hears so once. Never a second quote."""
+    CRM marks booking and shipment cancelled, the customer hears so once. Never a second quote. A booking the portal
+    cannot cancel (one booked by mail without an airline reference yet, or the portal refusing or down) is withdrawn
+    by mail with the airline it was booked with; only without an address does a person take it."""
     booking = bookings.for_session(ctx, quote.session_id)
-    if booking is None or not booking.booking_reference:
+    if booking is None:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
-            payload={"note": "Customer cancels a booking without an airline reference", "intent": "decline"},
+            payload={"note": "Customer cancels a booking we do not hold", "intent": "decline"},
         )  # fmt: skip
         return
     if booking.status != BookingStatus.CANCELLED:
-        try:
-            if not ctx.settings.dry_run:
+        why = None
+        if not booking.booking_reference:
+            why = "no airline reference yet"
+        elif not ctx.settings.dry_run:
+            try:
                 await ctx.portal.cancel(booking.booking_reference)
-        except (ApiError, httpx.HTTPError) as e:
+            except (ApiError, httpx.HTTPError) as e:
+                why = f"portal refused: {e!r}"
+        if why and not await _cancel_by_mail(ctx, quote, booking, why):
             events.emit(
                 ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
-                payload={"note": "Customer cancels; the portal refused", "error": repr(e)},
+                payload={"note": "Customer cancels; neither the portal nor a mail to the airline could", "why": why},
             )  # fmt: skip
             return
         booking = booking.model_copy(update={"status": BookingStatus.CANCELLED})
         _save(ctx, booking, "cancelled")
         events.emit(
             ctx, "booking.cancelled", "crm", session_id=quote.session_id, message_id=message.id,
-            payload={"booking_reference": booking.booking_reference, "shipment": booking.team_reference},
+            payload={"booking_reference": booking.booking_reference, "shipment": booking.team_reference,
+                     "via": "email" if why else "portal", **({"why": why} if why else {})},
         )  # fmt: skip
     await _tell_customer(ctx, quote, message.id, "cancelled", airline=booking.carrier,
-                         reference=booking.team_reference, airline_reference=booking.booking_reference)  # fmt: skip
+                         reference=booking.team_reference, airline_reference=booking.booking_reference or booking.team_reference)  # fmt: skip
+
+
+async def _cancel_by_mail(ctx: Context, quote: Quote, booking: Booking, why: str) -> bool:
+    address = _airline_address(ctx, booking.carrier, "")
+    if address is None:
+        return False
+    reference = f" (your reference {booking.booking_reference})" if booking.booking_reference else ""
+    body = "\n".join([
+        "Hello,", "",
+        f"please cancel our booking {booking.team_reference}{reference}: {_lane(quote)}, {quote.rfq.weight_kg} kg.",
+        "Our customer has withdrawn the order.", "", "Please confirm the cancellation.", "", "Thank you,",
+        "PIXEL Air Freight",
+    ])  # fmt: skip
+    try:
+        await outbox.send(
+            ctx, to=address, subject=f"Cancellation {booking.team_reference}: {_lane(quote)}", body=body,
+            session_id=quote.session_id, purpose="booking",
+        )  # fmt: skip
+    except outbox.NotSent:
+        return False
+    return True
 
 
 async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to: int | None) -> None:
