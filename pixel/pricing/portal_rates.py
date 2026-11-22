@@ -9,7 +9,7 @@ from pixel.contracts import RateOption, Rfq
 from pixel.core import events
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import calc
+from pixel.pricing import calc, selection
 
 LANES_TTL_S = 600
 _lanes: tuple[object, float, list[Lane]] | None = None
@@ -80,7 +80,7 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
 
     # Check the quota again after each batch. A zero left over from a previous minute permits one
     # probe; Portal.rate handles Retry-After if the window really is exhausted.
-    pending = list(lane.airlines)
+    pending = sorted(lane.airlines, key=lambda airline: not selection.requested_carrier(rfq, airline[1], airline[0]))
     found = []
     while pending:
         remaining = ctx.portal.rate_remaining

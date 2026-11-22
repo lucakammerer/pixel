@@ -113,8 +113,18 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     """Every priced option for the request: sheets (instant), portal and bids in parallel, pickup added for
     door-to-port. Emits `option.found` per option as it arrives, so the fallback always has the best so far."""
     sheets = sheet_options(ctx, rfq)
-    carriers = store.carriers(ctx, "airline", rfq.destination)
-    priced = {o.carrier.casefold() for o in sheets}
+    carriers = [
+        (name, email) for name, email in store.carriers(ctx, "airline", rfq.destination)
+        if selection.requested_carrier(rfq, name)
+    ]  # fmt: skip
+    priced = {o.carrier.casefold() for o in sheets if selection.requested_carrier(rfq, o.carrier, o.carrier_code)}
+
+    def priced_airlines() -> set[str]:
+        return {
+            option.carrier.casefold() for option in session.for_request(ctx, rfq)
+            if not option.trucker and selection.requested_carrier(rfq, option.carrier, option.carrier_code)
+        }  # fmt: skip
+
     candidates = bids.worth_asking(ctx, rfq, [(n, e) for n, e in carriers if n.casefold() not in priced])
     offers = []
     async with asyncio.TaskGroup() as group:
@@ -124,11 +134,11 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         # leave mail-only airlines time to answer, including after a late restart.
         head_start = min(PORTAL_HEAD_START_S, max(0.0, (deadline.target_at - timing.now()).total_seconds()))
         await asyncio.wait({portal_task}, timeout=head_start)
-        priced.update(o.carrier.casefold() for o in session.for_request(ctx, rfq) if not o.trucker)
+        priced.update(priced_airlines())
         unpriced = [(name, email) for name, email in candidates if name.casefold() not in priced]
         if not (priced or unpriced):  # nothing to mail: the portal's own answer decides whether the desk is needed
             await asyncio.wait({portal_task}, timeout=max(0.0, (deadline.target_at - timing.now()).total_seconds()))
-            priced.update(o.carrier.casefold() for o in session.for_request(ctx, rfq) if not o.trucker)
+            priced.update(priced_airlines())
         if _ask_desk(ctx, rfq, alone=not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
         if unpriced:

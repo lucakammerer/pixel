@@ -551,8 +551,8 @@ def _preference(text: str) -> Preference:
 # A customer ruling an airline out (round 42: "Please do not offer <airline> (<code>) for this shipment or for any of
 # our future inquiries", quoted anyway and rejected as excluded_airline).
 RULED_OUT = re.compile(
-    r"\b(?:not|never|exclud\w*|avoid\w*|without|except|other than"
-    r"|nicht|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)\w*)\b",
+    r"\b(?:not(?!\s+only\b)|never|exclud\w*|avoid\w*|without|except|other than"
+    r"|nicht(?!\s+nur\b)|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)(?!lich\b)\w*)\b",
     re.IGNORECASE,
 )
 LASTING = re.compile(
@@ -560,6 +560,10 @@ LASTING = re.compile(
     r"|künftig|zukünftig|ab sofort|generell|grundsätzlich|immer)\b",
     re.IGNORECASE,
 )
+AIRLINE_SENTENCES = re.compile(r"(?<=[.!?;])\s+|\n+")
+AIRLINE_ONLY = r"(?:only|exclusively|solely|nur|ausschlie(?:ß|ss)lich|seulement|uniquement)"
+AIRLINE_END = r"(?=\s*(?:$|[,.!?;]|please\b|bitte\b|for (?:this|the) (?:shipment|quote)\b|für diese sendung\b))"
+AIRLINE_CONNECTOR = r"(?:\s*,\s*(?:(?:or|and|oder|und|ou|et)\s+)?|\s+(?:or|and|oder|und|ou|et)\s+)"
 AIRLINE_WORD = re.compile(r"\s+(?:air\s+cargo|air\s+freight|airways|airlines?|air|cargo)$", re.IGNORECASE)
 CODE_IN_BRACKETS = re.compile(r"\(([A-Z0-9]{2})\)")
 
@@ -570,27 +574,61 @@ def _calls(name: str) -> set[str]:
     return {name.casefold()} | ({short.casefold()} if len(short) >= 4 else set())
 
 
+def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
+    """Read an exclusive instruction directly attached to known carrier names."""
+    if not airlines:
+        return ()
+    aliases = {name.casefold(): name for name in sorted(airlines)}
+    for name in sorted(airlines):
+        for alias in _calls(name):
+            aliases.setdefault(alias, name)
+    names = "|".join(re.escape(alias) for alias in sorted(aliases, key=lambda alias: (-len(alias), alias)))
+    mention = rf"(?<!\w)(?:{names})(?!\w)"
+    item = rf"{mention}(?:\s*\([a-z0-9]{{2}}\))?"
+    listed = rf"{item}(?:{AIRLINE_CONNECTOR}{item})*"
+    instruction = re.compile(
+        rf"\b{AIRLINE_ONLY}\s+(?:(?:quote|offer|use|fly)\s+)?"
+        rf"(?:(?:with|via|on|mit|von|über|avec|par|angebote von)\s+)?"
+        rf"(?P<after>{listed})(?:\s+(?:fliegen|anbieten))?{AIRLINE_END}"
+        rf"|(?P<before>{listed})\s+{AIRLINE_ONLY}\b{AIRLINE_END}"
+    )
+    required = set()
+    for sentence in AIRLINE_SENTENCES.split(text.casefold()):
+        for match in instruction.finditer(sentence):
+            if re.search(r"\b(?:not|nicht)\s+$", sentence[: match.start()]):
+                continue
+            group = match["before"] or match["after"]
+            required.update(aliases[name] for name in re.findall(mention, group))
+    return tuple(sorted(required))
+
+
 def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], bool]:
     """The airlines a sentence with a negation names, from `airlines`, plus a two-letter code in brackets in it; and
     whether the customer means later requests too. A negation that names no known airline rules nothing out."""
     found, lasting = set(), False
-    for sentence in re.split(r"(?<=[.!?;])\s+|\n+", text):
+    for sentence in AIRLINE_SENTENCES.split(text):
         if not RULED_OUT.search(sentence):
             continue
         lowered = sentence.casefold()
-        names = {a for a in airlines if any(re.search(rf"(?<!\w){re.escape(c)}(?!\w)", lowered) for c in _calls(a))}
+        required = set(required_airlines(sentence, airlines))
+        names = {
+            airline for airline in airlines - required
+            if any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
+        }
         if names:
-            found |= names | set(CODE_IN_BRACKETS.findall(sentence))
+            found.update(names)
+            if not required:
+                found.update(CODE_IN_BRACKETS.findall(sentence))
             lasting = lasting or bool(LASTING.search(sentence))
     return tuple(sorted(found)), lasting
 
 
-def _ruled_out(ctx: Context, rfq: Rfq, text: str) -> Rfq:
-    """The request with the airlines this mail rules out and those the customer ruled out for good before. A lasting
-    exclusion is kept as a `customer.excludes` event."""
+def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
+    """Apply this request's airline requirements and carry forward lasting exclusions."""
     if ctx is None:  # the offline benchmark reads without a store
         return rfq
-    names, lasting = excluded_airlines(text, store.airline_names(ctx))
+    airlines = store.airline_names(ctx)
+    names, lasting = excluded_airlines(text, airlines)
     rows = ctx.db.execute(
         "SELECT payload FROM events WHERE kind = 'customer.excludes' AND lower(json_extract(payload, '$.customer')) = ?",
         (rfq.customer.lower(),),
@@ -599,7 +637,8 @@ def _ruled_out(ctx: Context, rfq: Rfq, text: str) -> Rfq:
     if lasting:
         events.emit(ctx, "customer.excludes", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload={"customer": rfq.customer, "carriers": list(names)})  # fmt: skip
-    return rfq.model_copy(update={"excluded_carriers": tuple(sorted(set(names) | earlier))})
+    return rfq.model_copy(update={"excluded_carriers": tuple(sorted(set(names) | earlier)),
+                                  "required_carriers": required_airlines(text, airlines)})  # fmt: skip
 
 
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
@@ -1450,7 +1489,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         proof = {"document_weight_kg": document_weight} if document_weight == rfq.weight_kg else {}
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload={"sources": evidence, "attachment_route_conflicts": excluded, **proof})  # fmt: skip
-    rfq = _ruled_out(ctx, rfq, _text(mail))
+    rfq = _carrier_requirements(ctx, rfq, _text(mail))
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})

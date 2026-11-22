@@ -19,7 +19,7 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 
 | # | Case | Sample phrasing | Today | Required | Fix belongs in | Size |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `preferred-airline-only` | "We have a framework contract with Vega Skyfreight, so please quote Vega Skyfreight only" | Cobalt 2346.00 | Vega 3221.50: the mirror of round 42 | `extract.py` next to the exclusion rule; an allow-filter in `selection.select`; bids only to that airline | S |
+| 1 | `preferred-airline-only` | "We have a framework contract with Vega Skyfreight, so please quote Vega Skyfreight only" | **pass**: Vega 3221.50 | Vega 3221.50 | `extract.required_airlines`, `selection.select`, `bids.request` | — |
 | 2 | `dims-per-piece-mixed` (live bug, not a new kind) | "- 2 pallets, 120 x 80 x 60 cm, 210 kg each" | **pass**: 600 kg, Vega 1920.00 | 600 kg, Vega 1920.00 | — | — |
 | 3 | `latest-arrival-date` | "must arrive in Hong Kong no later than Monday 30 November" | Kestrel 1512.80, arrives 1 Dec | Helix 2132.80, the only one in time | arrival limit in `Rfq` (`contracts.py`, own commit); ready date + transit filter in `selection.select` | M |
 | 4 | `max-transit-days` | "Transit time must not exceed 3 days" | Elbflug 1430.90 (5 d) | Vega 1685.10 (3 d) | same as 3 | with 3 |

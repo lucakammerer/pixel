@@ -140,6 +140,29 @@ async def test_an_agent_that_gives_up_early_still_quotes_a_price_that_arrives_be
     assert kinds(ctx).count("quote.waiting") == 1
 
 
+async def test_fallback_waits_for_the_requested_airline_and_labels_an_alternative(conn):
+    ctx = make_ctx(conn)
+    message = ingest_rfq(ctx)
+    quote = make_quote(message)
+    requested_carrier = "Requested Air"
+    rfq = quote.rfq.model_copy(update={"required_carriers": (requested_carrier,)})
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, payload=rfq.model_dump(mode="json"))
+    events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
+                payload={"option": quote.option.model_dump(mode="json")})  # fmt: skip
+
+    assert await rfq_agent.fallback(ctx, rfq.session_id) is None
+    alternative = await rfq_agent.fallback(ctx, rfq.session_id, allow_partial=True)
+    assert alternative.option.carrier == quote.option.carrier
+    assert "The price above is for the alternative shown." in alternative.body
+
+    requested = quote.option.model_copy(update={"carrier": requested_carrier, "transit_days": 10})
+    events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
+                payload={"option": requested.model_dump(mode="json")})  # fmt: skip
+    compliant = await rfq_agent.fallback(ctx, rfq.session_id)
+    assert compliant.option.carrier == requested_carrier
+    assert "alternative shown" not in compliant.body
+
+
 @pytest.mark.parametrize("dry_run, late_mail", [(True, True), (False, False)])  # a dry run; a replay (the KPI)
 async def test_no_wait_for_a_late_price_that_cannot_arrive(conn, monkeypatch, dry_run, late_mail):
     ctx = make_ctx(conn, dry_run=dry_run)
