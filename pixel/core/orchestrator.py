@@ -153,6 +153,7 @@ async def _fallback(ctx: Context, message: Message, deadline: Deadline) -> None:
         return
     if quote is None:
         _missed(ctx, session_id, "no_price")
+        await _no_price_reply(ctx, message, deadline)
         return
     quote = quote.model_copy(update={"fallback": True})
     try:
@@ -215,6 +216,29 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     finally:
         if sourcing is not None:
             sourcing.cancel()
+
+
+async def _no_price_reply(ctx: Context, message: Message, deadline: Deadline) -> None:
+    """R1: a request no sheet, portal rate, bid or person priced by `hard_at` gets one plain answer, never silence.
+    It holds no figure: a guessed price is wrong for the customer and the scorer alike."""
+    from pixel.agents.rfq import compose
+    from pixel.pricing import session
+
+    session_id = message.session_id
+    rfq = session.rfq(ctx, session_id)
+    if ctx.settings.dry_run or not getattr(ctx.mailbox, "late_mail", True):
+        return
+    left = (deadline.expires_at - now()).total_seconds()
+    try:
+        async with asyncio.timeout(max(0.0, left)):
+            subject, body = compose.no_price(ctx, message, rfq)
+            await outbox.send(ctx, to=message.sender, subject=subject, body=body, session_id=session_id,
+                                     in_reply_to=message.id, purpose="no_price")  # fmt: skip
+    except outbox.NotSent:
+        return
+    except Exception as e:  # noqa: BLE001
+        _error(ctx, "no_price_reply", e, message)
+        return
 
 
 def _missed(ctx: Context, session_id: int, reason: str) -> None:

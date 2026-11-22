@@ -97,6 +97,7 @@ VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
+OFF_PORTAL = re.compile(r"not on the portal\b.*?(?P<email>[\w.+-]+@[\w-]+(?:\.[\w-]+)*)", re.IGNORECASE)
 # The desk's list as a table: columns found by their header, in this order, so "Rate id" is no price column, nor
 # is "Rate per kg".
 DESK_COLUMNS = {
@@ -371,6 +372,39 @@ def parse_desk(message: Message, rfq: Rfq) -> list[RateOption]:
             )
         )
     return found
+
+
+def desk_airlines(message: Message) -> list[tuple[str, str]]:
+    """(name, email) of every airline the desk lists as not on the portal: those are priced by mail (R21)."""
+    return [
+        (line["name"], found["email"].lower())
+        for line in DESK_LINE.finditer(_own_text(message.body))
+        if (found := OFF_PORTAL.search(line["rest"]))
+    ]
+
+
+async def _ask_listed(ctx: Context, message: Message, rfq: Rfq) -> None:
+    """The airlines the desk names off the portal that this request has not asked yet, while it has no quote: a lane
+    no sheet, portal rate or known carrier prices has no other price (R1)."""
+    if outbox.quoted(ctx, rfq.session_id):
+        return
+    asked = {
+        row[0].lower()
+        for row in ctx.db.execute(
+            "SELECT json_extract(payload,'$.email') FROM events WHERE session_id=? AND kind='bid.requested'"
+            " AND json_extract(payload,'$.origin')=? AND json_extract(payload,'$.destination')=?",
+            (rfq.session_id, rfq.origin, rfq.destination),
+        )
+        if row[0]
+    }
+    listed = []
+    for _, email in desk_airlines(message):
+        carrier = store.carrier_by_email(ctx, email)
+        if email not in asked and carrier and carrier[1] == "airline":
+            listed.append((carrier[0], email))
+            asked.add(email)
+    if listed:
+        await request(ctx, rfq, listed)
 
 
 ANSWER_SCHEMA = {
@@ -669,6 +703,8 @@ async def record(ctx: Context, message: Message) -> None:
     for option in listed:
         events.emit(ctx, "option.found", "pricing", session_id=message.session_id, message_id=message.id,
                     payload={"option": option.model_dump(mode="json")})  # fmt: skip
+    if kind == "ratedesk":
+        await _ask_listed(ctx, message, rfq)
 
 
 async def collect(

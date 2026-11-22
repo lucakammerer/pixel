@@ -51,9 +51,11 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
     return found
 
 
-def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
+def _ask_desk(ctx: Context, rfq: Rfq, alone: bool = False) -> bool:
     """R21: a rate read for this request answered 503, so the rate API is down; the desk mails the portal's rate per
-    airline with its rate id. A 404 or 429 leaves the API up: the desk would only repeat it. Once per request."""
+    airline with its rate id. A 404 or 429 leaves the API up: the desk would only repeat it. `alone`: no sheet, no
+    portal rate and no airline to mail, so nothing else can price the lane; the desk names the airlines that fly it
+    off the portal (R1). Once per request."""
     down = ctx.db.execute(
         "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.source')='portal'"
         " AND json_extract(payload,'$.error')='RatesUnavailable'",
@@ -64,7 +66,7 @@ def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
         " AND json_extract(payload,'$.origin')=? AND json_extract(payload,'$.destination')=?",
         (rfq.session_id, RATEDESK, rfq.origin, rfq.destination),
     ).fetchone()
-    return bool(down) and not asked
+    return (bool(down) or alone) and not asked
 
 
 def _distrusted(ctx: Context, rfq: Rfq, option: RateOption) -> None:
@@ -124,7 +126,10 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         await asyncio.wait({portal_task}, timeout=head_start)
         priced.update(o.carrier.casefold() for o in session.for_request(ctx, rfq) if not o.trucker)
         unpriced = [(name, email) for name, email in candidates if name.casefold() not in priced]
-        if _ask_desk(ctx, rfq):
+        if not (priced or unpriced):  # nothing to mail: the portal's own answer decides whether the desk is needed
+            await asyncio.wait({portal_task}, timeout=max(0.0, (deadline.target_at - timing.now()).total_seconds()))
+            priced.update(o.carrier.casefold() for o in session.for_request(ctx, rfq) if not o.trucker)
+        if _ask_desk(ctx, rfq, alone=not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
         if unpriced:
             mailed = await bids.request(ctx, rfq, unpriced)

@@ -157,8 +157,19 @@ def _claimed(ctx: Context, key: str, is_quote: bool) -> Message | None:
 def _hold(
     ctx: Context, to: str, sid: int | None, purpose: str, quote: Quote | None, operator: bool, parent: int | None
 ) -> str | None:
+    if purpose == "no_price" and sid is not None and quoted(ctx, sid):
+        return "duplicate_quote"
     if not allowed(ctx, to):
         return "recipient"
+    if (
+        quote
+        and parent == quote.rfq.message_id
+        and ctx.db.execute(
+            "SELECT 1 FROM mail_delivery WHERE session_id=? AND parent_id=? AND purpose='no_price'",
+            (sid, parent),
+        ).fetchone()
+    ):
+        return "duplicate_quote"
     # The customer changed the request before our quote: the answer to the change mail goes out, never the older facts.
     if quote and parent == quote.rfq.message_id and db.get(ctx.db, f"requote:{sid}"):
         return "superseded"
@@ -209,7 +220,9 @@ async def _deliver(
         ((f"offer-{quote.id}.pdf", "application/pdf", pdf.offer(quote, _reference(ctx, quote))),) if quote else ()
     )
     # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
-    key = json.dumps([sid, purpose, to, parent, "" if purpose == "tracking" else body], ensure_ascii=False)
+    key = json.dumps(
+        [sid, purpose, to, parent, "" if purpose in ("tracking", "no_price") else body], ensure_ascii=False
+    )
     if quote:
         # A requote answers the customer's change mail: its own claim, so the first quote's never blocks it.
         key = f"quote:{sid}" if parent == quote.rfq.message_id else f"quote:{sid}:{parent}"

@@ -143,3 +143,17 @@ async def test_a_desk_answer_without_rates_is_not_read_by_the_model(ctx):  # noq
     events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq().model_dump(mode="json"))
     await bids.record(ctx, mail(RATEDESK, "Hello,\n\nrates for AAA-BBB are currently unavailable.\n\nRate Desk"))
     assert kinds(ctx, "bid.received")[-1]["priced"] is False and not kinds(ctx, "error")
+
+
+async def test_a_lane_nothing_else_prices_asks_the_desk_and_mails_the_airlines_it_names(ctx, offline):  # noqa: F811
+    """R1: no sheet, no portal lane, no airline on the carrier list for the destination left the request no price."""
+    answer_rates(offline, "no lane")
+    request = rfq().model_copy(update={"destination": "ZZZ"})
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    await engine.options(ctx, request, deadline(0.3))
+    assert [r["email"] for r in kinds(ctx, "bid.requested")] == [RATEDESK]
+    desk = ("Hello,\n\nportal rates for AAA-ZZZ:\n\n- Air Two (A2): not on the portal, email two@air\n\n"
+            "Book with the rate_id on the portal or by mail to the airline.\n\nBest regards\nRate Desk")  # fmt: skip
+    await bids.record(ctx, mail(RATEDESK, desk))
+    await bids.record(ctx, mail(RATEDESK, desk))
+    assert [r["email"] for r in kinds(ctx, "bid.requested")] == [RATEDESK, "two@air"]
