@@ -39,8 +39,10 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   the truckers' answers of the last 24 hours) and the portal's rates and weight breaks as the API gave them, which the replay serves
   again (a reading rounded since gets the rate times its weight), and under `answers` what the model returned live
   by prompt hash (recorded since 22.11.): the same prompt gets that answer, free; any other model call fails
-  offline. Attachment bytes are not stored. `round-166-accepted` is the session `tests/test_capture.py` replays end to end (portal rate, its next
-  weight break, trucker bids) and `tests/test_outage_drill.py` replays under every drill.
+  offline. The question's archived receipt lets the replay ask again and link the reply to the question it just
+  sent, or to the original request if it has enough facts. Attachment bytes are not stored. `round-166-accepted`
+  is the session `tests/test_capture.py` replays end to end (portal rate, its next weight break, trucker bids) and
+  `tests/test_outage_drill.py` replays under every drill.
 - `replay-gate.json`: round 155's session as the live database held it (request mail, reading, every option found,
   the sent quote, pickup zone), which `tests/test_replay_gate.py` builds into a database for `tools/replay_gate.py`.
 - `thread-followups.json`: round 86's session with every mail that can arrive later in it, by sender, phase and

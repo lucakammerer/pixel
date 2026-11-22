@@ -216,10 +216,10 @@ Measured right: two, three and four shipments, a door pickup for all, bullets, G
 another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.
 
-## Axis R: the scorer's checks (22.11.2026, live database to round 187)
+## Axis R: the scorer's checks (22.11.2026, live database to round 192)
 
-What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (180 rounds,
-8 to 187: 130 accepted, 44 rejected and 6 with no answer) and the requests and replies behind the losses.
+What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (185 rounds,
+8 to 192: 134 accepted, 45 rejected and 6 with no answer) and the requests and replies behind the losses.
 
 ### The rubric, as far as the verdicts prove it
 
@@ -235,7 +235,7 @@ What the scorer reads from our first reply, reconstructed from the latest `feedb
 | 8 | dangerous goods the documents reveal are answered with the documents they need | `dg_docs_missing` (1: 10) | the mail said "non-dangerous", the packing list `PL_53839.xlsx` said otherwise | named documents (DGD, MSDS) |
 | 9 | the total stays within 5 % below the scorer's best (Price) | `too_low` (18) | round 13 was 2.67 % below the best and earned 33 of 45 (about 4.5 points per %). Insurance terms stated in the request count in the all-in (91) | the all-in total in EUR |
 | 10 | the total stays within 5 % above the scorer's best (Price) | `too_high` (10) | round 179 quoted a 1-day service when a cheaper 2-day service met the limit. For several shipments the scorer uses the sum (62, 127, 151, 153, 158, accepted) | the all-in total in EUR |
-| 11 | the option or reply fulfils the customer's stated wish | `not_what_was_asked` (1: 186) | 186 asked for "en hızlı seçenek" (fastest) and an estimated arrival. The reply offered the cheapest, repeated the wish in a note and omitted the arrival. The verdict does not identify which clauses it checked | the option or content against the wish |
+| 11 | the option or reply fulfils the customer's stated wish | `not_what_was_asked` (2: 186, 192) | 186 asked for the fastest option and an arrival estimate. The reply offered the cheapest and omitted the estimate. In 192 the new mail asked for cheapest, quoted the old subject with "Fastest", and got the quickest option with an arrival date. The two rounds establish that choosing by the current wish matters; an independent arrival check remains unproven | the option against the current wish |
 | — | the airline and the trucker are **not** compared | — | 172: our airline differed from the scorer's at the same total, 45 of 45; 13: another trucker, accepted | — |
 
 Order: 1, then 2 before 3 (round 156). The order of 5 to 8 and 11 relative to the two price thresholds remains
@@ -252,7 +252,7 @@ unproven. Those losses carry no `best`.
 | 96 (00:43) | 3 decline, while the rate API was down (93 to 99) | 96, 104, 122 | 1.7 h |
 | 113 (02:23) | 6 two shipments | 113, 150 | 6.5 h |
 | 177 (08:50) | 4 another mode of transport | 1 so far | 56 min |
-| 186 (09:46) | 11 a wish only noted, in a language the rules do not read | 1 so far | — |
+| 186 (09:46) | 11 a wish only noted, in a language the rules do not read | 186 and 192 | — |
 
 The pattern: every new check is one more field of the generator's request (an attachment fact, an exclusion, a
 language, an attachment wish, a shipment count, a mode), introduced alone in one round, repeated for 1 to 4 rounds, and
@@ -260,10 +260,12 @@ from then on **combined** with older ones: 156 is Korean + an "import" by the bu
 pounds and cubic feet + an arrival deadline + the buyer's "import" + PDF. Price levers move the same way from endpoint
 to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123).
 
-### Wishes we recognised and only noted (every `rfq.novelty` through round 187)
+### Wishes we recognised and only noted (every `rfq.novelty` through round 192)
 
 13 distinct sessions, 112 to 186, with a nonempty `mapped.conditions` or `mapped.documents`. Each row compares
 the first offer and stored attachment receipt with the request and verdict. A session can appear in several rows.
+Round 192 had no mapped novelty. Its new preference for cheapest lost to the quoted subject of an earlier
+request for fastest. Hot repair A owns the request-reading fix.
 
 | Kind of wish | Sessions (round) | Acted | Only noted | The scorer | Changes the right option or content |
 | --- | --- | --- | --- | --- | --- |
@@ -286,6 +288,15 @@ Ranked predictions of `not_what_was_asked` from the kinds only noted, each stepp
 | N3 | the offer PDF ask becomes a request for the customer to send a document | stubs `["PDF", "견적서"]`, `["shipper's declaration", "PDF"]`, and empty. The carrier's bid PDF supplies sourcing data. A customer's real DGD in PDF form still needs to be requested when required | wrong content, accepted twice. Empty stub produces no request | give the note the direction of each document request | Checklist |
 | N4 | a wish no option can meet | offline `agent._quote` with both a required airline and an impossible arrival gives both alternative notes when the RFQ carries the fields. The same inputs stubbed in novelty's `only_airlines` and `arrive_by` give neither note. A compatible airline and date correctly give neither note | model-only alternative disclosure open | check the selected option against the same requirements used for selection | Checklist (review thread merges) |
 | N5 | one air waybill or separate air waybills | the answer renderer confirms English "One AWB for all lots". Korean round 167 gets a note only and French "une seule LTA" gets no sentence. The opposite "two separate air waybills" triggers a one-AWB promise | wrong confirmation for the opposite case. Korean and French confirmation missing | `compose.ONE_AWB` | Checklist |
+
+Arrival was explicitly requested in 52 of the 179 first mails through round 186. In the offline replay of 186,
+stubbing its recorded ready date and using the corrected fastest option gives an estimated arrival of 28 November.
+The current composer leaves out that date. A candidate that uses `rfq.ready_on` also gives the same estimate in
+the reply and PDF when the date is written out in the body, supplied only in an attachment, or supplied in an
+attachment that supersedes the mail date. A reply-by date alone still produces no estimate. The quote's
+translation remains model-dependent. A translation stub that keeps the price and transit but drops the date
+passes `compose.translated_ok`. Changes to the ready date in a later mail are owned by Axis B
+(`followup.changes` reads cargo and routing changes but no schedule fields).
 
 ### The 20 most likely next checks
 
@@ -674,7 +685,7 @@ it or after booking, body and file and later correction, another language and sc
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
 
-## Axis P: price against the scorer's best (22.11.2026 13:10, live database to round 186)
+## Axis P: price against the scorer's best (22.11.2026 13:20, live database to round 190)
 
 `uv run python -m tools.price_ledger <database>` prints the rows below from a copy of the live database: every
 round lost on price or on accuracy points, and every accepted round today's code would quote otherwise (none today:
@@ -687,7 +698,7 @@ so it is within 5 % of the scorer's best for every best up to the range shown; i
 **Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted `feedback` events:
 round 93 was written 40 times, once per 10 s poll from 00:21 to 00:28 UTC, round 94 three times). **Today 26 of the 28 move past the verdict's
 bound with the source, rule or reading that was missing then. 15 and 16 pass once the customer names the pickup place,
-which today's code asks for (proven on 17, 18, 20 and 131); the place they would name is not in the database.**
+which today's code asks for (proven on 17, 18, 20, 131 and 189: asked, Nordlicht named Cologne, quoted CGN zone 50, 45 of 45); the place they would name is not in the database.**
 Cycle 4 added 130 (the document's 1144 kg, proven by the cross-check's own record) and 67 (Domblick's voice message,
 read since 21:59, priced from its other answers). Cycle 2 added
 17, 18 and 20 (priced at the place the customer named when asked) and 33 to 35 (priced at the figure today's rules
@@ -754,7 +765,7 @@ A contradiction is a lost round the rule alone explains and no other cause does.
 | The insurance premium on the customer's terms in the all-in | 3 (92, 109, 164) | 0 | 91 lost without it |
 | Arrival = ready day + transit, no day added for the trucker (hot repair A; before: a day more with a trucker) | 2 (170; 179 today) | 0 | before the repair 179 contradicted the extra day |
 | A figure the attached document states over the mail's (weight, volume) | 3 accepted since (`test_extract`) and 33, 34, 35 at the document's figure | 0 | 130 too, by hand at 1144 kg |
-| A pickup without a place is priced at the place the customer names when asked | 1 (131: Augsburg, 45 of 45) and 17, 18, 20 at the named place | 0 | 15 and 16: never asked |
+| A pickup without a place is priced at the place the customer names when asked | 2 (131: Augsburg; 189: Cologne; 45 of 45 each) and 17, 18, 20 at the named place | 0 | 15 and 16: never asked |
 | A converted unit rounded to 0.01 before pricing | 1 (136, by the points) | 0 | — |
 | An airline bid or the rate desk as the price | 4 (29, 45, 46, 47) | 0 | — |
 | Minimum on the freight, surcharges on billed weight, a quote in another currency | no scored round tests them | — | every sheet quoted above its minimum; no sheet quoted at a higher break with surcharges; every request asked EUR |
@@ -764,37 +775,37 @@ pickup longer than a day, the portal's transit against the sheet's, "by Friday".
 arrival limit, so none of these is tested by a scored round. Cheapest live evidence: the next round with an arrival
 limit and a door pickup whose ready day is a Friday, read with `tools.price_ledger`.
 
-Every scored round, cycle 4 (the ledger's last line): 186 scored, 136 accepted. Of these, today's code quotes 124
-exactly as sent and 1 a cent apart (46); all 128 with a session, the 3 that lost accuracy points included (13, 27,
-136), are within 5 % of the best their points give (at 45 points: the quote itself); 8 have no session in this
-database (1 to 7, 107). 28 lost on price, above. The other 22 rejections were judged on something else than the
-price (Axis R); 186 (`not_what_was_asked`, 22.11. 09:45) is new: a Turkish "en hızlı seçeneği istiyoruz" (fastest)
-read as cheapest, so Aurelia 3 d at 844.49 went out instead of Fjordline 2 d at 1194.71. The scorer now names a
-wrong kind of option by its own reason rather than as too low; hot repair A holds it (claim 56183, `extract.py`).
+Every scored round, cycle 5 (the ledger's last line, live database to round 190): 190 scored, 140 accepted. Of
+these, today's code quotes 127 exactly as sent and 1 a cent apart (46); all 131 with a session, the 3 that lost
+accuracy points included (13, 27, 136), are within 5 % of the best their points give (at 45 points: the quote
+itself); 9 have no session in this database (1 to 7, 107, and one not yet matched). 28 lost on price, above. The
+other rejections were judged on something else than the price (Axis R). 186 (`not_what_was_asked`, 22.11. 09:45:
+a Turkish "en hızlı seçeneği istiyoruz", fastest, read as cheapest) passes on today's `main`: hot repair A's reading
+gives fastest, so Fjordline 2 d at 1194.71 instead of Aurelia 3 d at 844.49.
 
 Open, none of them a price or selection rule: 15 and 16, the place the customer would name (generalize). Predicted,
 not yet live: one trucker's answer unreadable (a scan, a failed transcription) while the others priced; the pickup
 memory then prices only the others, as in 67. A fix (`pickup.estimates` for every trucker that answered without a
 price read) has one scored round behind it and waits behind the one-pull-request rule. Rounds 180 to 184 (cycle 2, fresh copy): all accepted, today's code quotes them as sent. Nothing in this axis is wrong today that has no owner.
 
-## Axis F: after the quote (22.11.2026, snapshot through round 188)
+## Axis F: after the quote (22.11.2026, snapshot through round 191)
 
-The snapshot ends at event 19589 (09:58:45 UTC). Inspect the recorded phase, sender, routing, decisions and
-linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 18991`
-for the 62 added mails since round 179's snapshot. The fixture run of the same tool checks today's rules and
+The snapshot ends at event 19893 (10:17:39 UTC). Inspect the recorded phase, sender, routing, decisions and
+linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 19589`
+for the 37 added mails since the previous snapshot. The fixture run of the same tool checks today's rules and
 selected tracking outcomes. `tests/test_booking.py` checks the booking actions with mocked services.
 
 ### What the scorer scores
 
-187 rounds were closed in this snapshot. Round 188 had a provisional accepted verdict and `booked: true`;
-points were still pending.
+190 rounds were closed in this snapshot. Round 191 had a provisional accepted verdict and `booked: true`.
+Points were still pending.
 
 | Evidence on the closed rounds | Observed verdicts and points | Interpretation |
 | --- | --- | --- |
-| Customer reply recorded in the RFQ session: 183 rounds vs 4 without | 137 accepted, 44 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
-| Airline confirmation linked to the RFQ: 114 rounds vs 73 without | 111 accepted and 3 rejected vs 26 accepted, 41 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
-| Tracking answer linked to the shipment: 109 rounds vs 78 without | 109 accepted, 105 with +10, vs 28 accepted and none with +10 | Every +10 coincided with `booked: true`. Six `booked: true` rounds scored zero, including unmatched requests or stuck bookings and the failed cancellation in round 88. |
-| Booking field on the board | `booked: true` in 111, false in 6 and null in 70. All 117 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
+| Customer reply recorded in the RFQ session: 186 rounds vs 4 without | 140 accepted, 44 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
+| Airline confirmation linked to the RFQ: 117 rounds vs 73 without | 114 accepted and 3 rejected vs 26 accepted, 41 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
+| Tracking answer linked to the shipment: 111 rounds vs 79 without | 111 accepted, 106 with +10, vs 29 accepted and none with +10 | Every +10 coincided with `booked: true`. Seven `booked: true` rounds scored zero. Round 190 had no tracking points field or tracking question in the snapshot. |
+| Booking field on the board | `booked: true` in 114, false in 6 and null in 70. All 119 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
 | Price-match requests in rounds 108, 132, 144, 157, 166 and 175 | 144 and 166 show `booked: false` and adjustment +10. Both were booked before the unconditional yes. The four without a reply had neither outcome. | Hold the quote and wait for the yes. The next clean hold can isolate what earns the adjustment. |
 | Withdrawal after booking (round 88) | Adjustment −20 when the cancellation was missed | Fixed in #336. |
 | Change after the quote (rounds 86, 152) | 86 counted the update as unanswered. 152 scored the quote sent in reply to the change. | A changed request can have a new scored quote. |
@@ -805,25 +816,26 @@ Round 187 also promised paperwork. The quote was accepted by the scorer in both 
 round 186 arrived after the quote had already selected the wrong service. Its reading error affects the CRM state.
 The first-quote loss belongs to the selection repair in #508.
 
-A later read at event 19799 closed round 188 with tracking 0.0. The answer matched its booked shipment after a Voice
-update to `at_origin`, printed the internal status code and omitted the airline booking reference. The scorer's
-specific reason is unknown. Round 189 was accepted and booked with tracking points still absent. The next question
-about a shipment with an intermediate status can distinguish this from an ordinary booking or matching failure.
+Round 188 closed with tracking 0.0. The answer matched its confirmed shipment after a Voice update to `at_origin`,
+printed the internal status code and omitted the airline booking reference and carrier. Round 189 matched a confirmed
+shipment and scored +10. The scorer's specific reason for 188 is open. The next question about an intermediate status
+can help isolate which missing fact mattered.
 
 ### The census
 
-1,804 incoming replies inside sessions, plus 17 standalone airline confirmations and 110 standalone tracking desk
+1,839 incoming replies inside sessions, plus 17 standalone airline confirmations and 112 standalone tracking desk
 questions. The recorded phase is taken before `mail.in`. A later `followup.read` gives the phase when the handler ran.
-Older events can only show the actions logged at the time. Tracking is linked using `tracking.answered.shipment_sessions`.
+Standalone confirmations and tracking questions use the linked shipment session's phase, or unknown if the log
+has no link. Tracking is linked using `tracking.answered.shipment_sessions`.
 
 | Sender and kind | Count | Action recorded |
 | --- | --- | --- |
-| Airline or trucker, bid | 1,263 | 1,222 arrived while the session was still open, 41 after the quote or acceptance. 1,257 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
-| Airline, confirmation | 122 | 114 confirmed, six duplicates, two unmatched on historically stuck mail bookings (rounds 27 and 29, #323). The confirmation in round 171 hit a mailbox error when telling the customer (C15, Generalize). |
-| Customer, reply | 424 | 122 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
-| Customer, answer to our question | 11 | Routed as `other/thread:question`. Cases and first-quote outcomes are handled in Scope and the request-scoring axes. |
+| Airline or trucker, bid | 1,283 | 1,242 arrived while the session was still open, 41 after the quote or acceptance. 1,277 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
+| Airline, confirmation | 126 | 118 confirmed, six duplicates, two unmatched on historically stuck mail bookings (rounds 27 and 29, #323). The confirmation in round 171 hit a mailbox error when telling the customer (C15, Generalize). |
+| Customer, reply | 434 | 125 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
+| Customer, answer to our question | 12 | Routed as `other/thread:question`. Cases and first-quote outcomes are handled in Scope and the request-scoring axes. |
 | Trucker, attached pickup offer | 1 | Routed as a tariff and failed (round 69, T4, Supply). |
-| Tracking desk, question | 110 | Latest recorded answer was matched to 107 confirmed shipments, two stuck bookings and one unmatched. Three questions had an unmatched answer at some point, including two later matched. Five added since round 179 all matched confirmed bookings. |
+| Tracking desk, question | 112 | Latest recorded answer matched 108 shipments at `confirmed`, one at `at_origin` (F23), and two stuck in `booking`. One question remains unmatched. Three were unmatched at some point, including two later matched. |
 
 The historical `reply_unhandled` cohort was 119 notes across 67 sessions before 22.11. The mail bodies show 107
 acknowledgments, six promises of dangerous-goods documents, two pickup answers, two corrections and two cancellation

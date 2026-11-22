@@ -563,9 +563,11 @@ What follows:
   unscored request reproduced their totals. The tracking status matched. The one routing difference is mail 56829
   in round 189: the replay sends its own question, but the reply references the original question ID, so the
   router sees a customer reply instead of `thread:question`. The extracted pickup and quoted total matched.
+  A fresh capture now keeps the question receipt and relinks replies at delivery time. The routing difference
+  disappeared across all 22 mails with the same totals and tracking status. Tests cover a direct reply and a
+  references-only reply, with and without a regenerated question.
   Open: #489 and #492 for review; Korean lots without the gateway (round 167, Cost); C16 (Accuracy), where
-  `tools.card_proof` showed the cached price was 11.765% below the first observed rate of a new dataset version;
-  and the question reference in the replay (Generalize).
+  `tools.card_proof` showed the cached price was 11.765% below the first observed rate of a new dataset version.
 - 22.11. 11:15, generalize cycles 4 and 5 (live to mail 54466, round 179; cursor was 49317). Every one of the 149
   incoming mails since the cursor replayed with `tools.capture` and compared, mail by mail: the route live and in the
   replay is the same for all 149; the 12 tracking questions answered with the same statuses; 52343 and 54267 (a
