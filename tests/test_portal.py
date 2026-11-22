@@ -68,6 +68,24 @@ async def test_rate_parses_and_reads_limit(portal):
     assert option.valid_until == datetime(2026, 11, 21, 16, 15, tzinfo=UTC)
 
 
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [
+        ({"X-RateLimit-Limit": "unknown", "X-RateLimit-Remaining": "3"}, (10, 3)),
+        ({"X-RateLimit-Limit": "8", "X-RateLimit-Remaining": "4, 3"}, (8, 4)),
+    ],
+)
+@respx.mock
+async def test_invalid_quota_header_does_not_discard_a_rate(portal, headers, expected):
+    respx.get(f"{BASE}/v1/portal/rates").mock(
+        side_effect=[httpx.Response(200, json=RATE, headers=item) for item in (LIMITS, headers)]
+    )
+    await read(portal)
+    option = await read(portal)
+    assert (portal.rate_limit, portal.rate_remaining) == expected
+    assert option.rate_id == RATE["rate_id"] and option.total_eur == Decimal("183.00")
+
+
 @respx.mock
 async def test_429_waited_out_when_deadline_allows(portal, no_sleep):
     respx.get(f"{BASE}/v1/portal/rates").mock(
