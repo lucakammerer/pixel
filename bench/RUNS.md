@@ -275,3 +275,15 @@ What follows:
   captured with rows. Wrong in every harness: 0. Open: multi-lot mails in pounds, tonnes, cubic feet or litres go
   to the model (`_lots`, Owner: Cost); a customer's second mail before our quote never came live, which version the
   scorer prices is unknown. Next: the live mail since mail 23698.
+- 22.11. 01:10, unseen-shape cycle 10 (live to round 90, mail 26279). Live: 85 and 88 accepted at the best price.
+  86 and 87 "no answer": the customer changed pieces, weight and volume 10 s after our quote and we sent no
+  second quote; the scorer prices the changed cargo (#273, captured as `reply-changed-cargo-update-offer.json`; a
+  replay on main requotes 1317 kg / 8.18 cbm and 611 kg / 5.71 cbm). 89 and 90 "no answer": one mail, two
+  shipments to two airports in numbered lines, a separate all-in price asked for each; no single destination, a
+  question, then no quote. Two wordings in two rounds ("1. GRU (Sao Paulo, BR) — ...", "1. Destination airport
+  RUH (Riyadh, SA): ..."); the repair on `accuracy/multi-shipment-first` quotes the first shipment and reads only
+  the first (Owner: Accuracy, handed the second wording). Thank-yous after the booking and a cancel after it
+  (round 88) are #276 and #277. Generated: multi-lot mails in pounds, tonnes, cubic feet or litres went to the
+  model (166 of 528), "1.234 t" in a lot read as 1234 t; read by rules since #279. Wrong in every harness: 0.
+  Open: which shipment the scorer prices in a multi-shipment mail (evidence: the board's verdict on the first
+  round answered with the first shipment). Next: the live mail since mail 26279.
