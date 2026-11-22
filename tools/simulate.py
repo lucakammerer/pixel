@@ -25,6 +25,14 @@ another lane's price or a date; in EUR (ISO code, euro sign, decimal comma, thou
 or CHF ("2'748.45"). A bid class the rules leave to the model costs a gateway call: it is named in the known gaps
 too, and a named class that reads right fails the run like any stale gap.
 
+`shipments` (`--family shipments`): several shipments in one mail (rounds 89, 90, 113, 127, 150, 151), as a
+one-factor matrix: from a base of two numbered lines from one origin, one change each in the number of shipments,
+the lanes (another origin, the same lane twice, a door pickup, door and port, a pickup postcode each), the layout
+(bullets, paragraphs, a table, "also" in running text, the subject, attachments, German, French) and the wishes (one
+per shipment, a currency for all). Read and split as `agent.handle` does (`extract.read_request`, then
+`extract.shipments`); where the rules give up, the model reads the first shipment right, as it did live, and the
+verdict is `model` when every shipment then comes out right. A question back to the customer is wrong.
+
 Right: every judged field within 1% or 0.005 (a volume written with two decimals); neither moves a price out of
 the 5% band. Model: the rules gave up and the model would read it, not measured offline. Wrong: the rules read a
 field wrong, a lost round. A wrong case inside `tests/fixtures/rfqs/simulate-known-gaps.json` is a known gap; any
@@ -679,6 +687,149 @@ def bid_cases(seed: int = 13, step: int = 1) -> list[Case]:
     return [_bid_case(i, dict(zip(BID_AXES, v, strict=True)), seed) for i, v in enumerate(grid) if not i % step]
 
 
+ZONES = Path(__file__).resolve().parent.parent / "data" / "start-kit" / "pickup_zones.csv"
+# One factor changed at a time from the base (each factor's first value), three draws of figures per cell.
+SHIPMENT_AXES = {
+    "count": ("2", "3", "4"),
+    "lanes": ("one_origin", "two_origins", "same_lane", "door", "door_and_port", "two_postcodes"),
+    "layout": ("numbered", "bullets", "paragraphs", "table", "also", "subject", "attachment_each",
+               "attachment_sections", "de", "fr"),
+    "wishes": ("cheapest", "cheapest_fastest", "exclude_one", "arrive_by_one", "currency"),
+}  # fmt: skip
+CARGO = {
+    "en": "{goods}, {n} pieces, gross weight {kg} kg, volume {cbm} cbm",
+    "de": "{goods}, {n} Packstücke, Bruttogewicht {kg} kg, Volumen {cbm} cbm",
+    "fr": "{goods}, {n} colis, poids brut {kg} kg, volume {cbm} m3",
+}
+INTRO = {
+    "en": ("Hello,\n\ncould you quote the {wish} air freight option for each of these {count} shipments{origin}? "
+           "All are ready on 2026-11-27.{door}"),
+    "de": ("Guten Tag,\n\nbitte nennen Sie uns für jede dieser {count} Sendungen{origin} die {wish} Luftfracht. "
+           "Alle sind ab 2026-11-27 bereit.{door}"),
+    "fr": ("Bonjour,\n\npourriez-vous nous coter l'option de fret aérien la {wish} pour chacun de ces {count} "
+           "envois{origin} ? Tous sont prêts le 2026-11-27.{door}"),
+}  # fmt: skip
+WISH_WORD = {"en": "cheapest", "de": "günstigste", "fr": "moins chère"}
+FROM = {"en": " from {}", "de": " ab {}", "fr": " au départ de {}"}
+DOOR = {
+    "en": " They are ready for pickup at our site in {town} (postcode {pc}); please arrange the truck to the airport.",
+    "de": " Bitte organisieren Sie die Abholung an unserem Standort in {pc} {town} und den LKW zum Flughafen.",
+    "fr": " Merci de les enlever sur notre site à {town} (code postal {pc}) et d'organiser le camion jusqu'à l'aéroport.",
+}
+CLOSE = {"en": "\n\nPlease send all prices in one reply.\n\nBest regards\nMira Petersen\nNordlicht Audio",
+         "de": "\n\nBitte senden Sie alle Preise in einer Antwort.\n\nViele Grüße\nMira Petersen\nNordlicht Audio",
+         "fr": "\n\nMerci d'envoyer tous les prix dans une seule réponse.\n\nCordialement\nMira Petersen"}  # fmt: skip
+
+
+def _zones() -> list[dict[str, str]]:
+    with ZONES.open() as f:
+        return list(csv.DictReader(f))
+
+
+def _shipments_case(i: int, axes: dict[str, str], seed: int) -> Case:
+    rng = random.Random(seed * 100_000 + i)
+    count, lanes, layout, wishes = int(axes["count"]), axes["lanes"], axes["layout"], axes["wishes"]
+    lang = layout if layout in ("de", "fr") else "en"
+    first = rng.choice(_zones())
+    zones = [first, rng.choice([z for z in _zones() if z["airport"] != first["airport"]])]
+    door = lanes in ("door", "door_and_port", "two_postcodes")
+    origin = zones[0]["airport"] if door else rng.choice(ORIGINS)
+    dests = rng.sample(DESTINATIONS, count)
+    if lanes == "same_lane":
+        dests[1] = dests[0]
+    ships = []
+    for j, dest in enumerate(dests):
+        row = _rows(rng, 1)[0]
+        zone = zones[j % 2] if lanes == "two_postcodes" else zones[0]
+        o = zone["airport"] if lanes == "two_postcodes" else origin
+        if lanes == "two_origins" and j % 2:
+            o = rng.choice([c for c in ORIGINS if c != origin])
+        ships.append({
+            "origin": o, "destination": dest, "weight_kg": D(row.kg), "volume_cbm": row.cbm.quantize(D("0.01")),
+            "pieces": row.pieces, "goods": rng.choice(GOODS), "door_pickup": door and not (lanes == "door_and_port" and j),
+            "pickup_postcode": f"{zone['zone']}{rng.randint(100, 999)}" if door and not (lanes == "door_and_port" and j)
+            else None, "preference": "fastest" if wishes == "cheapest_fastest" and j else "cheapest",
+        })  # fmt: skip
+    if lanes == "door":  # one site for all
+        for s in ships[1:]:
+            s["pickup_postcode"] = ships[0]["pickup_postcode"]
+    style = "de" if lang == "de" else "plain"
+    cargo = [CARGO[lang].format(goods=s["goods"], n=s["pieces"], kg=_num(s["weight_kg"], style),
+                                cbm=_num(s["volume_cbm"], style, 2)) for s in ships]  # fmt: skip
+    route = lambda s: f"{s['origin']} to {s['destination']}" if lanes == "two_origins" else s["destination"]
+    if lanes == "two_postcodes":
+        route = lambda s: f"{s['destination']}, pickup at postcode {s['pickup_postcode']}"
+    if lanes == "door_and_port":
+        route = lambda s: (f"{s['destination']}, collected at our site (postcode {s['pickup_postcode']})"
+                           if s["door_pickup"] else f"{s['destination']}, we deliver it to {s['origin']} ourselves")  # fmt: skip
+    intro = INTRO[lang].format(
+        wish=WISH_WORD[lang], count=count, origin=FROM[lang].format(origin) if lanes in ("one_origin", "same_lane")
+        else "", door=DOOR[lang].format(town=zones[0]["area"], pc=ships[0]["pickup_postcode"]) if lanes == "door" else "",
+    )  # fmt: skip
+    files, subject = [], f"Air freight quote: {count} shipments"
+    lines = [f"{route(s)}: {c}." for s, c in zip(ships, cargo, strict=True)]
+    if layout in ("numbered", "de", "fr"):
+        listing = "\n".join(f"{j}. {line}" for j, line in enumerate(lines, 1))
+    elif layout == "bullets":
+        listing = "\n".join(f"- {line}" for line in lines)
+    elif layout == "paragraphs":
+        listing = "\n\n".join(
+            f"Shipment {j}\n{'Origin: ' + s['origin'] + chr(10) if lanes == 'two_origins' else ''}Destination: "
+            f"{s['destination']}\n{c}." for j, (s, c) in enumerate(zip(ships, cargo, strict=True), 1)
+        )  # fmt: skip
+    elif layout == "table":
+        listing = "| Destination | Pieces | Gross weight (kg) | Volume (cbm) |\n" + "\n".join(
+            f"| {route(s)} | {s['pieces']} | {s['weight_kg']} | {s['volume_cbm']} |" for s in ships
+        )
+    elif layout == "also":
+        listing = f"The first shipment goes to {lines[0]}" + "".join(
+            f" {'We also have' if j == 1 else 'In addition, there is'} a shipment to {line}" for j, line in
+            enumerate(lines[1:], 1)
+        )  # fmt: skip
+    elif layout == "subject":
+        listing = f"The shipment: {lines[0]}"
+        subject = "Air freight quote: " + "; also ".join(f"{s['weight_kg']} kg, {s['volume_cbm']} cbm to "
+                                                          f"{s['destination']}" for s in ships[1:])  # fmt: skip
+        intro = intro.replace(f"each of these {count} shipments", "this shipment and the one in the subject")
+    else:
+        listing = "The details of each shipment are in the attached packing list."
+        sections = [[["Packing List"], ["Destination airport:", s["destination"]], ["Total pieces:", str(s["pieces"])],
+                     ["Total gross weight (kg):", str(s["weight_kg"])], ["Total volume (cbm):", str(s["volume_cbm"])],
+                     ["Goods description:", s["goods"]]] for s in ships]  # fmt: skip
+        if layout == "attachment_each":
+            files = [(f"PL_{j}.pdf", _pdf(doc)) for j, doc in enumerate(sections, 1)]
+        else:
+            joined = [cells for j, doc in enumerate(sections, 1) for cells in [[f"Shipment {j}"], *doc[1:]]]
+            files = [("packing-list.pdf", _pdf([["Packing List"], *joined]))]
+    wish = {
+        "cheapest_fastest": " For the first shipment the cheapest option, for the others the fastest.",
+        "exclude_one": f" For shipment 2, please do not use {CARRIERS['airline'][0]}.",
+        "arrive_by_one": " Shipment 2 must arrive by 2026-12-04.",
+        "currency": " Please quote all prices in USD.",
+    }.get(wishes, "")
+    body = f"{intro}\n\n{listing}\n\n{wish.strip()}{CLOSE[lang]}".replace("\n\n\n\n", "\n\n")
+    want = {}
+    for j, s in enumerate(ships):
+        keys = ["origin", "destination", "weight_kg", "volume_cbm", "door_pickup", "pickup_postcode", "preference"]
+        want |= {f"{j + 1}.{k}": s[k] for k in keys}
+        if wishes == "currency":
+            want[f"{j + 1}.currency"] = "USD"
+        if wishes == "exclude_one":
+            want[f"{j + 1}.excluded_carriers"] = (CARRIERS["airline"][0],) if j == 1 else ()
+        if wishes == "arrive_by_one":
+            want[f"{j + 1}.arrive_by"] = "2026-12-04" if j == 1 else None
+    first = {k: str(v) if isinstance(v, D) else v for k, v in ships[0].items() if k != "goods"}
+    first["currency"] = "USD" if wishes == "currency" else None
+    return Case("shipments", axes, subject, body, files, want, "shipments", first)
+
+
+def shipments_cases(seed: int = 17, draws: int = 3) -> list[Case]:
+    """The base (each axis's first value) and every one-factor change from it."""
+    base = {k: v[0] for k, v in SHIPMENT_AXES.items()}
+    cells = [base] + [base | {k: v} for k, values in SHIPMENT_AXES.items() for v in values[1:]]
+    return [_shipments_case(i * draws + d, cell, seed) for i, cell in enumerate(cells) for d in range(draws)]
+
+
 class Mailbox:
     def __init__(self, files: list[tuple[str, bytes]]):
         self.files = dict(enumerate(content for _, content in files))
@@ -692,7 +843,9 @@ class ModelNeeded(Exception):
 
 
 def _close(got, want) -> bool:
-    if isinstance(want, D):  # within 1%, or within the mail's written precision (0.38 cbm for a table's 0.384)
+    if isinstance(want, D) and isinstance(
+        got, D | int
+    ):  # within 1%, or within the mail's written precision (0.38 cbm for a table's 0.384)
         return abs(D(got) - want) <= max(want * TOLERANCE, WRITTEN)
     return got == want
 
@@ -748,12 +901,30 @@ async def _tariff(ctx: Context, message: Message, case: Case) -> dict:
     return got
 
 
+async def _shipments(ctx: Context, message: Message, case: Case) -> dict:
+    """Read and split as `agent.handle` does; a question back to the customer reads as `asked`."""
+    asked = []
+
+    async def ask(*args, **kwargs) -> None:
+        asked.append(1)
+
+    question, extract._ask = extract._ask, ask
+    try:
+        rfq, text = await extract.read_request(ctx, message, deadline_for(RECEIVED, ctx.settings))
+    finally:
+        extract._ask = question
+    parts = extract.shipments(rfq, text) or [rfq]
+    got = {f"{j}.{k}": "asked" if asked else getattr(p, k) for j, p in enumerate(parts, 1) for k in Rfq.model_fields}
+    got = {k: str(v) if k.endswith("arrive_by") and v else v for k, v in got.items()}
+    return {k: got.get(k, "not read") for k in case.want}
+
+
 async def _confirmation(ctx: Context, message: Message, case: Case) -> dict:
     return dict(zip(REFERENCES, await booking.confirmed_references(ctx, message), strict=True))
 
 
 READERS = {"customer_rfq": _rfq, "customer_reply": _reply, "tracking_question": _tracking, "tariff": _tariff,
-           "booking_confirmation": _confirmation}  # fmt: skip
+           "booking_confirmation": _confirmation, "shipments": _shipments}  # fmt: skip
 
 
 async def read(case: Case, ctx: Context) -> Outcome:
@@ -767,6 +938,8 @@ async def read(case: Case, ctx: Context) -> Outcome:
 
     async def model(ctx, **kw):
         called.append(1)
+        if case.kind == "shipments" and kw.get("purpose") == "rfq.extract":  # it reads the first one, as live
+            return LlmResult(data=case.request, model="first shipment", tokens_in=1, tokens_out=1, cost_usd=D(0))
         raise ModelNeeded
 
     llm.ask_json = model
@@ -774,9 +947,9 @@ async def read(case: Case, ctx: Context) -> Outcome:
         got = await READERS[case.kind](ctx, message, case)
     except ModelNeeded:
         return Outcome(case, "model")
-    if called:
-        return Outcome(case, "model")
     wrong = [f"{k}: {got[k]} != {v}" for k, v in case.want.items() if not _close(got[k], v)]
+    if called and (case.kind != "shipments" or not wrong):
+        return Outcome(case, "model")
     return Outcome(case, "wrong" if wrong else "right", wrong)
 
 
@@ -869,7 +1042,9 @@ async def run(cases: list[Case]) -> list[Outcome]:
     ctx = Context(replace(settings(), model_check=""), conn, None, None, None, None)
     ask_json, transcribe, gaps = llm.ask_json, tariffs._transcribe, known_gaps()
     tariffs._transcribe = lambda content: content.decode().splitlines()  # `_spoken_file`: the transcript itself
-    if any(c.family == "bid" for c in cases):
+    if any(c.family == "shipments" for c in cases):
+        store.save_zones(ctx, _zones())
+    if any(c.family in ("bid", "shipments") for c in cases):
         store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
     try:
         outcomes = [await (read_bid(c, ctx, i) if c.family == "bid" else read(c, ctx)) for i, c in enumerate(cases, 1)]
@@ -887,15 +1062,29 @@ def stale_gaps(outcomes: list[Outcome]) -> list[str]:
     return [g["note"] for g in known_gaps() if g["note"] not in hit]
 
 
+def cell(case: Case) -> str:
+    """A one-factor case's cell: the axis it changes from the base, or the base."""
+    base = {k: v[0] for k, v in SHIPMENT_AXES.items()}
+    return next((f"{k}={v}" for k, v in case.axes.items() if v != base[k]), "base")
+
+
 def report(outcomes: list[Outcome]) -> None:
     groups = defaultdict(list)
     for o in outcomes:
-        groups[o.case.family if o.case.kind == "customer_rfq" else f"{o.case.family}: {o.case.kind}"].append(o)
+        groups[
+            o.case.family if o.case.kind in ("customer_rfq", o.case.family) else f"{o.case.family}: {o.case.kind}"
+        ].append(o)
     for family, mine in groups.items():
         count = {v: sum(o.verdict == v for o in mine) for v in ("right", "model", "wrong")}
         known = sum(bool(o.gap) for o in mine if o.verdict == "wrong")
         print(f"\n[{family}] {len(mine)} cases: {count['right']} right, {count['model']} model, "
               f"{count['wrong']} wrong ({known} in known gaps)")  # fmt: skip
+        if family == "shipments":
+            tally = defaultdict(lambda: [0, 0, 0])
+            for o in mine:
+                tally[cell(o.case)][("right", "model", "wrong").index(o.verdict)] += 1
+            print("\n".join(f"  {c:28} {r}/{m}/{w}" for c, (r, m, w) in tally.items()))
+            continue
         for axis in mine[0].case.axes:
             tally = defaultdict(lambda: [0, 0, 0])
             for o in mine:
@@ -907,11 +1096,11 @@ def report(outcomes: list[Outcome]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--show", type=int, default=0, help="print this many wrong cases outside the known gaps")
-    parser.add_argument("--family", choices=("document", "mail", "bid"))
-    parser.add_argument("--seed", type=int, help="draw other figures for the same grid (default: 7, 11 and 13)")
+    parser.add_argument("--family", choices=("document", "mail", "bid", "shipments"))
+    parser.add_argument("--seed", type=int, help="draw other figures for the same grid (default: 7, 11, 13 and 17)")
     args = parser.parse_args()
     seeds = {} if args.seed is None else {"seed": args.seed}
-    every = (*document_cases(**seeds), *mail_cases(**seeds), *bid_cases(**seeds))
+    every = (*document_cases(**seeds), *mail_cases(**seeds), *bid_cases(**seeds), *shipments_cases(**seeds))
     cases = [c for c in every if args.family in (None, c.family)]
     outcomes = asyncio.run(run(cases))
     report(outcomes)

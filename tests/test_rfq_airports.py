@@ -79,3 +79,11 @@ async def test_a_lane_read_backwards_is_turned_round_without_a_model_call(conn, 
     asked = answers(monkeypatch, {})
     rfq = await agent.served_airports(served(conn), request("DDD", "AAA"), mail("From DDD airport to AAA, 855 kg."))
     assert (rfq.origin, rfq.destination, asked) == ("AAA", "DDD", [])
+
+
+async def test_an_import_the_mail_states_is_not_turned_round(conn, monkeypatch):
+    """Round 159: "air import from NRT to HAM" was asked for as HAM-NRT; an import is out of scope and declined."""
+    asked = answers(monkeypatch, {})
+    body = "Please quote an air import from Tokyo airport (DDD) to Hamburg airport (AAA). We are the receiver."
+    rfq = await agent.served_airports(served(conn), request("DDD", "AAA"), mail(body))
+    assert (rfq.origin, rfq.destination, asked) == ("DDD", "AAA", [])

@@ -65,7 +65,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `extract.py` `shipments`: a mail with numbered or bulleted shipment lines to different airports (rounds 89 and
-  90, "Shipment 1: FRA to SGN ...") gives one `Rfq` per line with its own airport, lane and cargo. `agent.py` `handle`
+  90, "Shipment 1: FRA to SGN ...") gives one `Rfq` per line with its own airport, lane and cargo; a line that names
+  its own pickup or says the customer delivers it to the airport sets that shipment's pickup alone. `by_rules` reads
+  such a mail as its first shipment when the mail names one origin or a pickup (rounds 89 to 151 each cost the
+  model's read, and with the gateway down no quote at all). `agent.py` `handle`
   quotes the first and prices the others beside it; `_with_shipments` adds each one's price and, when all have one,
   their sum in a paragraph of the same quote (R4). The quote's option, PDF details and booking stay the first's.
 - `extract.py` `excluded_airlines`, `_carrier_requirements`: an airline the customer rules out (a sentence with a negation that
@@ -220,23 +223,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   They stay in the request's language for the whole thread, also when the customer accepts in English: a language
   without `booking.CUSTOMER` text gets the English notice translated (`compose.localize`, at most
   `booking.TRANSLATE_WAIT_S`), sent only when `compose.kept` finds every reference, name and figure; the question
-  for a missing fact (`extract.py` `_ask`) likewise for a language without `ASK` text.
+  for a missing fact (`extract.py` `_ask`) likewise for a language without `ASK` text, its signer's name left out
+  of the translation and signed below it by code (round 156 got the name back in Hangul and went out in English).
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
   and the finished text. BLOCK: lane, arithmetic of the parts, chargeable weight, pickup present exactly when asked
-  for (round 15), the lots added up again (round 9), a priced weight no plain reading of the mail's own mass
-  figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier shipment left out, per-piece figures times their
-  count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
-  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
+  for (round 15), the lots added up again (round 9), dangerous goods marked by `extract` without the papers
+  (round 10), the total exactly once, template leftovers,
   a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67), an airline the customer ruled out
   while another is allowed (`_excluded`, round 42), insurance terms stated but no premium in the all-in (`_insured`,
   round 91), a mail not in the customer's script or clearly not in their language, read from their own words and not
   from `rfq.language` (`_language_sent`, rounds 70 and 72; on the draft only once it is no longer to be translated),
-  an offer PDF that is not whole or lacks the total (`_offer_pdf`, rounds 76 and 78), a volume no plain reading of
-  the mail's own figures gives while the volume decides the chargeable weight (`_volume_accounting`: cbm, m3, cubic
-  feet, litres, dimensions times the pieces on their line, sums; round 79's 95 cubic feet priced as 95 cbm; only a
-  WARN when the request has attachments, which may govern).
+  an offer PDF that is not whole or lacks the total (`_offer_pdf`, rounds 76 and 78).
   When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
   A share or rate may be written "%", "percent", "per cent", "pct", "Prozent" or per mille ("‰", "Promille").
   `compose.insured` confirms coverage in the mail alongside the single all-in amount.
@@ -244,7 +243,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.
   WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
-  implausible price per kg, the language, an expired rate. The check itself never changes a quote; every result
+  implausible price per kg, the language, an expired rate; a priced weight no plain reading of the mail's own mass
+  figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier
+  shipment left out, per-piece figures times their count; a listed shipment only by its sum), a volume no plain
+  reading of the mail's own figures gives while the volume decides the chargeable weight (`_volume_accounting`: cbm,
+  m3, cubic feet, litres, dimensions times the pieces on their line, sums; round 79's 95 cubic feet priced as 95
+  cbm), another amount with a currency in the mail outside the DG note. These three blocked right quotes more often
+  than wrong ones (rounds 57, 92, 127, 152, 153 against 113; `tools/check_precision.py`, `bench/REVIEWS.md`): the
+  right figure can be a document's or a later mail's, and every such amount is code's, since `compose.clean` lets no
+  digit into a model-written slot. The check itself never changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
 - `gaps.py`: known gaps, closed before the quote while they can change it (rounds 120 to 123: the rate API answered
@@ -265,16 +272,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   with an entry in `REPAIRS` it builds the quote again with one thing changed: the distrusted bid or the ruled-out
   airline left out (`option.vetoed`; `pricing/session.py` `options` no longer offers it, so the deadline fallback
   inherits it), the customer's language read again from their own words (a new `rfq.extracted`), the fixed phrases
-  instead of model-written slots, the dangerous-goods note put back after a translation, and a weight or volume the
-  mail does not explain read again (`_reading`): the lots' sum, the one reading code makes, or among several the
-  one `critic` picks (one gpt-4.1 call, 80 output tokens, at most `CRITIC_WAIT_S`, only on such a BLOCK; taken only
-  when the words it quotes stand in the request, give that reading alone and the reading is one of code's: an
-  `rfq.critic` event), then priced again by `agent._repriced` and recorded as with the second reader. Never when
+  instead of model-written slots, the dangerous-goods note put back after a translation, and lots added up wrong
+  priced again at their sum (`_reading`) by `agent._repriced` and recorded as with the second reader. Never when
   the figures may be a later mail's (`agent._later_figures`: an answer to our question, a customer's change, a
   requote): the check reads the first mail and would set the old figures back; it still checks and alerts. A
   reading the guard turns down leaves its prices out (`option.vetoed`, `rule: <rule>:rejected`). The new quote is kept only
   when its check blocks on fewer rules and on none the old one passed (`_better`); each attempt is a
-  `quote.repaired` event. No model call but `critic` (a language without our text uses the checked translation),
+  `quote.repaired` event. No model call (a language without our text uses the checked translation),
   at most `MAX_STEPS` repairs, none past `agent._repair_by` (15 s before the orchestrator takes over) or
   `FALLBACK_REPAIR_S` in the fallback; a repair that raises keeps the quote as it was. `PIXEL_REPAIR`: `on`,
   `detect` (the check on the sent text, no change) or `off`. A BLOCK without a repair (pickup missing, a reading with no
@@ -438,6 +442,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- The rules read no lane in a script they have no words for, so the model reads those requests alone (round 156,
+  Korean: "MIA (Miami, US)행" came back as origin MIA with no destination; we asked and sent no quote). Before a
+  destination is asked for, `extract.py` `_named_destination` takes the one airport only arrivals of ours use
+  (`store.airports`) that the customer's words name (`BARE_CODE`, also glued to a Hangul particle); a door request's
+  origin is then its pickup zone's (`_zone_origin`).
 - A departure the customer refuses is never the one asked for: "please do not route via FRA", "avoid FRA",
   "routing via FRA is not possible; please use MUC". `_asked_departure` reads each clause: one with a negation
   refuses its codes, the asked airport is the one served code left; "fly out of MUC" and "ex MUC" ask too.
@@ -481,7 +490,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   in the live mailbox. Offline KPI replay advances its clock through this wait and can deliver captured bids.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
-- The legs around the flight are no lane labels: "we deliver to HAM ourselves" names the departure airport,
+- The legs around the flight are no lane labels: "we deliver (them) to HAM ourselves" names the departure airport,
   "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).
