@@ -146,6 +146,10 @@ async def test_explicit_lane_suspension_applies_only_from_effective_date_until_r
         ("We offer 845,00 € all in, 2 Tage Laufzeit.\n\n> Please quote 100 kg, EUR 5 per kg", "845.00", "EUR", 2),
         ("EUR 900,00 all-in. Transitzeit: 3 Tage. Laufzeit des Angebots: 14 Tage.", "900.00", "EUR", 3),
         ("EUR 900.00 all-in, 2 days. Transit via DXB, 1 day stopover.", "900.00", "EUR", 2),
+        ("We can offer 950.00 EUR per AWB all-in, transit 3 days.", "950.00", "EUR", 3),  # per AWB: the flat total
+        ("We can offer 950 EUR per AWB all-in, transit 3 days.", "950.00", "EUR", 3),
+        ("Total 1,250.00 EUR/AWB, transit 3 days.", "1250.00", "EUR", 3),
+        ("Rate 2.10 EUR/KGS all-in, transit 3 days.", "210.00", "EUR", 3),  # per KGS: a rate per kg
         ("Freight EUR 500.00\nFuel EUR 80.00\n3 days", "580.00", "EUR", 3),  # charge lines without a total add up
     ],
 )
@@ -744,3 +748,12 @@ async def test_a_pickup_in_another_currency_without_its_rate_takes_the_rate_a_pr
 )
 def test_alternatives_and_side_prices_are_never_added_up(body):
     assert bids.parse(mail("air@x", body), rfq()) is None
+
+
+def test_a_rate_the_answer_names_is_its_own_and_never_borrowed():
+    """A rate of exactly 1 was unread and another carrier's 0.8301 taken instead: an answer that names its exchange
+    rate in words the rules cannot read goes to the model."""
+    stated = bids.parse(mail("air@x", "All-in USD 1,000.00, transit 3 days.\nExchange rate: 1 USD = 1 EUR"), rfq())
+    assert (stated.total, stated.fx_eur) == (D("1000.00"), D(1))
+    unread = "All-in USD 1,000.00, transit 3 days.\nExchange rate: one dollar is ninety euro cents."
+    assert bids.parse(mail("air@x", unread), rfq(), known_fx=lambda currency: D("0.8301")) is None

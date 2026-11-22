@@ -90,7 +90,7 @@ TOTAL_LINE = re.compile(
     rf"^\s*(?:grand\s+)?(?:{TOTAL_LABEL}(?:\s+(?:amount|sum))?|sum|summe)(?:\s+(?P<c>{CURRENCY}))?[\s:,-]*(?P<n>{AMOUNT})\s*$",
     re.IGNORECASE,
 )
-KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
+KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kgs?|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
 KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
 # A basis other than the whole shipment ("per pallet", "/ 100 kg"); "per shipment" or "per AWB" is the flat total.
@@ -128,7 +128,14 @@ PICKUP_SPAN = re.compile(
 )
 WAITING = re.compile(r"\b(?:waiting|wartezeit|standzeit)\b", re.IGNORECASE)
 VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
-FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
+# Only currency codes: "950.00 EUR per AWB" or "2.10 EUR/KGS" is a price, never an exchange rate.
+FX = re.compile(
+    rf"1\s*({CURRENCY})\s*=\s*(\d+(?:[.,]\d+)?)\s*EUR|(\d+(?:[.,]\d+)?)\s*EUR\s*(?:per|/)\s*(?:1\s*)?({CURRENCY})\b"
+)
+# An answer that names its exchange rate in a form `FX` cannot read borrows none (`known_fx`): the model reads it.
+RATE_NAMED = re.compile(
+    r"\b(?:exchange|conversion)\s+rate|\bwechselkurs|\btaux\s+de\s+change|\btipo\s+de\s+cambio", re.IGNORECASE
+)
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
 OFF_PORTAL = re.compile(r"not on the portal\b.*?(?P<email>[\w.+-]+@[\w-]+(?:\.[\w-]+)*)", re.IGNORECASE)
@@ -352,7 +359,8 @@ def parse(
     if DECLINE.search(text) or not (price := _price(text, rfq)):
         return None
     total, currency = price
-    fx = None if currency == "EUR" else _fx(text, currency) or (known_fx and known_fx(currency))
+    borrow = known_fx if known_fx and not RATE_NAMED.search(text) else None
+    fx = None if currency == "EUR" else _fx(text, currency) or (borrow and borrow(currency))
     days = _days(text)
     if total <= 0 or (currency != "EUR" and (fx is None or fx <= 0)) or (needs_transit and days is None):
         return None
