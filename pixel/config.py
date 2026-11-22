@@ -27,6 +27,8 @@ class Settings:
     second_read: str = "on"  # the prose call reads the cargo too (agents/rfq/agent.py `_second_read`): on, log or off
     unmet: str = "off"  # agents/rfq/unmet.py, the last reader of request and reply: on, log (record only) or off
     portal_page: str = ""  # the portal's browser page, read when the rate API answers 503 (`api/portal.py`)
+    elevenlabs_api_key: str = ""  # voice calls to carriers and customers (`voice/calls.py`); empty: no calls
+    elevenlabs_agent_id: str = ""  # set by `tools/voice_agent.py`
 
 
 @cache
@@ -54,4 +56,6 @@ def settings() -> Settings:
         second_read=env.get("PIXEL_SECOND_READ", "log").strip().lower(),  # on after a measured live hour
         unmet=env.get("PIXEL_UNMET", "off").strip().lower(),
         portal_page=env.get("PIXEL_PORTAL_PAGE", "https://start-hack.5u.ai/portal/ui"),
+        elevenlabs_api_key=env.get("ELEVENLABS_API_KEY", ""),
+        elevenlabs_agent_id=env.get("ELEVENLABS_AGENT_ID", ""),
     )
