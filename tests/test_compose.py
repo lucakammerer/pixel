@@ -243,6 +243,7 @@ def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
         ("en", "Please quote our purchase order PO-2026-5512 and attach the offer as a PDF.", "PO-2026-5512"),
         ("de", "Bitte nennen Sie unsere Bestellung 4500012345 im Angebot.", "4500012345"),
         ("fr", "Merci d'indiquer notre commande n° CMD-2231 sur l'offre.", "CMD-2231"),
+        ("de", "Bitte nennen Sie unsere Bestellung Nr. 4500012345 im Angebot.", "4500012345"),
     ],
 )
 def test_the_customers_own_reference_stands_in_the_mail(language, request_, ref):
@@ -252,7 +253,17 @@ def test_the_customers_own_reference_stands_in_the_mail(language, request_, ref)
 
 
 @pytest.mark.parametrize(
-    "text", ["PO Box 1234, Hamburg", "in order to ship 450 kg", "Die Bestellung wird am 27.11. abgeholt"]
+    "text",
+    [
+        "PO Box 1234, Hamburg",
+        "in order to ship 450 kg",
+        "Die Bestellung wird am 27.11. abgeholt",
+        "Neue Bestellung 450 kg nach JFK",
+        "Bestellung 120 kg, 2 Paletten",
+        "Commande 300 kg vers YUL",
+        "Pour la commande 25/11 merci de coter",
+        "Bestellung: 2026-11-27 Abholung",
+    ],
 )
 def test_no_reference_where_none_is_given(text):
     assert pdf.reference(text) is None

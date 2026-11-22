@@ -13,7 +13,10 @@ CENT = Decimal("0.01")
 # The customer's own reference: a word for it, then a code with a digit. "Your reference" is ours, not theirs.
 REFERENCE = re.compile(
     r"(?i)(?<!your )(?<!ihre )(?<!votre )\b(?:ref(?:erence|erenz)?|réf(?:érence)?|po(?: number| no)?|order (?:no|number)"
-    r"|bestellnummer|auftragsnummer|bestellung|commande)\b\.?\s*(?:[:#]|n[°o]\.?)?\s*(?P<ref>(?=[\w/-]*\d)[A-Z0-9][\w/-]{2,24})"
+    r"|bestellnummer|auftragsnummer|bestellung|commande)\b\.?\s*(?:[:#]|n[°or]\.?|nr\.?)?\s*"
+    # The whole token, never a date ("Bestellung: 2026-11-27", "commande 25/11") nor a quantity ("Bestellung 450 kg").
+    r"(?!\d{1,4}[/.-]\d{1,2}(?:[/.-]\d{1,4})?(?![\w/-]))(?P<ref>(?=[\w/-]*\d)[A-Z0-9][\w/-]{2,24})(?![\w/-])"
+    r"(?!\s*(?:kgs?|t|cbm|m³|m3|lbs?|pcs|pieces|pallets?|paletten|palettes?|colis)\b)"
 )
 # "our purchase order PO-2026-5512": the code names itself; "PO Box 12" is none.
 PO_CODE = re.compile(r"\b(?P<ref>PO[-#]?\d[\w/-]{2,24})")
