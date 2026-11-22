@@ -967,6 +967,23 @@ def test_schedule_reads_only_stated_readiness_and_limits(text, ready, arrive_by,
 
 
 @pytest.mark.parametrize(
+    ("text", "arrive_by"),
+    [
+        ("Arrival airport is Hong Kong, please reply by Wednesday 25 November.", None),
+        ("Please send us your rate with transit and arrival details by 25 November.", None),
+        ("Zielflughafen und Ankunft: Hongkong, Angebot bitte bis 25.11.", None),
+        ("Please confirm the arrival date by Friday 27 November.", None),
+        ("Last time the arrival in HKG was by Monday 16 November, which worked well.", None),
+        ("The goods must arrive by 15 June.", date(2027, 6, 15)),  # next June, not a past one
+        ("The goods must arrive in Hong Kong by Wednesday 25 November.", date(2026, 11, 25)),
+        ("Please make sure the cargo arrives no later than 2 December.", date(2026, 12, 2)),
+    ],
+)
+def test_a_latest_arrival_is_only_one_set_for_this_shipment(text, arrive_by):
+    assert extract.schedule(text, date(2026, 11, 22))[1] == arrive_by
+
+
+@pytest.mark.parametrize(
     ("text", "required", "excluded"),
     [
         ("Please quote Alpha Air only, no other airline.", ("Alpha Air",), ()),

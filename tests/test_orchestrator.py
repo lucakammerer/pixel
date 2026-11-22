@@ -163,6 +163,20 @@ async def test_fallback_waits_for_the_requested_airline_and_labels_an_alternativ
     assert "alternative shown" not in compliant.body
 
 
+async def test_a_missed_arrival_date_is_quoted_at_once_with_the_alternative_named(conn):
+    ctx = make_ctx(conn)
+    message = ingest_rfq(ctx)
+    quote = make_quote(message)
+    rfq = quote.rfq.model_copy(update={"arrive_by": quote.rfq.received_at.date()})  # no option arrives that soon
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, payload=rfq.model_dump(mode="json"))
+    events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
+                payload={"option": quote.option.model_dump(mode="json")})  # fmt: skip
+
+    late = await rfq_agent.fallback(ctx, rfq.session_id)  # before the hard deadline: no later price would meet it
+    assert late.option.carrier == quote.option.carrier
+    assert "outside the timing you requested" in late.body
+
+
 @pytest.mark.parametrize("dry_run, late_mail", [(True, True), (False, False)])  # a dry run; a replay (the KPI)
 async def test_no_wait_for_a_late_price_that_cannot_arrive(conn, monkeypatch, dry_run, late_mail):
     ctx = make_ctx(conn, dry_run=dry_run)
