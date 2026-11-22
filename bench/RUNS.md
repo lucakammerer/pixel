@@ -12,7 +12,7 @@ One line per setup change (R33): when, what failed, what it was, the commit that
 
 | When | Symptom | Cause | Fix |
 | --- | --- | --- | --- |
-| 21.11. 19:30 UTC | 891 poll `error` events, `429: one poll per 5 seconds` | the mailbox limits polls to one per 5 s; we poll every 1 s | open, Speed (`core/poller.py`, `PIXEL_POLL_SECONDS`) |
+| 21.11. 19:30 UTC | poll `error` events, `429: one poll per 5 seconds`, about 700 an hour | the mailbox limits polls to one per 5 s; we polled every 1 s | b72af35 (22.11. 00:23 UTC): `core/poller.py` `run` learns the interval from the 429 (`POLL_LIMIT`). Since then 7 to 14 such events an hour (3549 in all by 22.11. 06:43 UTC), which is noise, not a fault: `run` starts every restart at `PIXEL_POLL_SECONDS` and learns the limit again from one 429, and a poll exactly 5 s after the last can arrive early; the push delivers the mail, the next poll follows 5 s later, and `feedback.attention` leaves `poll` errors out |
 
 ## Voice loop (R31, R30)
 
@@ -543,6 +543,15 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 07:10 UTC, unseen-shape cycles 43 to 46 (live to round 159). Losses: 150 (one_of_two, covered on main by
+  #424) and 156 (no quote: main's #433, #436; wrong_language: the Korean question was refused by `compose.kept`,
+  most likely for the signer's name, so it went out in English. #440 signs below the translation in code). 159, an
+  import NRT-HAM, got the no-price reply and was accepted; `selection.py` raised "no option to select from" first
+  (handler error, the fallback answered; Owner: Speed). Unseen shapes: Korean in lb and cubic feet (round 149, the
+  model read it; fixture #426); German "zum Flughafen SGN" (round 74) and the truck leg "to BBB airport" / "Lkw zum
+  Flughafen" taken as the destination by rules on main, never seen live (#431, replacing the closed #428); "we will
+  deliver them to MUC ourselves" (round 154, #432). Each fix changed by_rules on the 155 live requests only where
+  intended, with benchmark and simulate as on main. Wrong: 0.
 - 22.11. 04:55, merged from the cycles above: `cost/insurance-per-cent` #372, `cost/past-shipment-figures` #374,
   `speed/ignore-invalid-portal-quota-headers` #375.
 - 22.11. 02:30, axis C (infrastructure, never seen live): mailbox, gateway, clock and restart replayed offline in

@@ -23,6 +23,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `rfqs/followup-answers.json`: answers to our one question, each naming another airport beside the request's;
   benchmark section 15 appends each to every captured request and requires the same fields. `known_gaps`:
   `"<answer>:<fixture>"` read wrong today, each ending `Owner: <role>.`
+- `replay-gate.json`: round 155's session as the live database held it (request mail, reading, every option found,
+  the sent quote, pickup zone), which `tests/test_replay_gate.py` builds into a database for `tools/replay_gate.py`.
 - `thread-followups.json`: round 86's session with every mail that can arrive later in it, by sender, phase and
   intent, and templates for the change mail in every language, unit system and attachment format;
   `tools/followup_matrix.py` runs it (benchmark section 17).

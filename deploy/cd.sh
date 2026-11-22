@@ -5,6 +5,7 @@
 # them, so whoever can merge does not get root.
 #   PIXEL_CD_DRY=1   logs what it would do and changes nothing in the live checkout or the service
 #   touch /opt/pixel/cd/PAUSE   pauses it; rm to resume
+#   touch /opt/pixel/cd/SKIP_GATE   lets the newest commit past the replay gate once
 set -u
 umask 022
 CD=/opt/pixel/cd
@@ -57,6 +58,15 @@ behind() {
   grep -q "^$head " "$CD/behind" 2> /dev/null || echo "$head $(date +%s)" > "$CD/behind"
   [ $(($(date +%s) - $(cut -d' ' -f2 "$CD/behind"))) -lt 600 ]
 }
+differs() {
+  # What tools/replay_gate.py holds against the commit in $REPO, nothing when it passes. A difference the live commit
+  # shows too is not this commit's: a change let through by hand stays in the last accepted requests for hours.
+  db=$(in_app ".venv/bin/python -c 'import os; from pixel.config import settings; print(os.path.abspath(settings().db_path))'")
+  as sh -c "cd $REPO && uv run python -m tools.replay_gate '$db'" > "$CD/gate.out" 2>&1 && return
+  grep -q ' differs: ' "$CD/gate.out" || { echo "the replay gate failed: $(tail -1 "$CD/gate.out")"; return; }
+  in_app ".venv/bin/python -m tools.replay_gate" 2> /dev/null | grep ' differs: ' > "$CD/gate.live"
+  grep ' differs: ' "$CD/gate.out" | grep -vxFf "$CD/gate.live"
+}
 # A change to these on main takes effect only once installed by hand; say so instead of installing it.
 pinned() {
   cmp -s "$APP/deploy/cd.sh" "$CD/cd.sh" || log "deploy/cd.sh on main differs from $CD/cd.sh, install it by hand"
@@ -77,7 +87,7 @@ if changed=$(as git -C "$REPO" diff --name-only "$live" "$new"); then
   restart=0
   for f in $changed; do
     case $f in
-      docs/* | bench/* | tests/* | .github/* | deploy/cd.sh | deploy/pixel-cd.* | tools/cd_status.py) ;;
+      docs/* | bench/* | tests/* | .github/* | deploy/cd.sh | deploy/pixel-cd.* | tools/cd_status.py | tools/replay_gate.py) ;;
       */*) restart=1 ;;
       *.md) ;;
       *) restart=1 ;;
@@ -101,6 +111,23 @@ if ! grep -qx "$new" "$CD/green" 2> /dev/null; then
     alert "RED $(short "$new"), not deployed: $(grep -E 'passed|failed|error|Found' "$CD/test.out" | tail -1)"
     exit 0
   fi
+fi
+
+if [ -e "$CD/SKIP_GATE" ]; then
+  rm -f "$CD/SKIP_GATE"
+  echo "$new" >> "$CD/gate.green"
+  log "$(short "$new") passes the replay gate by hand"
+fi
+if ! grep -qx "$new" "$CD/gate.green" 2> /dev/null; then
+  grep -qx "$new" "$CD/gate.red" 2> /dev/null \
+    && { log "$(short "$new") refused by the replay gate, waiting for a newer commit or $CD/SKIP_GATE"; exit 0; }
+  found=$(differs)
+  if [ -n "$found" ]; then
+    echo "$new" >> "$CD/gate.red"
+    alert "RED $(short "$new"), not deployed: $(echo "$found" | head -1) ($(echo "$found" | grep -c .) in all)"
+    exit 0
+  fi
+  echo "$new" >> "$CD/gate.green"
 fi
 
 # URGENT in a merge since the live commit: no limit of one restart per round, and no wait for the request's first

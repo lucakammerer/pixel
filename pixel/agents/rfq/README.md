@@ -220,7 +220,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   They stay in the request's language for the whole thread, also when the customer accepts in English: a language
   without `booking.CUSTOMER` text gets the English notice translated (`compose.localize`, at most
   `booking.TRANSLATE_WAIT_S`), sent only when `compose.kept` finds every reference, name and figure; the question
-  for a missing fact (`extract.py` `_ask`) likewise for a language without `ASK` text.
+  for a missing fact (`extract.py` `_ask`) likewise for a language without `ASK` text, its signer's name left out
+  of the translation and signed below it by code (round 156 got the name back in Hangul and went out in English).
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
@@ -267,7 +268,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   inherits it), the customer's language read again from their own words (a new `rfq.extracted`), the fixed phrases
   instead of model-written slots, the dangerous-goods note put back after a translation, and a weight or volume the
   mail does not explain read again (`_reading`): the lots' sum, the one reading code makes, or among several the
-  one `critic` picks (one gpt-4.1 call, 80 output tokens, at most `CRITIC_WAIT_S`, only on such a BLOCK; taken only
+  one `critic` picks (one gpt-4.1 call, `CRITIC_TOKENS` output tokens, a quote of at most twelve words: 80 cut a lot line off and the JSON with it, session 45928; at most `CRITIC_WAIT_S`, only on such a BLOCK; taken only
   when the words it quotes stand in the request, give that reading alone and the reading is one of code's: an
   `rfq.critic` event), then priced again by `agent._repriced` and recorded as with the second reader. Never when
   the figures may be a later mail's (`agent._later_figures`: an answer to our question, a customer's change, a
@@ -418,6 +419,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- The rules read no lane in a script they have no words for, so the model reads those requests alone (round 156,
+  Korean: "MIA (Miami, US)행" came back as origin MIA with no destination; we asked and sent no quote). Before a
+  destination is asked for, `extract.py` `_named_destination` takes the one airport only arrivals of ours use
+  (`store.airports`) that the customer's words name (`BARE_CODE`, also glued to a Hangul particle); a door request's
+  origin is then its pickup zone's (`_zone_origin`).
 - A departure the customer refuses is never the one asked for: "please do not route via FRA", "avoid FRA",
   "routing via FRA is not possible; please use MUC". `_asked_departure` reads each clause: one with a negation
   refuses its codes, the asked airport is the one served code left; "fly out of MUC" and "ex MUC" ask too.
@@ -461,7 +467,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   in the live mailbox. Offline KPI replay advances its clock through this wait and can deliver captured bids.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
-- The legs around the flight are no lane labels: "we deliver to HAM ourselves" names the departure airport,
+- The legs around the flight are no lane labels: "we deliver (them) to HAM ourselves" names the departure airport,
   "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).

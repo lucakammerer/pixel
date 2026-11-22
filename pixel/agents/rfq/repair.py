@@ -237,10 +237,12 @@ async def _dg_note(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Re
 
 
 CRITIC_WAIT_S = 6.0  # gpt-4.1 answers in about 1.5 s
+# Session 45928: a quote of a whole lot line ran past 80 tokens, the JSON was cut off and the critic gave no answer.
+CRITIC_TOKENS = 160
 CRITIC_SYSTEM = (
     "An air freight customer's request. Code read the shipment's total gross {field} in more than one way. Pick from "
     "the list the one value that is the whole shipment's gross {field} as the customer states it, and copy the exact "
-    "words of the request it comes from. null when no value in the list is."
+    "words of the request it comes from, at most twelve words. null when no value in the list is."
 )
 CRITIC_SCHEMA = {
     "type": "object",
@@ -286,7 +288,7 @@ async def critic(
         result = await asyncio.wait_for(
             llm.ask_json(ctx, purpose="rfq.critic", system=CRITIC_SYSTEM.format(field=unit.replace("cbm", "volume")),
                          user=f"{text[:2500]}\n\nReadings: {listed}", schema=CRITIC_SCHEMA,
-                         session_id=rfq.session_id, max_output_tokens=80, model=ctx.settings.model_check or None),
+                         session_id=rfq.session_id, max_output_tokens=CRITIC_TOKENS, model=ctx.settings.model_check or None),
             wait,
         )  # fmt: skip
         value, said = result.data.get("value"), str(result.data.get("quote") or "")
