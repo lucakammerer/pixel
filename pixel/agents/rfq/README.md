@@ -224,6 +224,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 
 - An acceptance or a decline in other words books or closes too: "let's go with this offer", "merci de réserver";
   "found a cheaper option elsewhere", "decided against it", "c'est trop cher" (`booking.ACCEPT`, `DECLINE`).
+  In French, Spanish, Italian and Portuguese, `booking.CONDITION` reads "si" and "se" at the start of a clause
+  or directly after an acceptance or offer phrase. A pickup detail such as "l'enlèvement se fera lundi" leaves
+  the acceptance in force. "Merci de réserver, si possible avec Lumen" goes to an operator.
 - `cancel` (the customer withdraws after the booking, round 88) cancels at the portal by the airline's reference.
   A booking by mail without that reference yet, or a portal that refuses or is down, is withdrawn by mail with the
   airline (`_cancel_by_mail`, the carrier list's address); the customer is told either way. Only without an address

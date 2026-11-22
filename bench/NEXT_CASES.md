@@ -759,6 +759,7 @@ es, it), two at once (a yes and a match request; a change and a yes).
 | F2 | price-match request that declines in its own sentence | never | decline | decline | right |
 | F3 | price-match request after the booking | never | person | person | right |
 | F4 | acceptance in Spanish, Italian, Dutch, Portuguese; the opposite: negated, conditional, put off, a participle (12 rows from the review of #494) | never | book; the opposite no booking | book; no booking | fixed (this pull request, after #494 was closed for booking on the opposite) |
+| F4a | a yes with a reflexive pickup or location detail (fr/es/it); a yes qualified by si or se (fr/es/it/pt) | review fixtures | book with a reflexive detail; hold on a real condition | book or hold respectively | right (this pull request: `booking.CONDITION`) |
 | F5 | decline "nous ne donnerons pas suite", Spanish, Italian, Dutch | never | decline | decline | fixed (this pull request) |
 | F6 | weight corrected "1,952 kg, not 753 kg, please correct the offer" | once after the booking (21.11.) | requote at 1,952 kg | person, no requote | **gap**, after the quote (`followup.changes`, `UPDATE`) |
 | F7 | the same correction after the confirmation | 21.11. 15:51 | person with the change | person, change unread | **gap**, after the quote |

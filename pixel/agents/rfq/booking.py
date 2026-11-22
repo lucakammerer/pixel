@@ -71,7 +71,12 @@ HOLD = re.compile(
 )
 CONDITION = re.compile(
     r"\b(?:if|unless|whether|falls|wenn|ob|haven['’]t|hasn['’]t|have not|has not|didn['’]t|did not"
-    r"|si|se|caso|qualora|indien|als\s+(?:u|jullie|het|de|we|wij|ze)\b)\b",  # Dutch "als", never German "als möglich"
+    r"|indien|als\s+(?:u|jullie|het|de|we|wij|ze))\b"
+    # A clause opener or an inline condition on the offer. Reflexives such as "la marchandise se trouve" can
+    # accompany an acceptance without qualifying it.
+    r"|(?:^|[,;:]|\b(?:offre|oferta|offerta|tarifa|tariffa|devis|r[ée]server|reservar|prenotare"
+    r"|acceptons|aceptamos|accettiamo|aceitamos)\b)\s*"
+    r"(?:(?:solo|só|somente|apenas)\s+)?(?:si|se|caso|qualora)\b",
     re.IGNORECASE,
 )
 ASKS_TO_BOOK = re.compile(
