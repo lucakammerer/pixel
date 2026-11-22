@@ -636,7 +636,13 @@ def _preference(text: str) -> Preference:
 # our future inquiries", quoted anyway and rejected as excluded_airline).
 RULED_OUT = re.compile(
     r"\b(?:not(?!\s+only\b)|never|exclud\w*|avoid\w*|without|except|other than"
-    r"|nicht(?!\s+nur\b)|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)(?!lich\b)\w*)\b",
+    r"|nicht(?!\s+nur\b)|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)(?!lich\b)\w*)\b|n['’]t\b",
+    re.IGNORECASE,
+)
+# A negation of something good is no exclusion: "we don't mind X", "never had issues with X", "does not require X".
+NEGATED_POSITIVE = re.compile(
+    r"(?:\b(?:not|never|no|nicht|kein\w*)\b|n['’]t\b)(?:\s+\w+){0,3}?\s+(?:mind|objection|object|problems?|issues?"
+    r"|complain\w*|require\w*|matter|preference|prefer\w*|have\s+to\s+be|has\s+to\s+be|need\s+to\s+be)\b",
     re.IGNORECASE,
 )
 LASTING = re.compile(
@@ -697,14 +703,17 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
     whether the customer means later requests too. A negation that names no known airline rules nothing out."""
     found, lasting = set(), False
     for sentence in AIRLINE_SENTENCES.split(text):
-        if not RULED_OUT.search(sentence):
-            continue
+        negated = bool(RULED_OUT.search(NEGATED_POSITIVE.sub(" ", sentence)))
         lowered = sentence.casefold()
+        if not negated and not re.search(r"\bno\s", lowered):
+            continue
         required = set(required_airlines(sentence, airlines))
+        # "No X, please" rules X out; a "no" elsewhere in the sentence ("no pickup needed") does not.
+        before = r"(?<!\w)" if negated else r"\bno\s+"
         names = {
             airline
             for airline in airlines - required
-            if any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
+            if any(re.search(rf"{before}{re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
         }
         if names:
             found.update(names)

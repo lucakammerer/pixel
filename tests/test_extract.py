@@ -1009,6 +1009,11 @@ def test_a_ready_date_this_autumn_stays_this_year():
         ("Only Alpha Air was available last time.", (), ()),
         ("Alpha Air only flies on Fridays.", (), ()),
         ("Only if it is cheaper, use Beta Cargo.", (), ()),
+        ("No Beta Cargo, please.", (), ("Beta Cargo",)),
+        ("We don't want Beta Cargo for this one.", (), ("Beta Cargo",)),
+        ("We have never had issues with Beta Cargo.", (), ()),  # used to rule Beta out
+        ("Our contract does not require Beta Cargo.", (), ()),
+        ("No pickup needed, Beta Cargo is fine.", (), ()),
         ("Please quote no airline other than Alpha Air.", ("Alpha Air",), ()),
         ("Bitte keine andere Fluggesellschaft außer Alpha Air.", ("Alpha Air",), ()),
         ("Keine andere Airline als Alpha Air oder Beta Cargo.", ("Alpha Air", "Beta Cargo"), ()),
