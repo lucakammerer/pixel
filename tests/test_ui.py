@@ -286,6 +286,11 @@ def test_timeline_folds_background_steps():
     assert not is_minor("booking.confirmed") and not is_minor("human.takeover") and is_minor("quote.checked")
     assert not is_minor("quote.checked", {"blocking": ["total"]}) and not is_minor("quote.unmet", {"alert": True})
 
+    many = [Event(id=i, ts=T0, kind="mail.in", actor="test", session_id=1) for i in range(1, 11)]
+    html = group_events(many, [event_row(e) for e in many], [False] * 10)
+    assert "Show 4 earlier entries" in html and html.index("evearlier") < html.index('id="ev1"')
+    assert html.index("</details>") < html.index('id="ev5"')  # the latest six stay open
+
 
 def test_mail_with_a_carrier_is_background():
     from pixel.contracts import Event
