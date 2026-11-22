@@ -53,7 +53,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
-  `kpi_pr.sh`, `board_me.py`, `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `capture.py` (a stored session as a replay fixture with the state it met and a pytest), `board_me.py`, `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -95,6 +95,7 @@ uv run pytest -q                                # seconds, no network
 uv run ruff check . && uv run ruff format .
 uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored mail through the pipeline
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
+uv run python -m tools.capture <database> <session>             # that session as a fixture and its pytest: a lost round as a failing test
 uv run python -m tools.kpi                      # accuracy, cost and speed on the replayed request fixtures, as JSON
 uv run python -m tools.benchmark_generalization # fixtures vs code: prices, sheets, wording, routing, bids; exit 1 on a fail
 uv run python -m tools.benchmark_generalization --gaps   # the channel matrix, then the open known gaps by owner

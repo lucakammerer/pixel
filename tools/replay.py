@@ -4,6 +4,7 @@ uv run python -m tools.replay tests/fixtures/mails/<file>.json     # one mail
 uv run python -m tools.replay --session 123                        # a whole session from the database
 uv run python -m tools.replay --capture 123 > tests/fixtures/mails/rfq-door.json
 uv run python -m tools.replay --db data/pixel.sqlite3 --session 123    # with the stored tariffs, carriers and bids
+uv run python -m tools.replay tests/fixtures/sessions/round-156.json    # a session captured with tools/capture.py
 
 A replay runs dry and with an API client that refuses every call unless `--online` is given (then portal
 and gateway are real, mail still is not, and the scorer counts the spend in that 18-minute window, R28). It runs
@@ -22,6 +23,7 @@ import sqlite3
 import tempfile
 from contextvars import copy_context
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -31,7 +33,9 @@ from pixel.api.portal import BookingUnavailable
 from pixel.app import build_context
 from pixel.config import settings
 from pixel.contracts import Event, Message
+from pixel.core import db as store
 from pixel.core import events, orchestrator, poller, timing
+from pixel.pricing import calc
 
 
 class OfflineMailbox(Mailbox):
@@ -64,6 +68,39 @@ class OfflineMailbox(Mailbox):
 
 def _offline(request: httpx.Request) -> httpx.Response:
     return httpx.Response(503, json={"detail": "replay is offline"})
+
+
+def _recorded(portal: dict):
+    """The portal as it answered a captured session: the lanes and rates it gave (`option.found`; a rate read at the
+    next weight break is billed there) and the airlines' weight breaks; every other read an outage as offline."""
+    rates, brackets = portal.get("rates", []), portal.get("brackets", {})
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        path, q = request.url.path, request.url.params
+        if path == "/v1/portal/brackets" and q["airline"] in brackets:
+            breaks = ", ".join(brackets[q["airline"]])  # numbers, as the portal sends them
+            return httpx.Response(200, text=f'{{"breaks_kg": [{breaks}]}}')
+        if path == "/v1/portal/ports":
+            lanes: dict[tuple[str, str], dict[str, str]] = {}
+            for o in rates:
+                lanes.setdefault((o["origin"], o["destination"]), {})[o["carrier_code"]] = o["carrier"]
+            return httpx.Response(200, json={"lanes": [
+                {"origin": a, "destination": b, "airlines": [{"code": c, "name": n} for c, n in airlines.items()]}
+                for (a, b), airlines in lanes.items()]})  # fmt: skip
+        if path == "/v1/portal/rates":
+            kg = calc.chargeable_kg(Decimal(q["weight_kg"]), Decimal(q["volume_cbm"]))
+            for o in rates:
+                if (o["origin"], o["destination"], o["carrier_code"]) == (q["origin"], q["destination"], q["airline"]) \
+                        and Decimal(o["billed_kg"]) == kg:  # fmt: skip
+                    return httpx.Response(200, json={
+                        "rate_id": o["rate_id"], "airline": o["carrier"], "airline_code": o["carrier_code"],
+                        "origin": o["origin"], "destination": o["destination"], "chargeable_weight_kg": o["billed_kg"],
+                        "total": o["total"], "currency": o["currency"], "fx_eur_per_usd": o["fx_eur"],
+                        "transit_days": o["transit_days"], "valid_until": o["valid_until"],
+                        "dataset_version": o["dataset_version"]})  # fmt: skip
+        return _offline(request)
+
+    return answer
 
 
 def _files(raws: list[dict]) -> dict[tuple[int, int], bytes]:
@@ -139,35 +176,39 @@ class _ReplayLoop(asyncio.SelectorEventLoop):
         return future
 
 
-def _offline_run(raws: list[dict], db: str | None, as_live: bool) -> list[Event]:
+def _offline_run(raws: list[dict], db: str | None, as_live: bool, portal: dict) -> list[Event]:
     with asyncio.Runner(loop_factory=_ReplayLoop) as runner:
         loop = runner.get_loop()
         start, baseline = to_message(raws[0], "in").sent_at, loop.time()
         token = timing.clock.set(lambda: start + timedelta(seconds=loop.time() - baseline))
         try:
             # Runner snapshots its context when get_loop initializes it.
-            return runner.run(_run(raws, False, db, as_live), context=copy_context())
+            return runner.run(_run(raws, False, db, as_live, portal), context=copy_context())
         finally:
             timing.clock.reset(token)
 
 
-async def run(raws: list[dict], online: bool, db: str | None = None, as_live: bool = False) -> list[Event]:
-    """Offline replay advances an isolated timer clock, preserving the order of bids and deadlines."""
+async def run(
+    raws: list[dict], online: bool, db: str | None = None, as_live: bool = False, portal: dict | None = None
+) -> list[Event]:
+    """Offline replay advances an isolated timer clock, preserving the order of bids and deadlines. `portal`: the
+    rates a captured session was given, served offline (`_recorded`)."""
     if not online:
-        return await asyncio.to_thread(_offline_run, raws, db, as_live)
+        return await asyncio.to_thread(_offline_run, raws, db, as_live, portal or {})
     return await _run(raws, True, db, as_live)
 
 
-async def _run(raws: list[dict], online: bool, db: str | None, as_live: bool) -> list[Event]:
+async def _run(
+    raws: list[dict], online: bool, db: str | None, as_live: bool, portal: dict | None = None
+) -> list[Event]:
     config = dataclasses.replace(
         settings(), dry_run=not as_live, db_path=str(Path(tempfile.mkdtemp()) / "replay.sqlite3")
     )
     last_event = _copy(db, config.db_path, raws) if db else 0
     ctx = build_context(config)
     original = ctx.mailbox.client
-    client = (
-        original if online else httpx.AsyncClient(base_url=config.api_base, transport=httpx.MockTransport(_offline))
-    )
+    handler = _recorded(portal) if portal else _offline
+    client = original if online else httpx.AsyncClient(base_url=config.api_base, transport=httpx.MockTransport(handler))
     ctx.mailbox = OfflineMailbox(client, _files(raws))
     # Captured replies arrive on schedule. The offline clock also exercises the full production deadline.
     ctx.mailbox.late_mail = not online or len(raws) > 1
@@ -209,8 +250,37 @@ def raws_of(fixture: dict | list[dict]) -> list[dict]:
     return fixture if isinstance(fixture, list) else [fixture]
 
 
-async def replay(raws: list[dict], online: bool, db: str | None = None) -> int:
-    for event in await run(raws, online, db):
+def seeded(state: dict[str, list[dict]]) -> str:
+    """A database holding the rows a captured session met on arrival (`tools/capture.py`), for `run`'s `db`."""
+    path = str(Path(tempfile.mkdtemp()) / "state.sqlite3")
+    conn = store.connect(path)
+    store.init(conn)
+    for table, rows in state.items():
+        if table == "portal":
+            continue
+        for row in rows:
+            conn.execute(f"INSERT INTO {table} ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+                         tuple(row.values()))  # fmt: skip
+    conn.close()
+    return path
+
+
+def state_of(fixture: Path) -> tuple[str | None, dict]:
+    """The seeded database and the portal's answers of a captured session's `<name>.state.json`; (None, {}) for a
+    mail fixture without one."""
+    path = fixture.with_suffix(".state.json")
+    state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    return (seeded(state), state.get("portal", {})) if state else (None, {})
+
+
+async def fixture(path: Path) -> list[Event]:
+    """A captured session offline, as live: its mails at their own times on the database and portal it met."""
+    db, portal = state_of(path)
+    return await run(raws_of(json.loads(path.read_text(encoding="utf-8"))), False, db, True, portal)
+
+
+async def replay(raws: list[dict], online: bool, db: str | None = None, portal: dict | None = None) -> int:
+    for event in await run(raws, online, db, portal=portal):
         usage = {"tokens_in": event.tokens_in, "tokens_out": event.tokens_out, "cost_usd": event.cost_usd,
                  "ms": event.duration_ms} if event.kind == "llm.call" else {}  # fmt: skip
         print(json.dumps({**event.payload, **usage, "ts": event.ts.isoformat(timespec="seconds"),
@@ -237,7 +307,8 @@ def main() -> None:
         raws = raws_of(json.loads(args.fixture.read_text()))
     else:
         parser.error("a fixture, --session or --capture")
-    raise SystemExit(asyncio.run(replay(raws, args.online, args.db)))
+    db, portal = state_of(args.fixture) if args.fixture and not args.db else (args.db, {})
+    raise SystemExit(asyncio.run(replay(raws, args.online, db, portal)))
 
 
 if __name__ == "__main__":
