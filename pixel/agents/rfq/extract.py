@@ -798,25 +798,28 @@ READY_ON = re.compile(
     re.IGNORECASE,
 )
 # What turns a date near "arrival" into something other than a latest arrival: our answer by a date ("please reply
-# by"), details sent by a date, or a past shipment ("the last arrival was by 16 November").
+# by"), details sent by a date, or a past shipment ("the last arrival was by 16 November"). "Arrival airport" is a
+# label, not a deadline.
 NOT_ARRIVAL = (
-    r"please|pls|kindly|reply|respond|answer|quote|send|confirm|advise|let us know|offer|details|information|date"
+    r"please|pls|kindly|reply|respond|answer|quote|send|confirm|advise|let us know|offer|details|information"
     r"|last|previous\w*|was|were|had|used to|bitte|antwort\w*|angebot\w*|senden|schicken|bestätig\w*|mitteil\w*"
     r"|letzte\w*|zuletzt|war|waren|répond\w*|envoy\w*|devis|dernière|était"
 )
 # Between "arrival" and "by" only the place may stand ("arrive in Hong Kong by"): no other clause, no other verb.
-ARRIVAL_SPAN = rf"(?:(?!\b(?:{NOT_ARRIVAL})\b)[^.!?;,:\n]){{0,40}}?"
+ARRIVAL_SPAN = rf"(?:(?!\b(?:{NOT_ARRIVAL})\b)(?:[^.!?;,:\n]|,(?=[ \t]*(?-i:[A-Z])))){{0,40}}?"
 ARRIVE_BY = re.compile(
-    rf"\b(?:arriv(?:e|es|ing|al)\b{ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
+    rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline)\s*[:=]?"
     rf"|(?:ankunft|eintreffen)\b{ARRIVAL_SPAN}(?:spätestens(?: am)?|bis(?: zum)?)\b"
     rf"|arriv(?:ée|er)\b{ARRIVAL_SPAN}au plus tard(?: le)?\b)" + STATED_DATE,
     re.IGNORECASE,
 )
-# The same clause before "arrival": "please confirm the arrival date by", "last time the arrival was by".
+# The last words before "arrival": "please confirm the arrival date by", "last time the arrival was by"; a request
+# verb further back ("please quote 300 kg that must arrive by") leaves the deadline standing.
 ARRIVAL_CONTEXT = re.compile(
     r"\b(?:reply|respond|answer|quote|send|confirm|advise|let us know|last time|previous\w*|used to|antwort\w*"
-    r"|angebot\w*|senden|schicken|bestätig\w*|mitteil\w*|letzte\w* mal|zuletzt|répond\w*|envoy\w*|dernière fois)\b",
+    r"|angebot\w*|senden|schicken|bestätig\w*|mitteil\w*|letzte\w* mal|zuletzt|répond\w*|envoy\w*|dernière fois)\b"
+    r"(?:\W+\w+){0,2}\W*$",
     re.IGNORECASE,
 )
 MAX_TRANSIT = re.compile(
@@ -829,7 +832,7 @@ MAX_TRANSIT = re.compile(
 
 
 def _stated_date(value: str, on: date) -> date | None:
-    """Resolve a date without a year against the request date: its next occurrence, unless it lies at most a month
+    """Resolve a date without a year against the request date: this year's, unless that lies more than half a year
     back."""
     try:
         if "-" in value:
@@ -842,8 +845,9 @@ def _stated_date(value: str, on: date) -> date | None:
         if year:
             return date(int(year[0]), month, day)
         stated = date(on.year, month, day)
-        # Up to a month back is a recent date (a missed deadline); further back the customer means next year's.
-        return stated if stated >= on - timedelta(days=31) else date(on.year + 1, month, day)
+        # Up to half a year back is this year's date (a ready date passed, a missed deadline); further back the
+        # customer means next year's ("arrive by 4 January" written in December).
+        return stated if stated >= on - timedelta(days=183) else date(on.year + 1, month, day)
     except (ValueError, KeyError):
         return None
 
@@ -1775,8 +1779,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     request_text = _text(mail)
     rfq = _carrier_requirements(ctx, rfq, request_text)
     subject = "" if REPLY_SUBJECT.match(mail.subject) else mail.subject
-    # The customer's own words above the sign-off: an out-of-office line in the signature sets no date.
-    ready_on, arrive_by, max_transit_days = schedule(f"{_unsigned(_body(mail))}\n{subject}", rfq.received_at.date())
+    ready_on, arrive_by, max_transit_days = schedule(f"{_body(mail)}\n{subject}", rfq.received_at.date())
     rfq = rfq.model_copy(update={"ready_on": ready_on, "arrive_by": arrive_by,
                                  "max_transit_days": max_transit_days})  # fmt: skip
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood

@@ -200,8 +200,9 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         except Exception:  # noqa: BLE001, S110  late or failed: the quote goes out with the fixed phrases
             pass  # a late task keeps running and stores its slots for the fallback
     prose = compose.stored(ctx, rfq.session_id)
-    # Only a required airline is worth waiting for: a late bid of its own can still come. No later price meets an
-    # arrival date the prices so far miss, so that quote goes now and names the alternative (`novelty.with_note`).
+    # Only a required airline is worth waiting for: a late bid of its own can still come. Bids were collected until
+    # `target_at`, so a later price meeting a missed arrival date is unlikely: that quote goes now and names the
+    # alternative (`novelty.with_note`).
     if rfq.required_carriers and not selection.requested_options(rfq, options):
         return None
     try:
