@@ -198,10 +198,12 @@ starting. Code calculates and formats customer prices. Gateway failures are repo
 
 ### 4.6 Stepping in
 
-During takeover, airline, trucker and rate-desk sourcing can continue. The operator can edit a priced draft and
-send it through `outbox.send_quote(operator=True)` while the session remains in human mode. The send route checks
-the total, currency, carrier and transit. The outbox blocks a free-text first reply to the customer. Other held
-customer mail appears in the session as drafts.
+During takeover, airline, trucker and rate-desk sourcing can continue. `ui/operator.py` `source` lets the operator
+record shipment facts after a stopped extraction, look up sheet and portal rates, and send tracked bid requests.
+`ui/operator.py` `source` uses the RFQ agent's quote builder and existing selection rules to prepare a draft from
+saved rates. The operator can edit the text and send through `outbox.send_quote(operator=True)`. The send route checks
+the draft identity, total, currency, carrier and transit. The outbox blocks a free-text first reply to the customer.
+Other held customer mail appears in the session as drafts. See [the operator walkthrough](MANUAL_TAKEOVER.md).
 
 If the operator leaves the request unanswered, the automatic fallback may send at `hard_at`. Release restores
 automatic handling before then. Both sends use the same session quote claim and the CRM stores the delivered offer.

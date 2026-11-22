@@ -122,15 +122,32 @@ font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
 .field{display:grid;grid-template-columns:64px 1fr;align-items:center;gap:10px;margin-bottom:8px}
 .field label{color:var(--muted)}
 .actions{display:flex;align-items:center;gap:12px;margin-top:10px}.actions .grow{flex:1}
+.handover,.actions{flex-wrap:wrap}
+.handover .grow{flex-basis:26rem}
+.handover p,.sourcing p{margin:6px 0 0;max-width:68ch}
+.handover-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+.handover-actions a{margin-right:8px;text-decoration:underline;text-underline-offset:3px}
+.sourcing{margin-bottom:16px}.sourcing-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.sourcing-head h2{margin:0}
+.shipment-form,.followup{margin-top:12px}
+.shipment-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:10px 14px}
+.shipment-fields label,.mail-text{display:grid;gap:4px}
+.shipment-fields select{width:100%;min-height:32px;background:var(--panel);border:1px solid var(--line-2);border-radius:6px;padding:5px 8px}
+.shipment-form>.btn{margin-top:12px}
+.followup>summary{cursor:pointer;padding:12px 18px}
+.option-table{overflow-x:auto}.option-table td:first-child{overflow-wrap:anywhere}
+.notice[hidden]{display:none}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .more{display:flex;justify-content:center;margin-top:16px}
 .co{display:flex;align-items:center;gap:10px;min-width:0}.co>div{min-width:0}
 .co .nm{color:var(--ink);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .co .ml{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media (max-width:900px){.split{grid-template-columns:1fr}.split>aside{position:static}.search{width:100%;margin:0}
+@media (max-width:900px){.split{grid-template-columns:minmax(0,1fr)}.split>aside{position:static}.search{width:100%;margin:0}
 .top{gap:18px;padding:0 16px}main{padding:20px 16px 60px}.hide-sm{display:none}
 .ev{grid-template-columns:56px minmax(0,1fr)}.ev .kind{display:none}}
-@media (max-width:420px){.top{gap:10px;padding:0 10px}.top nav{gap:10px}}
+@media (max-width:420px){.top{height:auto;min-height:56px;flex-wrap:wrap;gap:0 10px;padding:0 10px}
+.top .brand,.top .live{min-height:38px}.top nav{order:1;width:100%;gap:10px}
+.top nav a{min-height:34px}.split .ev,.split dd{overflow-wrap:anywhere}}
 """
 
 LIVE_JS = """
