@@ -1656,6 +1656,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         """Asks once for the facts still missing and reads the request again with the customer's answer."""
         nonlocal mail, message, sources, text, cargo, evidence, document_weight
         read = apply_pickup(read, guess=False)
+        if not read.destination and (parts := shipments(read, text)):
+            return parts[0]  # round 113: one line per shipment names each airport, nothing to ask
         if not (facts := _unknown(read)) or (said := await _ask(ctx, mail, read, facts, deadline)) is None:
             return read
         mail = mail.model_copy(update={"body": f"{_body(mail)}\n\n{own_words(said)}"})

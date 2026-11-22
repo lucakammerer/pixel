@@ -65,6 +65,8 @@ Captured mails of a request, from the request to the confirmed booking:
   belong to an old VIE-RUH request (708 kg), and an attached packing list (embedded) whose 1729 kg contradicts the
   mail's 1210 kg, its table's columns in another order (weight, width, length, height, pieces). Quoted on 1729 kg,
   accepted.
+- `rfq-door-two-shipments.json`: round 113, door to port from Munich, fastest, one numbered line per shipment
+  (RUH 749 kg, DXB 1239 kg). The model read no one destination and we asked for it before the quote.
 - `rfq-port-to-port.json`: a request that names both airports and delivers to the airport itself; the rules read
   it without a model.
 - `rfq-port-cheapest-airline-bids.json`: round 28, port to port and cheapest, sent while the portal's rate API
