@@ -1066,6 +1066,12 @@ def test_a_korean_chinese_or_japanese_pickup_date_is_the_ready_date(text, ready)
         ("报价请于2026-11-30前送达。", None),
         ("見積の回答は2026-11-30までに到着するようお願いします。", None),
         ("2026-12-01 이전에 도착 희망합니다.", date(2026, 12, 1)),
+        ("2026-11-30까지 도착하도록 견적서를 보내 주세요.", None),  # the reply word after the arrival verb
+        ("2026-11-30까지 도착하게 회신 부탁드립니다.", None),
+        ("请在2026-11-30前送达报价。", None),
+        ("2026-11-30までに到着するよう見積をお送りください。", None),
+        ("2026-11-30前到达的报价才有效。", None),
+        ("회신은 빨리 부탁드리고, 화물은 2026-12-01까지 도착해야 합니다.", date(2026, 12, 1)),  # another clause
     ],
 )  # fmt: skip
 def test_a_korean_chinese_or_japanese_arrival_deadline_is_read(text, arrive_by):

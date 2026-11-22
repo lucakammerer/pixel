@@ -936,8 +936,16 @@ READY_CJK = (
 )
 # The latest arrival as "2026-12-01까지 도착", "2026-12-01前到达", "2026-12-01までに到着": a date, its "by", then arriving.
 ARRIVE_BY_CJK = re.compile(rf"{CJK_DATE}\s*(?:까지|이전|之前|以前|前|までに|まで){CJK_CLAUSE}{{0,15}}?{CJK_ARRIVAL}")
-# The date our quote or reply must arrive by ("견적 회신은 2026-11-30까지 도착하도록"), never the cargo's.
+# The date our quote or reply must arrive by, never the cargo's: a reply word anywhere in the match's clause, before
+# ("견적 회신은 2026-11-30까지 도착하도록") or after it ("2026-11-30까지 도착하도록 견적서를 보내 주세요").
 CJK_REPLY = re.compile(r"견적|회신|답변|报价|回复|答复|見積|回答|返信")
+CLAUSE_END = re.compile(r"[.。!?！？\n,，、]")
+
+
+def _clause_of(text: str, match: re.Match) -> str:
+    start = max((m.end() for m in CLAUSE_END.finditer(text, 0, match.start())), default=0)
+    end = next((m.start() for m in CLAUSE_END.finditer(text, match.end())), len(text))
+    return text[start:end]
 ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline|(?:required|requested) delivery date|delivery date required)\s*[:=]?"
@@ -1020,7 +1028,7 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
             clause = re.split(r"[.!?;,:\n]", text[: match.start()])[-1]
             if OUR_SIDE.search(match[0]) or (origin and re.search(rf"\b{origin}\b", match[0])):
                 continue
-            if match.re is ARRIVE_BY_CJK and CJK_REPLY.search(re.split(r"[.。!?！？\n,，、]", text[: match.end()])[-1]):
+            if match.re is ARRIVE_BY_CJK and CJK_REPLY.search(_clause_of(text, match)):
                 continue
             if not ARRIVAL_CONTEXT.search(clause) and (value := _stated_date(match["value"], on)) and value >= on:
                 return value
