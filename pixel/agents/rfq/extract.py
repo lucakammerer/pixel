@@ -110,10 +110,10 @@ PIECES = re.compile(
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
-    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
+    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-](?:critical|sensitive))|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
     r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger"
     r"|pas\s+(?:urgent|press[ée]\w*)"
-    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*"
+    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*|shortest"
     r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
@@ -124,7 +124,18 @@ CHEAPEST = re.compile(
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
     r"as possible|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
-    r"|dringend\w*)\b",
+    r"|dringend\w*"
+    # The transit as the wish: "shortest transit time", "kürzeste Laufzeit", "transit time is key", "price is secondary"
+    r"|shortest\s+(?:transit|lead|delivery|travel)(?:\s+times?)?|kürzeste\w*\s+(?:laufzeit|transitzeit|transportzeit|lieferzeit)"
+    r"|(?:transit(?:\s+time)?|speed|time)\s+is\s+(?:key|crucial|critical|essential|what\s+matters|the\s+priority)"
+    r"|(?:price|cost|rate)\s+is\s+(?:secondary|not\s+(?:an\s+issue|important|the\s+priority))"
+    r"|(?:go\s+for|prefer|need|want|choose|book)\s+(?:the\s+|an\s+)?express|express[,!]?\s+(?:please|pls)"
+    r"|next\s+flight\s+out|(?:next|first)\s+available\s+flight|time[\s-]sensitive|(?-i:AOG))\b",
+    re.IGNORECASE,
+)
+# The price named as what counts beats a transit the mail also mentions: "price is what counts now".
+PRICE_FIRST = re.compile(
+    r"\b(?:price|cost|rate)\s+is\s+(?:key|crucial|what\s+(?:counts|matters)|the\s+priority|most\s+important)\b",
     re.IGNORECASE,
 )
 DOOR = re.compile(
@@ -627,7 +638,7 @@ def _preference(text: str) -> Preference:
     text = NOT_URGENT.sub("", text)
     if FASTEST.search(text):
         return Preference.FASTEST
-    if CHEAPEST.search(text) or not HURRY.search(text):
+    if CHEAPEST.search(text) or PRICE_FIRST.search(text) or not HURRY.search(text):
         return Preference.CHEAPEST
     return Preference.FASTEST
 

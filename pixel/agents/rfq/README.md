@@ -406,8 +406,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   under-prices a light, bulky shipment.
 - "Not urgent", "no rush" and "price matters more than speed" contain the urgency words: they mean cheapest. A
   superlative the customer wrote (fastest, cheapest) decides; without one, a hurry they describe ("as quickly as
-  possible", "time-critical", "speed matters more") means fastest. "Express" counts only as a service, not in a
-  company's name. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
+  possible", "time-critical", "speed matters more", "shortest transit time", "kürzeste Laufzeit", "transit time is
+  key", "price is secondary", "next flight out", "time-sensitive", "AOG") means fastest; "price is what counts" beats
+  a transit the mail also mentions (`PRICE_FIRST`). "Express" counts only as a service or a wish ("express please",
+  "go for express"), not in a company's name. The model reads no wish when the rules read the request, so a missed
+  one is quoted as cheapest. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
   "quickly" alone is about our reply, not the flight.
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
@@ -492,9 +495,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as
-  strict xfails: speed without a superlative or "urgent" ("next flight out", "shortest transit",
-  "time-sensitive", "AOG", "Express please") reads as cheapest; a currency in words, as a symbol, as "Price:
-  USD" or beside a second currency reads as none and is quoted in EUR.
+  strict xfails: a currency in words, as a symbol, as "Price: USD" or beside a second currency reads as none and is
+  quoted in EUR.
 
 ## Open
 
