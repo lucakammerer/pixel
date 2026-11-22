@@ -13,7 +13,7 @@ from pixel.core import events, feedback, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import EXPIRES_AFTER
 
-STUCK_AFTER = timedelta(seconds=90)
+STUCK_AFTER = timedelta(seconds=45)  # a normal quote leaves at about 33 s
 POLL_S = 5
 
 
