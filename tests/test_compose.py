@@ -531,3 +531,27 @@ def test_services_asked_for_and_not_priced_are_said_to_be_excluded():
     assert "Not included in this price: cargo insurance, export customs clearance." in body
     priced = "Please insure 110% of EUR 50,000 at 0.3%, minimum EUR 25."
     assert "Not included" not in compose.render(rfq("en"), OPTION, request=priced)[1]
+
+
+@pytest.mark.parametrize(
+    ("text", "both"),
+    [
+        ("Please give us two options so we can choose: your cheapest and your fastest, each with its price.", True),
+        ("Bitte nennen Sie uns zwei Optionen: die günstigste und die schnellste.", True),
+        ("Merci de nous donner deux options : la moins chère et la plus rapide.", True),
+        ("Could you quote both the fastest and the cheapest routing?", True),
+        ("Please quote the cheapest and fastest option.", False),
+        ("We need the fastest option, not the cheapest.", False),
+        ("Please quote your cheapest option.", False),
+    ],
+)
+def test_two_options_only_when_both_are_asked_for(text, both):
+    assert compose.both_options(text) is both
+
+
+def test_other_option_stands_after_the_offer_with_its_own_total():
+    _, body = compose.render(rfq("de"), OPTION)
+    fast = OPTION.model_copy(update={"carrier": "Quick Air", "total": Decimal("1500.00"), "transit_days": 1})
+    out = compose.other_option(body, rfq("de"), fast, "fastest")
+    assert out.split("\n\n")[2] == "Ihre andere Option, die schnellste: Quick Air, 1500.00 EUR all-in, Laufzeit 1 Tag."
+    assert out.count("1234.57 EUR") == 1

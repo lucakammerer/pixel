@@ -985,6 +985,39 @@ def insured(body: str, rfq: Rfq) -> str:
     return "\n\n".join([parts[0], f"{parts[1]} {note}", parts[2]])
 
 
+# "your cheapest and your fastest, each with its price", "zwei Optionen: die günstigste und die schnellste": two
+# options asked for. One option that is both ("the cheapest and fastest option") names no second one.
+_CHEAP = r"(?:cheapest|lowest|günstigst\w*|billigst\w*|moins\s+ch[eè]re?)"
+_FAST = r"(?:fastest|quickest|schnellst\w*|plus\s+rapide)"
+_AND = r"(?:\s+\w+){0,3}?\s+(?:and|as well as|plus|und|sowie|et)\s+(?:\w+\s+){0,2}?"
+BOTH_OPTIONS = re.compile(rf"(?i)\b(?:{_CHEAP}{_AND}{_FAST}|{_FAST}{_AND}{_CHEAP})\b")
+TWO = re.compile(r"(?i)\b(?:two|both|each|options|beide\w*|zwei|jeweils|optionen|deux|chacune?)\b")
+OTHER_OPTION = {
+    "en": ("Your other option, the {kind}: {carrier}, {total} {currency} all-in, with {transit} in transit.",
+           {"cheapest": "cheapest", "fastest": "fastest"}),
+    "de": ("Ihre andere Option, die {kind}: {carrier}, {total} {currency} all-in, Laufzeit {transit}.",
+           {"cheapest": "günstigste", "fastest": "schnellste"}),
+    "fr": ("Votre autre option, la {kind} : {carrier}, {total} {currency} tout compris, {transit} de transit.",
+           {"cheapest": "moins chère", "fastest": "plus rapide"}),
+}  # fmt: skip
+
+
+def both_options(request: str) -> bool:
+    return bool(BOTH_OPTIONS.search(request) and TWO.search(request))
+
+
+def other_option(body: str, rfq: Rfq, option: RateOption, kind: str) -> str:
+    """The second option a customer asked for beside the quoted one, after the offer, with its own total."""
+    parts = body.split("\n\n", 2)
+    if len(parts) < 3:
+        return body
+    lang = language_of(rfq)
+    line, kinds = OTHER_OPTION.get(lang, OTHER_OPTION["en"])
+    said = line.format(kind=kinds[kind], carrier=option.carrier, total=money(option.total), currency=option.currency,
+                       transit=_transit(option, TEXT[lang]))  # fmt: skip
+    return "\n\n".join([parts[0], parts[1], said, parts[2]])
+
+
 SHIPMENTS = {
     "en": (
         (
