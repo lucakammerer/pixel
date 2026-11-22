@@ -68,6 +68,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
+- A negation of something good rules no airline out: "we don't mind X", "never had issues with X", "does not
+  require X" (`NEGATED_POSITIVE`); "don't want X" and "No X, please" do rule it out, "no pickup needed, X is
+  fine" does not.
 - `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names ("<airline> only",
   "nur mit ...", and "no airline other than ...", "keine andere Airline als ...", which `excluded_airlines` no longer
   reads as ruling that airline out).
