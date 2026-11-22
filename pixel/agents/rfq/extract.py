@@ -248,7 +248,7 @@ DANGEROUS = re.compile(
 )
 DG_DOCUMENTS = "dangerous_goods_documents"
 CURRENCY_ASK = re.compile(r"(?i:\b(?:in|en|currency:?|währung:?|devise:?|moneda:?))\s+([A-Z]{3})\b")
-LONE_CODE = re.compile(r"(?<![\d.,])(?<![\d.,] )\b([A-Z]{3})\b(?! ?\d)")
+LONE_CODE = re.compile(r"(?<![\d.,])(?<![\d.,] )\b([A-Z]{3})(?![A-Za-z\d])(?! ?\d)")  # also "EUR로"
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
