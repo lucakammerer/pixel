@@ -15,6 +15,7 @@ from pixel.agents.rfq.extract import own_words, words_of
 from pixel.contracts import Message, Preference, RateOption, Rfq
 from pixel.core import events, pdf
 from pixel.core.context import Context
+from pixel.pricing import calc
 
 CENT = Decimal("0.01")
 DEFAULT_SIGNER = "Lena Berger"
@@ -680,9 +681,9 @@ def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> st
         said = []
         if ref := pdf.reference(f"{subject or ''}\n{request}"):
             said.append(t["reference"].format(ref=ref))
-        ready = ready_date(request)
+        ready = calc.ready_day(rfq) if rfq.arrive_by and rfq.ready_on else ready_date(request)
         if ready:
-            arrive = ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
+            arrive = calc.arrival(option, ready)
             city = city_of(request, option.destination)
             where = t["in_city" if city else "at_airport"].format(place=city or option.destination)
             arrival = "arrival_pickup" if option.trucker else "arrival_air_only" if rfq.door_pickup else "arrival"

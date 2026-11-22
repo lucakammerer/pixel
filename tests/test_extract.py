@@ -1,7 +1,7 @@
 import base64
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -911,6 +911,22 @@ async def test_an_airline_the_customer_rules_out_stays_out_now_and_later(conn):
 )
 def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
     assert set(extract.excluded_airlines(text, {"Alpha Air", "Beta Cargo"})[0]) == excluded
+
+
+@pytest.mark.parametrize(
+    ("text", "ready", "arrive_by", "max_days"),
+    [
+        ("Cargo ready Friday 18 December; must arrive no later than Tuesday 22 December.",
+         date(2026, 12, 18), date(2026, 12, 22), None),
+        ("Abholbereit am 28.12.2026. Ankunft spätestens am 4. Januar. Laufzeit höchstens 4 Tage.",
+         date(2026, 12, 28), date(2027, 1, 4), 4),
+        ("Ready on December 20, 2026. Maximum transit time: 3 days.", date(2026, 12, 20), None, 3),
+        ("The last shipment arrived on 2026-12-01. Transit used to take 3 days.", None, None, None),
+        ("Cargo ready 31.11.2026. Ready 02.12.2026 instead.", date(2026, 12, 2), None, None),
+    ],
+)
+def test_schedule_reads_only_stated_readiness_and_limits(text, ready, arrive_by, max_days):
+    assert extract.schedule(text, date(2026, 12, 17)) == (ready, arrive_by, max_days)
 
 
 @pytest.mark.parametrize(

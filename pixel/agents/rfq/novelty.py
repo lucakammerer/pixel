@@ -23,7 +23,8 @@ CONSUMED = (
     extract.PAIR, extract.PAIR_NAMED, extract.ORIGIN_LABEL, extract.DEST_LABEL, *extract.WEIGHT, *extract.VOLUME,
     *extract.POUNDS, *extract.TONNES, extract.DIMS, extract.PIECES, extract.FASTEST, extract.CHEAPEST,
     extract.HURRY, extract.NOT_URGENT, extract.DOOR, extract.OWN_DELIVERY, extract.POSTCODE, extract.DANGEROUS,
-    extract.CURRENCY_ASK, extract.SIGN_OFF, compose.READY, compose.PICKUP_ASK, compose.DEPARTURE, compose.ONE_AWB,
+    extract.CURRENCY_ASK, extract.SIGN_OFF, compose.READY, extract.READY_ON, extract.ARRIVE_BY, extract.MAX_TRANSIT,
+    compose.PICKUP_ASK, compose.DEPARTURE, compose.ONE_AWB,
     compose.CUTOFF, compose.GOODS, compose.FRAME, compose.WELL, compose.FROM_TOWN, pdf.REFERENCE,
     re.compile(r"\bPDF\b"),  # every quote carries itself as a PDF (`core/pdf.py`, round 76)
     re.compile(r"\([A-Z]{3}\)|\b[A-Z]{3} \("),  # an airport named with its city: the lane
@@ -83,6 +84,11 @@ AIRLINE_ALTERNATIVE = {
     "en": "We could not get a rate from the airline you specified. The price above is for the alternative shown.",
     "de": "Für die gewünschte Airline haben wir keinen Tarif erhalten. Der Preis oben gilt für die genannte Alternative.",
     "fr": "Nous n’avons pas obtenu de tarif auprès de la compagnie demandée. Le prix ci-dessus concerne l’alternative indiquée.",
+}
+SCHEDULE_ALTERNATIVE = {
+    "en": "The available option falls outside the timing you requested.",
+    "de": "Die verfügbare Option liegt außerhalb des gewünschten Zeitrahmens.",
+    "fr": "L’option disponible dépasse le délai que vous avez demandé.",
 }
 MONEY = re.compile(rf"[€$£]|\b(?:{'|'.join(extract.CURRENCIES)})\b")
 SENTENCE = re.compile(r"(?<=[.!?])\s+|\n")
@@ -208,6 +214,8 @@ def with_note(body: str, requirements: dict, language: str) -> str:
                                                          (noted, requirements.get("conditions"))) if items]  # fmt: skip
     if requirements.get("unmet_carrier"):
         lines.append(AIRLINE_ALTERNATIVE.get(language, AIRLINE_ALTERNATIVE["en"]))
+    if requirements.get("unmet_schedule"):
+        lines.append(SCHEDULE_ALTERNATIVE.get(language, SCHEDULE_ALTERNATIVE["en"]))
     if not lines:
         return body
     paragraphs = body.split("\n\n")

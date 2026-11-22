@@ -29,6 +29,12 @@ def bid_total(charges: list[tuple[Decimal, bool]], rfq: Rfq) -> Decimal:
     return sum((bid_charge(amount, per_kg, rfq) for amount, per_kg in charges), Decimal(0))
 
 
+def ready_day(rfq: Rfq) -> date:
+    """A shipment already ready can first ship on the request date."""
+    received = rfq.received_at.date()
+    return max(rfq.ready_on, received) if rfq.ready_on else received
+
+
 def arrival(option: RateOption, ready: date) -> date:
     """The ready date plus the transit, a day more when a trucker first takes the cargo to the airport."""
     return ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))

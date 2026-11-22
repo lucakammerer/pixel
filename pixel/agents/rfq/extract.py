@@ -3,7 +3,7 @@ import json
 import re
 import unicodedata
 from collections import Counter
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from pixel import llm
@@ -671,6 +671,72 @@ def _text(message: Message) -> str:
     """Subject and body; a reply's or forward's subject belongs to the older mail it answers."""
     subject = "" if REPLY_SUBJECT.match(message.subject) else message.subject
     return f"{subject}\n\n{_body(message)}"
+
+
+MONTHS = (
+    "jan january januar janv janvier", "feb february februar févr fevr février fevrier",
+    "mar march märz maerz mär mrz mars", "apr april avr avril", "may mai", "jun june juni juin",
+    "jul july juli juil juillet", "aug august août aout", "sep sept september septembre",
+    "oct october okt oktober octobre", "nov november novembre", "dec december dez dezember déc decembre décembre",
+)
+MONTH_NUMBER = {name: number for number, names in enumerate(MONTHS, 1) for name in names.split()}
+MONTH_NAME = "|".join(sorted(MONTH_NUMBER, key=lambda name: (-len(name), name)))
+DATE_VALUE = (
+    r"\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.(?:\d{4})?"
+    rf"|\d{{1,2}}\.?\s+(?:{MONTH_NAME})\.?(?:\s+\d{{4}})?"
+    rf"|(?:{MONTH_NAME})\.?\s+\d{{1,2}}(?:,?\s+\d{{4}})?"
+)
+WEEKDAY = (
+    r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun"
+    r"|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag"
+    r"|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)"
+)
+STATED_DATE = rf"[ \t]*(?:{WEEKDAY}\b\.?,?[ \t]+)?(?P<value>{DATE_VALUE})(?![\w-])"
+READY_ON = re.compile(
+    r"\b(?:ready|bereit|abholbereit|available|verfügbar|prête?s?)\b[ \t]*"
+    r"(?:(?:for (?:pickup|collection)|zur Abholung)[ \t]+)?"
+    r"(?:(?:on|from|am|ab|le)[ \t]+|:[ \t]*)?" + STATED_DATE,
+    re.IGNORECASE,
+)
+ARRIVE_BY = re.compile(
+    r"\b(?:arriv(?:e|es|ing|al)\b[^.!?;\n]{0,60}?(?:no later than|not later than|by)\b"
+    r"|(?:latest arrival|delivery deadline)\s*[:=]?"
+    r"|(?:ankunft|eintreffen)\b[^.!?;\n]{0,45}?(?:spätestens(?: am)?|bis(?: zum)?)\b"
+    r"|arriv(?:ée|er)\b[^.!?;\n]{0,45}?au plus tard(?: le)?\b)" + STATED_DATE,
+    re.IGNORECASE,
+)
+MAX_TRANSIT = re.compile(
+    r"\b(?:max(?:imum)?\.?\s+(?:transit(?: time)?|laufzeit)\s*[:=]?"
+    r"|(?:transit(?: time)?|laufzeit|transportdauer)\s+(?:must not exceed|cannot exceed|no more than"
+    r"|at most|max(?:imum)?\.?|höchstens|maximal|darf höchstens)\s*)"
+    r"[ \t]*(?P<days>\d{1,3})\s*(?:days?|tag(?:e|en)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _stated_date(value: str, on: date) -> date | None:
+    """Resolve a date without a year against the request date, including next winter's dates."""
+    try:
+        if "-" in value:
+            return date.fromisoformat(value)
+        first, second, *year = value.replace(".", " ").replace(",", " ").casefold().split()
+        if first.isdigit():
+            day, month = int(first), int(second) if second.isdigit() else MONTH_NUMBER[second]
+        else:
+            day, month = int(second), MONTH_NUMBER[first]
+        # A nearby past date can be a missed deadline. Roll only across the calendar boundary.
+        return date(int(year[0]) if year else on.year + (month < on.month - 6), month, day)
+    except (ValueError, KeyError):
+        return None
+
+
+def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]:
+    """Read cargo readiness, latest arrival, and a maximum transit from explicit statements."""
+    def first_date(pattern: re.Pattern) -> date | None:
+        return next((value for match in pattern.finditer(text) if (value := _stated_date(match["value"], on))), None)
+
+    transit = MAX_TRANSIT.search(text)
+    return first_date(READY_ON), first_date(ARRIVE_BY), int(transit["days"]) if transit else None
 
 
 def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:
@@ -1489,7 +1555,12 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         proof = {"document_weight_kg": document_weight} if document_weight == rfq.weight_kg else {}
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload={"sources": evidence, "attachment_route_conflicts": excluded, **proof})  # fmt: skip
-    rfq = _carrier_requirements(ctx, rfq, _text(mail))
+    request_text = _text(mail)
+    rfq = _carrier_requirements(ctx, rfq, request_text)
+    subject = "" if REPLY_SUBJECT.match(mail.subject) else mail.subject
+    ready_on, arrive_by, max_transit_days = schedule(f"{_body(mail)}\n{subject}", rfq.received_at.date())
+    rfq = rfq.model_copy(update={"ready_on": ready_on, "arrive_by": arrive_by,
+                                 "max_transit_days": max_transit_days})  # fmt: skip
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})

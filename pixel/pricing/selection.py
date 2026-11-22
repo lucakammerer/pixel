@@ -85,6 +85,20 @@ def requested_options(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
     return [option for option in allowed(rfq, options) if requested_carrier(rfq, option.carrier, option.carrier_code)]
 
 
+def meets_schedule(rfq: Rfq, option: RateOption) -> bool:
+    """Transit is the carrier's air leg. The delivery date includes any pickup leg."""
+    if rfq.max_transit_days is not None and option.transit_days > rfq.max_transit_days:
+        return False
+    return rfq.arrive_by is None or calc.arrival(option, calc.ready_day(rfq)) <= rfq.arrive_by
+
+
+def compliant_options(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
+    """Options that meet explicit routing and timing restrictions while the quote can still wait."""
+    if not rfq.required_carriers and rfq.arrive_by is None and rfq.max_transit_days is None:
+        return options
+    return [option for option in requested_options(rfq, options) if meets_schedule(rfq, option)]
+
+
 def required(
     options: list[RateOption], only: Iterable[str] = (), arrive_by: date | None = None, ready: date | None = None
 ) -> list[RateOption]:
@@ -118,5 +132,6 @@ def select(
     if rfq.required_carriers:
         options = requested_options(rfq, options) or options
         only = ()
-    options = required(options, only, arrive_by, ready)
+    options = [option for option in options if meets_schedule(rfq, option)] or options
+    options = required(options, only, None if rfq.arrive_by else arrive_by, ready)
     return min(options, key=_fastest if rfq.preference == Preference.FASTEST else _cheapest)
