@@ -613,6 +613,22 @@ reuse while a quote is pending. Amendments received after the quote or booking, 
 freshness rule across the rate desk and direct carrier offers remain open. Owner: supply. This audit has no direct
 effect on the accepted quote rate.
 
+### Bid deadlines on quotes already sent
+
+The snapshot through event 19799 and scored round 190 links 179 scored rounds to an exact quote timestamp.
+For the deadline check, match the air bid or a unique pickup bid from each quote to the carrier's own text.
+Keep only a single explicit UTC deadline in that text. On the head of [#496](https://github.com/lucakammerer/pixel/pull/496),
+the parser matches all 67 source deadlines (3 air and 64 pickup). None had elapsed when the quote went out.
+The shortest remaining validity was 789 seconds for air and 737 seconds for pickup. The other 54 matched
+bid references have no single deadline in this UTC body format. Four have attachment metadata, which
+cannot establish the deadline from the snapshot.
+
+For 58 of the 64 dated pickup offers, the air option also has a deadline from the source mail or the stored
+option. The pickup deadline is earlier in 55 of the 58. A combined quote's latest verified buying time is
+the earlier of its two deadlines. Final selection at or after that time, the combined validity shown in the
+quote, and reuse after booking remain open. Owner: supply. This audit establishes parser coverage and a
+gap in combined validity. It establishes no historical expired send in the matched cases.
+
 ### Bid validity variants
 
 The next snapshot, through event 19080 and round 181, adds four inbound census rows, three portal events and two
