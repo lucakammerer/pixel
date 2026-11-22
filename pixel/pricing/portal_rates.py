@@ -100,15 +100,15 @@ def _unpriced(ctx: Context, rfq: Rfq) -> tuple[set[str | None], bool]:
         payload = json.loads(row["payload"])
         if payload.get("source") == "portal" and _outage_name(payload.get("error")):
             down.add(payload.get("carrier"))
-        elif (option := payload.get("option")) and option.get("source") == "portal":
-            down.discard(option.get("carrier"))
+        elif (option := payload.get("option")) and option.get("source") == "portal" and option.get("rate_id"):
+            down.discard(option.get("carrier"))  # a price without a rate id (a rate card) is no answer of the API
     return down, None in down
 
 
 async def probe(ctx: Context, rfq: Rfq, deadline: Deadline) -> bool:
     """Reads again every selectable airline of the lane whose rate read answered with an outage and that no rate
     priced since. A rate found is an `option.found` like any other; a second failure is one more `option.failed`.
-    True when a read priced an airline, so the caller stops probing. Never waits for the rate limit (`_read`)."""
+    True when the API priced an airline (a rate id), so the caller stops probing. Never waits for the rate limit (`_read`)."""
     down, unlisted = _unpriced(ctx, rfq)
     if not down:
         return False
@@ -124,7 +124,7 @@ async def probe(ctx: Context, rfq: Rfq, deadline: Deadline) -> bool:
     found = await asyncio.gather(
         *(_read(ctx, rfq, deadline, c, n) for c, n in todo[: None if remaining is None else remaining])
     )
-    return any(option is not None for option in found)
+    return any(option is not None and option.rate_id for option in found)
 
 
 async def probes(ctx: Context, rfq: Rfq, deadline: Deadline, down: asyncio.Event) -> None:

@@ -261,3 +261,14 @@ async def test_a_rate_that_answered_503_is_read_again_before_the_quote(ctx, offl
     assert (best.source, best.rate_id, best.transit_days) == (Source.PORTAL, "R-portal", 3)
     assert reads == {"A1": 2, "A2": 2}
     assert timing.now() < started + timedelta(seconds=1.5)
+
+
+def test_a_price_without_a_rate_id_keeps_the_airline_probed(ctx):  # noqa: F811
+    """A rate card price (PR #410) has no rate id: only the API's own answer stops the probes for that airline."""
+    events.emit(ctx, "option.failed", "pricing", session_id=1,
+                payload={"source": "portal", "carrier": "Air One", "error": "RatesUnavailable"})  # fmt: skip
+    card = {"source": "portal", "carrier": "Air One", "rate_id": None}
+    events.emit(ctx, "option.found", "pricing", session_id=1, payload={"option": card})
+    assert portal_rates._unpriced(ctx, rfq()) == ({"Air One"}, False)
+    events.emit(ctx, "option.found", "pricing", session_id=1, payload={"option": card | {"rate_id": "R-1"}})
+    assert portal_rates._unpriced(ctx, rfq()) == (set(), False)
