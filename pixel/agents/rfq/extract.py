@@ -897,6 +897,13 @@ def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> De
     return max(values, default=None)
 
 
+PAST_SHIPMENT = re.compile(
+    r"[^.!?\n]*\b(?:last\s+(?:time|month|week|year)|previously|letztes\s+mal|letzten\s+monat|letzte\s+woche"
+    r"|letztes\s+jahr)\b[^.!?\n]*[.!?]?",
+    re.IGNORECASE,
+)
+
+
 def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo: dict | None = None) -> Rfq | None:
     """Regex and lookup tables. None unless origin, destination and weight are certain. With `guess`, for a model
     that cannot be reached: the largest gross weight and volume the mail names, rather than no quote at all."""
@@ -907,17 +914,18 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
         lane = ("", destination)  # the origin is the pickup zone's airport, set in `extract`
     if lane and cargo and cargo.get("destination"):
         lane = (lane[0], cargo["destination"])  # the attached document's (`_cargo_sources`)
+    figures = PAST_SHIPMENT.sub("", text)  # "Last month we shipped 1250 kg ..." is not this shipment
     if cargo is None:
-        lots = _lots(text)
-        pieces = lots[2] if lots else _pieces(text)
-        weight = lots[0] if lots else _weight(text, pieces)
-        volume = lots[1] if lots else _volume(text, pieces)
+        lots = _lots(figures)
+        pieces = lots[2] if lots else _pieces(figures)
+        weight = lots[0] if lots else _weight(figures, pieces)
+        volume = lots[1] if lots else _volume(figures, pieces)
     else:
         pieces, weight, volume = (cargo.get(k) for k in ("pieces", "weight_kg", "volume_cbm"))
     if guess:
-        weight = weight or _largest(WEIGHT, text, thousands=True)
-        volume = volume or _largest(VOLUME, text, thousands=False)
-    elif volume is None and (DIMS.search(text) or any(p.search(text) for p in VOLUME)):
+        weight = weight or _largest(WEIGHT, figures, thousands=True)
+        volume = volume or _largest(VOLUME, figures, thousands=False)
+    elif volume is None and (DIMS.search(figures) or any(p.search(figures) for p in VOLUME)):
         return None  # a volume is given but not certain: under-reading it under-prices the chargeable weight
     if lane is None or weight is None:
         return None
