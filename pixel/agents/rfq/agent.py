@@ -1,10 +1,10 @@
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
-from pixel.agents.rfq import check, compose, dangerous, extract
+from pixel.agents.rfq import check, compose, dangerous, extract, novelty
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
@@ -38,6 +38,11 @@ def _fx_for(currency: str, options: list[RateOption]) -> Decimal | None:
 
 
 def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
+    required = novelty.mapped(ctx, rfq.session_id)
+    if required.get("only_airlines") or required.get("arrive_by"):
+        ready = compose.ready_date(compose.customer_body(ctx, rfq.message_id)) or rfq.received_at.date()
+        arrive_by = date.fromisoformat(required["arrive_by"]) if required.get("arrive_by") else None
+        options = selection.required(options, required.get("only_airlines") or (), arrive_by, ready)
     option = selection.select(rfq, options)
     if rfq.currency and option.currency != rfq.currency:
         option = calc.in_currency(option, rfq.currency, _fx_for(rfq.currency, options))
@@ -67,10 +72,13 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
         created_at=timing.now(),
     )
     quote = _noted(ctx, rfq, quote)
+    if required:
+        quote = quote.model_copy(update={"body": novelty.with_note(quote.body, required, compose.language_of(rfq))})
     _check(ctx, rfq, quote)
     events.emit(ctx, "quote.drafted", "rfq", session_id=rfq.session_id,
                 payload={"quote_id": quote.id, "option": option.model_dump(mode="json"), "fallback": fallback,
-                         "options": len(options), "complete_service": not rfq.door_pickup or bool(option.trucker)})  # fmt: skip
+                         "options": len(options), "complete_service": not rfq.door_pickup or bool(option.trucker),
+                         **({"required": required} if required else {})})  # fmt: skip
     quotes.save(ctx, quote)  # booking finds the session's quote in the CRM, also when the fallback sends it
     return quote
 
@@ -127,6 +135,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
                     "missing": list(rfq.missing)})  # fmt: skip
         return None
     rfq = await served_airports(ctx, rfq, message, text=text, deadline=deadline)
+    novel = poller.spawn(ctx, novelty.check(ctx, rfq, text, message.subject))  # beside the bids, bounded by WAIT_S
     # The one gateway call per quote (R28): when rules read the request, it writes the prose slots (R31);
     # when the model read it, the same call already drafted them.
     # The prose may hold the quote at most PROSE_WAIT_S after it started, and never past target_at: a slow or
@@ -149,6 +158,10 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     prose = compose.stored(ctx, rfq.session_id)
     if not options:
         return None
+    try:
+        rfq = await asyncio.wait_for(asyncio.shield(novel), max((deadline.target_at - timing.now()).total_seconds(), 0))
+    except Exception:  # noqa: BLE001, S110  late: the quote goes out as the rules read it
+        pass
     quote = await _in_language(ctx, _quote(ctx, rfq, options, prose, fallback=False), deadline.hard_at)
     sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)

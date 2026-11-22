@@ -18,6 +18,7 @@ KINDS = (
     "quote.drafted", "quote.sent", "quote.fallback", "quote.recovery", "quote.waiting", "quote.missed", "quote.prose", "rfq.crosscheck", "bid.crosscheck", "prose.raw",
     "quote.stuck",  # core/watchdog.py: open past its STUCK_AFTER, alerted once
     "quote.checked",  # agents/rfq/check.py: what the last check before sending found
+    "rfq.novelty",  # agents/rfq/novelty.py: sentences no rule read, and what they ask of the quote
     "customer.accepted", "customer.declined", "customer.excludes",
     "followup.read",  # agents/rfq/followup.py: a customer's later mail in their thread, its phase, intent and changes
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",

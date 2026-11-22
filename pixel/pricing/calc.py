@@ -1,5 +1,6 @@
 """All arithmetic. Decimal only, ROUND_HALF_UP to two places at the end, never in a model."""
 
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from pixel.contracts import LaneTariff, RateOption, Rfq, Source
@@ -26,6 +27,11 @@ def bid_charge(amount: Decimal, per_kg: bool, rfq: Rfq) -> Decimal:
 
 def bid_total(charges: list[tuple[Decimal, bool]], rfq: Rfq) -> Decimal:
     return sum((bid_charge(amount, per_kg, rfq) for amount, per_kg in charges), Decimal(0))
+
+
+def arrival(option: RateOption, ready: date) -> date:
+    """The ready date plus the transit, a day more when a trucker first takes the cargo to the airport."""
+    return ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
 
 
 def transit_days(value: int, hours: bool) -> int:

@@ -14,7 +14,7 @@ R1, R4, R9–R17, R22–R24, R26–R29, R31.
 
 In: the RFQ `Message` and its `Deadline`; later the customer's reply and the airline's confirmation. Out: a `Quote`
 (sent through `core/outbox.py` `send_quote`), a `Booking` and a `Shipment`. Emits `rfq.extracted`,
-`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`.
+`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`, `rfq.novelty`.
 
 ## Implementation
 
@@ -126,6 +126,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   implausible price per kg, the language, an expired rate. The check never holds or changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
+- `novelty.py` (R33): a requirement no rule reads yet, caught in the round it first appears. `leftover` keeps the
+  sentences of the mail and its documents that none of the extractors' patterns (`CONSUMED`), no airline ruled out by
+  name and more than the frame of a request (`FRAME_WORDS`) account for; the subject, the signature and lines of names
+  or headings are skipped. Nothing left (35 of 37 request fixtures, all 27 scored openings): no call. Something left:
+  `check`, spawned by `agent.py` `handle` beside the bids, sends only those sentences to `PIXEL_MODEL_CHECK`
+  (`rfq.novelty`, at most `WAIT_S` = 8 s, 150 output tokens) and maps them: airlines ruled out (into
+  `Rfq.excluded_carriers`, a new `rfq.extracted`), the only airlines allowed and a latest arrival date
+  (`pricing/selection.py` `required`, arrival by `pricing/calc.py` `arrival`; when no option meets them all stay),
+  documents and conditions the quote names (`with_note`, before the booking line). A name or date the sentences do not
+  hold is dropped, and so is a phrase with a currency: the scorer reads our price from the mail. A mapped requirement or
+  a failed call goes to `PIXEL_ALERT_URL` at once (`novel_requirement`, with the sentences), not after the verdict.
+  `handle` waits for it at most until `target_at`; `_quote` reads the last `rfq.novelty`, so the fallback and a
+  requote follow it too, without waiting.
 
 ## Pitfalls
 
