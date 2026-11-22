@@ -456,6 +456,8 @@ def volume_readings(text: str, pieces: int | None = None) -> set[Decimal]:
         out |= {volume, *(volume * n for n in (count, pieces) if n)}
     if len(dims_lines) > 1:
         out.add(sum((v * (c or 1) for v, c in dims_lines), Decimal(0)))
+    if stated and dims_lines:  # round 153: one lot states its volume, the others give dimensions
+        out.add(sum(stated, Decimal(0)) + sum((v * (c or 1) for v, c in dims_lines), Decimal(0)))
     return out
 
 
