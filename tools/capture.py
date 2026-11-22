@@ -126,13 +126,20 @@ def state(conn: sqlite3.Connection, session_id: int) -> dict:
         "sessions": _rows(
             conn, "SELECT * FROM sessions WHERE id IN ({})".format(",".join("?" * len(earlier))), tuple(earlier)
         ),
-        # our mails of the session; without their text, the customer's earlier requests (`extract` finds one by its
-        # subject) and each sender's first request (a lookalike address is told from the original by it)
+        # our mails of the session but its question (asked once per request: the replay asks again, as live, and the
+        # answer joins by its references; round 131 guessed an old site instead); without their text, the customer's
+        # earlier requests (`extract` finds one by its subject) and each sender's first request (a lookalike address
+        # is told from the original by it)
         "messages": sorted(
             {
                 m["id"]: m
                 for m in [m | {"body": "", "data": "{}"} for m in firsts + _rows(conn, customers, tuple(earlier))]
-                + _rows(conn, "SELECT * FROM messages WHERE session_id = ? AND direction = 'out'", (session_id,))
+                + _rows(
+                    conn,
+                    "SELECT * FROM messages WHERE session_id = ? AND direction = 'out'"
+                    " AND COALESCE(purpose, '') <> 'question'",
+                    (session_id,),
+                )
             }.values(),
             key=lambda m: m["id"],
         ),
