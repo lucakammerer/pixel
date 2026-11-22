@@ -460,8 +460,8 @@ def test_a_negated_superlative_or_a_quick_reply_is_no_wish_for_speed(text):
 @pytest.mark.parametrize(
     "body, kg",
     [
-        ("AAA to BBB: 1 pallet, gross weight: 480 lbs, 120x80x100 cm.", 480 * extract.LB),  # not 480 kg
-        ("AAA to BBB, 3 pallets each 400 lbs, 120x80x110 cm", 1200 * extract.LB),
+        ("AAA to BBB: 1 pallet, gross weight: 480 lbs, 120x80x100 cm.", Decimal("217.72")),  # not 480 kg; two decimals as the scorer
+        ("AAA to BBB, 3 pallets each 400 lbs, 120x80x110 cm", 3 * Decimal("181.44")),
         ("AAA-BBB 1.2t 6cbm asap", Decimal(1200)),
         ("AAA-BBB, 2,5 Tonnen, 10 cbm", Decimal(2500)),
         ("AAA-BBB 1000 kg (2205 lbs), 3 cbm", Decimal(1000)),
@@ -672,7 +672,7 @@ def test_a_document_whose_total_and_table_disagree_settles_nothing(document):
 @pytest.mark.parametrize(
     "body, model_kg, model_cbm, pieces, expected",
     [
-        ("Hi, 1 pallet 480 lbs, 120x80x100 cm, AAA area to BBB.", "217.7", "0.96", 1, (480 * extract.LB, "0.96")),
+        ("Hi, 1 pallet 480 lbs, 120x80x100 cm, AAA area to BBB.", "217.7", "0.96", 1, (Decimal("217.72"), "0.96")),
         ("Two cartons of 60 x 40 x 50 cm, 95 kg together, to BBB.", "95", "0.25", 2, ("95", "0.240")),
     ],
 )

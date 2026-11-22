@@ -426,7 +426,7 @@ def _weight_text(kg: D, pieces: int, form: str) -> tuple[str, D]:
     """The weight as written, and the kg it means."""
     if form in ("lbs", "lb", "pounds"):
         lbs = (kg / LB).quantize(D(1))
-        return f"{lbs} {form}", lbs * LB
+        return f"{lbs} {form}", (lbs * LB).quantize(D("0.01"))
     if form == "tonnes":
         t = (kg / 1000).quantize(D("0.001"))
         return f"{t} t", t * 1000
