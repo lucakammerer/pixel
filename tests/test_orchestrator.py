@@ -109,8 +109,13 @@ async def test_missed_when_there_is_no_price(conn, monkeypatch):
     monkeypatch.setattr(rfq_agent, "handle", handle)
     monkeypatch.setattr(rfq_agent, "fallback", fallback)
     await orchestrator.quote_with_deadline(ctx, rfq)
-    assert ctx.mailbox.sent == []
-    assert kinds(ctx)[-1] == "quote.missed"
+    assert len(ctx.mailbox.sent) == 1
+    await orchestrator.quote_with_deadline(ctx, rfq)
+    assert ctx.mailbox.sent == [rfq.sender]
+    reply = conn.execute("SELECT in_reply_to, body FROM messages WHERE purpose='no_price'").fetchone()
+    assert reply["in_reply_to"] == rfq.id
+    assert "could not obtain a freight rate" in reply["body"]
+    assert "quote.missed" in kinds(ctx)
 
 
 async def test_an_agent_that_gives_up_early_still_quotes_a_price_that_arrives_before_hard_at(conn, monkeypatch):

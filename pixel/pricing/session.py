@@ -18,8 +18,13 @@ def rfq(ctx: Context, session_id: int) -> Rfq | None:
     return Rfq.model_validate(payloads[-1]) if payloads else None
 
 
+def option(stored: dict) -> RateOption:
+    """An option from the log; fields a hand-deployed branch wrote and main lacks are dropped."""
+    return RateOption.model_validate({k: v for k, v in stored.items() if k in RateOption.model_fields})
+
+
 def options(ctx: Context, session_id: int) -> list[RateOption]:
-    return [RateOption.model_validate(p["option"]) for p in _payloads(ctx, session_id, "option.found")]
+    return [option(p["option"]) for p in _payloads(ctx, session_id, "option.found")]
 
 
 def on_lane(option: RateOption, rfq: Rfq) -> bool:

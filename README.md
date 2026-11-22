@@ -63,7 +63,8 @@ A request normally uses one small gateway call.
 If the normal handler ends without a quote, or the request is still unanswered 2 minutes 30 seconds after receipt,
 the orchestrator takes over. It checks stored prices and runs a short second sourcing pass if needed. A door-to-port
 quote includes a trucker price. If only air freight is priced, PIXEL keeps the request open for late
-pickup bids. At the hard deadline it can send the airport-to-airport price with pickup explicitly excluded. If the
+pickup bids. At the hard deadline it can send the airport-to-airport price with pickup explicitly excluded. If no freight rate
+is available, it replies that it could not obtain one in time. If the
 customer omitted the postcode, the quote asks for the pickup address. With no air price at all the round is recorded
 as missed. A customer question about an offer goes to the operator. An affirmative instruction to book a delivered
 offer starts the booking.

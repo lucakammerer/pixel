@@ -93,7 +93,7 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                 selection.select → compose.render → outbox.send_quote  quote.sent
   recovery      unanswered after 150 s or handler exits                quote.recovery
   fallback      watch stored options for a complete price              quote.waiting
-                hard deadline: send available scope or record a miss   quote.fallback | quote.missed
+                hard deadline: send available scope or explain the miss  quote.fallback | quote.missed, mail.sent
 customer_reply      followup.read: phase, intent, changes                                  followup.read
                     change before the acceptance → requote in reply to the change mail   quote.sent
                     affirmative booking of a delivered quote → shipment → book by rate id or mail
@@ -176,9 +176,9 @@ and the portal for missing air prices and request pickup bids from eligible truc
 pickup. It uses the normal extraction path if no RFQ was stored and the rules can read the mail; otherwise the
 handler's model read, finished or cancelled, was the request's one gateway call.
 A door request needs a priced trucker before `hard_at`. At
-`hard_at`, an available airport-to-airport price may be sent with pickup excluded and `complete_service=false`.
-A missing postcode prompts a request for the pickup address in that quote. If air freight itself is still
-unpriced, the orchestrator emits `quote.missed`.
+`hard_at`, an available airport-to-airport price may be sent with pickup excluded and `complete_service=false`. With no freight rate,
+`_no_price_reply` sends one reply through the outbox and the request remains recorded as a scoring miss.
+A missing postcode prompts a request for the pickup address in that quote.
 
 Offline KPI replay advances its clock through bid waits and deadlines. A replay with scheduled replies can still
 receive a captured late bid. A single-request online replay can skip the final wait for incoming mail.

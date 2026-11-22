@@ -582,6 +582,23 @@ async def localize(
     return body
 
 
+NO_PRICE = {
+    "en": "Thank you for your request. We could not obtain a freight rate in time to send you a quote.",
+    "de": "Vielen Dank für Ihre Anfrage. Wir konnten rechtzeitig keinen Frachttarif für ein Angebot einholen.",
+    "fr": "Merci pour votre demande. Nous n’avons pas obtenu de tarif de fret à temps pour vous envoyer un devis.",
+}
+
+
+def no_price(ctx: Context, message: Message, rfq: Rfq | None) -> tuple[str, str]:
+    """Compose a last-resort reply without using the send window for a model call."""
+    lang = language_of(rfq) if rfq else "en"
+    request = own_words(message.body)
+    name = signed_name(request, ctx.settings.signer)
+    bye = sign_off(request, lang, name)[1]
+    body = "\n\n".join([greeting(lang, name, request), NO_PRICE[lang], signature(bye, ctx.settings.signer)])
+    return reply_subject(message.subject) or "Re: Freight inquiry", body
+
+
 def reply_subject(subject: str | None) -> str | None:
     subject = " ".join((subject or "").split())[:SUBJECT_MAX]  # one line, never a header break
     if not subject:
