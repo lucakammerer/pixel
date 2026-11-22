@@ -192,6 +192,25 @@
     "offer-Q-2E9A1DE7.pdf"
    ],
    "expected": []
+  },
+  {
+   "name": "round-177-sea-freight-quoted-as-air",
+   "session": 53355,
+   "round": 177,
+   "scored": "out_of_scope_quoted",
+   "request": "Sea freight quote: Hamburg to Jebel Ali\n\nHi there,\n\nHope your week’s going well! Could you send me an all-in price in EUR for a port-to-port sea freight shipment from Hamburg (DEHAM) to Jebel Ali (AEJEA)?\n\nThe furniture samples will be ready on 2026-11-27. It’s an FCL shipment in 1 x 40ft container, with 6 pieces, a gross weight of 9617 kg and a total volume of 43.5 cbm.\n\nThanks for taking a look!\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "sent_as": "quote",
+   "subject": "Re: Sea freight quote: Hamburg to Jebel Ali",
+   "reply": "Hi Klaus,\n\nTamarind Airways has the lowest rate for your furniture samples from HAM to DXB: 20291.87 EUR all-in, with 3 days in transit. The price includes the air freight and the fuel and security surcharges.\n\nWith the cargo ready on Friday 27 November, the earliest arrival at DXB would be Monday 30 November.\n\nI can hold the rate until 10:05 today. If that works for you, just reply and I'll book it right away.\n\nCheers,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [
+    "offer-Q-50555CB5.pdf"
+   ],
+   "expected": [
+    {
+     "class": "scope",
+     "sentence": "Could you send me an all-in price in EUR for a port-to-port sea freight shipment from Hamburg (DEHAM) to Jebel Ali (AEJEA)?"
+    }
+   ]
   }
  ]
 }

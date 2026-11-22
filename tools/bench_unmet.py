@@ -38,7 +38,7 @@ async def run() -> None:
             print(f"FAILED {case['name']}: {type(exc).__name__}")
             continue
         found = {a["class"] for a in asks}
-        ok = set(wanted) <= found if wanted else not found
+        ok = set(wanted) <= found if wanted else not found & set(unmet.HELD)  # a wording ask alerts nobody
         right += ok
         print(f"{'ok    ' if ok else 'WRONG '} {case['name']}: expected {wanted or 'nothing'}")
         for a in asks:

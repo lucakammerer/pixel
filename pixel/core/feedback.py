@@ -233,7 +233,7 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "bid_distrusted"
         elif row["kind"] == "rfq.novelty" and any((p.get("mapped") or {}).values()):
             issue = "novel_requirement"  # already posted by `novelty.check` the moment it was read
-        elif row["kind"] == "quote.unmet" and p.get("open") and p.get("mode") == "on":
+        elif row["kind"] == "quote.unmet" and p.get("alert"):
             issue = "unmet_ask"  # already posted by `unmet.settle` the moment it was read
         if issue:
             issues.append({"issue": issue, "event": row["id"], "at": row["ts"][:19], "session": row["session_id"],

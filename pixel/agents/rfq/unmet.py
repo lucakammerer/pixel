@@ -1,10 +1,10 @@
 """The last reader before a quote leaves (R33). The rounds only one to three teams won were each the first of a new
 kind of requirement, and `check.py` only knows the kinds we already lost. One gateway call reads the customer's
 request beside the exact text about to be sent and lists every ask the reply does not meet, each with the customer's
-own sentence and a class. It never changes the reply's text. In `on` every open ask goes to `PIXEL_ALERT_URL` at
-once, and one of `price`, `selection` or `scope` also holds this one quote until `target_at` for a person in the
-session UI, then it leaves as it is. `PIXEL_UNMET`: `off` (the default: no call), `log` (read and record only) or
-`on`."""
+own sentence and a class. It never changes the reply's text. In `on` an ask of class `price`, `selection` or
+`scope` goes to `PIXEL_ALERT_URL` at once and holds this one quote until `target_at` for a person in the session UI,
+then it leaves as it is. A `wording` ask is only recorded: the reader lists one on most quotes the scorer accepts.
+`PIXEL_UNMET`: `off` (the default: no call), `log` (read and record only) or `on`."""
 
 import asyncio
 from datetime import datetime
@@ -31,7 +31,11 @@ SYSTEM = (
     "format in the reply, with no effect on the amount or the chosen option), price (something that changes the "
     "amount: a service, a fee, an insurance, a currency), selection (something that changes which option may be "
     "chosen: an airline, a routing, a date, a transit limit) or scope (what is quoted: several shipments, another "
-    "lane, alternatives). Do not judge whether the departure airport, the airline, the trucker or the amounts are "
+    "lane, alternatives). Choose wording only when one more sentence in the reply would satisfy the ask. A "
+    "requirement on how the cargo is carried, handled, loaded, stacked or kept, on what the aircraft or carrier must "
+    "be able to do, on the currency of the amount, on booking without waiting for a confirmation, or on another kind "
+    "of transport or service than the air export quoted is never wording: it is price, selection or scope. Do not "
+    "judge whether the departure airport, the airline, the trucker or the amounts are "
     "well chosen or correct, code checked that: list only what the customer asks for and the reply does not do. "
     "Never write, compute or compare a price. A fact the customer only states is no ask. Never list what the reply "
     "already does. An empty list when nothing is unmet."
@@ -91,7 +95,7 @@ async def _hold(ctx: Context, session_id: int, until: datetime) -> None:
 
 
 async def settle(ctx: Context, quote: Quote, request: str, deadline: Deadline, by: datetime) -> None:
-    """Emits `quote.unmet`; in `on` an open ask alerts, one of `HELD` also holds the quote until
+    """Emits `quote.unmet`; in `on` an open ask of `HELD` alerts and holds the quote until
     `deadline.target_at`. Reading and holding end by `by`, before the orchestrator takes the request over. One call
     per session, at most `WAIT_S`; never raises."""
     mode = ctx.settings.unmet
@@ -104,11 +108,12 @@ async def settle(ctx: Context, quote: Quote, request: str, deadline: Deadline, b
             return
         asks = await read(ctx, request, quote.subject, quote.body, (f"offer-{quote.id}.pdf",), wait, quote.session_id)
         left = sorted({a["class"] for a in asks})
-        held = mode == "on" and any(c in HELD for c in left) and timing.now() < until
+        alert = mode == "on" and any(c in HELD for c in left)
+        held = alert and timing.now() < until
         events.emit(ctx, "quote.unmet", "rfq", session_id=quote.session_id,
-                    payload={"quote": quote.id, "mode": mode, "asks": asks, "open": left,
+                    payload={"quote": quote.id, "mode": mode, "asks": asks, "open": left, "alert": alert,
                              "hold_until": until.isoformat() if held else None})  # fmt: skip
-        if mode == "on" and left and ctx.settings.alert_url:
+        if alert and ctx.settings.alert_url:
             poller.spawn(ctx, feedback.post(ctx, [{"issue": "unmet_ask", "session": quote.session_id,
                                                    "at": timing.now().isoformat()[:19], "classes": left,
                                                    "held": held}]))  # fmt: skip
