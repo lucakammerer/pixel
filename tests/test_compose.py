@@ -472,3 +472,11 @@ def test_a_breakdown_asked_for_lists_the_parts_and_the_rate_per_kg_but_not_the_t
     assert "air freight 1000.00 EUR, fuel surcharge 200.00 EUR, security surcharge 34.00 EUR" in body
     assert "1.03 EUR per kg" in body and body.count("1234.00") == 1
     assert body.startswith("Hello Eva,")
+
+
+def test_an_offer_addressed_to_a_colleague_greets_the_colleague():
+    request = "Please address the offer to my colleague Mr. Jens Hartmann.\n\nBest regards\nFrank Maier"
+    _, body = compose.render(rfq("en"), OPTION, request=request)
+    assert body.startswith("Dear Mr. Hartmann,")
+    _, body = compose.render(rfq("en"), OPTION, request="Please send the quote to Hamburg.\n\nBest regards\nFrank Maier")
+    assert body.startswith("Hello Frank,")

@@ -479,6 +479,15 @@ BREAKDOWN = re.compile(
     r"|ventilation|détail(?:ler|lé)?\s+(?:le|du)\s+prix",
     re.IGNORECASE,
 )
+# "please address the offer to my colleague Mr. Jens Hartmann", "richten Sie das Angebot an Herrn Jens Hartmann":
+# a colleague word or a title before the name, so "send the quote to Hamburg" names nobody.
+HONORIFIC = r"(?:Mr|Mrs|Ms|Herrn?|Frau|M|Mme)\.?\s+"
+ADDRESSEE = re.compile(
+    r"(?i:\b(?:address|send|direct)\w*\s+(?:the|your|this)\s+(?:offer|quote|quotation|reply)\s+to"
+    r"|\bAngebot\w*\s+(?:\w+\s+){0,2}an)\s+"
+    rf"(?:(?i:(?:my|our|meine[nr]?|unsere[nr]?)\s+(?:colleague|Kolleg(?:en|in))\s+)(?P<title>{HONORIFIC})?"
+    rf"|(?P<titled>{HONORIFIC}))(?P<name>[A-ZÄÖÜ][\w'’-]+(?:\s+[A-ZÄÖÜ][\w'’-]+)?)"
+)
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
 MORE_EN = {"i", "it", "this", "that", "will", "be", "are", "in", "on", "have", "good", "great", "day", "thank",
@@ -765,10 +774,24 @@ def signed_name(request: str, signer: str = "", full: bool = False) -> str | Non
     return None
 
 
+def addressee(request: str) -> str | None:
+    """The colleague the customer asks us to address the offer to, in their own words: "Mr. Hartmann" when they
+    give a title, else the name as written."""
+    if not (found := ADDRESSEE.search(request)):
+        return None
+    title = (found["title"] or found["titled"] or "").rstrip(". ").replace("Herrn", "Herr")
+    if not title:
+        return found["name"]
+    return f"{title}{'.' if title in {'Mr', 'Mrs', 'Ms', 'M'} else ''} {found['name'].split()[-1]}"
+
+
 def greeting(lang: str, name: str | None, request: str) -> str:
     """The salutation in the customer's register, the same in the quote and in its booking mails: a formal mail
-    gets the whole signed name ("Dear Jonas Kessler,"), never a guessed Mr or Ms."""
+    gets the whole signed name ("Dear Jonas Kessler,"), never a guessed Mr or Ms; a colleague they name as the
+    offer's addressee instead of them."""
     t = TEXT[lang]
+    if to := addressee(request):
+        return t["hello_name"]["formal"].format(name=to)
     if not name:
         return t["hello"]
     tone = register(request)
