@@ -227,8 +227,8 @@
      }
     ]
    },
-   "today": "Rules return None, model path (offline: no quote); one Rfq per session.",
-   "known_gap": "`Rfq` holds one lane; two shipments in one mail need one reply with both totals (R4) Owner: Accuracy."
+   "today": "`extract.shipments` reads FRA-SGN 900 kg and STR-YYZ 1200 kg; both are priced in one quote. Offline the rules give up before (model path, no quote).",
+   "known_gap": "Unmeasured live: the scorer's format for two totals is unknown. Owner: Accuracy."
   },
   {
    "fixture": "next-cases/split-shipment.json",

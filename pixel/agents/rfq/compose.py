@@ -906,6 +906,43 @@ def insured(body: str, rfq: Rfq) -> str:
     return "\n\n".join([parts[0], f"{parts[1]} {note}", parts[2]])
 
 
+SHIPMENTS = {
+    "en": (
+        (
+            "For the shipment to {destination} ({weight} kg) I would go with {carrier}: {total} {currency} all-in, with "
+            "{transit} in transit."
+        ),
+        "All shipments together: {total} {currency} all-in.",
+    ),
+    "de": (
+        (
+            "Für die Sendung nach {destination} ({weight} kg) empfehle ich {carrier}: {total} {currency} all-in, die "
+            "Laufzeit beträgt {transit}."
+        ),
+        "Alle Sendungen zusammen: {total} {currency} all-in.",
+    ),
+}
+
+
+def shipments(body: str, rfq: Rfq, priced: list[tuple[Rfq, RateOption]], total: Decimal | None) -> str:
+    """A paragraph after the first shipment's offer with each further shipment's price, and their sum when every
+    shipment has one."""
+    parts = body.split("\n\n", 2)
+    if len(parts) < 3 or not priced:
+        return body
+    lang = language_of(rfq)
+    one, together = SHIPMENTS.get(lang, SHIPMENTS["en"])
+    t = TEXT[lang]
+    lines = [
+        one.format(destination=o.destination, weight=weight(r.weight_kg, lang), carrier=o.carrier,
+                   total=money(o.total), currency=o.currency, transit=_transit(o, t))
+        for r, o in priced
+    ]  # fmt: skip
+    if total is not None:
+        lines.append(together.format(total=money(total), currency=priced[0][1].currency))
+    return "\n\n".join([parts[0], parts[1], " ".join(lines), parts[2]])
+
+
 def check(body: str, rfq: Rfq, option: RateOption) -> bool:
     """R9 and P1 on the finished mail: the total exactly once, its currency, carrier and transit present."""
     lang = language_of(rfq)

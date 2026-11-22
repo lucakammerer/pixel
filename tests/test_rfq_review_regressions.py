@@ -1,5 +1,5 @@
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -319,3 +319,32 @@ async def test_a_document_net_or_tare_weight_never_replaces_the_mail_gross(conn,
     body = "Please quote FRA-ORD, 5 pallets, gross weight 500 kg, 2 cbm."
     rfq = await extract.extract(make_ctx(conn, PackingList(doc)), with_attachment(mail(body)), DEADLINE)
     assert rfq.weight_kg == Decimal(500)
+
+
+async def test_every_shipment_of_one_mail_is_priced_in_the_one_quote(conn, monkeypatch):
+    ctx = make_ctx(conn)
+    store.upsert(ctx, [LaneTariff(
+        carrier=f"Carrier {code}", origin="AAA", destination=code, currency="EUR", valid_from=date(2000, 1, 1),
+        valid_to=date(2100, 1, 1), version="example", transit_days=2, minimum=Decimal(5),
+        breaks=((Decimal(0), rate),), fuel_per_kg=Decimal(0), security_per_kg=Decimal(0), source="fixture",
+    ) for code, rate in (("BBB", Decimal(2)), ("CCC", Decimal(3)))])  # fmt: skip
+
+    async def no_lanes(ctx, **kwargs):
+        return []
+
+    monkeypatch.setattr(portal_rates, "lanes", no_lanes)
+    answers(monkeypatch, {"origin": "AAA", "destination": "BBB", "weight_kg": "300", "preference": "fastest"})
+    sent = []
+
+    async def send_quote(ctx, quote, reply_to=None):
+        sent.append(quote)
+        return quote
+
+    monkeypatch.setattr(agent.outbox, "send_quote", send_quote)
+    body = "Please quote the fastest option from AAA for each of these shipments:\n1. BBB, 100 kg\n2. CCC, 200 kg"
+    msg = poller.ingest(ctx, mail(body))
+    received = datetime.now(UTC) - timedelta(seconds=ctx.settings.quote_target_s - 1)
+    await asyncio.wait_for(agent.handle(ctx, msg, deadline_for(received, ctx.settings)), 10)
+    [quote] = sent
+    assert (quote.option.destination, quote.total) == ("BBB", Decimal(200))
+    assert "600.00 EUR" in quote.body and "800.00 EUR" in quote.body

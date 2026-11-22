@@ -37,6 +37,25 @@ def _fx_for(currency: str, options: list[RateOption]) -> Decimal | None:
     return next((o.fx_eur for o in options if o.currency == currency and o.fx_eur and o.fx_eur > 0), None)
 
 
+async def _with_shipments(quote: Quote, others: list[Rfq], pricing: list[asyncio.Task], deadline: Deadline) -> Quote:
+    """The mail's further shipments, each priced and selected like the first, in the same quote (R4). One that has
+    no price by `target_at` is left out, and with it the sum of all."""
+    wait = max((deadline.target_at - timing.now()).total_seconds(), 0.0)
+    done, _ = await asyncio.wait(pricing, timeout=wait)
+    priced = []
+    for rfq, task in zip(others, pricing, strict=True):
+        if task not in done or task.exception():
+            continue
+        options = [o for o in task.result() if o.trucker or not rfq.door_pickup]
+        if not (options := selection.compliant_options(rfq, options)):
+            continue
+        option = calc.in_currency(selection.select(rfq, options), quote.currency, _fx_for(quote.currency, options))
+        if option.currency == quote.currency:  # never a sum across currencies
+            priced.append((rfq, option))
+    total = quote.total + sum((o.total for _, o in priced), Decimal(0)) if len(priced) == len(others) else None
+    return quote.model_copy(update={"body": compose.shipments(quote.body, quote.rfq, priced, total)})
+
+
 def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
     required = novelty.mapped(ctx, rfq.session_id)
     request = compose.customer_body(ctx, rfq.message_id)
@@ -149,8 +168,8 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     compose.render -> outbox.send_quote. Sends at `deadline.target_at` at the latest unless waiting can
     still change the answer and `hard_at` is not reached."""
     rfq, text = await extract.read_request(ctx, message, deadline)
-    if not rfq.destination and (first := extract.first_shipment(rfq, text)):
-        rfq = first
+    if parts := extract.shipments(rfq, text):
+        rfq = parts[0]
         events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload=rfq.model_dump(mode="json"))  # fmt: skip
     if REQUIRED & set(rfq.missing):
@@ -170,6 +189,8 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         prose_by = min(timing.now() + timedelta(seconds=PROSE_WAIT_S), deadline.target_at)
     else:
         compose.adopt(ctx, rfq, message, raw)
+    others = [p.model_copy(update={"origin": rfq.origin}) if p.origin == parts[0].origin else p for p in parts[1:]]
+    pricing = [poller.spawn(ctx, engine.options(ctx, p, deadline)) for p in others]
     options = await engine.options(ctx, rfq, deadline)
     if rfq.door_pickup:
         options = [o for o in options if o.trucker]
@@ -185,7 +206,10 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         rfq = await asyncio.wait_for(asyncio.shield(novel), max((deadline.target_at - timing.now()).total_seconds(), 0))
     except Exception:  # noqa: BLE001, S110  late: the quote goes out as the rules read it
         pass
-    quote = await _in_language(ctx, _quote(ctx, rfq, options, prose, fallback=False), deadline.hard_at)
+    quote = _quote(ctx, rfq, options, prose, fallback=False)
+    if others:
+        quote = await _with_shipments(quote, others, pricing, deadline)
+    quote = await _in_language(ctx, quote, deadline.hard_at)
     sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent
