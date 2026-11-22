@@ -136,7 +136,7 @@ AGENT = {
                 "dynamic_variable_placeholders": {
                     "name": "Cobalt Skylift",
                     "party": "order_status",
-                    "reference": "order PX-4F8A2C (booking BK-88412)",
+                    "reference": "booking BK-88412",
                     "lane": "FRA to JFK",
                     "shipment": "420 kg for Nordlicht Audio GmbH, currently booked",
                     "wanted": "a quick status update on where the shipment is right now and its expected arrival time",

@@ -48,41 +48,132 @@ showScreen('lock');
 
 const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
-// Browsers (iOS above all) play sound only after a tap: the first touch anywhere unlocks it for the ringtone.
+// Browsers (iOS above all) play sound only after a tap: the first touch anywhere unlocks the ringtone. It plays through
+// an <audio> element rather than Web Audio, because iOS mutes Web Audio when the ring/silent switch is on.
+const RING_RATE = 22050;
+const RING_LOOP = 2.6; // seconds per repeat: the phrase twice, then a pause
+const PHRASE = [[0, 1046.5], [0.16, 1318.5], [0.32, 1568], [0.48, 1318.5], [0.64, 1568], [0.8, 2093]];
+
+// Renders a marimba-like phrase to a looping WAV, so no audio file has to ship with the page.
+function ringtoneUrl() {
+  const n = Math.round(RING_RATE * RING_LOOP);
+  const pcm = new Float32Array(n);
+  for (const offset of [0, 1.05]) {
+    for (const [at, freq] of PHRASE) {
+      const start = Math.round((offset + at) * RING_RATE);
+      const len = Math.round(0.45 * RING_RATE);
+      for (let i = 0; i < len && start + i < n; i++) {
+        const t = i / RING_RATE;
+        const attack = Math.min(1, t / 0.004);
+        const v = Math.sin(2 * Math.PI * freq * t) * Math.exp(-t * 9)
+          + 0.25 * Math.sin(2 * Math.PI * freq * 4 * t) * Math.exp(-t * 30)
+          + 0.08 * Math.sin(2 * Math.PI * freq * 9.9 * t) * Math.exp(-t * 60);
+        pcm[start + i] += 0.42 * attack * v;
+      }
+    }
+  }
+  const buf = new ArrayBuffer(44 + n * 2);
+  const dv = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, RING_RATE, true); dv.setUint32(28, RING_RATE * 2, true);
+  dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
+const ringtone = new Audio(ringtoneUrl());
+ringtone.loop = true;
+ringtone.preload = 'auto';
+ringtone.setAttribute('playsinline', '');
+let ringtoneUnlocked = false;
+
 function unlockAudio() {
+  if (ringtoneUnlocked || ringTimer) return;
+  // Playing it once (muted) inside a tap is what lets iOS start it later from an SSE event.
+  ringtone.muted = true;
+  ringtone.play().then(() => {
+    ringtoneUnlocked = true;
+    if (!ringTimer) { ringtone.pause(); ringtone.currentTime = 0; }
+    ringtone.muted = false;
+  }).catch(() => { ringtone.muted = false; });
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    if (!audioCtx) audioCtx = new Ctx();
-    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    if (Ctx && !audioCtx) audioCtx = new Ctx();
+    if (audioCtx?.state === 'suspended') audioCtx.resume().catch(() => {});
   } catch {}
 }
 addEventListener('pointerdown', unlockAudio, { passive: true });
 addEventListener('keydown', unlockAudio);
 
-// A short marimba-like phrase, repeated while it rings.
-const PHRASE = [[0, 1046.5], [0.16, 1318.5], [0.32, 1568], [0.48, 1318.5], [0.64, 1568], [0.8, 2093]];
-function playRingTone() {
+// Web Audio fallback for the one repeat if the <audio> element is refused.
+function beepFallback() {
   try {
-    unlockAudio();
-    if (!audioCtx) return;
+    if (!audioCtx || audioCtx.state !== 'running') return;
     const t0 = audioCtx.currentTime + 0.02;
     for (const [at, freq] of PHRASE) {
-      for (const [mult, level] of [[1, 0.09], [4, 0.015]]) {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq * mult;
-        gain.gain.setValueAtTime(0.0001, t0 + at);
-        gain.gain.exponentialRampToValueAtTime(level, t0 + at + 0.008);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.32);
-        osc.connect(gain).connect(audioCtx.destination);
-        osc.start(t0 + at);
-        osc.stop(t0 + at + 0.34);
-      }
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + at);
+      gain.gain.exponentialRampToValueAtTime(0.09, t0 + at + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.32);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + at);
+      osc.stop(t0 + at + 0.34);
     }
-  } catch { /* no sound until the first tap; the screen still rings */ }
+  } catch {}
 }
+
+function playRingtone() {
+  ringtone.muted = false;
+  ringtone.currentTime = 0;
+  ringtone.play().catch(() => {
+    beepFallback();
+    ringTimer = setInterval(beepFallback, RING_LOOP * 1000);
+  });
+}
+
+function stopRingtone() {
+  ringtone.pause();
+  ringtone.currentTime = 0;
+}
+
+// Keep the screen on from the moment it rings until a minute after the call ends, so the page (and the call with it)
+// survives the phone going into a pocket: iOS suspends the page as soon as the screen auto-locks.
+const AWAKE_AFTER_CALL_MS = 60_000;
+let wakeLock = null;
+let wantAwake = false;
+let releaseTimer = null;
+
+async function acquireWakeLock() {
+  if (!wantAwake || wakeLock || document.visibilityState !== 'visible' || !navigator.wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (err) { console.warn('wake lock refused', err); }
+}
+
+function stayAwake() {
+  clearTimeout(releaseTimer);
+  releaseTimer = null;
+  wantAwake = true;
+  acquireWakeLock();
+}
+
+function stayAwakeForAMinute() {
+  clearTimeout(releaseTimer);
+  releaseTimer = setTimeout(() => {
+    wantAwake = false;
+    releaseTimer = null;
+    wakeLock?.release().catch(() => {});
+    wakeLock = null;
+  }, AWAKE_AFTER_CALL_MS);
+}
+
+// The OS drops a wake lock whenever the page is hidden; take it back when the page returns.
+document.addEventListener('visibilitychange', acquireWakeLock);
 
 function startRinging(call) {
   if (live) return;
@@ -92,15 +183,19 @@ function startRinging(call) {
   $('btn-accept').disabled = false;
   $('btn-decline').disabled = false;
   showScreen('ring');
+  stayAwake();
   clearInterval(ringTimer);
-  playRingTone();
-  ringTimer = setInterval(playRingTone, 1800);
-  try { navigator.vibrate?.([400, 300, 400]); } catch {}
+  ringTimer = -1; // ringing; replaced by an interval id only if the Web Audio fallback is used
+  playRingtone();
+  try { navigator.vibrate?.([800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800, 400, 800]); } catch {}
 }
 
-function stopRinging() {
-  clearInterval(ringTimer);
+function stopRinging(wasAnswered = false) {
+  if (ringTimer > 0) clearInterval(ringTimer);
   ringTimer = null;
+  stopRingtone();
+  try { navigator.vibrate?.(0); } catch {}
+  if (!wasAnswered) stayAwakeForAMinute();
 }
 
 async function post(path, body) {
@@ -115,7 +210,7 @@ async function post(path, body) {
 async function acceptCall() {
   if (!pending || live) return;
   const call = pending;
-  stopRinging();
+  stopRinging(true);
   $('btn-accept').disabled = true;
   $('btn-decline').disabled = true;
   $('c-name').textContent = CALLER;
@@ -183,6 +278,7 @@ async function acceptCall() {
     live = null;
     liveCallId = null;
     pending = null;
+    stayAwakeForAMinute();
     $('c-timer').textContent = ending;
     await new Promise((r) => setTimeout(r, 1600));
     showScreen('lock');

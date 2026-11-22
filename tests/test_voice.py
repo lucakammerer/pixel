@@ -238,7 +238,7 @@ async def test_order_status_call_rings_picks_up_and_updates_shipment_live(ctx):
     call_id = rung["call_id"]
     assert rung["order"]["id"] == "PX-DEMO01"
     assert rung["variables"]["party"] == "order_status"
-    assert "PX-DEMO01" in rung["variables"]["reference"]
+    assert rung["variables"]["reference"] == "booking BK-88412"  # one number only: the booking, not our order id
 
     pending = calls.active_ringing(ctx)
     assert pending is not None and pending["call_id"] == call_id
