@@ -663,7 +663,7 @@ RULED_OUT = re.compile(
 # A negation of something good is no exclusion: "we don't mind X", "never had issues with X", "does not require X".
 NEGATED_POSITIVE = re.compile(
     r"(?:\b(?:not|never|no|nicht|kein\w*)\b|n['’]t\b)(?:\s+\w+){0,3}?\s+(?:mind|objection|object|problems?|issues?"
-    r"|complain\w*|require\w*|matter|preference|prefer\w*|have\s+to\s+be|has\s+to\s+be|need\s+to\s+be)\b",
+    r"|complain\w*|require\w*|matter|preference|prefer\w*|(?:have|has|need)\s+to(?:\s+be)?|must)\b",
     re.IGNORECASE,
 )
 LASTING = re.compile(
@@ -689,6 +689,9 @@ def _calls(name: str) -> set[str]:
     return {name.casefold()} | ({short.casefold()} if len(short) >= 4 else set())
 
 
+CLAUSE_NEGATION = re.compile(r"\b(?:not|no|never|nicht|kein\w*)\b|n['’]t\b")
+
+
 def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
     """Read an exclusive instruction directly attached to known carrier names: "only", "exclusively", "nur" next to
     the names, or "no airline other than" before them."""
@@ -703,18 +706,32 @@ def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
     item = rf"{mention}(?:\s*\([a-z0-9]{{2}}\))?"
     listed = rf"{item}(?:{AIRLINE_CONNECTOR}{item})*"
     instruction = re.compile(
-        rf"\b{AIRLINE_ONLY}\s+(?:(?:quote|offer|use|fly)\s+)?"
+        rf"\b{AIRLINE_ONLY}\s+(?:(?:quote|offer|use|fly|accept|book|ship|work)\s+)?"
         rf"(?:(?:with|via|on|mit|von|über|avec|par|angebote von)\s+)?"
         rf"(?P<after>{listed})(?:\s+(?:fliegen|anbieten))?{AIRLINE_END}"
         rf"|(?P<before>{listed})\s+{AIRLINE_ONLY}\b{AIRLINE_END}"
         rf"|\b{AIRLINE_NO_OTHER}\s+(?P<other>{listed})"
+        # "must fly with X", "requires X", "X is our only approved carrier", "X, no other airline"
+        rf"|\b(?:must|has to|have to|needs? to|muss|müssen)\s+(?:be\s+)?(?:fl(?:y|own)|go|ship(?:ped)?|booked)\s+"
+        rf"(?:with|via|on|by|mit)\s+(?P<must>{listed}){AIRLINE_END}"
+        rf"|\b(?:muss|müssen)\s+(?:mit|über)\s+(?P<muss>{listed})\s+(?:fliegen|geflogen|gehen|versendet)\b"
+        rf"|\brequires?\s+(?P<requires>{listed})"
+        rf"|(?P<sole>{listed})\s+is\s+(?:our|the)\s+only\b"
+        rf"|(?P<other_after>{listed}),?\s+(?:and\s+)?no other (?:airlines?|carriers?)\b"
     )
     required = set()
     for sentence in AIRLINE_SENTENCES.split(text.casefold()):
         for match in instruction.finditer(sentence):
             if re.search(r"\b(?:not|nicht)\s+$", sentence[: match.start()]):
                 continue
-            group = match["before"] or match["after"] or match["other"]
+            # "doesn't have to fly with X" frees the choice, "X is the only one we do not use" rules X out.
+            before = re.split(r"[,;:]", sentence[: match.start()])[-1]
+            after = re.split(r"[,;:]", sentence[match.end() :])[0] if match["sole"] else ""
+            if not (match["after"] or match["before"] or match["other"]) and CLAUSE_NEGATION.search(
+                before + " " + after
+            ):
+                continue
+            group = next(g for g in match.groups() if g)
             required.update(aliases[name] for name in re.findall(mention, group))
     return tuple(sorted(required))
 
