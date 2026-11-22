@@ -35,6 +35,12 @@ UPDATE = re.compile(
     r"|nueva\s+(?:oferta|cotización)|\baggiorna\w*\s+(?:l['’]|la\s+)?offerta|nuova\s+offerta",
     re.IGNORECASE,
 )
+# "No need to correct the offer": the update word is negated in its sentence, nothing to price again.
+NO_NEED = re.compile(
+    r"\b(?:no\s+need|not\s+necessary|need\s+not|don['’]t\s+need|pas\s+besoin|inutile\s+de"
+    r"|nicht\s+(?:nötig|notwendig|erforderlich)|no\s+hace\s+falta|non\s+serve|niet\s+nodig)\b",
+    re.IGNORECASE,
+)
 # The figure a correction replaces ("1,952 kg, not 753 kg", "statt 753 kg", "au lieu de 753 kg"): never the new one.
 REPLACED = re.compile(
     rf"(?:,\s*|\s+|^)(?:and\s+|und\s+|et\s+)?(?:not|instead\s+of|rather\s+than|(?:an)?statt|nicht|au\s+lieu\s+de|non|pas"
@@ -239,7 +245,8 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         if said == "accept" and found.keys() <= {"weight_kg", "volume_cbm", "pieces"} and _priced(rfq, found):
             found = {}
     # "The updated offer works, please book" accepts: only a changed field outweighs an acceptance or a decline.
-    if found or (UPDATE.search(own) and said == "other"):
+    asks = any(UPDATE.search(s) and not NO_NEED.search(s) for s in re.split(r"(?<=[.!?])\s+|\n", own))
+    if found or (asks and said == "other"):
         intent = "change"
     elif CANCELS.search(own):  # "bitte stornieren, der Auftrag wurde zurückgezogen": "Auftrag" is no acceptance here
         intent = "cancel"
