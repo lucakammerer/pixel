@@ -147,8 +147,11 @@ TEXT = {
         "reference": "Your reference {ref} is on the offer.",
         "not_included": "Not included in this price: {services}. I can quote {them} separately if you need {them}.",
         "them": ("it", "them"),
-        "services": {"insurance": "cargo insurance", "customs": "export customs clearance",
-                     "screening": "security screening of the cargo"},
+        "services": {
+            "insurance": "cargo insurance",
+            "customs": "export customs clearance",
+            "screening": "security screening of the cargo",
+        },
         "breakdown": "The breakdown: {parts}; all-in that is {per_kg} {currency} per kg chargeable weight.",
         "parts": ("air freight", "fuel surcharge", "security surcharge", "pickup"),
         "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
@@ -264,8 +267,11 @@ TEXT = {
         "reference": "Ihre Referenz {ref} steht auf dem Angebot.",
         "not_included": "Nicht im Preis enthalten: {services}. Gern biete ich {them} Ihnen separat an.",
         "them": ("sie", "sie"),
-        "services": {"insurance": "Transportversicherung", "customs": "Exportzollabfertigung",
-                     "screening": "Sicherheitskontrolle der Ware"},
+        "services": {
+            "insurance": "Transportversicherung",
+            "customs": "Exportzollabfertigung",
+            "screening": "Sicherheitskontrolle der Ware",
+        },
         "breakdown": "Aufgeschlüsselt: {parts}; all-in sind das {per_kg} {currency} pro kg frachtpflichtiges Gewicht.",
         "parts": ("Luftfracht", "Treibstoffzuschlag", "Sicherheitszuschlag", "Abholung"),
         "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
@@ -378,8 +384,11 @@ TEXT = {
         "reference": "Votre référence {ref} figure sur l'offre.",
         "not_included": "Non inclus dans ce prix : {services}. Je peux vous {them} proposer séparément.",
         "them": ("le", "les"),
-        "services": {"insurance": "l'assurance marchandises", "customs": "le dédouanement export",
-                     "screening": "le contrôle de sûreté de la marchandise"},
+        "services": {
+            "insurance": "l'assurance marchandises",
+            "customs": "le dédouanement export",
+            "screening": "le contrôle de sûreté de la marchandise",
+        },
         "breakdown": "Le détail : {parts} ; tout compris, cela fait {per_kg} {currency} par kg de poids taxable.",
         "parts": ("fret aérien", "surcharge carburant", "surcharge sûreté", "enlèvement"),
         "cutoff": "L'heure limite exacte de dépôt à {origin} vient avec la réservation de la compagnie ; je vous la "
@@ -621,6 +630,9 @@ async def translate(ctx: Context, rfq: Rfq, option: RateOption, body: str, wait:
                           "quote.translate")  # fmt: skip
 
 
+CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 async def localize(
     ctx: Context, language: str, session_id: int | None, body: str, wait: float, ok, purpose: str
 ) -> str:
@@ -643,9 +655,13 @@ async def localize(
             wait,
         )
         text = result.data.get("body")
-        if isinstance(text, str) and ok(text.strip()):
+        # A control character makes the mailbox answer 500 (session 51345: "Say\x013n" for "Sayın").
+        if isinstance(text, str) and CONTROL.search(text):
+            error = "translation holds control characters"
+        elif isinstance(text, str) and ok(text.strip()):
             return text.strip()
-        error = "translation dropped a figure or name"
+        else:
+            error = "translation dropped a figure or name"
     except Exception as exc:  # noqa: BLE001  the English mail still goes out
         error = type(exc).__name__
     events.emit(ctx, "error", "rfq", session_id=session_id,
@@ -689,11 +705,52 @@ GOODS = re.compile(
     r"|\b[Ww]e(?:['’]re| are) (?:shipping|sending) (?P<h>[a-z][a-z -]{2,40}?)(?=[:,.]| with )"
 )
 NOT_GOODS = {
-    "shipment", "goods", "cargo", "consignment", "freight", "lot", "lots", "import", "export", "pieces",
-    "option", "price", "quote", "pickup", "the", "this", "our", "your", "each", "all", "both",
-    "pallets", "pallet", "cartons", "carton", "boxes", "box", "crates", "crate", "packages", "package", "pkgs", "colli",
-    "me", "rate", "rates", "offer",
-    "firma", "company", "industries", "gmbh", "ag", "ltd", "inc", "corp", "corporation",
+    "shipment",
+    "goods",
+    "cargo",
+    "consignment",
+    "freight",
+    "lot",
+    "lots",
+    "import",
+    "export",
+    "pieces",
+    "option",
+    "price",
+    "quote",
+    "pickup",
+    "the",
+    "this",
+    "our",
+    "your",
+    "each",
+    "all",
+    "both",
+    "pallets",
+    "pallet",
+    "cartons",
+    "carton",
+    "boxes",
+    "box",
+    "crates",
+    "crate",
+    "packages",
+    "package",
+    "pkgs",
+    "colli",
+    "me",
+    "rate",
+    "rates",
+    "offer",
+    "firma",
+    "company",
+    "industries",
+    "gmbh",
+    "ag",
+    "ltd",
+    "inc",
+    "corp",
+    "corporation",
 }
 
 
