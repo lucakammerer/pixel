@@ -610,7 +610,7 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
     return [message_id for message_id in sent if message_id is not None]
 
 
-def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool]:
+def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool, tuple | None]:
     """Identify the enquiry being answered before pricing the reply with the current RFQ.
     Older request events can recover their lane from the extraction preceding that enquiry."""
     rows = ctx.db.execute(
@@ -636,17 +636,30 @@ def _enquiry(ctx: Context, message: Message, rfq: Rfq) -> tuple[int | None, bool
     for ref in refs:
         if ref in by_ref:
             enquiry_id, lane = by_ref[ref]
-            return enquiry_id, lane == current
+            return enquiry_id, lane == current, lane
     # Standalone replies can identify the request by subject or a sender with a single requested lane.
     candidates = by_subject or by_sender
     if candidates:
-        return candidates[0][0], all(lane == current for _, lane in candidates)
+        lanes = {lane for _, lane in candidates}
+        return candidates[0][0], lanes == {current}, lanes.pop() if len(lanes) == 1 else None
     lanes = ctx.db.execute(
         "SELECT DISTINCT json_extract(payload,'$.origin'), json_extract(payload,'$.destination') "
         "FROM events WHERE kind='rfq.extracted' AND session_id=?",
         (rfq.session_id,),
     ).fetchall()
-    return None, all(tuple(lane) == current for lane in lanes)
+    return None, all(tuple(lane) == current for lane in lanes), None
+
+
+def _shipment(ctx: Context, rfq: Rfq, lane: tuple | None) -> Rfq | None:
+    """Session 33301: a mail with several shipments asks a bid for each; an answer for a further one is priced with
+    that shipment's lane and cargo, else every answer for DXB was dropped as another lane and DXB went unquoted."""
+    from pixel.agents.rfq import compose, extract
+
+    if not lane:
+        return None
+    subject = compose._customer(ctx, rfq.message_id, "subject") or ""
+    text = f"{subject}\n{compose.customer_body(ctx, rfq.message_id)}"
+    return next((p for p in extract.shipments(rfq, text) if (p.origin or rfq.origin, p.destination) == lane), None)
 
 
 async def _with_attachments(ctx: Context, message: Message) -> tuple[str, list[str]]:
@@ -689,7 +702,9 @@ async def record(ctx: Context, message: Message) -> None:
         events.emit(ctx, "carrier.lanes", "pricing", session_id=message.session_id, message_id=message.id,
                     payload={"carrier": name, "lanes": lanes})  # fmt: skip
     pickup = kind == "trucker"
-    enquiry, current = _enquiry(ctx, message, rfq)
+    enquiry, current, lane = _enquiry(ctx, message, rfq)
+    if not current and (part := _shipment(ctx, rfq, lane)):
+        rfq, current = part.model_copy(update={"origin": lane[0]}), True
     if not current:
         events.emit(ctx, "bid.received", "pricing", session_id=message.session_id, message_id=message.id,
                     payload={"carrier": name, "pickup": pickup, "priced": False, "request_id": enquiry,
