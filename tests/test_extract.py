@@ -174,6 +174,8 @@ async def test_a_german_door_request_names_its_destination_zum_flughafen(conn, m
         ("Abholung in 60311, Transport zum Flughafen AAA, Luftfracht nach BBB, 300 kg, 1,2 cbm.", ("", "BBB")),
         ("Bitte holen Sie die Ware in 60311 Town ab und bringen Sie sie zum Flughafen AAA. Ziel ist Chicago (BBB). 300 kg.", None),
         ("Abholung in 60311 Town, Lkw zum Abflughafen. Luftfracht zum Flughafen BBB, 300 kg, 1,2 cbm.", ("", "BBB")),
+        ("Bitte holen Sie die Ware in 60311 Town ab und fahren Sie sie zum Flughafen AAA. Ziel: Singapur. 300 kg.", None),
+        ("Wir fahren die Kisten zum Flughafen AAA, Bestimmung Singapur, Abholung in 60311, 300 kg.", None),
     ],
 )  # fmt: skip
 def test_the_truck_leg_zum_flughafen_is_no_destination(body, lane):

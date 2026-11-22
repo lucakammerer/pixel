@@ -357,8 +357,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "bultos", "colli", "volumes", "stuks"; "más/mais rápida", "più veloce", "snelste" fastest and "más económica",
   "più economica", "goedkoopste", "mais barata" cheapest. Read by rules without the wish words, a fastest request
   would have been quoted cheapest. Portuguese is still answered in English (`_language`).
-- A German request names its destination "zum Flughafen SGN" too (round 74, read by the model before);
-  "Lkw/Transport/Abholung … zum Flughafen FRA" is the truck leg and no destination (`TRUCK_LEG`).
+- A German request names its destination "Luftfracht zum Flughafen SGN" too (round 74, read by the model before), only
+  after air freight in the same clause: "Wir liefern die Ware selbst zum Flughafen MUC" and "Lkw zum Flughafen FRA"
+  are the truck leg and no destination (`DEST_LABEL`, `TRUCK_LEG`).
 - A request can point to the customer's earlier one: "the same shipment as in my earlier request, "Air freight
   quote request: STR to MEL" ... the new destination is LAX" (round 103, accepted on the earlier cargo; round 104,
   "the same shipment as in my request", lost when the model read no weight). `_earlier` takes the earlier request of

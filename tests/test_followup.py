@@ -61,6 +61,8 @@ def requoted(pipe, monkeypatch):
         ("Thanks again!\n\nKlaus Weidner\nHauptstr. 1, 90402 Nürnberg", {}),
         ("Thanks for confirming the booking from FRA to JFK.", {}),
         ("Please book the fastest option.", {}),
+        ("Wir liefern die Ware selbst zum Flughafen FRA.", {}),  # the truck to the departure airport, never the destination
+        ("Wir fahren die Kisten morgen zum Flughafen FRA.", {}),
     ],
 )
 def test_changes_are_the_fields_a_mail_states_differently(text, want):

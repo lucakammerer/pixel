@@ -31,7 +31,9 @@ ORIGIN_LABEL = re.compile(
 # "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
 DEST_LABEL = re.compile(
     rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)à(?!\w)"
-    rf"|\bzu[mr](?=\s+(?:ziel)?flughafen\b)"  # "Luftfracht zum Flughafen SGN" (round 74); the truck's: `TRUCK_LEG`
+    # "Luftfracht zum Flughafen SGN" (round 74): only after air freight in the clause; "Wir liefern die Ware selbst zum
+    # Flughafen MUC" is the truck's.
+    rf"|\b(?:luftfracht\w*|flug(?!hafen)\w*|flieg\w*|geflogen)\b[^\n.;!?,]{{0,40}}?\bzu[mr](?=\s+flughafen\b)"
     # Spanish, Italian, Portuguese "a GRU", only right before a code that ends the clause: never the English article
     rf"|(?<!\w)a(?=\s+(?-i:[A-Z]{{3}})\s*(?:[.,;:!?(\n]|$))"
     rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
