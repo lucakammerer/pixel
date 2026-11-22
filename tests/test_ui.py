@@ -1,13 +1,17 @@
 import json
+from datetime import timedelta
 from decimal import Decimal as D
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from test_crm import T0, quote
 
+from pixel.api.portal import Lane
 from pixel.contracts import QuoteStatus
-from pixel.core import events
+from pixel.core import events, timing
 from pixel.crm import quotes, shipments
 from pixel.ui import crm, dashboard, home, routes
 
@@ -105,7 +109,7 @@ def test_takeover_edit_send_release(client, pipe):
     pipe.emit(pipe.ctx, "mail.held", "outbox", session_id=2,
               payload={"to": "ops@globex.example", "subject": "Your quote", "body": "Draft text", "reason": "human"})  # fmt: skip
     page = client.get("/sessions/2").text
-    assert "Draft text" in page and "Release to autopilot" in page
+    assert "Review and send the quote" in page and "Release to autopilot" in page
 
     client.post(
         "/sessions/2/send",
@@ -129,6 +133,48 @@ def test_takeover_edit_send_release(client, pipe):
     assert pipe.ctx.db.execute("SELECT mode FROM sessions WHERE id = 2").fetchone()[0] == "auto"
     kinds = [r[0] for r in pipe.ctx.db.execute("SELECT kind FROM events WHERE session_id = 2 AND kind LIKE 'human.%'")]
     assert kinds == ["human.takeover", "human.note", "human.release"]
+
+
+def test_operator_sources_a_stalled_request_and_sends_only_the_current_draft(client, pipe, monkeypatch):
+    monkeypatch.setattr(timing, "now", lambda: T0 + timedelta(seconds=75))
+    old = quote(2, customer="ops@globex.example", status=QuoteStatus.DRAFT)
+    pipe.ctx.db.execute("UPDATE sessions SET deadline_at=? WHERE id=2", (old.rfq.deadline_at.isoformat(),))
+    pipe.emit(pipe.ctx, "quote.waiting", "orchestrator", session_id=2)
+    client.post("/sessions/2/takeover")
+    assert "Save shipment details" in client.get("/sessions/2").text
+    form = {
+        "action": "record", "origin": old.rfq.origin, "destination": old.rfq.destination,
+        "weight_kg": str(old.rfq.weight_kg), "preference": "cheapest", "language": "en",
+        "required_carriers": old.option.carrier, "max_transit_days": str(old.option.transit_days),
+    }  # fmt: skip
+    assert "Shipment details saved" in client.post("/sessions/2/source", data=form).text
+    other = old.option.model_copy(update={"carrier": "Another airline", "carrier_code": None})
+    pipe.emit(pipe.ctx, "option.found", "pricing", session_id=2, payload={"option": other.model_dump(mode="json")})
+    slow = old.option.model_copy(update={"transit_days": old.option.transit_days + 1})
+    pipe.emit(pipe.ctx, "option.found", "pricing", session_id=2, payload={"option": slow.model_dump(mode="json")})
+    assert "No complete price yet" in client.post("/sessions/2/source", data={"action": "draft"}).text
+    offer = old.option.model_copy(update={"valid_until": old.rfq.deadline_at + timedelta(minutes=5)})
+    portal = SimpleNamespace(
+        lanes=AsyncMock(return_value=[Lane(offer.origin, offer.destination, ((offer.carrier_code, offer.carrier),))]),
+        rate=AsyncMock(return_value=offer), brackets=AsyncMock(return_value=()), rate_remaining=1,
+    )  # fmt: skip
+    pipe.ctx.portal = portal
+    page = client.post("/sessions/2/source", data={"action": "portal"}).text
+    assert "Found 0 sheet and 1 portal rates" in page and offer.rate_id in page
+    assert portal.rate.await_args.args == (offer.origin, offer.destination, offer.carrier_code, old.rfq.weight_kg, D(0))
+    assert pipe.sent == []
+    assert "Priced draft ready" in client.post("/sessions/2/source", data={"action": "draft"}).text
+    draft = quotes.for_session(pipe.ctx, 2)
+    assert draft and draft.option == offer
+    send = {"to": draft.rfq.customer, "subject": draft.subject, "body": draft.body, "quote_id": draft.id, "manual": "1"}
+    carrier_form = {key: value for key, value in send.items() if key != "quote_id"}
+    assert client.post("/sessions/2/send", data=carrier_form | {"to": quote(1).rfq.customer}).status_code == 422
+    rejected = client.post("/sessions/2/send", data=send | {"body": "A custom edit with no offer"})
+    assert rejected.status_code == 422 and "A custom edit with no offer" in rejected.text and pipe.sent == []
+    assert "Quote sent." in client.post("/sessions/2/send", data=send).text
+    assert "draft has changed" in client.post("/sessions/2/send", data=send).text
+    assert len(pipe.sent) == 1 and pipe.sent[0]["purpose"] == "quote"
+    assert "Take over" in client.post("/sessions/2/release").text
 
 
 def test_dashboard_renders(client, pipe):

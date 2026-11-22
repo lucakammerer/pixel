@@ -145,13 +145,13 @@ class Seeder:
                       payload={"model": "gpt-5-mini", "purpose": "extract"}, tokens_in=r.randint(600, 1100),
                       tokens_out=r.randint(60, 160), cost_usd=str(Decimal(r.uniform(0.0002, 0.0007)).quantize(
                           Decimal("0.00001"))), duration_ms=r.randint(600, 1800))  # fmt: skip
-        self.emit(at + timedelta(seconds=2), "rfq.extracted", "rfq", session_id=sid,
-                  payload={"origin": origin, "destination": destination, "weight_kg": str(kg),
-                           "door_pickup": door, "by": "model" if by_model else "rules"})  # fmt: skip
         rfq = Rfq(session_id=sid, message_id=sid, customer=customer, origin=origin, destination=destination,
                   weight_kg=kg, volume_cbm=cbm, preference="fastest" if fastest else "cheapest", door_pickup=door,
                   pickup_postcode=f"{zone['zone']}123" if zone else None, pickup_zone=zone and zone["zone"],
                   received_at=t0, deadline_at=t0 + timedelta(minutes=6), extracted_by="model" if by_model else "rules")  # fmt: skip
+        self.emit(
+            at + timedelta(seconds=2), "rfq.extracted", "rfq", session_id=sid, payload=rfq.model_dump(mode="json")
+        )
 
         options = self.options(sid, rfq, at + timedelta(seconds=4))
         if fate in ("open", "missed") or not options:

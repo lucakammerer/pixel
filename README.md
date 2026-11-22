@@ -67,7 +67,9 @@ quote includes a trucker price. If only air freight is priced, PIXEL keeps the r
 pickup bids. At the hard deadline it can send the airport-to-airport price with pickup explicitly excluded. If no freight rate
 is available, it replies that it could not obtain one in time. If the
 customer omitted the postcode, the quote asks for the pickup address. With no air price at all the round is recorded
-as missed. A customer question about an offer goes to the operator. An affirmative instruction to book a delivered
+as missed. A customer question about an offer goes to the operator. Use the
+[manual takeover guide](docs/MANUAL_TAKEOVER.md) to source rates, prepare a quote and send from the session page.
+An affirmative instruction to book a delivered
 offer starts the booking.
 
 The Performance dashboard leads with our rank in big, the team total and the gap to the teams around us
