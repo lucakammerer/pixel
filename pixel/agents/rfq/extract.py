@@ -919,10 +919,18 @@ READY_DATE_FIRST = re.compile(
 CJK_PICKUP = r"(?:픽업|집하|출고|提货|取货|备妥|备好|集荷|出荷)"
 CJK_ARRIVAL = r"(?:도착|到达|抵达|到港|到着|送达)"
 CJK_DATE = r"(?P<value>\d{4}-\d{2}-\d{2})(?![\d-])"
+# A date first only with the pickup word right after it ("2026-12-15까지 납품해야 하므로 픽업은" is a delivery date): a
+# particle or a few letters between, never "by", and ",，、" end the clause.
+CJK_CLAUSE = r"[^.。!?！？\n,，、]"
 READY_CJK = (
-    re.compile(rf"{CJK_DATE}(?:(?!{CJK_ARRIVAL})[^.。!?！？\n]){{0,60}}?{CJK_PICKUP}"),
-    re.compile(rf"{CJK_PICKUP}[^\d.。!?！？\n]{{0,8}}?{CJK_DATE}(?![^.。!?！？\n]{{0,6}}?{CJK_ARRIVAL})"),
+    re.compile(
+        rf"{CJK_DATE}\s*(?:부터|에|이후|起|以后|后|から|以降|に)?\s*(?:(?!까지|前|まで)[^\d\s.。!?！？\n,，、]){{0,3}}"
+        rf"{CJK_PICKUP}"
+    ),
+    re.compile(rf"{CJK_PICKUP}(?:(?!\d){CJK_CLAUSE}){{0,8}}?{CJK_DATE}(?!{CJK_CLAUSE}{{0,6}}?{CJK_ARRIVAL})"),
 )
+# The latest arrival as "2026-12-01까지 도착", "2026-12-01前到达", "2026-12-01までに到着": a date, its "by", then arriving.
+ARRIVE_BY_CJK = re.compile(rf"{CJK_DATE}\s*(?:까지|이전|之前|以前|前|までに|まで){CJK_CLAUSE}{{0,15}}?{CJK_ARRIVAL}")
 ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline|(?:required|requested) delivery date|delivery date required)\s*[:=]?"
@@ -998,7 +1006,8 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
     def arrive_by() -> date | None:
         """A latest arrival is a coming date the customer sets for this shipment, never an earlier one, and never the
         drop-off at our side ("delivered to your warehouse at FRA by")."""
-        matches = sorted([*ARRIVE_BY.finditer(text), *ARRIVE_BY_LAST.finditer(text)], key=lambda m: m.start())
+        found = (*ARRIVE_BY.finditer(text), *ARRIVE_BY_LAST.finditer(text), *ARRIVE_BY_CJK.finditer(text))
+        matches = sorted(found, key=lambda m: m.start())
         origin = (_lane(text) or ("",))[0]
         for match in matches:
             clause = re.split(r"[.!?;,:\n]", text[: match.start()])[-1]
