@@ -26,7 +26,9 @@ PDFS: dict[str, bytes] = {}  # body -> the PDF sent with it
 
 class _Mailbox(replay.OfflineMailbox):
     async def send(self, to, subject, body, in_reply_to=None, attachments=()):
-        PDFS.update({body: data for name, _, data in attachments if name.endswith(".pdf")})
+        for name, _, data in attachments:
+            if name.endswith(".pdf"):
+                PDFS[body] = data
         return await super().send(to, subject, body, in_reply_to, attachments)
 
 
@@ -56,7 +58,9 @@ def judge(expected: dict, sent: dict | None) -> list[str]:
         failed.append(f"{len(check.amounts(check.ours(body)))} amounts, not {count}")
     if expected.get("pdf"):
         data = PDFS.get(body, b"")
-        totals = [o["total"] for o in expected.get("options", [])] + ([expected["total"]] if "total" in expected else [])
+        totals = [o["total"] for o in expected.get("options", [])] + (
+            [expected["total"]] if "total" in expected else []
+        )
         if not data.rstrip().endswith(b"%%EOF"):
             failed.append("no_pdf_offer")
         failed += [f"PDF lacks {t}" for t in totals if data and t.encode() not in data]
