@@ -931,6 +931,8 @@ READY_CJK = (
 )
 # The latest arrival as "2026-12-01까지 도착", "2026-12-01前到达", "2026-12-01までに到着": a date, its "by", then arriving.
 ARRIVE_BY_CJK = re.compile(rf"{CJK_DATE}\s*(?:까지|이전|之前|以前|前|までに|まで){CJK_CLAUSE}{{0,15}}?{CJK_ARRIVAL}")
+# The date our quote or reply must arrive by ("견적 회신은 2026-11-30까지 도착하도록"), never the cargo's.
+CJK_REPLY = re.compile(r"견적|회신|답변|报价|回复|答复|見積|回答|返信")
 ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline|(?:required|requested) delivery date|delivery date required)\s*[:=]?"
@@ -1012,6 +1014,8 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
         for match in matches:
             clause = re.split(r"[.!?;,:\n]", text[: match.start()])[-1]
             if OUR_SIDE.search(match[0]) or (origin and re.search(rf"\b{origin}\b", match[0])):
+                continue
+            if match.re is ARRIVE_BY_CJK and CJK_REPLY.search(re.split(r"[.。!?！？\n,，、]", text[: match.end()])[-1]):
                 continue
             if not ARRIVAL_CONTEXT.search(clause) and (value := _stated_date(match["value"], on)) and value >= on:
                 return value
