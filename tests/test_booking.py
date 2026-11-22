@@ -206,6 +206,12 @@ async def test_the_airlines_reply_to_our_booking_by_mail_stores_its_reference(pi
     ("text", "said"),
     [
         ("Yes, please go ahead and book.", "accept"),
+        ("Let's go with this offer.", "accept"),
+        ("D'accord, merci de réserver.", "accept"),
+        ("We found a cheaper option elsewhere, thanks.", "decline"),
+        ("Thank you, but we have decided against it.", "decline"),
+        ("Merci, mais c'est trop cher.", "decline"),
+        ("If we decide to go with this offer, we will let you know.", "other"),
         ("Bitte buchen Sie die Sendung.", "accept"),
         ("Thanks, but too expensive for us.", "decline"),
         ("We cannot accept this price.", "decline"),
@@ -461,6 +467,9 @@ def test_a_plain_acceptance_books(text):
         "Bitte buchen Sie erst nach Freigabe.",
         "Auftragsnummer: 4500123",  # a packing list's order number
         "We accept no liability for delays.",  # an attached document's terms
+        "We'll go with the airline we used last time.",  # "go with" someone else's offer
+        "We will go with the slower option from our usual forwarder.",
+        "We'll go with the cheaper carrier this time, thanks anyway.",
     ],
 )
 def test_a_negated_or_held_acceptance_never_books(text):
