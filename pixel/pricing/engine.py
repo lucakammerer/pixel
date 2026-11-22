@@ -12,6 +12,7 @@ from pixel.pricing import availability, bids, calc, pickup, portal_rates, select
 
 PORTAL_HEAD_START_S = 1.0
 PORTAL_DOWN_WAIT_S = 4.0  # a read that has not failed yet gets this long to say so before the mails go out
+LATE_503_S = 10.0  # round 122: the 503 came after the head start and the desk was never asked
 
 
 def _found(ctx: Context, rfq: Rfq, option: RateOption) -> None:
@@ -203,6 +204,18 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         if desk_id is None and (down or not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
         mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
+        if desk_id is None and not down and not portal_task.done():
+            # Still no answer after the mails: a failure that arrives later (the page read takes its time) still
+            # asks the desk in this round.
+            remaining = (deadline.target_at - timing.now()).total_seconds()
+            late = group.create_task(down_now.wait())
+            await asyncio.wait(
+                {portal_task, late}, timeout=max(0.0, min(LATE_503_S, remaining)), return_when=asyncio.FIRST_COMPLETED
+            )  # fmt: skip
+            late.cancel()
+            down = down_now.is_set() or _portal_down(ctx, rfq)
+            if down and _desk_enquiry(ctx, rfq) is None:
+                mailed += await bids.request(ctx, rfq, [("Rate desk", RATEDESK)])
         # An outage makes the desk reply worth the whole desk wait, also on a lane no sheet prices (round 123).
         pending_desk = (desk_id or _desk_enquiry(ctx, rfq)) if down else None
         if pending_desk is not None:

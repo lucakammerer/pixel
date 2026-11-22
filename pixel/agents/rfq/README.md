@@ -70,6 +70,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
+- A negation of something good rules no airline out: "we don't mind X", "never had issues with X", "does not
+  require X" (`NEGATED_POSITIVE`); "don't want X" and "No X, please" do rule it out, "no pickup needed, X is
+  fine" does not.
 - `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names ("<airline> only",
   "nur mit ...", and "no airline other than ...", "keine andere Airline als ...", which `excluded_airlines` no longer
   reads as ruling that airline out).
@@ -80,8 +83,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   arrival is only "arrive … by / no later than <date>" with nothing but the place between (`ARRIVE_BY`; "Shanghai,
   China" allowed, "arrival airport" a label), never a reply-by or a details-by date, never a past shipment
   (`ARRIVAL_CONTEXT`, the last words before "arrival") and never a date before the request; a date without a year is
-  this year's unless that lies more than half a year back (`_stated_date`). A sentence the rule leaves is read by `novelty.py`, whose date counts
-  only as written. `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
+  this year's unless that lies more than half a year back (`_stated_date`). A sentence the rule leaves, and one with a coming date it does not take,
+  is read by `novelty.py`, whose date counts only as written. `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
   `pricing/calc.py` `arrival` for the delivery date including pickup. When no price meets the timing, the quote goes
   out at once with the best one and `novelty.py` `with_note` names the alternative: bids were collected until
   `target_at`, so a later price that meets it is unlikely.
@@ -179,6 +182,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   reads the cap, `selection.within_cap` compares it with our total ("below" strict, "up to" not, another currency
   never), and `handle_reply` books only when it is met; otherwise, or when the condition is not a price, a person.
   It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
+  The cap may also follow its amount ("400 EUR or less", "2000 euros tops") or be "match 400 EUR", "within a
+  budget of 300 EUR"; "max." does not end the sentence, and a date after the word is no cap.
 - `cancel` (the customer withdraws after the booking, round 88) cancels at the portal by the airline's reference.
   A booking by mail without that reference yet, or a portal that refuses or is down, is withdrawn by mail with the
   airline (`_cancel_by_mail`, the carrier list's address); the customer is told either way. Only without an address
@@ -243,11 +248,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `novelty.py` (R33): a requirement no rule reads yet, caught in the round it first appears. `leftover` keeps the
   sentences of the mail and its documents that none of the extractors' patterns (`CONSUMED`), no airline ruled out by
   name and more than the frame of a request (`FRAME_WORDS`) account for; the subject, the signature and lines of names
-  or headings are skipped. Nothing left (35 of 37 request fixtures, all 27 scored openings): no call. Something left:
+  or headings are skipped. A sentence with a coming date in the customer's own words is left too unless the rules
+  read that date as the ready date or latest arrival, or it follows a reply-by or validity word (`unread_dates`,
+  `SET_ASIDE`): round 118's "Die Ware steht am 2026-11-26 zur Abholung bereit" counted as read because another rule
+  used the sentence, so the transit ran from today. 15 of the 119 stored requests have such a date (round 118 among 16 before #362), 12 of them
+  without other leftovers (about 0.03 cost points per quote). Nothing left (35 of 37 request fixtures, all 27 scored
+  openings): no call. Something left:
   `check`, spawned by `agent.py` `handle` beside the bids, sends only those sentences to `PIXEL_MODEL_CHECK`
   (`rfq.novelty`, at most `WAIT_S` = 8 s, 150 output tokens) and maps them: airlines ruled out (into
   `Rfq.excluded_carriers`, a new `rfq.extracted`), the only airlines allowed and a latest arrival date
   (`pricing/selection.py` `required`, arrival by `pricing/calc.py` `arrival`; when no option meets them all stay),
+  the ready date only where the rules found none (`Rfq.ready_on`, a new `rfq.extracted`),
   documents and conditions the quote names (`with_note`, before the booking line). A name or date the sentences do not
   hold is dropped, and so is a phrase with a currency: the scorer reads our price from the mail. A mapped requirement or
   a failed call goes to `PIXEL_ALERT_URL` at once (`novel_requirement`, with the sentences), not after the verdict.
@@ -349,6 +360,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- A departure the customer refuses is never the one asked for: "please do not route via FRA", "avoid FRA",
+  "routing via FRA is not possible; please use MUC". `_asked_departure` reads each clause: one with a negation
+  refuses its codes, the asked airport is the one served code left; "fly out of MUC" and "ex MUC" ask too.
 - A pickup abroad ("collected from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria") has no zone, so no
   trucker and no zone airport. Asking for its postcode got the customer's address back and then a no-price reply.
   `extract.py` `_abroad_pickup` (a country abroad on a pickup line, or a postcode of other than five digits) asks
@@ -402,8 +416,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   under-prices a light, bulky shipment.
 - "Not urgent", "no rush" and "price matters more than speed" contain the urgency words: they mean cheapest. A
   superlative the customer wrote (fastest, cheapest) decides; without one, a hurry they describe ("as quickly as
-  possible", "time-critical", "speed matters more") means fastest. "Express" counts only as a service, not in a
-  company's name. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
+  possible", "time-critical", "speed matters more", "shortest transit time", "kürzeste Laufzeit", "transit time is
+  key", "price is secondary", "next flight out", "time-sensitive", "AOG") means fastest; "price is what counts" beats
+  a transit the mail also mentions (`PRICE_FIRST`). "Express" counts only as a service or a wish ("express please",
+  "go for express"), not in a company's name. The model reads no wish when the rules read the request, so a missed
+  one is quoted as cheapest. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
   "quickly" alone is about our reply, not the flight.
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
@@ -488,9 +505,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as
-  strict xfails: speed without a superlative or "urgent" ("next flight out", "shortest transit",
-  "time-sensitive", "AOG", "Express please") reads as cheapest; a currency in words, as a symbol, as "Price:
-  USD" or beside a second currency reads as none and is quoted in EUR.
+  strict xfails: a currency in words, as a symbol or beside a second currency reads as none and is quoted in EUR.
+  Without "in USD" or "Currency: USD", the one code the mail names away from a figure is the wish ("Price: USD",
+  round 126's "EUR cinsinden"; `_currency`, `LONE_CODE`), never "3000 EUR".
 
 ## Open
 

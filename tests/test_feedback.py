@@ -94,7 +94,7 @@ async def test_a_new_verdict_becomes_feedback_and_teaches_the_pickup_rule(conn, 
     assert feedback.pickup_rule(ctx) == selection.DEFAULT_RULE  # every rule takes this trucker: no lead, no change
 
 
-async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch):
+async def test_each_lost_session_is_reported_once(conn, monkeypatch):
     def emit(ctx, kind, actor, *, session_id=None, message_id=None, payload=None, **metrics):
         ctx.db.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES (?, ?, ?, ?, ?)",
                        (datetime.now(UTC).isoformat(), session_id, kind, actor, json.dumps(payload or {})))  # fmt: skip
@@ -125,8 +125,14 @@ async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch)
     emit(ctx, "feedback", "board", session_id=4, payload={"round": 4, "verdict": "rejected", "reason": "price"})
     assert await feedback.alert(ctx) == 3
     assert {i["issue"] for i in calls[0][1]["issues"]} == {"missed", "lost_points", "rejected"}
+    rejected = next(i for i in calls[0][1]["issues"] if i["issue"] == "rejected")
+    assert rejected | {"at": None} == {"issue": "rejected", "session": 4, "at": None, "reason": "price", "round": 4,
+                                       "quoted": None, "best": None}  # fmt: skip
     emit(ctx, "quote.missed", "orchestrator", session_id=5, payload={"reason": "no_price"})
-    assert await feedback.alert(ctx) == 0 and len(calls) == 1  # the same kind, the same commit
+    assert await feedback.alert(ctx) == 1  # the same kind under the same commit: another lost session
+    assert calls[1][1]["issues"][0]["reason"] == "missed"
+    emit(ctx, "feedback", "board", session_id=5, payload={"round": 5, "verdict": "no answer"})
+    assert await feedback.alert(ctx) == 0 and len(calls) == 2  # each session once
     emit(ctx, "human.note", "crm", session_id=6, payload={"note": "Customer reply needs a person"})
     assert await feedback.alert(ctx) == 0  # listed by `attention`, but it costs no points: no repair run
     assert "reply_unhandled" in {i["issue"] for i in feedback.attention(conn, 5)}
@@ -135,7 +141,7 @@ async def test_each_kind_of_issue_is_reported_once_per_commit(conn, monkeypatch)
     assert await feedback.alert(ctx) == 0  # what happened before the restart is the old code's
     emit(ctx, "quote.missed", "orchestrator", session_id=7, payload={"reason": "no_price"})
     monkeypatch.setattr(feedback, "STARTED", "2026-01-01T00:00:00")
-    assert await feedback.alert(ctx) == 3  # the new code missed one too: reported again, with what else is open
+    assert await feedback.alert(ctx) == 1  # the new code missed one too; sessions already reported stay quiet
 
 
 def test_one_misread_round_does_not_change_the_pickup_rule(conn):

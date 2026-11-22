@@ -51,10 +51,11 @@ WEIGHT = (
         rf"(?![\d.,']|{OTHER_UNIT}\b)"
     ),
 )
-POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
+# A unit may end without a space before a Korean or Japanese particle ("lb입니다", session 39219): no \b there.
+POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)(?![A-Za-z])"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 # Round 79: "a total volume of 95.00 cubic feet" (2.69 cbm) was read by the model as 95 cbm.
-FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t\b|cu\.?\s*ft\b|ft3\b|ft³)"
+FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t(?![A-Za-z])|cu\.?\s*ft(?![A-Za-z])|ft3(?![A-Za-z\d])|ft³)"
 FT3 = Decimal("0.028316846592")
 # "3360 litres" is 3.36 cbm; a bare "l" is left alone: "5 l canisters" names the goods, not the shipment.
 LITRE = r"\s*(?i:lit(?:er|re)s?\b|ltrs?\b)"
@@ -110,10 +111,10 @@ PIECES = re.compile(
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
-    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
+    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-](?:critical|sensitive))|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
     r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger"
     r"|pas\s+(?:urgent|press[ée]\w*)"
-    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*"
+    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*|shortest"
     r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
@@ -124,7 +125,18 @@ CHEAPEST = re.compile(
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
     r"as possible|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
-    r"|dringend\w*)\b",
+    r"|dringend\w*"
+    # The transit as the wish: "shortest transit time", "kürzeste Laufzeit", "transit time is key", "price is secondary"
+    r"|shortest\s+(?:transit|lead|delivery|travel)(?:\s+times?)?|kürzeste\w*\s+(?:laufzeit|transitzeit|transportzeit|lieferzeit)"
+    r"|(?:transit(?:\s+time)?|speed|time)\s+is\s+(?:key|crucial|critical|essential|what\s+matters|the\s+priority)"
+    r"|(?:price|cost|rate)\s+is\s+(?:secondary|not\s+(?:an\s+issue|important|the\s+priority))"
+    r"|(?:go\s+for|prefer|need|want|choose|book)\s+(?:the\s+|an\s+)?express|express[,!]?\s+(?:please|pls)"
+    r"|next\s+flight\s+out|(?:next|first)\s+available\s+flight|time[\s-]sensitive|(?-i:AOG))\b",
+    re.IGNORECASE,
+)
+# The price named as what counts beats a transit the mail also mentions: "price is what counts now".
+PRICE_FIRST = re.compile(
+    r"\b(?:price|cost|rate)\s+is\s+(?:key|crucial|what\s+(?:counts|matters)|the\s+priority|most\s+important)\b",
     re.IGNORECASE,
 )
 DOOR = re.compile(
@@ -180,6 +192,7 @@ DANGEROUS = re.compile(
 )
 DG_DOCUMENTS = "dangerous_goods_documents"
 CURRENCY_ASK = re.compile(r"(?i:\b(?:in|en|currency:?|währung:?|devise:?|moneda:?))\s+([A-Z]{3})\b")
+LONE_CODE = re.compile(r"(?<![\d.,])(?<![\d.,] )\b([A-Z]{3})\b(?! ?\d)")
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
@@ -547,8 +560,11 @@ def _pickup(text: str) -> tuple[bool, str | None]:
 
 
 def _currency(text: str) -> str | None:
+    """The currency asked for: "in USD", "Currency: USD", or else the one code the mail names away from a figure
+    ("Price: USD", round 126's Turkish "EUR cinsinden"); "3000 EUR" is an amount, not a wish."""
     asked = {c for c in CURRENCY_ASK.findall(text) if c in CURRENCIES}
-    return asked.pop() if len(asked) == 1 else None
+    named = asked or {c for c in LONE_CODE.findall(text) if c in CURRENCIES}
+    return named.pop() if len(named) == 1 else None
 
 
 def words_of(text: str, extra: dict[str, set[str]] | None = None) -> dict[str, int]:
@@ -627,7 +643,7 @@ def _preference(text: str) -> Preference:
     text = NOT_URGENT.sub("", text)
     if FASTEST.search(text):
         return Preference.FASTEST
-    if CHEAPEST.search(text) or not HURRY.search(text):
+    if CHEAPEST.search(text) or PRICE_FIRST.search(text) or not HURRY.search(text):
         return Preference.CHEAPEST
     return Preference.FASTEST
 
@@ -636,7 +652,13 @@ def _preference(text: str) -> Preference:
 # our future inquiries", quoted anyway and rejected as excluded_airline).
 RULED_OUT = re.compile(
     r"\b(?:not(?!\s+only\b)|never|exclud\w*|avoid\w*|without|except|other than"
-    r"|nicht(?!\s+nur\b)|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)(?!lich\b)\w*)\b",
+    r"|nicht(?!\s+nur\b)|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)(?!lich\b)\w*)\b|n['’]t\b",
+    re.IGNORECASE,
+)
+# A negation of something good is no exclusion: "we don't mind X", "never had issues with X", "does not require X".
+NEGATED_POSITIVE = re.compile(
+    r"(?:\b(?:not|never|no|nicht|kein\w*)\b|n['’]t\b)(?:\s+\w+){0,3}?\s+(?:mind|objection|object|problems?|issues?"
+    r"|complain\w*|require\w*|matter|preference|prefer\w*|have\s+to\s+be|has\s+to\s+be|need\s+to\s+be)\b",
     re.IGNORECASE,
 )
 LASTING = re.compile(
@@ -697,14 +719,17 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
     whether the customer means later requests too. A negation that names no known airline rules nothing out."""
     found, lasting = set(), False
     for sentence in AIRLINE_SENTENCES.split(text):
-        if not RULED_OUT.search(sentence):
-            continue
+        negated = bool(RULED_OUT.search(NEGATED_POSITIVE.sub(" ", sentence)))
         lowered = sentence.casefold()
+        if not negated and not re.search(r"\bno\s", lowered):
+            continue
         required = set(required_airlines(sentence, airlines))
+        # "No X, please" rules X out; a "no" elsewhere in the sentence ("no pickup needed") does not.
+        before = r"(?<!\w)" if negated else r"\bno\s+"
         names = {
             airline
             for airline in airlines - required
-            if any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
+            if any(re.search(rf"{before}{re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
         }
         if names:
             found.update(names)
@@ -798,7 +823,7 @@ WEEKDAY = (
 )
 STATED_DATE = rf"[ \t]*(?:{WEEKDAY}\b\.?,?[ \t]+)?(?P<value>{DATE_VALUE})(?![\w-])"
 READY_ON = re.compile(
-    r"\b(?:ready|bereit|abholbereit|available|verfügbar|prête?s?)\b[ \t]*"
+    r"\b(?:ready|bereit|abholbereit|available|verfügbar|prête?s?)\b[ \t]*(?:date\b[ \t]*)?"
     r"(?:(?:for (?:pickup|collection)|zur Abholung)[ \t]+)?"
     r"(?:(?:on|from|am|ab|le)[ \t]+|:[ \t]*)?" + STATED_DATE,
     re.IGNORECASE,
@@ -1206,17 +1231,28 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
 
 # A departure airport the customer asks for: "please route via Munich (MUC), not Frankfurt; our letter of credit names
 # MUC as airport of departure". The code must be one we truck to, and one only once ruled-out codes are dropped.
-DEPARTURE_ASKED = re.compile(r"\b(?:route|routing|via|depart\w*|abflug\w*|über|en partance)\b", re.IGNORECASE)
+DEPARTURE_ASKED = re.compile(
+    r"\b(?:route|routing|via|depart\w*|abflug\w*|über|en partance|fly\s+out\s+of|ex)\b", re.IGNORECASE
+)
 NOT_CODE = re.compile(r"\b(?:not|nicht|instead of|statt|anstatt|rather than)\s+(?:\w+\s+)?\(?$", re.IGNORECASE)
+# A clause that refuses: "please do not route via FRA", "routing via FRA is not possible; use MUC", "avoid FRA".
+REFUSED = re.compile(
+    r"\b(?:not|cannot|can['’]t|no|avoid\w*|impossible|nicht|kein\w*|unmöglich|vermeiden)\b|n['’]t\b", re.IGNORECASE
+)
 
 
 def _asked_departure(ctx: Context, text: str) -> str | None:
     served = store.zone_airports(ctx)
-    codes = set()
-    for sentence in re.split(r"(?<=[.;!?])\s+|\n", text):
-        if DEPARTURE_ASKED.search(sentence):
-            codes |= {m.group(0) for m in CODE.finditer(sentence)
-                      if m.group(0) in served and not NOT_CODE.search(sentence[: m.start()])}  # fmt: skip
+    asked, refused = set(), set()
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+        if not DEPARTURE_ASKED.search(sentence):
+            continue
+        for clause in re.split(r"[;,]|\s(?:so|but|aber|sondern)\s", sentence):
+            for m in CODE.finditer(clause):
+                if m.group(0) in served:
+                    no = REFUSED.search(clause) or NOT_CODE.search(clause[: m.start()])
+                    (refused if no else asked).add(m.group(0))
+    codes = asked - refused
     return codes.pop() if len(codes) == 1 else None
 
 
@@ -1669,7 +1705,15 @@ async def _crosscheck(
         for f in CHECKED
         if getattr(read, f) not in (None, "", 0) and getattr(read, f) != getattr(rfq, f)
     }
-    gross = {"weight_kg": _gross(sources, WEIGHT, True), "volume_cbm": _gross(sources, VOLUME, False)}
+    documents = [s for s in sources if s[0] != "mail"]
+
+    def stated(field: str, patterns: tuple[re.Pattern, ...], thousands: bool) -> set[Decimal]:
+        """A gross total the documents state stands against the mail's: the scorer prices the document (rounds 33
+        to 35, 130)."""
+        in_documents = _gross(documents, patterns, thousands)
+        return in_documents if getattr(rfq, field) in in_documents else _gross(sources, patterns, thousands)
+
+    gross = {"weight_kg": stated("weight_kg", WEIGHT, True), "volume_cbm": stated("volume_cbm", VOLUME, False)}
     taken = {
         f: getattr(read, f) for f in differs if f in ("pieces", "preference") or getattr(read, f) in gross.get(f, ())
     }

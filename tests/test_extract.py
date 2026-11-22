@@ -392,6 +392,12 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
         ("The cheapest option please, ideally urgent.", False),
         ("Best regards, Nordwind Express GmbH", False),
         ("Bitte so schnell wie möglich.", True),
+        ("Price is secondary, transit time is key.", True),
+        ("Bitte die kürzeste Laufzeit.", True),
+        ("We need the shortest lead time, please go for express.", True),
+        ("The shortest transit we had was 3 days, but price is what counts now.", False),
+        ("Not the shortest transit, the best rate. Not time-sensitive.", False),
+        ("This is our first flight shipment with you.", False),
         ("", False),
     ],
 )
@@ -423,6 +429,19 @@ async def test_the_pickup_lines_town_wins_over_the_signatures(conn, emitted):
     rfq = extract._town_zone(ctx, rfq, extract._text(message))
     assert rfq.pickup_zone == "24"  # the pickup line's town
     assert (await extract.extract(ctx, message, DEADLINE)).origin == "AAA"
+
+
+@pytest.mark.parametrize(
+    ("text", "currency"),
+    [
+        ("Tüm masraflar dahil EUR cinsinden fiyat verebilir misiniz?", "EUR"),  # round 126
+        ("Our budget is 3000 EUR.", None),
+        ("Goods value EUR 45,000 for insurance.", None),
+        ("Value 12.500,00 EUR, please quote in CHF.", "CHF"),
+    ],
+)
+def test_the_one_code_named_away_from_a_figure_is_the_currency(text, currency):
+    assert extract._currency(text) == currency
 
 
 @pytest.mark.parametrize(
@@ -958,6 +977,7 @@ def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
             4,
         ),
         ("Ready on December 20, 2026. Maximum transit time: 3 days.", date(2026, 12, 20), None, 3),
+        ("- Ready date: 2026-12-29", date(2026, 12, 29), None, None),  # a labelled ready date
         ("The last shipment arrived on 2026-12-01. Transit used to take 3 days.", None, None, None),
         ("Cargo ready 31.11.2026. Ready 02.12.2026 instead.", date(2026, 12, 2), None, None),
         ("Die Sendung muss spätestens am 2026-12-28 am Zielflughafen eintreffen.", None, date(2026, 12, 28), None),
@@ -1008,6 +1028,11 @@ def test_a_ready_date_this_autumn_stays_this_year():
         ("Only Alpha Air was available last time.", (), ()),
         ("Alpha Air only flies on Fridays.", (), ()),
         ("Only if it is cheaper, use Beta Cargo.", (), ()),
+        ("No Beta Cargo, please.", (), ("Beta Cargo",)),
+        ("We don't want Beta Cargo for this one.", (), ("Beta Cargo",)),
+        ("We have never had issues with Beta Cargo.", (), ()),  # used to rule Beta out
+        ("Our contract does not require Beta Cargo.", (), ()),
+        ("No pickup needed, Beta Cargo is fine.", (), ()),
         ("Please quote no airline other than Alpha Air.", ("Alpha Air",), ()),
         ("Bitte keine andere Fluggesellschaft außer Alpha Air.", ("Alpha Air",), ()),
         ("Keine andere Airline als Alpha Air oder Beta Cargo.", ("Alpha Air", "Beta Cargo"), ()),
@@ -1181,6 +1206,25 @@ async def test_a_departure_airport_the_customer_asks_for_wins_over_the_pickup_zo
 
 
 @pytest.mark.parametrize(
+    ("text", "asked"),
+    [
+        ("Please do not route via AAA.", None),  # used to ask for AAA, the airport refused
+        ("Please avoid routing via AAA.", None),
+        ("Routing via AAA is not possible for us; please use BBB.", "BBB"),
+        ("We cannot depart from AAA, so please use BBB.", "BBB"),
+        ("Please fly out of BBB.", "BBB"),
+        ("Departure from AAA is fine, but BBB would be better.", None),
+    ],
+)
+def test_an_airport_the_customer_refuses_is_never_the_asked_departure(conn, text, asked):
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(
+        ctx, [{"zone": "65", "area": "Town", "airport": "AAA"}, {"zone": "80", "area": "City", "airport": "BBB"}]
+    )
+    assert extract._asked_departure(ctx, text) == asked
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "We need to ship to Chicago (ORD) 900 kg, 3.5 cbm; please collect from our warehouse in 63450 Hanau.",
@@ -1272,3 +1316,10 @@ def test_a_past_shipment_beside_the_request_is_not_its_cargo():
         DEADLINE,
     )
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(990), Decimal("5.75"), 4)
+
+
+def test_a_unit_followed_by_a_korean_particle_is_read():
+    """Session 39219: "부피는 113.01 cubic feet입니다" ended the unit without a space; the volume was asked for twice."""
+    text = "화물은 가구 샘플 12개이며, 총중량은 2028.26 lb입니다, 부피는 113.01 cubic feet입니다."
+    assert round(extract._volume(text, 12), 2) == Decimal("3.20")
+    assert round(extract._weight(text, 12)) == 920

@@ -67,8 +67,9 @@ CAP = re.compile(
     r"\b(?:(below|under|less\s+than|lower\s+than|cheaper\s+than|unter(?:halb)?|weniger\s+als|günstiger\s+als"
     r"|moins\s+de|en\s+dessous\s+de|inférieur\s+à|por\s+debajo\s+de|menos\s+de|sotto)"
     r"|(up\s+to|at\s+most|max(?:imum)?\.?|not\s+(?:more|higher)\s+than|no\s+more\s+than|(?:does\s+not|doesn['’]t)\s+exceed"
-    r"|höchstens|maximal|bis\s+(?:zu\s+)?|nicht\s+mehr\s+als|au\s+maximum|pas\s+plus\s+de|jusqu['’]à))"
-    r"\s*(?:of\s+|von\s+|de\s+)?(?=[€$\d]|EUR|USD|GBP|CHF)",
+    r"|höchstens|maximal|bis\s+(?:zu\s+)?|nicht\s+mehr\s+als|au\s+maximum|pas\s+plus\s+de|jusqu['’]à"
+    r"|match|within(?:\s+(?:a|our)\s+budget)?|budget|im\s+rahmen\s+von))"
+    r"\s*(?:of\s+|von\s+|de\s+)?(?!\d{4}-\d{2})(?=[€$\d]|EUR|USD|GBP|CHF)",
     re.IGNORECASE,
 )
 SYMBOL = {"€": "EUR", "$": "USD"}
@@ -146,9 +147,17 @@ def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: li
     return found
 
 
+# "2000 EUR or less": a cap written after its amount.
+CAP_AFTER = re.compile(
+    rf"(?:(?:EUR|USD|GBP|CHF|€|\$)\s*{extract.NUM}|{extract.NUM}\s*(?:EUR|USD|GBP|CHF|€|\$|euros?)?)"
+    r"\s+(?:or\s+less|or\s+below|oder\s+weniger|max(?:imum)?\b|at\s+most|tops)",
+    re.IGNORECASE,
+)
+
+
 def conditional(text: str) -> tuple[bool, tuple[Decimal, str | None, bool] | None]:
     """Whether a sentence books on a condition, and the price cap it names: (amount, currency or None, strict)."""
-    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+    for sentence in re.split(r"(?<=[.!?])(?<!\bmax\.)(?<!\bca\.)(?<!\bapprox\.)\s+|\n", text):
         if not (CONDITION.search(sentence) and BOOK_WORD.search(sentence)):
             continue
         for m in CAP.finditer(sentence):
@@ -162,6 +171,10 @@ def conditional(text: str) -> tuple[bool, tuple[Decimal, str | None, bool] | Non
             if amount:
                 currency = SYMBOL.get(unit, unit.upper() if unit else None)
                 return True, (amount, currency, m.group(1) is not None)
+        if (after := CAP_AFTER.search(sentence)) and (amount := extract.number(after.group(1) or after.group(2))):
+            unit = re.search(r"EUR|USD|GBP|CHF|€|\$|euro", after.group(0), re.IGNORECASE)
+            currency = unit and {"euro": "EUR", **SYMBOL}.get(unit.group(0).lower(), unit.group(0).upper())
+            return True, (amount, currency, False)
         return True, None
     return False, None
 
