@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import date, datetime, timedelta
@@ -10,7 +11,7 @@ from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, 
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
-from pixel.core.orchestrator import Deadline, deadline_for
+from pixel.core.orchestrator import Deadline, deadline_for, is_import
 from pixel.crm import quotes
 from pixel.pricing import calc, engine, portal_rates, selection, session, store
 
@@ -432,6 +433,8 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
                     "missing": list(rfq.missing)})  # fmt: skip
         return None
     rfq = await served_airports(ctx, rfq, message, text=text, deadline=deadline)
+    if is_import(ctx, rfq.session_id):  # out of scope: no airline asked, the orchestrator declines at once
+        return None
     novel = poller.spawn(ctx, novelty.check(ctx, rfq, text, message.subject, extract._text(message)))  # within WAIT_S
     # The one gateway call per quote (R28): when rules read the request, it writes the prose slots (R31);
     # when the model read it, the same call already drafted them.
@@ -514,6 +517,15 @@ async def requote(ctx: Context, message: Message, rfq: Rfq) -> Quote | None:
     return sent
 
 
+IMPORT = re.compile(r"\b(?:import\w*|einfuhr)\b", re.IGNORECASE)
+
+
+def _import_said(rfq: Rfq, text: str) -> bool:
+    """The mail calls it an import and writes its lane this way round: "air import from NRT to HAM" (round 159) is
+    out of scope (R36), never a lane read backwards."""
+    return bool(IMPORT.search(text)) and extract._lane(text) == (rfq.origin, rfq.destination)
+
+
 async def served_airports(
     ctx: Context, rfq: Rfq, message: Message, *, text: str | None = None, deadline: Deadline | None = None
 ) -> Rfq:
@@ -522,7 +534,11 @@ async def served_airports(
     the airports we serve; a code the mail names stands. No call when both codes are served."""
     text = extract._text(message) if text is None else text
     origins, destinations = store.airports(ctx)
-    if rfq.origin in destinations - origins and rfq.destination in origins - destinations:
+    if (
+        rfq.origin in destinations - origins
+        and rfq.destination in origins - destinations
+        and not _import_said(rfq, text)
+    ):
         # A lane we price only the other way round was read backwards; as read it has no price and no fallback (R1).
         rfq = rfq.model_copy(update={"origin": rfq.destination, "destination": rfq.origin})
         events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
