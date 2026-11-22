@@ -1,0 +1,19 @@
+{
+  "id": 995070,
+  "from": "procurement@harburg-anlagen.hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "Quote request",
+  "body": "Hello,\n\nplease quote the shipment in the attached file.\n\nRegards\nSven Ahrens\nHarburg Anlagen GmbH",
+  "in_reply_to": null,
+  "references": [],
+  "received_at": "2026-11-22T10:00:00+00:00",
+  "attachments": [
+    {
+      "id": 1,
+      "filename": "request.txt",
+      "content_type": "text/plain",
+      "size": 144,
+      "content_base64": "TW9kZTogc2VhIGZyZWlnaHQgRkNMLCBwb3J0IHRvIHBvcnQKRnJvbTogSGFtYnVyZyAoREVIQU0pClRvOiBKZWJlbCBBbGkgKEFFSkVBKQpFcXVpcG1lbnQ6IDEgeCA0MGZ0IGNvbnRhaW5lcgpXZWlnaHQ6IDksNjE3IGtnClZvbHVtZTogNDMuNSBjYm0K"
+    }
+  ]
+}
