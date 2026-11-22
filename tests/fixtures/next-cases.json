@@ -108,8 +108,7 @@
     "currency": "EUR",
     "body_states": "delivery from DXB to the door is not included"
    },
-   "today": "Lane read as DXB-HAM, no price, no quote at all (quote.missed).",
-   "known_gap": "`extract` takes 'from DXB airport to the door' as the lane; the fallback then has nothing to send (R1) Owner: Cost."
+   "today": "HAM-DXB Orion Cargo Air 1029.00 EUR; the note on delivery at destination comes from `novelty` (live only)."
   },
   {
    "fixture": "next-cases/dims-per-piece-mixed.json",

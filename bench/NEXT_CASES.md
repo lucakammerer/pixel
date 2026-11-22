@@ -26,7 +26,7 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | 5 | `ready-after-tariff-validity` | "ready on 4 December 2026" (sheets valid to 30.11.) | Elbflug 864.00 from the November sheet | no sheet that has expired by the ready date; portal, bid or a valid sheet | `pricing/store.py` `lookup` by ready date | S |
 | 6 | `customer-reference-in-quote` | "Please quote our purchase order reference PO-2026-4471 in your offer" | price right, no reference | the reference in the quote and PDF | `extract.py` reference; `compose.render`, `pdf.py` | S |
 | 7 | `reply-in-other-language` | English mail: "Please reply in German, our shipping office does not read English" | English | German (R37's cousin) | `extract.py` language: an explicit ask wins | S |
-| 8 | `door-to-door-dap` | "Terms are DAP … please include delivery from DXB airport to the door" | lane read DXB-HAM, **no quote sent** | HAM-DXB Orion 1029.00, says that delivery at destination is not included | `extract.py` lane; why the fallback sent nothing (`orchestrator.recover`) | M |
+| 8 | `door-to-door-dap` | "Terms are DAP … please include delivery from DXB airport to the door" | **pass**: HAM-DXB Orion 1029.00; the note on delivery at destination only from `novelty` (live) | HAM-DXB Orion 1029.00, says that delivery at destination is not included | — | — |
 | 9 | `departure-airport-forced` | pickup 65189 Wiesbaden, "please route via Munich (MUC), not Frankfurt" | FRA, Elbflug 1140.00 | MUC, Helix 1635.00 + pickup to MUC | `extract.py` named departure airport wins over the zone; `pricing/pickup.py` | M |
 | 10 | `incoterm-exw-implies-pickup` | "on EXW terms, ex works our plant at … 80809 München" | model | door pickup 80809, MUC, Helix 1635.00 + pickup | `extract.py` rule: EXW with an address = pickup | S |
 | 11 | `cost-breakdown-required` | "break the price down into air freight, fuel surcharge and security surcharge … all-in rate per kg" | total only; greets "Hello Operations" | 1042.20 + 399.60 + 59.40 = 1501.20, 2.78/kg | `compose.render` from the option's parts; `compose.greeting` name vs role line | S |
@@ -52,8 +52,6 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 
 ## What the replay showed beyond the predictions
 
-- **A request with no quote at all** (8): the lane was read backwards, no option was found and `quote.missed`
-  followed. R1 says always answer; a request where the rules misread the lane gets no answer.
 - **Bulleted pieces with "each" after the dimensions** (2, 21) count one piece's weight. When the weight decides the
   price, the quote comes out more than 20% too low.
 - The greeting took "Operations", a role line in the signature, as the name (11).
