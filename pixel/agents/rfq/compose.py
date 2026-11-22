@@ -593,12 +593,17 @@ def kept(english: str, translated: str, names: tuple[str, ...]) -> bool:
     """A follow-up's translation keeps every name and reference in `names` and every figure of the English mail, and
     adds no long one. Every figure counts, short ones too ("3 days" turned "4 days", a weight under 100 kg); only a
     short one may be added, a month a language writes as a figure ("Tuesday 24 November" is "11月24日")."""
-    found = set(NUMBER.findall(translated))
+    # Digits only: a language writes its own separators (Turkish "1.986 kg", "3.680,00 EUR"; session 37583).
+    found, given = _figures(translated), _figures(english)
     return (
         all(name in translated for name in names if len(name or "") > 1)
-        and set(NUMBER.findall(english)) <= found
-        and all(len(n) <= 2 for n in found - set(NUMBER.findall(english)))
+        and given <= found
+        and all(len(n) <= 2 for n in found - given)
     )
+
+
+def _figures(text: str) -> set[str]:
+    return {re.sub(r"\D", "", n) for n in NUMBER.findall(text)}
 
 
 async def translate(ctx: Context, rfq: Rfq, option: RateOption, body: str, wait: float) -> str:
