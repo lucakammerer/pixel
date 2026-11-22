@@ -308,6 +308,18 @@ def test_two_sessions_do_not_read_alike():
     assert len(bodies) >= 5
 
 
+@pytest.mark.parametrize(("language", "comparison"), [("en", "compared"), ("de", "verglichen"), ("fr", "comparé")])
+@pytest.mark.parametrize("preference", [Preference.CHEAPEST, Preference.FASTEST])
+def test_offer_states_the_rate_directly(language, comparison, preference):
+    for session_id in range(1, 10):
+        request = rfq(language, session_id).model_copy(update={"preference": preference})
+        for text in ("", "We are shipping wooden toys."):
+            _, body = compose.render(request, OPTION, request=text)
+            offer = body.split("\n\n")[1]
+            assert comparison not in offer.casefold()
+            assert compose.check(offer, request, OPTION)
+
+
 def test_an_english_request_from_a_german_town_is_answered_in_english_throughout():
     """Round 11: "Lueneburg, Germany" made the model answer `de`; the quote opened in German, the dangerous-goods
     note was English, and the name was lost. Code decides the language, and every part of the mail follows it."""

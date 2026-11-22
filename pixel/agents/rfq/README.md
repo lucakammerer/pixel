@@ -84,7 +84,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
   by the name they signed with (the model's slot, else `signed_name` by rule). The offer follows the greeting
-  directly, as in the six rounds that earned Humanity points. It states the goods in
+  directly. It states the selected option without describing how the carriers were compared, and names the goods in
   the customer's words when the mail names them (`goods_of`, "For your machine parts, …"), total and currency,
   carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
   our desk's clock ("until 17:22 today") with the booking line, for a sheet price its last valid day
