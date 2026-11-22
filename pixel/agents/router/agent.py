@@ -73,8 +73,13 @@ def _lookalike(ctx: Context, sender: str, before: int) -> bool:
         local, _, domain = address.lower().partition("@")
         return re.sub(r"[.\-_+]", "", local) + "@" + domain
 
-    known = ctx.db.execute("SELECT DISTINCT sender FROM messages WHERE kind = ? AND sender <> ? AND id < ?",
-                           (MailKind.CUSTOMER_RFQ.value, sender, before)).fetchall()  # fmt: skip
+    # Only an address that wrote to us before this sender's first mail is the original: round 107's real customer
+    # was taken for a lookalike of the impostor who had written in between.
+    first = ctx.db.execute("SELECT MIN(id) FROM messages WHERE sender = ?", (sender,)).fetchone()[0] or before
+    known = ctx.db.execute(
+        "SELECT sender FROM messages WHERE kind = ? AND sender <> ? GROUP BY sender HAVING MIN(id) < ?",
+        (MailKind.CUSTOMER_RFQ.value, sender, min(first, before)),
+    ).fetchall()
     return any(plain(row[0]) == plain(sender) for row in known)
 
 
