@@ -75,7 +75,7 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
     quote = _noted(ctx, rfq, quote)
     if required:
         quote = quote.model_copy(update={"body": novelty.with_note(quote.body, required, compose.language_of(rfq))})
-    _check(ctx, rfq, quote, insurance_eur=premium or Decimal(0))
+    _check(ctx, rfq, quote, premium or Decimal(0))
     events.emit(ctx, "quote.drafted", "rfq", session_id=rfq.session_id,
                 payload={"quote_id": quote.id, "option": option.model_dump(mode="json"), "fallback": fallback,
                          "options": len(options), "insurance_eur": str(premium) if premium else None, "complete_service": not rfq.door_pickup or bool(option.trucker),
@@ -97,7 +97,7 @@ def _insurance(ctx: Context, rfq: Rfq, request: str, options: list[RateOption], 
     return calc.to_eur(calc.insurance_premium(value, share, rate, minimum), currency, fx)
 
 
-def _check(ctx: Context, rfq: Rfq, quote: Quote, *, insurance_eur: Decimal = Decimal(0)) -> None:
+def _check(ctx: Context, rfq: Rfq, quote: Quote, insurance_eur: Decimal = Decimal(0)) -> None:
     """The last look before the quote can leave (`check.py`): a `quote.checked` event with what it found. It never
     holds or changes the quote; a BLOCK finding is an issue for `feedback.alert`, so a person sees it at once.
     PIXEL_PRECHECK=off skips it. Never raises."""
