@@ -369,31 +369,32 @@ def _label_reach(pattern: re.Pattern, text: str) -> dict[str, int]:
     return reach
 
 
-SHIPMENT_LINE = re.compile(r"^\s*(?:\d+[.):]|[-•*])\s+(.*)$", re.MULTILINE)
+SHIPMENT_LINE = re.compile(r"^\s*(?:(?i:shipment|sendung|envoi|lot)\s*)?(?:\d+[.):]|[-•*])\s+(.*)$", re.MULTILINE)
 CODE = re.compile(r"\b[A-Z]{3}\b")
 
 
-def first_shipment(rfq: Rfq, text: str) -> Rfq | None:
-    """Session 25795: one mail, two shipments to two airports ("1. GRU ... 1281 kg, 3.76 cbm / 2. TLV ..."), so no
-    one destination. Rather than no answer, the first shipment is quoted with its own airport and cargo."""
+def shipments(rfq: Rfq, text: str) -> list[Rfq]:
+    """Rounds 89 and 90: one mail, shipments to several airports ("1. GRU ... 1281 kg, 3.76 cbm / 2. TLV ..."), the
+    fastest "for each". Every shipment with its own airport, lane when its line names one, and cargo, in the mail's
+    order; none unless each line names an airport and a weight and the airports differ."""
     lines = [
         (code, line)
         for line in SHIPMENT_LINE.findall(text)
         if (code := next((c for c in CODE.findall(line) if _airport(c)), None))
     ]
     if len({code for code, _ in lines}) < 2:
-        return None
-    code, rest = lines[0]
-    pieces = _pieces(rest)
-    weight, volume = _weight(rest, pieces), _volume(rest, pieces)
-    if not weight:
-        return None
-    update = {"destination": code, "weight_kg": weight, "missing": tuple(m for m in rfq.missing if m != "destination")}
-    if volume:
-        update["volume_cbm"] = volume
-    if pieces:
-        update["pieces"] = pieces
-    return rfq.model_copy(update=update)
+        return []
+    found = []
+    for code, rest in lines:
+        pieces = _pieces(rest)
+        if not (weight := _weight(rest, pieces)):
+            return []
+        origin, code = _lane(rest) or (rfq.origin, code)
+        found.append(rfq.model_copy(update={
+            "origin": origin, "destination": code, "weight_kg": weight, "pieces": pieces,
+            "volume_cbm": _volume(rest, pieces) or Decimal(0), "missing": tuple(m for m in rfq.missing if m != "destination"),
+        }))  # fmt: skip
+    return found
 
 
 def _destination_only(text: str) -> str | None:

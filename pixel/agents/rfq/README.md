@@ -60,6 +60,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   lists what is missing in `Rfq.missing`. A request without an origin airport but with a pickup postcode takes the
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
+- `extract.py` `shipments`: a mail with numbered or bulleted shipment lines to different airports (rounds 89 and
+  90, "Shipment 1: FRA to SGN ...") gives one `Rfq` per line with its own airport, lane and cargo. `agent.py` `handle`
+  quotes the first and prices the others beside it; `_with_shipments` adds each one's price and, when all have one,
+  their sum in a paragraph of the same quote (R4). The quote's option, PDF details and booking stay the first's.
 - `extract.py` `excluded_airlines`, `_carrier_requirements`: an airline the customer rules out (a sentence with a negation that
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
