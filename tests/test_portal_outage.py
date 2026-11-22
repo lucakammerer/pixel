@@ -15,7 +15,7 @@ from pixel.api.mailbox import RATEDESK
 from pixel.api.portal import Portal
 from pixel.contracts import LaneTariff, Preference, Source
 from pixel.core import events, timing
-from pixel.pricing import bids, engine, portal_rates, selection, store
+from pixel.pricing import bids, engine, portal_rates, rate_card, selection, store
 from tests.test_bids import ctx, deadline, kinds, mail, rfq  # noqa: F401  ctx is the fixture
 
 BASE = "https://portal.test"
@@ -232,3 +232,41 @@ async def test_a_rate_that_answered_503_is_read_again_before_the_quote(ctx, offl
     assert (best.source, best.rate_id, best.transit_days) == (Source.PORTAL, "R-portal", 3)
     assert reads == {"A1": 2, "A2": 2}
     assert timing.now() < started + timedelta(seconds=1.5)
+
+
+async def test_a_503_prices_the_airline_from_the_rate_card_of_the_current_version(ctx, offline):  # noqa: F811
+    """Round 94: the API, its page and the desk were silent; Xenon's rate read at 1133 kg on the same version at
+    03:34 prices 1135.6 kg at 3406.80. An older version's cheaper read is no price."""
+    answer_rates(offline, "503")
+
+    def read(version: str, bracket: str, kg: str, total: str) -> None:
+        events.emit(ctx, rate_card.KIND, "pricing", payload={
+            "origin": "AAA", "destination": "BBB", "code": "A1", "carrier": "Air One", "bracket": bracket, "kg": kg,
+            "breaks": ["0", "1000"], "total": total, "currency": "EUR", "fx_eur": None, "transit_days": 2,
+            "version": version})  # fmt: skip
+
+    read("v2", "1000", "1133", "2000.00")
+    read("v3", "1000", "1133", "3399.00")
+    read("v3", "0", "500", "2000.00")
+    found = await portal_rates.options(ctx, rfq().model_copy(update={"weight_kg": D("1135.6")}), deadline())
+    assert [(o.carrier, o.source, o.total_eur, o.rate_id) for o in found] == [
+        ("Air One", Source.PORTAL, D("3406.80"), None)
+    ]
+
+
+async def test_the_rate_card_reads_only_once_the_open_request_is_answered(ctx, offline, monkeypatch):  # noqa: F811
+    answer_rates(offline, "healthy")
+    offline.get("/v1/portal/brackets").respond(200, json={"breaks_kg": [0, 1000]})
+    monkeypatch.setattr(rate_card, "PACE_S", 0)
+    received = timing.now() - timedelta(seconds=30)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=7, payload={"received_at": received.isoformat()})
+
+    async def fill() -> list[dict]:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(rate_card.run(ctx), 0.2)
+        return kinds(ctx, rate_card.KIND)
+
+    assert await fill() == []
+    events.emit(ctx, "quote.sent", "outbox", session_id=7, payload={})
+    reads = await fill()
+    assert [(r["code"], r["bracket"]) for r in reads] == [("A1", "1000")]  # one a minute while the limit is unknown

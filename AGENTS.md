@@ -43,7 +43,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`, `check.py` and `repair.py`: the check before sending and the repair of what
   it blocks; `gaps.py`: what the session knows it has not read, closed before the quote), `tracking`, `tariffs`
-- `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,
+- `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`, `rate_card.py` (the portal's rates read in quiet minutes, priced during a 503),
   `bids.py`, `pickup.py`, `engine.py`
 - `pixel/crm/`: quotes, bookings, shipments, customers, carriers; `pixel/ui/`: start page at `/` (`home.py`, with
   `pipeline.py` and `impact.py`), requests at `/requests` (`routes.py`), CRM viewer (`crm.py`, with the carrier

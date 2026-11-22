@@ -91,12 +91,23 @@ async def test_portal_down_books_by_mail_to_the_address_given(pipe, accepted):
     assert sent["to"] == "bookings@kestrel.example" and b.team_reference in sent["body"]
 
 
-async def test_no_rate_id_books_by_mail_with_the_carrier_list(pipe):
-    pipe.ctx.db.execute("INSERT INTO carriers VALUES ('Kestrel Airways', 'airline', 'kestrel@air.example', 'JFK')")
+async def test_no_rate_id_books_a_fresh_rate_or_by_mail_with_the_carrier_list(pipe):
+    """A rate card price (`pricing/rate_card.py`) has no rate id: a fresh rate books it once the API is back."""
     quotes.save(pipe.ctx, quote(1, rate_id=None))
-    pipe.ctx.portal = Portal()
+    pipe.ctx.portal = Portal(None)
     b = await booking.book(pipe.ctx, "Q-1")
-    assert b.via == "email" and pipe.sent[0]["to"] == "kestrel@air.example" and pipe.ctx.portal.calls == []
+    assert b.via == "portal" and pipe.ctx.portal.calls == [("R-fresh000001", b.team_reference)]
+
+    pipe.ctx.db.execute("INSERT INTO carriers VALUES ('Kestrel Airways', 'airline', 'kestrel@air.example', 'JFK')")
+    quotes.save(pipe.ctx, quote(2, rate_id=None))
+    pipe.ctx.portal = Portal()
+
+    async def down(*args, **kw):
+        raise RatesUnavailable("The rate API is unavailable.")
+
+    pipe.ctx.portal.rate = down
+    b = await booking.book(pipe.ctx, "Q-2")
+    assert b.via == "email" and pipe.sent[-1]["to"] == "kestrel@air.example" and pipe.ctx.portal.calls == []
 
 
 @pytest.mark.parametrize("status", ["Status: QU. Space pending.", "Confirmed for 3 of 5 pcs. Balance pending."])

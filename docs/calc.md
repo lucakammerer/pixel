@@ -26,6 +26,10 @@ Decimal only; a model never computes, compares or writes a price (P1).
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
   code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
   business days alike, and a range ("2-3 days") its first figure.
+- **Rate card** (`rate_card.option`): during a 503, a portal airline at the rates read for the current dataset
+  version, one read per bracket at its own break (`calc.card_breaks`: the bracket's rate is total / weight read),
+  priced like a sheet without minimum or surcharges, the higher breaks included. No rate id: `booking.book` reads a
+  fresh rate first.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
   and validity it states. `engine.options` asks after a rate read returns 503 or when no other source can price the
   lane. During an outage with a sheet price, `bids.collect` gives a pending desk reply until 115 seconds from receipt.

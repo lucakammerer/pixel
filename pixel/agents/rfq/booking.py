@@ -2,6 +2,7 @@
 through `core.outbox` only."""
 
 import asyncio
+import contextlib
 import re
 from datetime import UTC, datetime
 
@@ -11,7 +12,7 @@ from pixel.agents.rfq import compose, extract, followup
 from pixel.api.client import ApiError
 from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.api.portal import BookingUnavailable, NotOnPortal, PortalBooking, RateExpired, RateLimited
-from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus, Rfq
+from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus, Rfq, Source
 from pixel.core import db, events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
@@ -218,6 +219,12 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
 
     if booking.carrier.casefold() in availability.suspended_carriers(ctx, quote.rfq):
         return _failed(ctx, booking, "carrier suspended new bookings on this lane")
+    if booking.via != "email" and not booking.rate_id and quote.option.source == Source.PORTAL:
+        # A price from the rate card (`pricing/rate_card.py`) has no rate id: a fresh rate books it, if the API is back.
+        with contextlib.suppress(NotOnPortal, RateLimited, ApiError, httpx.HTTPError):
+            fresh = await portal_rates.refresh(ctx, quote.option)
+            booking = booking.model_copy(update={"rate_id": fresh.rate_id})
+            _save(ctx, booking, "booking")
     if booking.via == "email" or not booking.rate_id:
         return await _book_by_mail(ctx, quote, booking, "booking by email")
     try:

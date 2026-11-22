@@ -64,6 +64,11 @@ def rate_for(breaks: tuple[tuple[Decimal, Decimal], ...], kg: Decimal) -> Decima
     return rate
 
 
+def card_breaks(reads: list[tuple[Decimal, Decimal, Decimal]]) -> tuple[tuple[Decimal, Decimal], ...]:
+    """Portal reads (bracket, weight read, total) as a sheet's breaks: the bracket's rate is total / weight."""
+    return tuple(sorted((bracket, total / kg) for bracket, kg, total in reads))
+
+
 def _priced(tariff: LaneTariff, billed: Decimal) -> tuple[Decimal, Decimal, Decimal]:
     freight = max(rate_for(tariff.breaks, billed) * billed, tariff.minimum)
     return freight, tariff.fuel_per_kg * billed, tariff.security_per_kg * billed
