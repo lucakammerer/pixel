@@ -1109,3 +1109,17 @@ def test_a_language_asked_for_wins_over_the_mails_own(text, language):
 def test_the_pickup_postcode_is_no_phone_number_other_address_or_postcode_abroad(text, postcode):
     # 20121 Milano read as zone 20 asked Hamburg's truckers; a phone number beside the postcode lost it altogether.
     assert extract._pickup(text) == (True, postcode)
+
+
+async def test_a_departure_airport_the_customer_asks_for_wins_over_the_pickup_zones(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(
+        ctx, [{"zone": "65", "area": "Town", "airport": "AAA"}, {"zone": "80", "area": "City", "airport": "BBB"}]
+    )
+    body = ("Please quote 480 kg, 1.6 cbm to Hong Kong (HKG), with truck collection from our site in 65189 Town.\n"
+            "Please route via City (BBB), not AAA; our letter of credit names BBB.")  # fmt: skip
+    assert (await extract.extract(ctx, mail(body), DEADLINE)).origin == "BBB"

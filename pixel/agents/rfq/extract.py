@@ -1103,13 +1103,32 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
     return row["body"]
 
 
+# A departure airport the customer asks for: "please route via Munich (MUC), not Frankfurt; our letter of credit names
+# MUC as airport of departure". The code must be one we truck to, and one only once ruled-out codes are dropped.
+DEPARTURE_ASKED = re.compile(r"\b(?:route|routing|via|depart\w*|abflug\w*|über|en partance)\b", re.IGNORECASE)
+NOT_CODE = re.compile(r"\b(?:not|nicht|instead of|statt|anstatt|rather than)\s+(?:\w+\s+)?\(?$", re.IGNORECASE)
+
+
+def _asked_departure(ctx: Context, text: str) -> str | None:
+    served = store.zone_airports(ctx)
+    codes = set()
+    for sentence in re.split(r"(?<=[.;!?])\s+|\n", text):
+        if DEPARTURE_ASKED.search(sentence):
+            codes |= {m.group(0) for m in CODE.finditer(sentence)
+                      if m.group(0) in served and not NOT_CODE.search(sentence[: m.start()])}  # fmt: skip
+    return codes.pop() if len(codes) == 1 else None
+
+
 def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
     """The pickup zone belongs to one airport (R16): a door-to-port request leaves from it unless the mail itself
-    names its origin airport. A model guesses from the town: XFW for Lueneburg (zone HAM), CGN for Wuppertal (zone
-    DUS); no airline flew those lanes and both requests were missed."""
+    names its origin airport or asks for another one we truck to (`_asked_departure`). A model guesses from the
+    town: XFW for Lueneburg (zone HAM), CGN for Wuppertal (zone DUS); no airline flew those lanes and both requests
+    were missed."""
     if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
         return rfq
-    if rfq.origin and (not rfq.door_pickup or names_code(text, rfq.origin)):
+    if rfq.door_pickup and (asked := _asked_departure(ctx, text)):
+        airport = asked
+    elif rfq.origin and (not rfq.door_pickup or names_code(text, rfq.origin)):
         return rfq
     return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
 

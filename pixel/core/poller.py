@@ -17,6 +17,7 @@ from pixel.crm import bookings
 SINCE_KEY = "poller.since_id"
 NAMES_OUR_MAIL = re.compile(r'your mail "(.+?)"')
 POLL_LIMIT = re.compile(r"\bone poll per (\d+(?:\.\d+)?) seconds?\b", re.IGNORECASE)
+INGEST_TRIES = 3  # a mail that cannot be stored after this many polls is skipped, so it cannot block every later one
 
 
 def session_of(ctx: Context, message: Message) -> int:
@@ -109,10 +110,14 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
     since_id = int(db.get(ctx.db, SINCE_KEY) or 0)
     interval = ctx.settings.poll_seconds
     failing = False
+    tries: dict[int, int] = {}
     while True:
         try:
             messages, next_since_id = await ctx.mailbox.poll(since_id)
             failing = False
+            for skipped in getattr(ctx.mailbox, "skipped", ()):
+                emit(ctx, "error", "poller", payload={"where": "mapping", "error": f"mail {skipped['id']} skipped: "
+                                                      f"{skipped['error']}, check api/mailbox.py to_message"})  # fmt: skip
         except Exception as e:  # noqa: BLE001
             if not failing:  # one event per outage, not one per second
                 emit(ctx, "error", "poller", payload={"where": "poll", "error": f"{type(e).__name__}: {e}"})
@@ -128,8 +133,14 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
             continue
         for message in messages:
             if not accept(ctx, message, on_message):
-                # Preserve the last durable cursor so a transient storage failure cannot lose this mail.
-                break
+                # Preserve the last durable cursor so a transient storage failure cannot lose this mail, but only a
+                # few times: a mail that never stores would hold every later request behind it (R1).
+                tries[message.id] = tries.get(message.id, 0) + 1
+                if tries[message.id] < INGEST_TRIES:
+                    break
+                emit(ctx, "error", "poller", message_id=message.id,
+                     payload={"where": "ingest", "error": f"skipped after {INGEST_TRIES} tries"})  # fmt: skip
+            tries.pop(message.id, None)
             since_id = message.id
             db.put(ctx.db, SINCE_KEY, str(since_id))
         else:

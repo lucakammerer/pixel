@@ -15,7 +15,7 @@ from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus,
 from pixel.core import db, events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
-from pixel.pricing import calc, portal_rates, session
+from pixel.pricing import calc, portal_rates, selection, session
 
 NO_PRICE_ACK = re.compile(
     r"(?:understood[,.]?\s+)?(?:thanks|thank you)(?: for (?:letting me know|the update))?[.!]?",
@@ -119,6 +119,15 @@ async def handle_reply(ctx: Context, message: Message) -> None:
     if act == "cancel":
         await cancel(ctx, sent, message)
         return
+    if act == "book_if" and sent is not None:
+        if read.cap is None or not selection.within_cap(sent.total, sent.currency, *read.cap):
+            events.emit(
+                ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
+                payload={"note": "Customer books on a condition our quote does not meet or code cannot read",
+                         "cap": [str(c) for c in read.cap] if read.cap else None, "total": str(sent.total)},
+            )  # fmt: skip
+            return
+        act = "book"
     if quote is not None and sent is None:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,

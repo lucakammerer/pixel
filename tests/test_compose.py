@@ -480,3 +480,11 @@ def test_an_offer_addressed_to_a_colleague_greets_the_colleague():
     assert body.startswith("Dear Mr. Hartmann,")
     _, body = compose.render(rfq("en"), OPTION, request="Please send the quote to Hamburg.\n\nBest regards\nFrank Maier")
     assert body.startswith("Hello Frank,")
+
+
+def test_services_asked_for_and_not_priced_are_said_to_be_excluded():
+    request = "Goods worth EUR 180,000, please include cargo insurance and export customs clearance (EAD)."
+    _, body = compose.render(rfq("en"), OPTION, request=request)
+    assert "Not included in this price: cargo insurance, export customs clearance." in body
+    priced = "Please insure 110% of EUR 50,000 at 0.3%, minimum EUR 25."
+    assert "Not included" not in compose.render(rfq("en"), OPTION, request=priced)[1]
