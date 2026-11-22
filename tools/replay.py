@@ -21,6 +21,7 @@ import base64
 import dataclasses
 import json
 import selectors
+import shutil
 import sqlite3
 import tempfile
 from collections.abc import Callable
@@ -270,6 +271,8 @@ async def _run(
         if client is not original:
             await client.aclose()
         ctx.db.close()
+        # each replay holds a copy of the database it starts from: kept, they filled the disk (22.11., 36 GB)
+        shutil.rmtree(Path(config.db_path).parent, ignore_errors=True)
 
 
 def raws_of(fixture: dict | list[dict]) -> list[dict]:
