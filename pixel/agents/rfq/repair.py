@@ -18,15 +18,18 @@ leaves, change nothing), `off`.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
+from decimal import Decimal
 
+from pixel import llm
 from pixel.agents.rfq import check, compose, dangerous, extract
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import events, feedback, timing
 from pixel.core.context import Context
-from pixel.pricing import engine, selection, session
+from pixel.pricing import calc, engine, selection, session
 
 MAX_STEPS = 3
 TRANSLATE_MIN_S = 3.0  # a translation needs this much time left to be worth a try
@@ -44,11 +47,29 @@ class Draft:
 
 Build = Callable[[Draft], Awaitable[Quote]]
 Inspect = Callable[[Quote], list[check.Finding] | None]
+Reprice = Callable[[Rfq], Awaitable[list[RateOption]]]
 Repaired = tuple[Quote, Draft] | None
 
 
+@dataclass(frozen=True)
+class Tools:
+    """What a repair may use: build the quote again, price a changed request again, and the time it has."""
+
+    build: Build
+    by: datetime | None
+    reprice: Reprice | None = None
+    rule: str = ""  # the BLOCK being repaired
+
+
 async def settle(
-    ctx: Context, quote: Quote, draft: Draft, build: Build, inspect: Inspect, *, by: datetime | None
+    ctx: Context,
+    quote: Quote,
+    draft: Draft,
+    build: Build,
+    inspect: Inspect,
+    *,
+    by: datetime | None,
+    reprice: Reprice | None = None,
 ) -> Quote:
     """The quote to send: `quote` itself, or a repaired one whose check blocks less. Never raises."""
     mode = ctx.settings.repair
@@ -68,7 +89,7 @@ async def settle(
             break
         tried.add(rule)
         try:
-            candidate = await REPAIRS[rule](ctx, quote, draft, by, build)
+            candidate = await REPAIRS[rule](ctx, quote, draft, Tools(build, by, reprice, rule))
             if candidate is None:
                 continue
             new_quote, new_draft = candidate
@@ -82,6 +103,7 @@ async def settle(
                              "total_after": str(new_quote.total), "before": _blocks(findings),
                              "after": _blocks(new_findings)})  # fmt: skip
         if not kept:
+            _discard(ctx, draft, new_draft, rule)
             continue
         _persist(ctx, draft, new_draft, rule)
         steps.append({"rule": rule, "before": str(quote.total), "after": str(new_quote.total)})
@@ -128,6 +150,16 @@ def request(ctx: Context, rfq: Rfq) -> tuple[str, tuple[str, ...]]:
     return (extract._text(message), tuple(a.filename for a in message.attachments)) if message else ("", ())
 
 
+def _discard(ctx: Context, old: Draft, rejected: Draft, rule: str) -> None:
+    """A rejected reading was priced again, and those prices are in the log as `option.found`: they are left out,
+    so the fallback never quotes the cargo the guard turned down."""
+    before = calc.chargeable_kg(old.rfq.weight_kg, old.rfq.volume_cbm)
+    after = calc.chargeable_kg(rejected.rfq.weight_kg, rejected.rfq.volume_cbm)
+    if after != before:
+        events.emit(ctx, "option.vetoed", "rfq", session_id=old.rfq.session_id,
+                    payload={"kind": "chargeable", "kg": str(after), "rule": f"{rule}:rejected"})  # fmt: skip
+
+
 async def _without(ctx: Context, draft: Draft, build: Build, records: list[dict]) -> Repaired:
     """The quote built again without the options `records` leave out; None when that leaves nothing or changes
     nothing (R1: an answer beats none)."""
@@ -151,50 +183,50 @@ async def _without(ctx: Context, draft: Draft, build: Build, records: list[dict]
 # --- the repairs: each returns the rebuilt quote and its draft, or None when it has nothing to offer --------------
 
 
-async def _distrusted(ctx: Context, quote: Quote, draft: Draft, by: datetime | None, build: Build) -> Repaired:
+async def _distrusted(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
     """`implausible_bid`: leave out the distrusted bid (round 67: a waiting charge per hour as the pickup)."""
     found = check.distrusted(quote, session.for_request(ctx, draft.rfq))
-    return await _without(ctx, draft, build, [session.veto(o, o.trucker is not None) for o in found])
+    return await _without(ctx, draft, tools.build, [session.veto(o, o.trucker is not None) for o in found])
 
 
-async def _excluded(ctx: Context, quote: Quote, draft: Draft, by: datetime | None, build: Build) -> Repaired:
+async def _excluded(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
     """`excluded_carrier`: leave out every option of an airline the customer ruled out (round 42)."""
     allowed = selection.allowed(draft.rfq, draft.options)
-    return await _without(ctx, draft, build, [{"kind": "airline", "name": o.carrier}
+    return await _without(ctx, draft, tools.build, [{"kind": "airline", "name": o.carrier}
                                          for o in draft.options if o not in allowed])  # fmt: skip
 
 
-async def _off_lane(ctx: Context, quote: Quote, draft: Draft, by: datetime | None, build: Build) -> Repaired:
+async def _off_lane(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
     """`lane`: leave out options of another lane (`session.for_request` keeps to the lane: nothing to record)."""
     r = draft.rfq
     kept = [o for o in draft.options if (o.origin, o.destination) == (r.origin, r.destination)]
     if not kept or len(kept) == len(draft.options):
         return None
     new = replace(draft, options=kept)
-    return await build(new), new
+    return await tools.build(new), new
 
 
-async def _language(ctx: Context, quote: Quote, draft: Draft, by: datetime | None, build: Build) -> Repaired:
+async def _language(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
     """`language_sent`: the customer's language read again from their own words; our text when we have one, else
     the checked translation, which needs time left (rounds 70 and 72)."""
     language = extract._language(extract.own_words(request(ctx, draft.rfq)[0]))
     if language == compose.language_of(draft.rfq):
         return None
-    if language not in compose.TEXT and _time_left(by) < TRANSLATE_MIN_S:
+    if language not in compose.TEXT and _time_left(tools.by) < TRANSLATE_MIN_S:
         return None
     new = replace(draft, rfq=draft.rfq.model_copy(update={"language": language}))
-    return await build(new), new
+    return await tools.build(new), new
 
 
-async def _plain(ctx: Context, quote: Quote, draft: Draft, by: datetime | None, build: Build) -> Repaired:
+async def _plain(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
     """`text_*`: the mail rendered with the fixed phrases only, no model-written slot."""
     if draft.prose is None:
         return None
     new = replace(draft, prose=None)
-    return await build(new), new
+    return await tools.build(new), new
 
 
-async def _dg_note(ctx: Context, quote: Quote, draft: Draft, by: datetime | None, build: Build) -> Repaired:
+async def _dg_note(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
     """`dangerous_goods`: a translation may drop the papers the request needs; the note goes back in."""
     found = dangerous.declared(ctx, draft.rfq)
     if not found:
@@ -202,6 +234,113 @@ async def _dg_note(ctx: Context, quote: Quote, draft: Draft, by: datetime | None
     goods, source = found
     body = dangerous.with_note(quote.body, goods, compose.language_of(draft.rfq), source)
     return quote.model_copy(update={"body": body}), draft
+
+
+CRITIC_WAIT_S = 6.0  # gpt-4.1 answers in about 1.5 s
+CRITIC_SYSTEM = (
+    "An air freight customer's request. Code read the shipment's total gross {field} in more than one way. Pick from "
+    "the list the one value that is the whole shipment's gross {field} as the customer states it, and copy the exact "
+    "words of the request it comes from. null when no value in the list is."
+)
+CRITIC_SCHEMA = {
+    "type": "object",
+    "properties": {"value": {"type": ["number", "null"]}, "quote": {"type": "string"}},
+    "required": ["value", "quote"],
+    "additionalProperties": False,
+}
+FIELDS = {"weight": "weight_kg", "weight_unexplained": "weight_kg", "volume_unexplained": "volume_cbm"}
+
+
+def _readings(field: str, text: str, pieces: int | None) -> set[Decimal]:
+    return check.weight_readings(text) if field == "weight_kg" else check.volume_readings(text, pieces)
+
+
+def _near(a: Decimal, b: Decimal) -> bool:
+    return abs(a - b) <= max(Decimal("0.01"), abs(b) * Decimal("0.005"))
+
+
+def _distinct(values: set[Decimal]) -> list[Decimal]:
+    out: list[Decimal] = []
+    for v in sorted(values):
+        if v > 0 and not any(_near(v, o) for o in out):
+            out.append(v)
+    return out
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+async def critic(
+    ctx: Context, rfq: Rfq, field: str, text: str, candidates: list[Decimal], by: datetime | None
+) -> Decimal | None:
+    """One small model call that picks among the readings code made, never a figure of its own. Its answer counts
+    only when the words it quotes stand in the request, those words alone give that reading, and the reading is one
+    of `candidates`: two independent readers agree. None on any doubt, failure or lack of time."""
+    wait = min(CRITIC_WAIT_S, _time_left(by))
+    if wait <= 1 or len(candidates) < 2:
+        return None
+    unit = "kg" if field == "weight_kg" else "cbm"
+    listed = ", ".join(f"{c.normalize():f} {unit}" for c in candidates)
+    try:
+        result = await asyncio.wait_for(
+            llm.ask_json(ctx, purpose="rfq.critic", system=CRITIC_SYSTEM.format(field=unit.replace("cbm", "volume")),
+                         user=f"{text[:2500]}\n\nReadings: {listed}", schema=CRITIC_SCHEMA,
+                         session_id=rfq.session_id, max_output_tokens=80, model=ctx.settings.model_check or None),
+            wait,
+        )  # fmt: skip
+        value, said = result.data.get("value"), str(result.data.get("quote") or "")
+        picked = Decimal(str(value)) if value is not None else None
+    except Exception as exc:  # noqa: BLE001  no answer: the quote stays as it was
+        events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                    payload={"where": "repair:critic", "error": type(exc).__name__})  # fmt: skip
+        return None
+    grounded = (
+        picked is not None
+        and len(said.strip()) >= 3
+        and _flat(said) in _flat(text)
+        and any(_near(picked, c) for c in candidates)
+        and any(_near(picked, r) for r in _readings(field, said, rfq.pieces))
+    )
+    events.emit(ctx, "rfq.critic", "rfq", session_id=rfq.session_id,
+                payload={"field": field, "candidates": [str(c) for c in candidates], "value": str(picked),
+                         "quote": said[:200], "taken": grounded})  # fmt: skip
+    if not grounded:
+        return None
+    return next(c for c in candidates if _near(picked, c))
+
+
+async def _reading(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
+    """`weight`, `weight_unexplained`, `volume_unexplained`: the figure the customer's own words give, when code reads
+    exactly one (the lots added up, a single reading), else the one `critic` picks from code's readings; the request
+    is priced again at it (sheets and the portal; airline prices for the old chargeable weight are left out, the
+    pickup stays) and the quote built again. Nothing without a way to price again."""
+    if tools.reprice is None:
+        return None
+    rule = tools.rule
+    field, r = FIELDS[rule], draft.rfq
+    text = extract.own_words(request(ctx, r)[0])
+    if rule == "weight" and (lots := check.lot_weight(text)) is not None:
+        value = lots
+    else:
+        candidates = _distinct(_readings(field, text, r.pieces))
+        if len(candidates) == 1:
+            value = candidates[0]
+        else:
+            value = await critic(ctx, r, field, text, candidates, tools.by)
+    if value is None or _near(value, getattr(r, field)):
+        return None
+    new_rfq = r.model_copy(update={field: value})
+    options = await tools.reprice(new_rfq)
+    if not options:
+        return None
+    old_kg, new_kg = (
+        calc.chargeable_kg(r.weight_kg, r.volume_cbm),
+        calc.chargeable_kg(new_rfq.weight_kg, new_rfq.volume_cbm),
+    )
+    stale = ({"kind": "chargeable", "kg": str(old_kg)},) if old_kg != new_kg else ()
+    new = replace(draft, rfq=new_rfq, options=options, vetoed=(*draft.vetoed, *stale))
+    return await tools.build(new), new
 
 
 REPAIRS: dict[str, Callable[..., Awaitable[Repaired]]] = {
@@ -213,4 +352,7 @@ REPAIRS: dict[str, Callable[..., Awaitable[Repaired]]] = {
     "text_amounts": _plain,
     "text_leftover": _plain,
     "dangerous_goods": _dg_note,
+    "weight": _reading,
+    "weight_unexplained": _reading,
+    "volume_unexplained": _reading,
 }

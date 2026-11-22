@@ -5,6 +5,20 @@ mails written for the tool (German with dimensions and pickup, pounds, a terse o
 city names, one without the facts), the production extraction prompt and its limit of 200 output tokens, seven
 fields per mail. Prices are OpenAI's list prices; "points" is what one call costs of the 40 cost points (R28).
 
+## 22.11.2026: model calls only where the check or a second reader doubts
+
+Not measured on the live key yet; offline the replayed fixtures make the same calls as before.
+
+- `compose.prose` (the call on every request the rules read) also reads destination, weight and volume: about 30
+  output tokens more on `PIXEL_MODEL_PROSE`, no further call.
+- Where it disagrees with the rules, gpt-4.1 reads the request (`extract._crosscheck` via `agent._second_read`):
+  about 0.0027 USD, about 1 cost point, on the requests with a dissent only.
+- `repair.critic`: one gpt-4.1 call of 80 output tokens, only when the check blocks a weight or volume the mail does
+  not explain and code reads it more than one way.
+- `PIXEL_SECOND_READ=log` records every dissent without the gpt-4.1 call; `off` sends the name-only prompt again.
+- Measure after a live hour: share of requests with a dissent (`rfq.second_read` with `dissent`), critic calls
+  (`rfq.critic`), and how often either changed the quoted price.
+
 ## 21.11.2026, round 83: what measuring on the live key cost
 
 The scorer's cost points per 18-minute window against the spend the live service logged (`llm.call` events). Where

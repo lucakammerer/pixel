@@ -1,6 +1,7 @@
 """What a session already knows, read back from the event log: its RFQ and the options found so far."""
 
 import json
+from decimal import Decimal
 
 from pixel.contracts import RateOption, Rfq, Source
 from pixel.core.context import Context
@@ -33,7 +34,8 @@ def options(ctx: Context, session_id: int) -> list[RateOption]:
 
 def veto(option: RateOption, trucker: bool) -> dict:
     """The record of a left-out option: its trucker, or its airline (with the source, so a bid is left out and the
-    same airline's sheet or portal rate stays)."""
+    same airline's sheet or portal rate stays). A third kind, `chargeable`, leaves out every airline price for a
+    chargeable weight a corrected reading no longer has (`agents/rfq/repair.py` `_reading`)."""
     if trucker:
         return {"kind": "trucker", "name": option.trucker}
     return {"kind": "airline", "name": option.carrier, "source": option.source.value}
@@ -43,6 +45,8 @@ def vetoed(option: RateOption, record: dict) -> bool:
     """Whether `option`, a found one or one with its pickup added, is built from what `record` left out."""
     if record.get("kind") == "trucker":
         return option.trucker is not None and option.trucker == record.get("name")
+    if record.get("kind") == "chargeable":  # an airline price for a weight the request no longer has
+        return option.trucker is None and abs(option.chargeable_kg - Decimal(str(record.get("kg")))) <= Decimal("0.01")
     if record.get("kind") != "airline" or option.carrier != record.get("name"):
         return False
     return record.get("source") is None or option.source.value == record["source"]

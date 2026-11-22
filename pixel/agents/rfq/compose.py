@@ -405,16 +405,31 @@ TEXT = {
 
 PROSE_SYSTEM = (
     "Read the customer's own email. Return their first name exactly as signed, or null if they did not sign "
-    'with a first name. Answer as JSON {"first_name": ...}.'
+    "with a first name. Also read the shipment as the customer states it: the destination airport's IATA code, the "
+    "whole shipment's gross weight in kg and its volume in cbm (convert pounds, tonnes, cubic feet and litres; add "
+    "up lots and pieces), null for what the email does not say. "
+    'Answer as JSON {"first_name": ..., "destination": ..., "weight_kg": ..., "volume_cbm": ...}.'
 )
 NULLABLE = {"type": ["string", "null"]}
 PROSE_FIELDS = {"first_name": NULLABLE, "intro": NULLABLE, "closing": NULLABLE}
 PROSE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
+    "properties": {"first_name": NULLABLE, "destination": NULLABLE, "weight_kg": {"type": ["number", "null"]},
+                   "volume_cbm": {"type": ["number", "null"]}},
+    "required": ["first_name", "destination", "weight_kg", "volume_cbm"],
+}  # fmt: skip
+NAME_SYSTEM = (
+    "Read the customer's own email. Return their first name exactly as signed, or null if they did not sign "
+    'with a first name. Answer as JSON {"first_name": ...}.'
+)
+NAME_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
     "properties": {"first_name": NULLABLE},
     "required": ["first_name"],
-}
+}  # PIXEL_SECOND_READ=off: the name alone, as before
+SECOND_READ = ("destination", "weight_kg", "volume_cbm")  # read beside the name: `agents/rfq/agent.py` `_second_read`
 
 DIGIT = re.compile(r"\d")
 CODE = re.compile(r"\b[A-Z]{3}\b")
@@ -1099,14 +1114,15 @@ def adopt(ctx: Context, rfq: Rfq, message: Message, raw: dict) -> Prose:
 
 
 async def prose(ctx: Context, rfq: Rfq, message: Message) -> Prose | None:
-    """Read the signed name for the greeting when rules read the request (R28, R31)."""
+    """Read the signed name for the greeting when rules read the request (R28, R31), and the cargo beside it."""
+    reads = getattr(ctx.settings, "second_read", "on") != "off"
     try:
         result = await llm.ask_json(
             ctx,
             purpose="quote.prose",
-            system=PROSE_SYSTEM,
-            user=own_words(message.body)[-1500:],
-            schema=PROSE_SCHEMA,
+            system=PROSE_SYSTEM if reads else NAME_SYSTEM,
+            user=_prose_input(own_words(message.body)) if reads else own_words(message.body)[-1500:],
+            schema=PROSE_SCHEMA if reads else NAME_SCHEMA,
             session_id=rfq.session_id,
             max_output_tokens=150,
             model=ctx.settings.model_prose or None,
@@ -1116,7 +1132,16 @@ async def prose(ctx: Context, rfq: Rfq, message: Message) -> Prose | None:
             ctx, "error", "rfq", session_id=rfq.session_id, payload={"where": "prose", "error": type(exc).__name__}
         )
         return None
-    return adopt(ctx, rfq, message, result.data)
+    data = result.data if isinstance(result.data, dict) else {}
+    if reads:
+        events.emit(ctx, "rfq.second_read", "rfq", session_id=rfq.session_id,
+                    payload={"figures": {k: data.get(k) for k in SECOND_READ}, "model": result.model})  # fmt: skip
+    return adopt(ctx, rfq, message, {k: v for k, v in data.items() if k not in SECOND_READ})
+
+
+def _prose_input(text: str) -> str:
+    """The mail for the prose call: its figures stand at the top, the signed name at the end."""
+    return text if len(text) <= 2500 else f"{text[:1500]}\n…\n{text[-1000:]}"
 
 
 def stored(ctx: Context, session_id: int) -> Prose | None:
