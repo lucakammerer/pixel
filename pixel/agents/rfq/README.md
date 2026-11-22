@@ -22,7 +22,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   too (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s), as an `rfq.crosscheck` event. Pieces and the wish win as
   the model reads them; its weight or volume only when code reads that figure as a gross total with its unit in the
   customer's own words or documents (`_gross`: never net, tare, per piece, superseded, forwarded or in pounds); a
-  destination never, it is only reported. On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
+  destination never, it is only reported. A figure the rules took from the attached documents (`evidence`: no
+  "mail") is never replaced, stated as a total or added up from the rows (benchmark section 11 runs once more with a
+  cross-check that reads every figure as the mail states it). On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
   the prose (`prose.raw`) and `compose.adopt` checks it; only without either, `compose.prose` runs in parallel. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
   failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (no bid
   to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by

@@ -196,6 +196,12 @@ def test_a_mail_that_contradicts_its_attached_document_is_read_by_the_document()
     assert [f"{r.name}: {r.wrong_fields}" for r in results if r.right is False and not r.known_gap] == []
 
 
+def test_a_cross_check_that_reads_the_mails_figures_never_beats_the_document():
+    """Rounds 82 and 130: gpt-4.1 read the mail's figure and the cross-check took it over the document's."""
+    results = bench.document_conflicts.audit(adversarial=True)
+    assert [f"{r.name}: {r.wrong_fields}" for r in results if r.right is False and not r.known_gap] == []
+
+
 def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
     """Every seventh document case, every mail case and every eleventh carrier answer of `tools/simulate.py`: read
     right or left to the model, unless `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now
