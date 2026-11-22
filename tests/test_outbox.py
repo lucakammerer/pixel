@@ -239,3 +239,52 @@ async def test_resending_stops_when_its_time_is_up(conn, monkeypatch):
         await outbox.send_quote(ctx, make_quote(rfq))
     assert not outbox.quoted(ctx, rfq.session_id)  # the claim is free for the fallback
     assert kinds(ctx).count("mail.resend") == 0
+
+
+class RecordingMailbox(FakeMailbox):
+    async def send(self, to, subject, body, in_reply_to=None, attachments=()):
+        self.bodies = [*getattr(self, "bodies", []), body]
+        return await super().send(to, subject, body, in_reply_to, attachments)
+
+
+def unconfirmed(ctx):
+    outbox.repair_receipts(ctx)
+    return [
+        r for r in ctx.db.execute("SELECT payload FROM events WHERE kind = 'error'") if "delivery_unconfirmed" in r[0]
+    ]
+
+
+@pytest.mark.parametrize("purpose", ["booking", "tracking", "bid_request"])
+@pytest.mark.parametrize("failures", [1, 2])
+async def test_a_non_quote_mail_the_mailbox_refuses_with_a_500_is_tried_once_more_then_settled(
+    conn, monkeypatch, purpose, failures
+):
+    """C15, session 51345: the booking notice got a 500 and was never sent again; its entry was reported at every
+    restart. One more try, then settled either way."""
+    monkeypatch.setattr(outbox, "RESEND_BACKOFF_S", (0.0,))
+    ctx = make_ctx(conn, RecordingMailbox([ApiError(500, "Internal Server Error")] * failures))
+    rfq = ingest_rfq(ctx)
+    to = rfq.sender
+    if purpose == "bid_request":
+        to = "carrier@example.test"
+        conn.execute("INSERT INTO carriers (name, kind, email, serves) VALUES ('c', 'airline', ?, '')", (to,))
+    send = outbox.send(ctx, to=to, subject="s", body="b", session_id=rfq.session_id, purpose=purpose)
+    if failures == 1:
+        await send
+        assert ctx.mailbox.sent == [to]
+    else:
+        with pytest.raises(ApiError):
+            await send
+        assert ctx.mailbox.sent == []
+        assert "error" in kinds(ctx)
+    assert unconfirmed(ctx) == []  # nothing reported again at a restart
+
+
+async def test_a_refused_translation_is_tried_once_more_in_english(conn, monkeypatch):
+    monkeypatch.setattr(outbox, "RESEND_BACKOFF_S", (0.0,))
+    ctx = make_ctx(conn, RecordingMailbox([ApiError(500, "Internal Server Error")]))
+    rfq = ingest_rfq(ctx)
+    await outbox.send(ctx, to=rfq.sender, subject="s", body="Say\x013n Deniz", session_id=rfq.session_id,
+                      purpose="booking", english="Dear Deniz")  # fmt: skip
+    assert ctx.mailbox.bodies == ["Say\x013n Deniz", "Dear Deniz"]
+    assert unconfirmed(ctx) == []

@@ -1427,7 +1427,7 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
     names = [FACTS[f][de] for f in facts]
     joined = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {'und' if de else 'and'} {names[-1]}"
     subject = message.subject if REPLY_SUBJECT.match(message.subject) else f"Re: {message.subject}"
-    body = ASK["de" if de else "en"].format(facts=joined, signer=ctx.settings.signer)
+    body = plain = ASK["de" if de else "en"].format(facts=joined, signer=ctx.settings.signer)
     if rfq.language not in ASK:
         from pixel.agents.rfq import compose  # compose reads this module's word lists
 
@@ -1440,7 +1440,7 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
     try:
         question = await outbox.send(
             ctx, to=message.sender, subject=subject, session_id=message.session_id, in_reply_to=message.id,
-            body=body, purpose="question",
+            body=body, purpose="question", english=plain,
         )  # fmt: skip
     except Exception:  # noqa: BLE001 - held (dry run, takeover) or failed: the guess takes over
         return None

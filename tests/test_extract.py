@@ -808,7 +808,7 @@ async def test_a_door_request_whose_customer_named_sites_in_two_zones_asks_and_r
     request, answer = captured("rfq-door-warehouse-two-sites.json"), captured("customer-names-pickup.json")
     asked = []
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         asked.append((to, subject, body, purpose))
         poller.ingest(ctx, answer)  # "The pickup address is 51115 Bergisch Gladbach", in the request's thread
         return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
@@ -829,7 +829,7 @@ async def test_a_customer_with_one_known_site_is_still_asked_and_a_town_answer_g
     await extract.extract(ctx, captured("rfq-dg-packing-list.json").model_copy(update={"attachments": []}), DEADLINE)
     request, answer = captured("rfq-door-warehouse-wrong-site.json"), captured("customer-names-pickup-town.json")
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         poller.ingest(ctx, answer)  # "The pickup is in Augsburg, Germany."
         return answer.model_copy(update={"id": answer.id - 2, "direction": "out"})
 
@@ -892,7 +892,7 @@ async def test_the_answer_gives_the_place_also_when_the_model_read_the_request(c
     answer = captured("customer-names-pickup.json")
     answer = answer.model_copy(update={"body": "Hi Lena,\n\nSorry, it is 51115.\n\nSara"})
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         poller.ingest(ctx, answer)
         return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
 
@@ -939,7 +939,7 @@ async def test_an_answer_that_gives_every_fact_is_read_after_the_model_could_rea
     store.save_zones(ctx, [{"zone": zone_of("42925"), "area": "Town", "airport": "AAA"}])
     request, answer = captured("rfq-voice-unread.json"), captured("customer-answers-every-fact.json")
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         poller.ingest(ctx, answer)
         return answer.model_copy(update={"id": answer.id - 1, "direction": "out"})
 
@@ -963,7 +963,7 @@ async def test_the_asked_facts_come_from_the_answer_alone_when_the_rules_cannot_
             "2026-11-21 for CCC? The new destination is BBB. Please send your all-in price for the fastest option.")  # fmt: skip
     request = poller.ingest(ctx, mail(body).model_copy(update={"id": 9200, "session_id": 9200}))
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         poller.ingest(ctx, request.model_copy(update={"id": 9202, "in_reply_to": 9201, "references": (9200, 9201),
             "body": "The departure airport has not been specified. Please arrange pickup from our site in postcode "
                     "40043, Germany. The shipment has a gross weight of 585 kg and a total volume of 5.01 m³."}))  # fmt: skip
@@ -985,7 +985,7 @@ async def test_a_request_without_a_volume_asks_for_it_and_reads_the_answer(conn,
         update={"id": 9100, "session_id": 9100, "sender": "buyer@hackloop.mail"}))  # fmt: skip
     asked = []
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         asked.append(body)
         reply = request.model_copy(update={"id": 9102, "body": "Sorry, it is 4 pallets of 120 x 80 x 150 cm.",
                                            "in_reply_to": 9101, "references": (9100, 9101)})  # fmt: skip
@@ -1255,7 +1255,7 @@ async def test_a_question_for_a_missing_fact_is_asked_in_the_customers_language(
         return LlmResult(data={"body": kw["user"].replace("Hello,", "Hola:")}, model="m", tokens_in=1, tokens_out=1,
                          cost_usd=Decimal(0))  # fmt: skip
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         asked.append(body)
         return request.model_copy(update={"id": 9201, "direction": "out"})
 
@@ -1277,7 +1277,7 @@ async def test_a_translated_question_keeps_the_signers_name_as_written(conn, mon
         name = "\n레나 베르거" if ctx.settings.signer in kw["user"] else ""
         return LlmResult(data={"body": korean + name}, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         asked.append(body)
         return request.model_copy(update={"id": 9301, "direction": "out"})
 

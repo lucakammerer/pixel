@@ -218,25 +218,27 @@ async def _deliver(
     *,
     quote: Quote | None = None,
     operator: bool = False,
+    english: str | None = None,
 ) -> Message:
     to = to.strip().lower()
     # Every quote carries itself as a PDF: a customer who asked for one rejects the quote without it (round 76).
     attachments = (
         ((f"offer-{quote.id}.pdf", "application/pdf", pdf.offer(quote, _reference(ctx, quote))),) if quote else ()
     )
-    # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
-    key = json.dumps(
-        [sid, purpose, to, parent, "" if purpose in ("tracking", "no_price") else body], ensure_ascii=False
-    )
-    if quote:
-        # A requote answers the customer's change mail: its own claim, so the first quote's never blocks it.
-        key = f"quote:{sid}" if parent == quote.rfq.message_id else f"quote:{sid}:{parent}"
-    elif purpose == HUMAN:
-        key = uuid.uuid4().hex
-    else:
-        key = hashlib.sha256(key.encode()).hexdigest()
+
+    def operation(text: str) -> str:
+        # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
+        key = json.dumps(
+            [sid, purpose, to, parent, "" if purpose in ("tracking", "no_price") else text], ensure_ascii=False
+        )
+        if quote:
+            # A requote answers the customer's change mail: its own claim, so the first quote's never blocks it.
+            return f"quote:{sid}" if parent == quote.rfq.message_id else f"quote:{sid}:{parent}"
+        return uuid.uuid4().hex if purpose == HUMAN else hashlib.sha256(key.encode()).hexdigest()
+
+    key = operation(body)
     payload = {"to": to, "subject": subject, "body": body, "in_reply_to": parent, "purpose": purpose}
-    resend_until, resends = asyncio.get_running_loop().time() + RESEND_S, 0
+    resend_until, resends, retried = asyncio.get_running_loop().time() + RESEND_S, 0, False
     while True:
         if sent := _claimed(ctx, key, quote is not None):
             return sent
@@ -289,12 +291,26 @@ async def _deliver(
                      payload={"where": "attachment", "error": scrub(ctx, str(e))})  # fmt: skip
                 attachments = ()
                 continue
+            translated = english is not None and english != body
+            if quote is None:
+                # Settled: the failed attempt is never reported again at a restart (C15, session 51345).
+                ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))
+                # Once more, never a loop: a translation the mailbox refused leaves in English.
+                if not retried and (e.status >= 500 or e.status == 0 or translated):
+                    retried = True
+                    emit(ctx, "mail.resend", "outbox", session_id=sid,
+                         payload={"purpose": purpose, "status": e.status, "try": 2, "english": translated})  # fmt: skip
+                    if translated:
+                        body, key = english, operation(english)
+                        payload["body"] = body
+                    await asyncio.sleep(RESEND_BACKOFF_S[0])
+                    continue
             emit(
                 ctx,
                 "error",
                 "outbox",
                 session_id=sid,
-                payload={**payload, "where": "send", "error": scrub(ctx, str(e))},
+                payload={**payload, "where": "send", "error": scrub(ctx, str(e)), "retried": retried},
             )
             raise
         except (Exception, asyncio.CancelledError) as e:
@@ -320,9 +336,11 @@ async def send(
     session_id: int | None,
     in_reply_to: int | None = None,
     purpose: str,
+    english: str | None = None,
 ) -> Message:
-    """Send a non-quote. A replay of a delivered automatic action reuses its receipt."""
-    return await _deliver(ctx, to, subject, body, session_id, in_reply_to, purpose)
+    """Send a non-quote. A replay of a delivered automatic action reuses its receipt. `english`: the text `body`
+    translates, sent instead when the mailbox refuses the translation."""
+    return await _deliver(ctx, to, subject, body, session_id, in_reply_to, purpose, english=english)
 
 
 async def send_quote(ctx: Context, quote: Quote, *, operator: bool = False, reply_to: int | None = None) -> Quote:
