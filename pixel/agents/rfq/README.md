@@ -501,8 +501,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as
-  strict xfails: a currency in words, as a symbol, as "Price: USD" or beside a second currency reads as none and is
-  quoted in EUR.
+  strict xfails: a currency in words, as a symbol or beside a second currency reads as none and is quoted in EUR.
+  Without "in USD" or "Currency: USD", the one code the mail names away from a figure is the wish ("Price: USD",
+  round 126's "EUR cinsinden"; `_currency`, `LONE_CODE`), never "3000 EUR".
 
 ## Open
 
