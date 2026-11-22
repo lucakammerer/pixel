@@ -159,12 +159,18 @@ OTHER_ADDRESS = re.compile(
     re.IGNORECASE,
 )
 FOREIGN_PREFIX = re.compile(r"\b(?:I|F|E|A|CH|NL|B|L|PL|CZ|DK|S|FL|P|GR)-$")
+# "20121 Milano, Italy": the town of the postcode and its country right after it. "63450 Hanau for export to Chicago,
+# USA" names the destination's country, not the pickup's.
+TOWN_WORD = r"(?!(?:to|for|nach|via|export|and|und|then|with)\b)[^\W\d][\w'’.-]*"
 ABROAD = re.compile(
-    r"[^\n.;]{0,40}?\b(?:italy|italia|spain|espa(?:ñ|n)a|france|frankreich|austria|(?:ö|oe)sterreich|switzerland|"
-    r"schweiz|suisse|netherlands|niederlande|belgium|belgien|poland|polen|czechia|czech\s+republic|denmark|"
-    r"d(?:ä|ae)nemark|sweden|schweden|portugal|greece|turkey|t(?:ü|ue)rkei|usa|united\s+states|united\s+kingdom)\b",
+    rf"[ \t]+{TOWN_WORD}(?:[ \t-]+{TOWN_WORD}){{0,2}}[ \t]*,?[ \t]*\(?(?:italy|italia|spain|espa(?:ñ|n)a|france|"
+    r"frankreich|austria|(?:ö|oe)sterreich|switzerland|schweiz|suisse|netherlands|niederlande|belgium|belgien|poland|"
+    r"polen|czechia|czech\s+republic|denmark|d(?:ä|ae)nemark|sweden|schweden|portugal|greece|turkey|t(?:ü|ue)rkei|usa|"
+    r"united\s+states|united\s+kingdom)\b",
     re.IGNORECASE,
 )
+# Where the sentence or clause holding a postcode starts: "Str. 1" or "No. 5" ends none.
+CLAUSE_START = re.compile(r";|[.!?](?=\s+[A-ZÄÖÜ])|\n")
 # "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
 DANGEROUS = re.compile(
     r"(?<!non-)(?<!non )(?<!no )(?<!not )(?<!kein )(?<!keine )(?<!kein)"
@@ -508,7 +514,8 @@ def pickup_postcodes(text: str) -> tuple[dict[str, bool], bool]:
         line_start = text.rfind("\n", 0, start) + 1
         line_end = text.find("\n", end)
         line = text[line_start : line_end if line_end >= 0 else len(text)]
-        if any(a <= start and end <= b for a, b in phones) or OTHER_ADDRESS.search(text[line_start:start]):
+        clause = text[max([m.end() for m in CLAUSE_START.finditer(text, 0, start)] + [max(0, start - 60)]) : start]
+        if any(a <= start and end <= b for a, b in phones) or OTHER_ADDRESS.search(clause):
             continue
         if _abroad(text, start, end):
             abroad = True
