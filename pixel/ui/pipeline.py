@@ -1,4 +1,4 @@
-"""The start page's "How it works": one real request travels the pipeline, station by station, on a loop.
+"""The start page's "How it works": one real request travels the pipeline, one large figure per stop, on a loop.
 
 The example is the newest booked request in the CRM (else the newest quote), so every figure on it ran here."""
 
@@ -10,68 +10,63 @@ from pixel.crm import bookings, quotes, shipments
 from pixel.ui import names
 from pixel.ui.page import esc, money
 
-ICONS = {  # 24x24 line icons, stroke only
-    "mail": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/>',
-    "read": '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 12h6M10 16h6"/>',
-    "price": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
-    "send": '<path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/>',
-    "book": '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="m3 7 9 4 9-4M12 11v10"/>',
-}
-
 CSS = """<style>
-.pipe{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px 24px 18px;
-overflow:hidden}
-.pipe .stations{position:relative;display:grid;gap:22px}
-.pipe .rail{position:absolute;width:2px;background:var(--line-2);border-radius:2px}
-.pipe .fill{position:absolute;left:0;top:0;width:100%;height:0;background:var(--accent);border-radius:2px;
-transition:height .9s cubic-bezier(.4,0,.2,1)}
-.pipe .dot{position:absolute;left:50%;top:0;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;
-background:var(--accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 22%,transparent);
-transition:top .9s cubic-bezier(.4,0,.2,1)}
-.st5{display:grid;grid-template-columns:52px minmax(0,1fr);column-gap:18px;align-items:center;min-width:0}
-.st5 .ic{grid-row:span 2;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;
-background:var(--surface);border:1.5px solid var(--line-2);color:var(--muted);transition:all .45s ease;position:relative;
-z-index:1}
-.st5 .ic svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;
-stroke-linejoin:round}
-.st5 h3{font-size:14px;font-weight:500;margin:0;color:var(--ink-2);transition:color .45s}
-.st5 .ex{justify-self:start;margin-top:6px;font-size:13px;line-height:1.45;padding:6px 10px;border-radius:8px;
-background:var(--sunk);color:var(--ink);opacity:0;transform:translateX(-6px);transition:opacity .45s,transform .45s;
-font-variant-numeric:tabular-nums}
-.st5.done .ic{border-color:var(--accent);color:var(--accent)}
-.st5.now .ic{background:var(--accent);border-color:var(--accent);color:#fff;transform:scale(1.08);
-box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 16%,transparent)}
-.st5.done h3,.st5.now h3{color:var(--ink)}
-.st5.done .ex,.st5.now .ex{opacity:1;transform:none}
-.pipe .cap{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;
-gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
-.pipe .cap b{color:var(--ink);font-weight:500}
-.pipe .clock{font-variant-numeric:tabular-nums}
-@media (max-width:420px){.pipe{padding:18px 16px 14px}}
+/* one statement on top, then one large figure at a time over a five-stop timeline. The accent marks only the
+price, the moment the section is about; everything else is white at three strengths */
+.pipe{margin-top:104px;padding:96px 64px 72px;border-radius:28px;background:var(--navy);color:#fff;text-align:center}
+.pipe .ey{margin:0 0 14px;font-size:17px;color:rgba(255,255,255,.55)}
+.pipe h2{margin:0;font-size:56px;font-weight:500;letter-spacing:-.035em;line-height:1.05;color:#fff}
+.pipe h2 span{color:rgba(255,255,255,.45)}
+.pipe .scenes{position:relative;height:240px;margin-top:80px}
+.pipe .sc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+opacity:0;transform:translateY(12px) scale(.98);transition:opacity .6s ease,transform .8s cubic-bezier(.2,.7,.2,1)}
+.pipe .sc.on{opacity:1;transform:none}
+.pipe .sc .v{max-width:100%;font-size:clamp(44px,7vw,80px);font-weight:500;letter-spacing:-.045em;line-height:1.02;
+font-variant-numeric:tabular-nums;text-wrap:balance;overflow-wrap:anywhere}
+.pipe .sc.hero .v{color:var(--accent-2)}
+.pipe .sc .c{margin-top:18px;font-size:19px;line-height:1.4;color:rgba(255,255,255,.6);text-wrap:balance}
+.pipe .tl{position:relative;max-width:880px;margin:56px auto 0}
+.pipe .tl-line{position:absolute;top:39px;left:10%;right:10%;height:2px;border-radius:2px;background:rgba(255,255,255,.12)}
+.pipe .tl-line i{position:absolute;inset:0 auto 0 0;width:0;border-radius:2px;background:#fff;
+transition:width .9s cubic-bezier(.6,0,.2,1)}
+.pipe .stps{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+.pipe .stp{display:flex;flex-direction:column;align-items:center;padding:0;border:0;background:none;color:inherit;
+font:inherit;cursor:pointer}
+.pipe .stp .t{order:-1;margin-bottom:14px;font-size:13px;line-height:20px;white-space:nowrap;
+font-variant-numeric:tabular-nums;color:rgba(255,255,255,.35);transition:color .4s}
+.pipe .stp i{width:12px;height:12px;border-radius:50%;background:var(--navy);
+box-shadow:inset 0 0 0 2px rgba(255,255,255,.25);transition:background .4s,box-shadow .4s}
+.pipe .stp b{margin-top:16px;font-size:15px;font-weight:500;color:rgba(255,255,255,.4);transition:color .4s}
+.pipe .stp:focus-visible{outline:2px solid var(--accent-2);outline-offset:6px;border-radius:8px}
+.pipe .stp.done i{background:#fff;box-shadow:none}
+.pipe .stp.done b,.pipe .stp.done .t{color:rgba(255,255,255,.75)}
+.pipe .stp.now i{background:#fff;box-shadow:0 0 0 6px rgba(255,255,255,.14)}
+.pipe .stp.now b,.pipe .stp.now .t{color:#fff}
+.pipe .stp.hero.now i,.pipe .stp.hero.done i{background:var(--accent-2)}
+.pipe .stp.hero.now i{box-shadow:0 0 0 6px rgba(232,121,90,.22)}
+.pipe .proof{margin:56px 0 0;font-size:13px;color:rgba(255,255,255,.4)}
+@media (max-width:1000px){.pipe{margin-top:80px;padding:72px 32px 56px}.pipe h2{font-size:44px}}
+@media (max-width:560px){.pipe{padding:56px 16px 44px}.pipe h2{font-size:34px}.pipe .scenes{height:200px;margin-top:56px}
+.pipe .sc .c{font-size:16px}.pipe .stp .t{font-size:11px}.pipe .stp b{font-size:12px}}
 @media (prefers-reduced-motion:reduce){.pipe *{transition:none!important}}
 </style>"""
 
 JS = """
-(()=>{const p=document.getElementById('pipe');if(!p)return;let i=-1;
-const st=[...p.querySelectorAll('.st5')],fill=p.querySelector('.fill'),dot=p.querySelector('.dot'),
-clk=p.querySelector('.clock'),secs=JSON.parse(p.dataset.secs),rail=p.querySelector('.rail'),
-box=p.querySelector('.stations');
-function place(){const b=box.getBoundingClientRect(),ic=p.querySelectorAll('.ic'),
-a=ic[0].getBoundingClientRect(),z=ic[ic.length-1].getBoundingClientRect();
-Object.assign(rail.style,{left:a.left+a.width/2-b.left-1+'px',top:a.top+a.height/2-b.top+'px',
-height:(z.top-a.top)+'px'});}
-function show(i){st.forEach((s,k)=>{s.classList.toggle('done',k<i);s.classList.toggle('now',k===i);});
-const f=(100*Math.max(0,i)/(st.length-1))+'%';fill.style.height=f;dot.style.top=f;
-if(clk)clk.textContent=i<0?'0 s':secs[i];}
-place();addEventListener('resize',place);
-if(matchMedia('(prefers-reduced-motion:reduce)').matches){show(st.length-1);return;}
-function next(){i=i>=st.length-1?-1:i+1;show(i);setTimeout(next,i===st.length-1?4200:i<0?700:2100);}
-next();})();
+(()=>{const p=document.getElementById('pipe');if(!p)return;
+const sc=[...p.querySelectorAll('.sc')],st=[...p.querySelectorAll('.stp')],fill=p.querySelector('.tl-line i'),
+hero=st.findIndex(s=>s.classList.contains('hero'));let i=0,tm=0;
+function show(k,go){i=k;clearTimeout(tm);
+sc.forEach((s,n)=>s.classList.toggle('on',n===k));
+st.forEach((s,n)=>{s.classList.toggle('done',n<k);s.classList.toggle('now',n===k);});
+fill.style.width=(k/(st.length-1)*100)+'%';
+if(go)tm=setTimeout(()=>show((k+1)%st.length,true),k===hero?4200:k===st.length-1?3000:2400);}
+const still=matchMedia('(prefers-reduced-motion:reduce)').matches;
+st.forEach((s,n)=>s.addEventListener('click',()=>show(n,!still)));
+if(still){show(hero,false);return;}
+show(0,false);
+new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)show(0,true);else clearTimeout(tm);}),
+{threshold:.4}).observe(p);})();
 """
-
-
-def _icon(name: str) -> str:
-    return f'<svg viewBox="0 0 24 24" aria-hidden=true>{ICONS[name]}</svg>'
 
 
 def span(seconds: float) -> str:
@@ -121,7 +116,8 @@ def example(ctx: Context) -> dict[str, Any] | None:
     clock.append(span((booking.created_at - start).total_seconds()) if booking else "not booked yet")
     return {
         "company": names.who(ctx, r.customer).name,
-        "cargo": f"{r.weight_kg} kg · {o.origin} → {o.destination}",
+        "weight": f"{r.weight_kg} kg",
+        "lane": f"{o.origin} → {o.destination}",
         "options": options,
         "carrier": o.carrier,
         "total": money(quote.total, quote.currency),
@@ -135,39 +131,39 @@ def example(ctx: Context) -> dict[str, Any] | None:
 def render(ctx: Context) -> str:
     ex = example(ctx)
     if ex:
-        notes = (
-            f"<b>{esc(ex['company'])}</b> asks for a price",
-            esc(ex["cargo"]) + ", read by rules",
-            f"<b>{ex['options'] or 'Every'}</b> options compared, best: {esc(ex['carrier'])}",
-            f"<b>{esc(ex['total'])}</b> all-in, sent after {esc(span(ex['secs']))}",
-            (f"Booked · <b>{esc(ex['ref'])}</b>, tracking answered from the CRM" if ex["booked"]
-             else "Booked by rate id when the customer says yes"),
+        n = ex["options"]
+        scenes = (  # (big figure, one sentence) per stop, all from this one request
+            (esc(ex["company"]), "emails asking for a price."),
+            (f"{esc(ex['weight'])} · {esc(ex['lane'])}", f"Weight, lane and dates, read in {esc(ex['clock'][1])}."),
+            (f"{n} option{'s' if n != 1 else ''}" if n else "Every option",
+             f"Compared to the cent. {esc(ex['carrier'])} wins."),
+            (esc(ex["total"]), f"All-in, in their inbox {esc(span(ex['secs']))} after they asked."),
+            ("Booked.", f"{esc(ex['ref'])}, tracked until it lands.") if ex["booked"]
+            else ("On their yes", "Booked by rate id, then tracked until it lands."),
         )  # fmt: skip
-        clock = ex["clock"]
-        caption = (
-            f"<span>A real request from <b>{esc(ex['company'])}</b>, as it ran through PIXEL</span>"
-            "<span>Time since the mail arrived: <b class=clock>0 s</b></span>"
-        )
+        times = [esc(t) for t in ex["clock"][:4]] + [esc(ex["clock"][4]) if ex["booked"] else "on yes"]
+        proof = "A real request, replayed. Every figure on it was computed here."
     else:
-        notes = ("A customer mails a request", "Weight, lane, pickup read", "Every price source compared",
-                 "One all-in price sent", "Booked and tracked")  # fmt: skip
-        clock = ["", "", "", "", ""]
-        caption = "<span>Every request takes this path, day and night</span>"
-    stations = (
-        ("mail", "Request in"),
-        ("read", "Reads"),
-        ("price", "Prices"),
-        ("send", "Replies"),
-        ("book", "Books & tracks"),
+        scenes = (("One email", "A customer asks for a price."), ("Weight, lane", "Pickup and dates, read in seconds."),
+                  ("Every source", "Rate sheets, the portal and carrier bids, compared."),
+                  ("All-in", "One price, in their own thread."), ("Booked.", "And tracked until it lands."))  # fmt: skip
+        times = ["&nbsp;"] * 5
+        proof = "Every request takes this path, day and night."
+    titles = ("Request", "Read", "Price", "Reply", "Book")
+    hero = 3  # the reply: the one moment in the accent colour
+    shown = "".join(
+        f"<div class='sc{' hero' if k == hero else ''}'><div class=v>{v}</div><div class=c>{c}</div></div>"
+        for k, (v, c) in enumerate(scenes)
     )
-    cells = "".join(
-        f"<div class=st5><div class=ic>{_icon(icon)}</div><h3>{esc(title)}</h3><div class=ex>{note}</div></div>"
-        for (icon, title), note in zip(stations, notes, strict=True)
+    stops = "".join(
+        f"<button type=button class='stp{' hero' if k == hero else ''}'><span class=t>{t}</span><i></i>"
+        f"<b>{esc(title)}</b></button>"
+        for k, (title, t) in enumerate(zip(titles, times, strict=True))
     )
-    secs = "[" + ",".join(f'"{esc(c)}"' for c in clock) + "]"
-    return (
-        CSS
-        + f"<div class=pipe id=pipe data-secs='{secs}'><div class=stations>"
-        + f"<div class=rail><div class=fill></div><div class=dot></div></div>{cells}</div>"
-        + f"<div class=cap>{caption}</div></div>"
+    return CSS + (
+        "<section class=pipe id=pipe><p class=ey>How it works</p>"
+        "<h2>One email in.<br><span>One all-in price out.</span></h2>"
+        f"<div class=scenes>{shown}</div>"
+        f"<div class=tl><div class=tl-line><i></i></div><div class=stps>{stops}</div></div>"
+        f"<p class=proof>{proof}</p></section>"
     )

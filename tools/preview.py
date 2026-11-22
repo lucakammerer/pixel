@@ -39,6 +39,7 @@ from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import store
 from pixel.ui import crm, dashboard, home, routes
+from pixel.ui import map as world_map
 
 KIT = Path("data/start-kit")
 US = "pixel@hackloop.mail"
@@ -445,7 +446,7 @@ def main() -> None:
                 await task
 
     app = FastAPI(title="PIXEL preview", lifespan=lifespan)
-    for module in (home, routes, dashboard, crm):
+    for module in (home, routes, dashboard, crm, world_map):
         app.include_router(module.router)
     app.state.ctx = ctx
     print(f"preview on http://localhost:{args.port} (synthetic data, nothing is sent)")

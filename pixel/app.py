@@ -20,6 +20,7 @@ from pixel.core.context import Context
 from pixel.core.events import emit
 from pixel.pricing import rate_card
 from pixel.ui import crm, dashboard, home, routes
+from pixel.ui import map as world_map
 from pixel.voice import routes as voice
 
 
@@ -83,3 +84,4 @@ app.include_router(routes.router)
 app.include_router(dashboard.router)
 app.include_router(crm.router)
 app.include_router(voice.router)
+app.include_router(world_map.router)

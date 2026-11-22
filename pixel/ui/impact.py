@@ -1,5 +1,5 @@
 """The start page's use cases: for each job PIXEL takes off a forwarder's desk, the problem, what PIXEL does about it,
-and three figures from the event log that show it."""
+and three figures from the event log that show it. One row per job, one below the other."""
 
 from datetime import datetime
 from statistics import median
@@ -12,35 +12,31 @@ OFFICE = ZoneInfo("Europe/Berlin")
 OPEN, CLOSE = 8, 18  # office hours, local time
 
 CSS = """<style>
-.uses{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
-.use{background:var(--sunk);border:1px solid var(--line);border-radius:20px;overflow:hidden}
-.use.wide{grid-column:1/-1}
-.use .figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;background:var(--surface);
-padding:18px 20px;border-bottom:1px solid var(--line);text-align:center}
-.use .figs b{display:block;font-size:28px;font-weight:500;letter-spacing:-.025em;line-height:1.15;color:var(--navy);
-font-variant-numeric:tabular-nums}
-.use .figs span{font-size:12px;color:var(--ink-2)}
-.use .body{padding:24px 24px 26px}
-.use h3{font-size:28px;font-weight:500;letter-spacing:-.025em;line-height:1.15;margin:0 0 18px}
-.use .ps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.use .p,.use .s{border-radius:12px;padding:16px 16px 18px;font-size:13px;line-height:1.5}
-.use .p{background:var(--surface);border:1px solid var(--line);color:var(--ink-2)}
-.use .s{background:var(--navy);color:#f5efe9}
-.use .p h4,.use .s h4{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;margin:0 0 8px}
-.use .p h4{color:var(--ink)}.use .s h4{color:#fff}
-.use h4 svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;
-stroke-linejoin:round}
-.use.wide .ps{max-width:none}
-@media (max-width:900px){.uses{grid-template-columns:1fr}}
-@media (max-width:520px){.use .ps{grid-template-columns:1fr}.use .figs b{font-size:20px}.use h3{font-size:20px}}
+/* the three jobs as rows: title, problem and answer as text, the figures as a column on the right */
+.uses{border-top:1px solid var(--line-2)}
+.use{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,5fr) minmax(0,3fr);gap:48px;padding:44px 0;
+border-bottom:1px solid var(--line-2);align-items:start}
+.use .idx{font-size:13px;font-weight:500;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:.04em;
+margin-bottom:12px}
+.use h3{font-size:30px;font-weight:500;letter-spacing:-.03em;line-height:1.1;margin:0}
+.use .ps{display:grid;gap:22px}
+.use .p,.use .s{padding-left:18px;font-size:15px;line-height:1.6;text-wrap:pretty}
+.use .p{border-left:2px solid var(--line-2);color:var(--muted)}
+.use .s{border-left:2px solid var(--accent);color:var(--ink)}
+.use .lbl{font-size:12px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.use .p .lbl{color:var(--muted)}.use .s .lbl{color:var(--accent)}
+.use .figs{display:grid}
+.use .figs>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:12px 0;
+border-top:1px solid var(--line)}
+.use .figs>div:first-child{border-top:0;padding-top:0}
+.use .figs b{font-size:28px;font-weight:500;letter-spacing:-.025em;line-height:1.1;color:var(--ink);
+font-variant-numeric:tabular-nums;white-space:nowrap}
+.use .figs>div:first-child b{color:var(--accent)}
+.use .figs span{font-size:13px;color:var(--muted);text-align:right}
+@media (max-width:980px){.use{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px 40px}
+.use>header{grid-column:1/-1}}
+@media (max-width:640px){.use{grid-template-columns:1fr;padding:32px 0}.use h3{font-size:24px}}
 </style>"""
-
-PROBLEM = (
-    '<svg viewBox="0 0 24 24" aria-hidden=true><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg>'
-)
-SOLUTION = (
-    '<svg viewBox="0 0 24 24" aria-hidden=true><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16 9.8"/></svg>'
-)
 
 
 def _ts(value: str | None) -> datetime | None:
@@ -66,13 +62,13 @@ def figures(ctx: Context, n: dict) -> dict:
     }
 
 
-def _card(title: str, figs: list[tuple[str, str]], problem: str, solution: str, *, wide: bool = False) -> str:
+def _row(index: int, title: str, figs: list[tuple[str, str]], problem: str, solution: str) -> str:
     cells = "".join(f"<div><b>{esc(v)}</b><span>{esc(k)}</span></div>" for v, k in figs)
     return (
-        f"<article class='use{' wide' if wide else ''}'><div class=figs>{cells}</div><div class=body>"
-        f"<h3>{esc(title)}</h3><div class=ps>"
-        f"<div class=p><h4>{PROBLEM}Problem</h4>{esc(problem)}</div>"
-        f"<div class=s><h4>{SOLUTION}Solution</h4>{esc(solution)}</div></div></div></article>"
+        f"<article class=use><header><div class=idx>{index:02d}</div><h3>{esc(title)}</h3></header><div class=ps>"
+        f"<div class=p><div class=lbl>The problem</div>{esc(problem)}</div>"
+        f"<div class=s><div class=lbl>With PIXEL</div>{esc(solution)}</div></div>"
+        f"<div class=figs>{cells}</div></article>"
     )
 
 
@@ -81,7 +77,8 @@ def render(ctx: Context, n: dict) -> str:
     median_quote = f"{n['median']} s" if n["median"] is not None else "—"
     return CSS + (
         "<div class=uses>"
-        + _card(
+        + _row(
+            1,
             "Rate management",
             [
                 (median_quote, "Time to quote"),
@@ -93,7 +90,8 @@ def render(ctx: Context, n: dict) -> str:
             "PIXEL reads the request, compares every price source to the cent and sends one all-in price in the "
             "customer's own thread.",
         )
-        + _card(
+        + _row(
+            2,
             "Track & trace",
             [
                 (str(f["tracked"]), "Questions answered"),
@@ -103,16 +101,16 @@ def render(ctx: Context, n: dict) -> str:
             "Customers ask where their shipment is, and someone has to dig through mails and bookings to tell them.",
             "PIXEL answers from its own CRM: status, airline and booking reference, in the customer's tone.",
         )
-        + _card(
+        + _row(
+            3,
             "Customer service",
             [
-                (str(f["after_hours"]), "Quotes sent outside office hours"),
+                (str(f["after_hours"]), "Quotes sent after hours"),
                 (str(n["missed"]), "Requests missed"),
                 (f["last"], "Last answer sent"),
             ],
             "A request that lands at 2 a.m. waits until the office opens. By then the customer has booked elsewhere.",
             "PIXEL answers within minutes, day and night, and a person can step into any request at any time.",
-            wide=True,
         )
         + "</div>"
     )
