@@ -73,11 +73,6 @@ def _desk_enquiry(ctx: Context, rfq: Rfq) -> int | None:
     return asked[0] if asked else None
 
 
-def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
-    """The rate API answered 503 for this request and the desk has not been asked yet."""
-    return _portal_down(ctx, rfq) and _desk_enquiry(ctx, rfq) is None
-
-
 def _distrusted(ctx: Context, rfq: Rfq, option: RateOption) -> None:
     """Once per bid: an `option.failed` that `feedback.attention` shows, so the reading can be repaired."""
     name = option.trucker or option.carrier
