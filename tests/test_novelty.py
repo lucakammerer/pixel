@@ -117,3 +117,10 @@ def test_dates_the_rules_read_set_aside_or_left_behind_are_accounted_for():
         "Die Abholung ist ab dem 26.11.2026 möglich.", "Bitte Ihr Angebot bis 24.11. Letzte Sendung am 3.11."
     )
     assert novelty.unread_dates(said, rfq) == []
+
+
+def test_a_dangerous_goods_line_with_n_o_s_is_read_whole():
+    """Sessions 33097 and 38213: "n.o.s." split the packing list's DG line, and "(contains phosphoric acid)" cost a
+    model call and a note in the quote though the DG rule had read the line."""
+    line = "Dangerous goods: UN1760, Class 8, Corrosive liquid, n.o.s. (contains phosphoric acid)"
+    assert novelty.leftover(line) == []
