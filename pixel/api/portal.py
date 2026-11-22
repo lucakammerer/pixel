@@ -166,7 +166,7 @@ def page_rate(html: str) -> dict:
 class Portal:
     def __init__(self, client: httpx.AsyncClient, page_url: str = ""):
         self.client = client
-        self.page_url = page_url  # the portal's browser page, read when the rate API answers 503; empty: never
+        self.page_url = page_url  # the portal's browser page, read on any outage answer or a hung read; empty: never
         self.rate_limit: int | None = None  # X-RateLimit-Limit
         self.rate_remaining: int | None = None  # X-RateLimit-Remaining
         self.window_reset_at: datetime | None = None  # from the last 429's Retry-After
@@ -224,7 +224,13 @@ class Portal:
         for attempt in range(2):
             if self.rate_remaining == 0 and self.window_reset_at and self.window_reset_at > _now():
                 await self._wait((self.window_reset_at - _now()).total_seconds(), not_after, attempt)
-            response = await self.client.get("/v1/portal/rates", params=params, timeout=READ_TIMEOUT_S)
+            try:
+                response = await self.client.get("/v1/portal/rates", params=params, timeout=READ_TIMEOUT_S)
+            except httpx.TimeoutException as e:  # a hung read is an outage: the page may still have the rate
+                page = await self._page_rate(params) if self.page_url else None
+                if isinstance(page, RateOption):
+                    return page
+                raise RatesUnavailable(f"no answer within {READ_TIMEOUT_S:g} s", page) from e
             self._read_limits(response)
             if response.status_code == 429:
                 retry_after = float(response.headers.get("Retry-After", "60"))
