@@ -272,7 +272,8 @@ async def test_the_booking_mail_greets_and_signs_as_the_quote_did(pipe, accepted
     (told,) = pipe.sent
     # Same greeting and sign-off as the quote of this session.
     assert told["body"].startswith("Hi Klaus,\n\n")
-    assert "\n\nCheers,\nLena Berger\n" in told["body"] and "great to have you on board" in told["body"]
+    assert "\n\nCheers,\nLena Berger\n" in told["body"] and "Great to have you on board." in told["body"]
+    assert told["body"].count("Thanks") == 1
 
 
 async def test_the_booking_mail_to_a_formal_customer_stays_formal(pipe, accepted):
