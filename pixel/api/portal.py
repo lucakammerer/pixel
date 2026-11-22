@@ -153,9 +153,15 @@ def page_rate(html: str) -> dict:
 
 
 class Portal:
-    def __init__(self, client: httpx.AsyncClient, page_url: str = ""):
+    def __init__(self, client: httpx.AsyncClient, page_url: str = "", page_cookie: str = "", page_agent: str = ""):
         self.client = client
         self.page_url = page_url  # the portal's browser page, read when the rate API answers 503; empty: never
+        # The page sits behind a Cloudflare human check. A person passes it by hand in a real browser and the
+        # cf_clearance cookie it mints (with the same browser's User-Agent) is carried here. We never solve the
+        # check: without a valid cookie the page answers 403 and the caller reports the API's 503 (R21). Secret,
+        # like the key: never logged or put in an event. Cloudflare binds it to the IP and User-Agent that minted
+        # it, so it must come from a browser on the live host, and it is refreshed by hand when it expires.
+        self._page_headers = {"Cookie": page_cookie, "User-Agent": page_agent} if page_cookie else {}
         self.rate_limit: int | None = None  # X-RateLimit-Limit
         self.rate_remaining: int | None = None  # X-RateLimit-Remaining
         self.window_reset_at: datetime | None = None  # from the last 429's Retry-After
@@ -237,7 +243,7 @@ class Portal:
                   "weight": params["weight_kg"], "volume": params["volume_cbm"]}  # fmt: skip
         refused = None
         for _ in range(PAGE_TRIES):
-            load = await self.client.post(self.page_url, headers={"X-Portal-Step": "load"})
+            load = await self.client.post(self.page_url, headers={"X-Portal-Step": "load", **self._page_headers})
             if load.status_code != 200:
                 return _refusal(load)
             try:
@@ -253,7 +259,7 @@ class Portal:
                     )  # fmt: skip
                 response = await self.client.post(
                     self.page_url,
-                    headers={"X-Portal-Challenge": form["id"]},
+                    headers={"X-Portal-Challenge": form["id"], **self._page_headers},
                     files={k: (None, v) for k, v in data.items()},
                 )
                 body = response.json()

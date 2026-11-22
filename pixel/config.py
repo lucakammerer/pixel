@@ -25,6 +25,8 @@ class Settings:
     repair: str = "on"  # agents/rfq/repair.py: on (mend a BLOCK before sending), detect (check only) or off
     second_read: str = "on"  # the prose call reads the cargo too (agents/rfq/agent.py `_second_read`): on, log or off
     portal_page: str = ""  # the portal's browser page, read when the rate API answers 503 (`api/portal.py`)
+    portal_cookie: str = ""  # cf_clearance a person minted by passing the page's human check by hand; secret
+    portal_agent: str = ""  # the User-Agent of the browser that minted the cookie (Cloudflare binds one to the other)
 
 
 @cache
@@ -50,4 +52,6 @@ def settings() -> Settings:
         repair=env.get("PIXEL_REPAIR", "on").strip().lower(),
         second_read=env.get("PIXEL_SECOND_READ", "log").strip().lower(),  # on after a measured live hour
         portal_page=env.get("PIXEL_PORTAL_PAGE", "https://start-hack.5u.ai/portal/ui"),
+        portal_cookie=env.get("PIXEL_PORTAL_COOKIE", ""),
+        portal_agent=env.get("PIXEL_PORTAL_UA", ""),
     )

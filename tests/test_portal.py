@@ -124,6 +124,30 @@ async def test_503_reads_the_rate_from_the_portal_page():
 
 
 @respx.mock
+async def test_page_carries_the_human_cleared_cookie_and_refuses_without_it():
+    """The page sits behind a human check: a person's cf_clearance cookie and matching User-Agent pass it, and
+    without them the gate answers 403 and the rate error says why. We never solve the check."""
+    page_url = "https://page.test/portal/ui"
+    fixtures = Path(__file__).parent / "fixtures" / "portal_page"
+    load, rate = (json.loads((fixtures / f"{n}.json").read_text()) for n in ("load", "rate"))
+
+    def page(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("cookie") != "cf_clearance=abc" or "RealBrowser" not in request.headers.get(
+            "user-agent", ""
+        ):
+            return httpx.Response(403, html="<title>Just a moment...</title>")
+        return httpx.Response(200, json=load if request.headers.get("X-Portal-Step") == "load" else rate)
+
+    respx.get(f"{BASE}/v1/portal/rates").respond(503, json={"detail": "The rate API is unavailable."})
+    respx.post(page_url).mock(side_effect=page)
+    async with httpx.AsyncClient(base_url=BASE, headers={"X-API-Key": "secret"}) as client:
+        with pytest.raises(portal_module.RatesUnavailable):
+            await read(Portal(client, page_url))  # no cookie: refused, the fallback quotes
+        option = await read(Portal(client, page_url, "cf_clearance=abc", "Mozilla/5.0 RealBrowser"))
+    assert option.source == Source.PORTAL
+
+
+@respx.mock
 async def test_a_page_that_refuses_says_why_in_the_rate_error():
     """Round 120: the page answered 403 with a bot check and the outage showed no reason."""
     page_url = "https://page.test/portal/ui"

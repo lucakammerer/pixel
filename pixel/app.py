@@ -32,7 +32,7 @@ def build_context(config: Settings | None = None) -> Context:
         settings=config,
         db=conn,
         mailbox=Mailbox(client),
-        portal=Portal(client, config.portal_page),
+        portal=Portal(client, config.portal_page, config.portal_cookie, config.portal_agent),
         gateway=Gateway(client),
         board=Board(client),
     )
