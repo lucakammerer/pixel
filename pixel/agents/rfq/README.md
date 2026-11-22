@@ -112,8 +112,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "required delivery date", "transit time: max 4 days", "no more than 4 days in transit", "can be collected from".
   A ready date also as "cargo ready date:", "ready to go on", "available for collection as of", "pick-up possible
   from", "earliest collection:", "Abholung frühestens am", "ist ab dem ... abholbereit", and with ordinals ("Nov 28th",
-  "the 28th of November"). It picks the sheet version as well as the arrival, so a missed one can price an old
-  tariff.
+  "the 28th of November"), and in Korean, Chinese or Japanese as an ISO date right beside the pickup word
+  ("2026-11-24부터 픽업 가능", "2026-11-23 可以提货", "픽업은 2026-11-24부터"; a date further off, often a delivery or
+  reply date, is left alone: `READY_CJK`), a latest arrival as "2026-12-01까지 도착" or "2026-12-01前到达"
+  (`ARRIVE_BY_CJK`). It picks the sheet version as well as the arrival, so a missed one can price an old tariff.
   Only the goods, the shipment or "it" set an arrival limit ("will be delivered to FRA by" is our pickup side, "the
   offer has to be in our system by" a reply deadline). `novelty.leftover` splits sentences at ";" and ", and" so a
   read limit does not hide an unread requirement in the same sentence.

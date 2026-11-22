@@ -1032,6 +1032,52 @@ def test_a_latest_arrival_is_only_one_set_for_this_shipment(text, arrive_by):
     assert extract.schedule(text, date(2026, 11, 22))[1] == arrive_by
 
 
+@pytest.mark.parametrize(
+    ("text", "ready"),
+    [
+        ("2026-11-24부터 픽업 가능합니다.", date(2026, 11, 24)),  # rounds 149, 156, 161
+        ("픽업은 2026-11-24부터 가능하며, 공항까지의 픽업 트럭도 배차해 주세요.", date(2026, 11, 24)),
+        ("货物是汽车传感器。2026-11-23 可以提货，提货地点是我们的场地。", date(2026, 11, 23)),  # round 72
+        ("2026-11-25に集荷可能です。", date(2026, 11, 25)),
+        ("2026-12-01까지 도착해야 합니다. 픽업 가능합니다.", None),  # an arrival, not the pickup
+        ("픽업 후 2026-12-01까지 도착해야 합니다.", None),
+        ("货物需在2026-12-01前到达，2026-11-25可以提货。", date(2026, 11, 25)),
+        ("2026-12-15까지 납품해야 하므로 픽업은 가능한 빨리 부탁드립니다.", None),  # a delivery date, not the pickup
+        ("고객에게 2026-12-15까지 배송되어야 하며 픽업은 내일 가능합니다.", None),
+        ("2026-12-15前必须交货给客户，提货随时可以。", None),
+        ("货物需在2026-12-15送到客户手中，明天可以提货。", None),
+        ("2026-12-15までに納品が必要で、集荷は明日可能です。", None),
+        ("2026-12-20에 현지 창고 입고 필요, 출고는 2026-11-25 가능.", date(2026, 11, 25)),
+        ("견적은 2026-11-23까지 부탁드리며 픽업 주소는 41680입니다.", None),  # our answer's date
+    ],
+)  # fmt: skip
+def test_a_korean_chinese_or_japanese_pickup_date_is_the_ready_date(text, ready):
+    assert extract.schedule(text, date(2026, 11, 22))[0] == ready
+
+
+@pytest.mark.parametrize(
+    ("text", "arrive_by"),
+    [
+        ("2026-11-24부터 픽업 가능합니다. 2026-12-03까지 도착해야 합니다.", date(2026, 12, 3)),
+        ("货物须于2026-12-01前到达。", date(2026, 12, 1)),
+        ("2026-12-01までに到着する必要があります。", date(2026, 12, 1)),
+        ("견적은 2026-11-23까지 보내 주세요. 도착은 빠를수록 좋습니다.", None),  # our answer's date
+        ("견적 회신은 2026-11-30까지 도착하도록 부탁드립니다.", None),  # the reply arrives by then, not the cargo
+        ("报价请于2026-11-30前送达。", None),
+        ("見積の回答は2026-11-30までに到着するようお願いします。", None),
+        ("2026-12-01 이전에 도착 희망합니다.", date(2026, 12, 1)),
+        ("2026-11-30까지 도착하도록 견적서를 보내 주세요.", None),  # the reply word after the arrival verb
+        ("2026-11-30까지 도착하게 회신 부탁드립니다.", None),
+        ("请在2026-11-30前送达报价。", None),
+        ("2026-11-30までに到着するよう見積をお送りください。", None),
+        ("2026-11-30前到达的报价才有效。", None),
+        ("회신은 빨리 부탁드리고, 화물은 2026-12-01까지 도착해야 합니다.", date(2026, 12, 1)),  # another clause
+    ],
+)  # fmt: skip
+def test_a_korean_chinese_or_japanese_arrival_deadline_is_read(text, arrive_by):
+    assert extract.schedule(text, date(2026, 11, 22))[1] == arrive_by
+
+
 def test_a_ready_date_this_autumn_stays_this_year():
     assert extract.schedule("Cargo available from 15 October.", date(2026, 11, 22))[0] == date(2026, 10, 15)
 
