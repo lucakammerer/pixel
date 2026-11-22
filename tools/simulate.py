@@ -405,6 +405,10 @@ def other_kind_cases() -> list[Case]:
                           "booking_confirmation"))  # fmt: skip
         if fmt == "mp3":  # a tariff is no voice message
             continue
+        if fmt == "txt":  # also written in the mail itself
+            body = "\n".join("  ".join(cells) for cells in sheet)
+            cases.append(Case("document", {"kind": "tariff", "format": "body"}, "Tariff update", body, [], prices,
+                              "tariff"))  # fmt: skip
         cases.append(Case("document", {"kind": "tariff", "format": fmt}, "Tariff update",
                           "Hello,\n\nplease find our new air export tariff attached.\n\nTestline Cargo",
                           [(f"testline-cargo-tariff-2026-11.{fmt}", write(sheet))], prices, "tariff"))  # fmt: skip

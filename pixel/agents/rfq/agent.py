@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -164,7 +165,7 @@ def _findings(ctx: Context, rfq: Rfq, quote: Quote, insurance_eur: Decimal = Dec
         ).fetchone()
         if evidence and evidence["weight"] is not None:
             document_weight = Decimal(evidence["weight"])
-    return check.run(
+    findings = check.run(
         quote,
         request,
         session.for_request(ctx, rfq),
@@ -172,6 +173,13 @@ def _findings(ctx: Context, rfq: Rfq, quote: Quote, insurance_eur: Decimal = Dec
         document_weight=document_weight,
         insurance_eur=insurance_eur,
     )
+    if not _later_figures(ctx, rfq):
+        return findings
+    # The figures are a later mail's (a change, an answer): the first mail cannot explain them (round 152).
+    return [
+        replace(f, level=check.WARN) if f.rule in ("weight_unexplained", "volume_unexplained") else f
+        for f in findings
+    ]
 
 
 def _premium(ctx: Context, quote: Quote) -> Decimal:

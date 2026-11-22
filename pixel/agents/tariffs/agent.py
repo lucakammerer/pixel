@@ -379,6 +379,49 @@ async def attachment_lines(ctx: Context, message: Message, attachment: Attachmen
     return None
 
 
+SCAN_PAGES = 3  # a photographed request or offer is a page or two; more would only cost tokens
+# A phone photo at full size makes the one fallback call slow or fail: pages go at most this long and this heavy.
+PAGE_SIDE, PAGE_QUALITY, PAGE_BYTES = 1600, 80, 1_500_000
+
+
+async def attachment_images(ctx: Context, message: Message) -> tuple[bytes, ...]:
+    """The attachments code cannot read as text, as JPEG pages for the model: a photo, a scanned pdf. A pdf with text
+    is read as text and never sent."""
+    pages: list[bytes] = []
+    for attachment in message.attachments:
+        suffix = Path(attachment.filename).suffix.lower()
+        if suffix not in IMAGES and suffix != ".pdf":
+            continue
+        try:
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            if suffix in IMAGES:
+                found = [content]
+            else:
+                try:
+                    _lines(attachment.filename, content)
+                    continue
+                except Unreadable:
+                    found = list(await asyncio.to_thread(_pdf_pages, content))
+            for page in found:
+                if len(jpeg := await asyncio.to_thread(_jpeg, page)) <= PAGE_BYTES:
+                    pages.append(jpeg)
+        except Exception as e:  # noqa: BLE001  a broken file must not lose the mail
+            events.emit(ctx, "error", "attachments", session_id=message.session_id, message_id=message.id,
+                        payload={"where": "attachment_images", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+    return tuple(pages[:SCAN_PAGES])
+
+
+def _jpeg(content: bytes) -> bytes:
+    """A page as a JPEG at most `PAGE_SIDE` pixels on its long side."""
+    from PIL import Image
+
+    with Image.open(io.BytesIO(content)) as image, io.BytesIO() as stream:
+        page = image.convert("RGB")
+        page.thumbnail((PAGE_SIDE, PAGE_SIDE))
+        page.save(stream, format="JPEG", quality=PAGE_QUALITY)
+        return stream.getvalue()
+
+
 def speech_model():
     """The local speech model, loaded once. The app loads it at start, so no request waits for its download."""
     from faster_whisper import WhisperModel
@@ -800,6 +843,8 @@ async def handle(ctx: Context, message: Message) -> None:
         events.emit(ctx, "carrier.availability", "tariffs", session_id=message.session_id, message_id=message.id,
                     payload={**notice, "carrier": carrier[0]})  # fmt: skip
     files = [(a.filename, await ctx.mailbox.attachment(message.id, a.id)) for a in message.attachments]
+    if not files:  # the tariff written in the mail itself (`router` `body:tariff`)
+        files = [("body.txt", message.body.encode())]
     for key, document in _documents(files).items():
         if key.lower().endswith(".csv") and _reference_csv(ctx, document[0][1]):
             continue

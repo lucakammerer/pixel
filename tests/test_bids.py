@@ -361,32 +361,39 @@ def test_a_rate_per_kg_column_is_never_the_desk_total():
     assert {o.total for o in found} <= {D("952.00")}
 
 
-async def test_a_trucker_who_answers_only_in_a_file_no_code_reads_is_answered_unpriced_without_an_error(
-    ctx, monkeypatch
-):
-    """A photographed offer: no code reads an image outside a tariff mail. The file is an `attachment.unreadable`,
-    the trucker counts as answered, and no model call copies a price from a mail that holds none."""
+async def test_a_trucker_who_answers_only_in_a_photo_is_read_by_the_model_from_the_image(ctx, monkeypatch):
+    """A photographed offer: no code reads an image outside a tariff mail, so the model reads its page, the one call a
+    bid the rules cannot read costs anyway. Before, the trucker counted as answered and stayed unpriced."""
+    import io
 
-    class NoDownload:
+    from PIL import Image
+
+    with io.BytesIO() as stream:
+        Image.new("RGB", (40, 20), "white").save(stream, format="PNG")
+        png = stream.getvalue()
+
+    class Files:
         async def attachment(self, message_id, attachment_id):
-            raise AssertionError("a type without a reader is never downloaded")
+            return png
 
-    async def no_model(ctx, **kw):
-        raise AssertionError("the mail holds no price to copy")
+    seen = []
 
-    monkeypatch.setattr(llm, "ask_json", no_model)
+    async def model(ctx, *, images=(), **kw):
+        seen.append(images)
+        data = {"offer": True, "total": "181.96 EUR", "components": [], "currency": "EUR", "transit_days": None,
+                "eur_per_unit": None}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
     events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq(door_pickup=True).model_dump(mode="json"))
     photo = Attachment(id=1, filename="offer-TRK-6203.jpg", content_type="image/jpeg", size=10)
     message = mail("a@truck", "Our offer TRK-6203 is in the attached photo.").model_copy(
         update={"attachments": (photo,)}
     )
-    await bids.record(replace(ctx, mailbox=NoDownload()), message)
-    assert kinds(ctx, "attachment.unreadable") == [
-        {"file": "offer-TRK-6203.jpg", "type": "image/jpeg", "reason": "no code parser for .jpg"}
-    ]
-    [received] = kinds(ctx, "bid.received")
-    assert (received["priced"], received["unread"]) == (False, ["offer-TRK-6203.jpg"])
-    assert kinds(ctx, "error") == kinds(ctx, "option.found") == []
+    await bids.record(replace(ctx, mailbox=Files()), message)
+    assert len(seen) == 1 and seen[0][0][:2] == b"\xff\xd8"  # the page as a JPEG
+    [found] = [o["option"] for o in kinds(ctx, "option.found")]
+    assert found["pickup"] == "181.96"
 
 
 async def test_the_captured_rate_desk_answer_gives_one_option_per_priced_airline_without_a_model(ctx, monkeypatch):
