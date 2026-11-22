@@ -303,6 +303,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "our budget is around 3300 EUR" (rounds 101, 102: ignored, accepted at the best price), "last month we shipped
   1250 kg". Cargo figures are read without sentences about a past shipment (`PAST_SHIPMENT`); a request that only
   says "same as last time: 990 kg" goes to the model.
+
+
+- A request can point to the customer's earlier one: "the same shipment as in my earlier request, "Air freight
+  quote request: STR to MEL" ... the new destination is LAX" (round 103, accepted on the earlier cargo; round 104,
+  "the same shipment as in my request", lost when the model read no weight). `_earlier`
+  takes the earlier request of that subject (else the latest) as it was read, with what this mail states anew:
+  another destination, a weight, volume or piece count, a moved pickup (its zone's airport), the wish, the currency. It runs before the rules, which
+  would read the old lane from the quoted subject; two new airports or an unknown subject go to the model, whose
+  reading `_earlier_request` still fills from a request of the quoted subject.
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.

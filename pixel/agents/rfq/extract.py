@@ -950,6 +950,58 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
     )
 
 
+# Round 114 split it in two: "the same shipment again? My earlier request, "...", was for YYZ".
+SAME_AS_EARLIER = re.compile(
+    r"\b(?:same|identical)\s+(?:shipment|cargo|goods|consignment)\b|\b(?:gleiche|selbe|dieselbe)\s+(?:sendung|ware)\b",
+    re.IGNORECASE,
+)
+EARLIER_REQUEST = re.compile(
+    r"\b(?:earlier|previous|last|former|prior|my|our)\s+(?:request|inquiry|enquiry)|\b(?:früher|vorherig|letzt)\w*\s+anfrage",
+    re.IGNORECASE,
+)
+
+
+def _earlier(ctx: Context, message: Message, deadline: Deadline) -> Rfq | None:
+    """Round 103: "the same shipment as in my earlier request, "Air freight quote request: STR to MEL" ... the new
+    destination is LAX". The customer's earlier request of that subject (else their latest), as it was read, with
+    what this mail states anew: a destination it names besides the earlier lane, a weight, volume or piece count, the
+    wish, the currency. It comes before the rules, which would read the earlier lane from the quoted subject."""
+    text = own_words(_body(message))
+    if not SAME_AS_EARLIER.search(text):
+        return None
+    rows = ctx.db.execute(
+        "SELECT s.id, m.subject FROM sessions s JOIN messages m ON m.id = s.id"
+        " WHERE LOWER(s.customer) = LOWER(?) AND s.id < ? ORDER BY s.id DESC",
+        (message.sender, message.session_id),
+    ).fetchall()
+    named = {q.strip().casefold() for q in QUOTED_SUBJECT.findall(text)}
+    if named:
+        rows = [r for r in rows if r["subject"].strip().casefold() in named]
+    else:  # without its subject only a request that says it points to the latest one
+        rows = rows[:1] if EARLIER_REQUEST.search(text) else []
+    read = rows and ctx.db.execute(
+        "SELECT payload FROM events WHERE session_id = ? AND kind = 'rfq.extracted' ORDER BY id DESC LIMIT 1",
+        (rows[0]["id"],),
+    ).fetchone()
+    if not read:
+        return None
+    before = Rfq.model_validate_json(read["payload"])
+    said = QUOTED_SUBJECT.sub("", text)  # the earlier subject names the earlier lane
+    new = {c for c in re.findall(r"\b[A-Z]{3}\b", said) if _airport(c)} - {before.origin, before.destination}
+    if len(new) > 1:
+        return None
+    pieces = _pieces(said)
+    stated = {"pieces": pieces, "weight_kg": _weight(said, pieces), "volume_cbm": _volume(said, pieces)}
+    if (pickup := _pickup(said))[1]:  # a pickup moved: its zone's airport is the origin (`extract`)
+        stated |= {"door_pickup": True, "pickup_postcode": pickup[1], "pickup_zone": zone_of(pickup[1]), "origin": ""}
+    return before.model_copy(update={k: v for k, v in stated.items() if v is not None} | {
+        "session_id": message.session_id, "message_id": message.id, "customer": message.sender,
+        "destination": new.pop() if new else before.destination, "preference": _preference(text),
+        "currency": _currency(text) or before.currency, "language": _language(text),
+        "received_at": deadline.received_at, "deadline_at": deadline.expires_at, "excluded_carriers": (),
+    })  # fmt: skip
+
+
 def _dims_volume(text: str) -> Decimal | None:
     dims = DIMS.findall(text)
     if len(dims) != 1:
@@ -1754,7 +1806,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             again = _from_answer(read, own_words(said), facts)
         return apply_pickup(again or read, guess=False)
 
-    rfq, prose = rules(), None
+    rfq, prose = _earlier(ctx, mail, deadline) or rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
     if rfq is not None and files and ctx.settings.model_check:

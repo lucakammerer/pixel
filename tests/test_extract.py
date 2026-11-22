@@ -1273,3 +1273,43 @@ def test_a_past_shipment_beside_the_request_is_not_its_cargo():
         DEADLINE,
     )
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(990), Decimal("5.75"), 4)
+
+
+@pytest.mark.parametrize(
+    ("pointer", "changed", "origin"),
+    [
+        ("the same shipment as in my earlier request", "The cargo is unchanged.", "STR"),
+        ("the same shipment as in my request", "The cargo is unchanged.", "STR"),
+        ("the same shipment as in my request", "The pickup is now from our site in 80331 Munich.", "BBB"),
+        ("the same shipment again. My earlier request was", "The cargo is unchanged.", "STR"),  # round 114
+    ],
+)
+async def test_the_same_shipment_as_an_earlier_request_is_read_from_it(conn, monkeypatch, pointer, changed, origin):
+    """Rounds 103 and 104 pointed to the customer's earlier request by its subject and named only a new destination;
+    the scorer priced the earlier cargo (103 accepted, 104 lost when the model read no weight). The quoted subject's
+    lane is the earlier one, not this request's."""
+
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "80", "area": "City", "airport": "BBB"}])
+    earlier = extract.by_rules(mail("Please quote STR to MEL, 6 pieces, 1841 kg gross, 4.63 cbm, cheapest."), DEADLINE)
+    conn.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (1, 'buyer@example.com', 'quoted', ?)",
+                 (RECEIVED.isoformat(),))  # fmt: skip
+    conn.execute(
+        "INSERT INTO messages (id, session_id, direction, sender, recipient, subject, body, sent_at, data)"
+        " VALUES (1, 1, 'in', 'buyer@example.com', 'us@pixel', 'Air freight quote request: STR to MEL', '', ?, '{}')",
+        (RECEIVED.isoformat(),),
+    )
+    conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES (?, 1, 'rfq.extracted', 'rfq', ?)",
+                 (RECEIVED.isoformat(), earlier.model_dump_json()))  # fmt: skip
+    request = mail(
+        f'Please quote {pointer}, "Air freight quote request: STR to MEL". {changed} The new destination is LAX. '
+        "Please send the cheapest all-in price in EUR."
+    ).model_copy(update={"id": 2, "session_id": 2})
+    rfq = await extract.extract(ctx, request, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (
+        origin, "LAX", Decimal(1841), Decimal("4.63"), 6
+    )  # fmt: skip
