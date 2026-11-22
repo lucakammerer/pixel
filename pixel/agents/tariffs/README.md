@@ -40,6 +40,8 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
   pages as JPEGs. `read_with_model` sends those pages or the original image attachments through `llm.ask_json`,
   once per page. The model transcribes cells. Code merges rates and surcharges across pages, parses numbers
   and applies the same validation as for text tariffs before making rates available to pricing.
+- `handle`: a tariff mail without a file is read from its body (`router` `body:tariff`: an airline, outside our
+  threads, a subject that names a tariff or rates, at least two lane rows).
 - `attachment_lines`: the text lines of a request's or a carrier's attachment for `agents/rfq/extract.py` and
   `pricing/bids.py`, in a thread. A type `_lines` has no reader for (`READABLE`: xlsx, xls, docx, pdf, html, eml,
   zip, text, audio) is not downloaded; it and a pdf without text raise `Unreadable` and become an `attachment.unreadable`

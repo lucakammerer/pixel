@@ -48,6 +48,9 @@ call fails, a new thread becomes `customer_rfq` (a missed request costs the whol
 
 ## Pitfalls
 
+- An airline can write its tariff in the mail itself, no file. `rules` takes it as a tariff (`body:tariff`) when
+  the subject names a tariff or rates and two rows or more start with a lane (`LANE_ROW`); a reply ("Re: Rate
+  request") or one lane stays a bid.
 - A customer's request can carry an attachment (a packing specification as xlsx). A file alone does not make a
   tariff mail: only from a carrier of the carrier list, or when a mail that asks for nothing brings a file named
   like a tariff. Routing such a request to the tariff agent lost it.
