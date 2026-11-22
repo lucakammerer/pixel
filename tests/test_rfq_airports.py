@@ -2,6 +2,8 @@ import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+
 from pixel import llm
 from pixel.agents.rfq import agent
 from pixel.config import settings
@@ -76,14 +78,24 @@ async def test_a_hanging_airport_check_never_holds_the_pricing(conn, monkeypatch
 
 
 async def test_a_lane_read_backwards_is_turned_round_without_a_model_call(conn, monkeypatch):
+    """Round 8's shape: the delivery leg "from DDD airport to the door" read as the lane."""
     asked = answers(monkeypatch, {})
-    rfq = await agent.served_airports(served(conn), request("DDD", "AAA"), mail("From DDD airport to AAA, 855 kg."))
+    body = "From AAA airport to Town, 855 kg. Please include delivery from DDD airport to the door."
+    rfq = await agent.served_airports(served(conn), request("DDD", "AAA"), mail(body))
     assert (rfq.origin, rfq.destination, asked) == ("AAA", "DDD", [])
 
 
-async def test_an_import_the_mail_states_is_not_turned_round(conn, monkeypatch):
-    """Round 159: "air import from NRT to HAM" was asked for as HAM-NRT; an import is out of scope and declined."""
+@pytest.mark.parametrize(
+    "body",
+    [
+        # round 159
+        "Please quote an air import from Tokyo airport (DDD) to Hamburg airport (AAA). We are the receiver.",
+        # an import by its lane alone (Axis S `import-implicit`)
+        "Our supplier has 5 cartons ready, 220 kg. Please quote air freight DDD to AAA, delivered to our warehouse.",
+    ],
+)
+async def test_an_import_the_mail_writes_is_not_turned_round(conn, monkeypatch, body):
+    """An import is out of scope and declined (R36), never priced as the export the other way round."""
     asked = answers(monkeypatch, {})
-    body = "Please quote an air import from Tokyo airport (DDD) to Hamburg airport (AAA). We are the receiver."
     rfq = await agent.served_airports(served(conn), request("DDD", "AAA"), mail(body))
     assert (rfq.origin, rfq.destination, asked) == ("DDD", "AAA", [])

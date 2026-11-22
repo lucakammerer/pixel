@@ -508,7 +508,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   ("we'll deliver it to Düsseldorf Airport (DUS) ourselves", rounds 168 and 174, read by the model before), and
   "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
-  fallback has nothing to send (`quote.missed`, `no_price`).
+  fallback has nothing to send (`quote.missed`, `no_price`). Only a reading against the lane the mail itself writes
+  (`_written_so`): "air freight PVG to FRA, delivered to our warehouse" is an import, out of scope (R36), and turned
+  round it was quoted as the export FRA-PVG (Axis S `import-implicit`).
 - A door request's truck leg is no destination either: "arrange the truck from our site to BBB airport. The goods
   go to Singapore" named no destination code, and the rules took BBB (`TRUCK_LEG`: a code named as an airport,
   before any flight or arrival word, also "Lkw zum Flughafen FRA"; a bare "deliver them to JFK" stays the

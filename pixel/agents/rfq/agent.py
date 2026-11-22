@@ -1,6 +1,5 @@
 import asyncio
 import json
-import re
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -510,13 +509,11 @@ async def requote(ctx: Context, message: Message, rfq: Rfq) -> Quote | None:
     return sent
 
 
-IMPORT = re.compile(r"\b(?:import\w*|einfuhr)\b", re.IGNORECASE)
-
-
-def _import_said(rfq: Rfq, text: str) -> bool:
-    """The mail calls it an import and writes its lane this way round: "air import from NRT to HAM" (round 159) is
-    out of scope (R36), never a lane read backwards."""
-    return bool(IMPORT.search(text)) and extract._lane(text) == (rfq.origin, rfq.destination)
+def _written_so(rfq: Rfq, text: str) -> bool:
+    """The mail itself writes its lane this way round: "air import from NRT to HAM" (round 159), "air freight PVG to
+    FRA, delivered to our warehouse in Frankfurt". An import is out of scope (R36), never a lane read backwards; only
+    a reading against the mail's own lane (round 8's delivery leg "from DXB airport to the door") is turned round."""
+    return extract._lane(text) == (rfq.origin, rfq.destination)
 
 
 async def served_airports(
@@ -530,7 +527,7 @@ async def served_airports(
     if (
         rfq.origin in destinations - origins
         and rfq.destination in origins - destinations
-        and not _import_said(rfq, text)
+        and not _written_so(rfq, text)
     ):
         # A lane we price only the other way round was read backwards; as read it has no price and no fallback (R1).
         rfq = rfq.model_copy(update={"origin": rfq.destination, "destination": rfq.origin})
