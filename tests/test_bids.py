@@ -503,6 +503,52 @@ async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monk
     assert all(o.pickup == D("75.00") for o in found)
 
 
+async def earlier_pickups(ctx) -> Rfq:
+    """Two earlier requests of zone 12 both truckers answered (Truck A 50 + 0.10/kg in 10 h, Truck B 20 + 0.10/kg in
+    30 h), a sheet for the lane, and a door-to-port request of 100 kg: balanced takes Truck A at 60.00."""
+    store.upsert(ctx, [LaneTariff(
+        carrier="Air One", origin="AAA", destination="BBB", currency="EUR", valid_from=date(2000, 1, 1),
+        valid_to=date(2100, 1, 1), version="v", transit_days=3, minimum=D(50), breaks=((D(0), D("2.00")),),
+        fuel_per_kg=D("0.50"), security_per_kg=D("0.10"), source="test",
+    )])  # fmt: skip
+    for session_id, kg, a, b in ((2, 200, "70.00", "40.00"), (3, 400, "90.00", "60.00")):
+        earlier = rfq(door_pickup=True, pickup_zone="12").model_copy(
+            update={"session_id": session_id, "weight_kg": D(kg)}
+        )
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=session_id, payload=earlier.model_dump(mode="json"))
+        await bids.record(ctx, mail("a@truck", f"Pickup EUR {a}. Pickup time: 10 hours", session_id))
+        await bids.record(ctx, mail("b@truck", f"Pickup EUR {b}. Pickup time: 30 hours", session_id))
+    request = rfq(door_pickup=True, pickup_postcode="12345", pickup_zone="12")
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    return request
+
+
+async def test_silent_truckers_are_priced_from_their_earlier_answers_and_a_real_bid_wins(ctx):
+    # Next case D5: no trucker answers. Rounds 63 to 65 went out at 315 s without the pickup and were rejected.
+    ctx.settings = replace(ctx.settings, bid_wait_s=0)
+    request = await earlier_pickups(ctx)
+    [found] = await engine.options(ctx, request, deadline(0.2))
+    assert (found.trucker, found.pickup, found.pickup_hours, found.total) == ("Truck A", D("60.00"), 10, D("320.00"))
+    assert kinds(ctx, "pickup.estimated")[0]["estimated"] is True
+
+    await bids.record(ctx, mail("b@truck", "Pickup EUR 75.00. Pickup time: 30 hours"))
+    [real] = await engine.options(ctx, request, deadline(0.2))
+    assert (real.trucker, real.pickup) == ("Truck B", D("75.00"))
+
+
+async def test_the_fallback_estimates_a_pickup_only_once_the_truckers_had_their_time(ctx, monkeypatch):
+    monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
+    request = await earlier_pickups(ctx)
+    events.emit(ctx, "option.found", "pricing", session_id=1,
+                payload={"option": engine.sheet_options(ctx, request)[0].model_dump(mode="json")})  # fmt: skip
+    assert await agent.fallback(ctx, 1) is None  # received just now: an answer can still come
+
+    late = request.model_copy(update={"received_at": NOW - timedelta(seconds=ctx.settings.quote_target_s)})
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=late.model_dump(mode="json"))
+    quote = await agent.fallback(ctx, 1)
+    assert (quote.option.trucker, quote.total) == ("Truck A", D("320.00"))
+
+
 @pytest.mark.parametrize(
     "text, price, days",
     [

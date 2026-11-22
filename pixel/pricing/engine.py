@@ -240,8 +240,9 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     portal = [] if portal_task.cancelled() else portal_task.result()
     # Also reuse same-lane bids published before recovery or while another price source was still running.
     carried = [o for o in session.for_request(ctx, rfq) if o.source in (Source.PORTAL, Source.BID, Source.RATEDESK)]
-    all_options = dict.fromkeys(sheets + portal + offers + pickups + carried)
-    found = combine(rfq, list(all_options), feedback.pickup_rule(ctx), ctx)
+    all_options = list(dict.fromkeys(sheets + portal + offers + pickups + carried))
+    all_options += pickup.estimates(ctx, rfq, all_options)  # no trucker priced it: the pickup price memory
+    found = combine(rfq, all_options, feedback.pickup_rule(ctx), ctx)
     if found or not (expired := expired_sheet_options(ctx, rfq)):
         return found
     for option in expired:

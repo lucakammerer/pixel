@@ -12,7 +12,7 @@ from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline, deadline_for
 from pixel.crm import quotes
-from pixel.pricing import calc, engine, portal_rates, selection, session, store
+from pixel.pricing import calc, engine, pickup, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
@@ -590,6 +590,8 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
     if rfq is None:
         return None
     stored = session.for_request(ctx, rfq)
+    if timing.now() >= deadline_for(rfq.received_at, ctx.settings).target_at:  # the truckers had their time
+        stored += pickup.estimates(ctx, rfq, stored)
     options = engine.combine(rfq, stored, feedback.pickup_rule(ctx), ctx) or engine.combine(
         rfq, engine.expired_sheet_options(ctx, rfq) + stored, feedback.pickup_rule(ctx), ctx
     )  # a cargo ready after its sheets run out: an expired sheet's price beats no answer (R1)
