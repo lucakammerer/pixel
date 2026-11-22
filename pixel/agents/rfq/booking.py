@@ -16,6 +16,11 @@ from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import calc, portal_rates, session
 
+NO_PRICE_ACK = re.compile(
+    r"(?:understood[,.]?\s+)?(?:thanks|thank you)(?: for (?:letting me know|the update))?[.!]?",
+    re.IGNORECASE,
+)
+
 ACCEPT = re.compile(
     r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+(?:that|no|any)\b)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
     r"|(?:offer|quote) accepted|confirm\s+(?:the|this|our)\s+booking|go ahead|book\s+(?:it|this|the\s+shipment|with)\b"
@@ -105,7 +110,9 @@ async def handle_reply(ctx: Context, message: Message) -> None:
 
         await tracking.handle(ctx, message)
         return
-    if act == "nothing":
+    if act == "nothing" or (
+        read.intent == "thanks" and read.phase == "open" and _acknowledges_no_price(ctx, message)
+    ):
         return
     if act == "cancel":
         await cancel(ctx, sent, message)
@@ -139,6 +146,18 @@ async def handle_reply(ctx: Context, message: Message) -> None:
         quotes.set_status(ctx, sent.id, QuoteStatus.ACCEPTED)
         events.emit(ctx, "customer.accepted", "crm", session_id=sent.session_id, message_id=message.id)
     await book(ctx, sent.id, reply_to=message.id)
+
+
+def _acknowledges_no_price(ctx: Context, message: Message) -> bool:
+    if message.in_reply_to is None or message.attachments:
+        return False
+    own = followup.own_words(message)
+    if not NO_PRICE_ACK.fullmatch(extract._unsigned(own).strip() or own):
+        return False
+    return ctx.db.execute(
+        "SELECT 1 FROM messages WHERE id=? AND session_id=? AND direction='out' AND purpose='no_price'",
+        (message.in_reply_to, message.session_id),
+    ).fetchone() is not None
 
 
 async def _request(ctx: Context, session_id: int, quote: Quote | None) -> Rfq | None:
