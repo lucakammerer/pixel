@@ -145,3 +145,16 @@ def test_a_zip_inside_a_zip_is_never_opened_and_a_large_archive_not_read():
     assert agent._lines("offer.zip", renamed) == ["Gross weight 300 kg"]
     with pytest.raises(agent.Unreadable):  # 64 MB from about 64 kB
         agent._lines("offer.zip", zipped(*((f"part{i}.txt", b"0" * 1_000_000) for i in range(64))))
+
+
+def test_a_photographed_page_goes_to_the_model_no_longer_than_its_limit():
+    """A full-size phone photo made the one fallback call slow or fail: its page is scaled down to `PAGE_SIDE`."""
+    import io
+
+    from PIL import Image
+
+    with io.BytesIO() as stream:
+        Image.new("RGB", (4000, 3000), "white").save(stream, format="PNG")
+        photo = stream.getvalue()
+    with Image.open(io.BytesIO(agent._jpeg(photo))) as page:
+        assert (page.format, max(page.size)) == ("JPEG", agent.PAGE_SIDE)

@@ -492,14 +492,19 @@ ANSWER_PROMPT = (
 )
 
 
-async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_transit: bool) -> RateOption | None:
+async def _read_with_model(
+    ctx: Context, message: Message, rfq: Rfq, needs_transit: bool, images: tuple[bytes, ...] = ()
+) -> RateOption | None:
+    """The model copies the answer's charges; `images` are its pages code cannot read (a photo, a scanned pdf)."""
+    note = "\n\nThe offer stands in the attached image." if images else ""
     result = await llm.ask_json(
         ctx,
         purpose="bid.read",
         system=ANSWER_PROMPT,
-        user=_own_text(message.body)[:4000],
+        user=_own_text(message.body)[:4000] + note,
         schema=ANSWER_SCHEMA,
         session_id=message.session_id,
+        images=images,
         max_output_tokens=150,
     )
     data = result.data
@@ -793,17 +798,23 @@ async def record(ctx: Context, message: Message) -> None:
     if option is not None and attached and ctx.settings.model_check:
         option, read_by = await _crosscheck(ctx, message, rfq, option, needs_transit=not pickup)
     # The desk writes in one fixed layout: what its rules cannot read holds no rate, and costs no model call. An offer
-    # only in a file code cannot read leaves no price in the text for a model to copy either.
+    # only in a file code cannot read as text goes to the model as its pages when it is a photo or a scan; a video or
+    # an unknown file leaves the model nothing to copy.
+    scans = ()
+    if unread and not listed and option is None and not PRICED.search(message.body):
+        from pixel.agents.tariffs.agent import attachment_images
+
+        scans = await attachment_images(ctx, message)
     if (
         not listed
         and option is None
         and kind != "ratedesk"
         and not DECLINE.search(_own_text(message.body))
-        and not (unread and not PRICED.search(message.body))
+        and not (unread and not PRICED.search(message.body) and not scans)
     ):
         read_by = "model"
         try:
-            option = await _read_with_model(ctx, message, rfq, needs_transit=not pickup)
+            option = await _read_with_model(ctx, message, rfq, needs_transit=not pickup, images=scans)
         except Exception as exc:  # noqa: BLE001  one unreadable answer must not stop the others
             events.emit(ctx, "error", "pricing", session_id=message.session_id, message_id=message.id,
                         payload={"where": "bid.read", "error": type(exc).__name__})  # fmt: skip
