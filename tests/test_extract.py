@@ -1123,3 +1123,26 @@ async def test_a_departure_airport_the_customer_asks_for_wins_over_the_pickup_zo
     body = ("Please quote 480 kg, 1.6 cbm to Hong Kong (HKG), with truck collection from our site in 65189 Town.\n"
             "Please route via City (BBB), not AAA; our letter of credit names BBB.")  # fmt: skip
     assert (await extract.extract(ctx, mail(body), DEADLINE)).origin == "BBB"
+
+
+async def test_a_pickup_abroad_asks_nothing_and_the_model_names_the_nearest_of_our_airports(conn, monkeypatch, emitted):
+    async def no_question(*args, **kw):
+        raise AssertionError("the customer gave the address")
+
+    async def as_the_model_read_it(ctx, **kw):
+        assert "AAA, BBB" in kw["user"]
+        data = {"origin": "BBB", "destination": "HKG", "weight_kg": "480", "volume_cbm": "1.6", "pieces": 2,
+                "preference": "cheapest", "door_pickup": True, "pickup_postcode": "5020", "currency": "EUR",
+                "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(extract, "_ask", no_question)
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(
+        ctx, [{"zone": "65", "area": "Town", "airport": "AAA"}, {"zone": "80", "area": "City", "airport": "BBB"}]
+    )
+    body = ("Please quote 2 crates to Hong Kong (HKG), 480 kg, 1.6 cbm, collected from our warehouse at "
+            "Alpenstrasse 48, 5020 Salzburg, Austria.\n\nBest regards\nAnna")  # fmt: skip
+    rfq = await extract.extract(ctx, mail(body), DEADLINE)
+    assert (rfq.origin, rfq.door_pickup, rfq.pickup_zone, rfq.missing) == ("BBB", True, None, ())
