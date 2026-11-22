@@ -51,22 +51,21 @@ def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
     return found
 
 
-def _ask_desk(ctx: Context, rfq: Rfq, alone: bool = False) -> bool:
-    """R21: a rate read for this request answered 503, so the rate API is down; the desk mails the portal's rate per
-    airline with its rate id. A 404 or 429 leaves the API up: the desk would only repeat it. `alone`: no sheet, no
-    portal rate and no airline to mail, so nothing else can price the lane; the desk names the airlines that fly it
-    off the portal (R1). Once per request."""
-    down = ctx.db.execute(
+def _portal_down(ctx: Context, rfq: Rfq) -> bool:
+    return ctx.db.execute(
         "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.source')='portal'"
         " AND json_extract(payload,'$.error')='RatesUnavailable'",
         (rfq.session_id,),
-    ).fetchone()
+    ).fetchone() is not None
+
+
+def _desk_enquiry(ctx: Context, rfq: Rfq) -> int | None:
     asked = ctx.db.execute(
-        "SELECT 1 FROM events WHERE session_id=? AND kind='bid.requested' AND json_extract(payload,'$.email')=?"
+        "SELECT message_id FROM events WHERE session_id=? AND kind='bid.requested' AND json_extract(payload,'$.email')=?"
         " AND json_extract(payload,'$.origin')=? AND json_extract(payload,'$.destination')=?",
         (rfq.session_id, RATEDESK, rfq.origin, rfq.destination),
     ).fetchone()
-    return (bool(down) or alone) and not asked
+    return asked[0] if asked else None
 
 
 def _distrusted(ctx: Context, rfq: Rfq, option: RateOption) -> None:
@@ -139,12 +138,17 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         if not (priced or unpriced):  # nothing to mail: the portal's own answer decides whether the desk is needed
             await asyncio.wait({portal_task}, timeout=max(0.0, (deadline.target_at - timing.now()).total_seconds()))
             priced.update(priced_airlines())
-        if _ask_desk(ctx, rfq, alone=not (priced or unpriced)):
+        down = _portal_down(ctx, rfq)
+        desk_id = _desk_enquiry(ctx, rfq)
+        # On a 503 the desk supplies portal rates. On a lane with no other source it may name off-portal airlines.
+        if desk_id is None and (down or not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
-        if unpriced:
-            mailed = await bids.request(ctx, rfq, unpriced)
-            if mailed:
-                offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
+        mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
+        pending_desk = (desk_id or _desk_enquiry(ctx, rfq)) if down and selection.requested_options(rfq, sheets) else None
+        if pending_desk is not None and pending_desk not in mailed:
+            mailed.append(pending_desk)
+        if mailed:
+            offers = await bids.collect(ctx, rfq.session_id, deadline, mailed, pending_desk=pending_desk)
         pickups = await pickup_task
         offers = [o for o in offers if o.source in (Source.BID, Source.RATEDESK)]
         published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL]

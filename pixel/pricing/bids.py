@@ -19,6 +19,7 @@ from pixel.core.orchestrator import Deadline
 from pixel.pricing import calc, selection, session, store
 
 POLL_S = 0.5
+DESK_CUTOFF_S = 115  # leave five seconds to compose and send for full response-time points (R29)
 # Grouped thousands only when a separator is there: an ungrouped "1195.90" is one amount, not "119". The Swiss group
 # with an apostrophe: "CHF 2'748.45" is no "CHF 2".
 AMOUNT = r"(?:\d{1,3}(?:[ \u00a0'’]\d{3})+|\d+)(?:[.,]\d+)*"
@@ -712,15 +713,25 @@ async def record(ctx: Context, message: Message) -> None:
 
 
 async def collect(
-    ctx: Context, session_id: int, deadline: Deadline, expected: list[int] | int, *, pickup: bool = False
+    ctx: Context,
+    session_id: int,
+    deadline: Deadline,
+    expected: list[int] | int,
+    *,
+    pickup: bool = False,
+    pending_desk: int | None = None,
 ) -> list[RateOption]:
-    """Give the current lane's enquiries their response window after mailing, up to the hard deadline."""
+    """Wait for the lane's enquiries, with extra time for a pending desk reply during a portal outage."""
     rfq = session.rfq(ctx, session_id)
     if rfq is None:
         return []
     after_ask = timing.now() + timedelta(seconds=ctx.settings.bid_wait_s)
     until = min(max(deadline.target_at, after_ask), deadline.hard_at)
-    while expected and timing.now() < until:
+    desk_until = until
+    if pending_desk is not None:
+        desk_until = max(until, min(deadline.received_at + timedelta(seconds=DESK_CUTOFF_S), deadline.recovery_at))
+    extended = False
+    while expected and timing.now() < desk_until:
         rows = ctx.db.execute(
             "SELECT json_extract(payload,'$.request_id'), json_extract(payload,'$.carrier') FROM events "
             "WHERE session_id=? AND kind='bid.received' AND json_extract(payload,'$.origin')=? "
@@ -732,7 +743,19 @@ async def collect(
                 break
         elif set(expected).issubset(row[0] for row in rows):
             break
-        await asyncio.sleep(min(POLL_S, max(0.0, (until - timing.now()).total_seconds())))
+        cutoff = until
+        if pending_desk is not None and all(row[0] != pending_desk for row in rows):
+            cutoff = desk_until
+        now = timing.now()
+        remaining = (cutoff - now).total_seconds()
+        if remaining <= 0:
+            break
+        if now >= until and not extended:
+            events.emit(ctx, "bid.desk_wait", "pricing", session_id=session_id, message_id=pending_desk,
+                        payload={"until": desk_until.isoformat()})  # fmt: skip
+            extended = True
+        next_cutoff = until if now < until else cutoff
+        await asyncio.sleep(min(POLL_S, (next_cutoff - now).total_seconds()))
     return [
         o
         for o in session.for_request(ctx, rfq)
