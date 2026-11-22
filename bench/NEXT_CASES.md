@@ -379,6 +379,12 @@ The causes, all owned by this thread unless the row says otherwise:
 - **G10**: `orchestrator.NOT_AIR` matches a mode said in passing ("by ship" for the inbound leg, "rail freight" in
   the goods' name, "our sea freight team"); an in-scope request is declined.
 
+Proof against the other direction: `uv run python -m tools.scope_proof <copy of the live database>` replays every
+live request offline through today's router, rules and scope decision beside the scorer's verdict and what we sent
+live. On main at round 183: 125 of 125 accepted quotes still served; declined are round 159 (the import, accepted as
+a decline), round 177 (sea, `out_of_scope_quoted`) and the impostor of session 30919 (no answer). Every scope pull
+request states this count.
+
 The class fix (next pull requests, read path, for the review thread): decide scope before the question (G1), then
 one scope reading: a rule that only notices a mode, service or non-request word in any language (subject, body and
 attachment, G2, G6, G7, G8) hands the mail to the extraction call, which returns one more field, what is asked, and
@@ -557,7 +563,6 @@ it or after booking, body and file and later correction, another language and sc
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
 
-
 ## Axis P: price against the scorer's best (22.11.2026 11:20, live database to round 179)
 
 `uv run python -m tools.price_ledger <database>` prints the rows below from a copy of the live database: every
@@ -570,8 +575,8 @@ so it is within 5 % of the scorer's best for every best up to the range shown; i
 
 **Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted `feedback` events:
 round 93 was written 40 times, once per 10 s poll from 00:21 to 00:28 UTC, round 94 three times). **Today 18 of the 28 move past the verdict's
-bound with the source or rule that was missing then, 1 moves short of it (67), 9 do not move or cannot be
-replayed offline.** Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
+bound with the source or rule that was missing then; 67 stays short of it for want of a trucker offer in an mp3,
+which today's code reads; 9 do not move or cannot be replayed offline.** Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
 scorer's best today.
 
 | Round | Verdict | Quoted then | Today | Today passes if best in | Cause class | Fixed by / owner |
@@ -593,7 +598,7 @@ scorer's best today.
 | 9 | too_low | 4739.50 Lumen at 1750 kg | 5177.96 Lumen at 1952 kg + Domblick | 4988.95 to 5450.48 | reading: three lots added up by the model | rules sum lots (#18, #21) |
 | 82 | too_high | 45056.60 Polaris at 95 cbm | 2051.20 Polaris at 2.69 cbm | 1953.52 to 2159.16 | reading: "95.00 cubic feet" as cbm | febf549 |
 | 118 | too_low | 4867.68 Nova Atlas 7 d + Kranich | 6634.32 Fjordline 4 d + Kranich | 6318.40 to 6983.49 | reading: ready date 26.11. not read, so the 7-day airline missed "arrive by 1.12." | ready date read today (the arrival rule of 179 does not change it: 26.11. + 7 > 1.12.) |
-| 67 | too_low | 3345.48 Riverbend + Rheinufer 45.00 | 3515.72 Riverbend + Schwabenbote | 3521.56 to 3700.76: short of the bound by 5.84 | priced differently: "45.00 EUR for each hour" read as the trucker's price | `selection.implausible`; open: why 3515.72, the balanced total, lies below the bound (generalize: the trucker's real 181.96 / 28 h would not change the pick) |
+| 67 | too_low | 3345.48 Riverbend + Rheinufer 45.00 | 3515.72 Riverbend + Schwabenbote | 3521.56 to 3700.76: short of the bound by 5.84 | option never had: a fourth trucker, Domblick, sent its offer only as a voice message (mp3), never read. With Riverbend no trucker we had reaches the bound (Hansekogge 220.24 gives 3520.72), so the scorer's trucker cost at least 221.08: Domblick, the express trucker of zone 40. Also "45.00 EUR for each hour" read as Rheinufer's price | `bids._with_attachments` reads audio today (`tariffs.agent.attachment_lines`, transcribed locally) and `selection.implausible` drops the misread; unproven offline, the mp3 is not stored; supply |
 | 179 | too_high | 1410.83 Meridian 1 d + Westfalenroute | 1074.69 Aurelia 2 d + Westfalenroute | 1023.51 to 1131.25 | option had, not selected: `calc.arrival` added a day for the trucker; the scorer counts ready + transit | hot repair A, on `main` (`calc.arrival`) |
 | 130 | too_high | 3753.00 Aurelia at 1510 kg + Grautal | same offline | — | reading: the packing list said 1144 kg, the cross-check kept the mail's 1510 | likely 2ef42c6 (05:05 UTC, an hour after the round: a document's figure is never replaced by the cross-check); unproven, attachment bytes not stored; generalize |
 | 33 | too_high | 1475.00 Borealis at 2.78 cbm | same offline | — | reading: document 1.92 cbm against the mail's 2.78 | #159; attachment not stored; generalize |
@@ -609,6 +614,16 @@ scorer's best today.
 | 136 | accepted, 44.9 | 467.64 Borealis at 0.46014876 cbm | 467.53 at 0.46 cbm by hand (339.65 / 76.845 x 76.82 + 127.99) | passes, best 467.54 from the points | reading: a converted volume not rounded to 0.01 | 66b462b (`extract.CONVERTED`) |
 
 Rounds 1, 2 and 4 lost accuracy points too; their sessions are not in this database.
+
+How far the two sources behind 13 of the 18 can be trusted, on the same database:
+
+- Rate card (`uv run python -m tools.card_proof <database>`): of 190 portal rates it could price from the reads
+  before them, 133 read in the same version within 0.001 %, 56 scaled from another version within 0.4 %; the one
+  outlier (11.8 %) was the first read of a new version, which no card can know.
+- Pickup memory (`uv run python -m tools.memory_proof <database>`): of 110 door requests with two or more timed
+  trucker answers, the memory of the answers before each priced 78: the same balanced trucker in 75, median
+  difference 0.10 EUR, none more than 5 % of the all-in (14 above 1 %, 5 above 2.5 %; worst 4.2 %, round 17's zone
+  21, where Odenwald's first answer was cheaper than every earlier one).
 
 ### The scorer's rules as hypotheses, with counts
 
@@ -632,8 +647,8 @@ pickup longer than a day, the portal's transit against the sheet's, "by Friday".
 arrival limit, so none of these is tested by a scored round. Cheapest live evidence: the next round with an arrival
 limit and a door pickup whose ready day is a Friday, read with `tools.price_ledger`.
 
-Open: 67 (the balanced total below the verdict's bound), 35 (which figure), 15 to 18 and 20 (the pickup place),
-130/33/34 (proof needs the attachments, not stored). Nothing in this axis is wrong today that has no owner.
+Open: 67, 130, 33 and 34 (proof needs the attachments, not stored), 35 (which figure), 15 to 18 and 20 (the pickup
+place). Nothing in this axis is wrong today that has no owner.
 
 ## Axis F: after the quote (22.11.2026 11:00, live database to round 179)
 
