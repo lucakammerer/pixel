@@ -480,6 +480,14 @@ def test_a_translated_follow_up_keeps_short_figures_too():
     )  # a month as figure
 
 
+def test_a_translated_follow_up_may_write_figures_with_its_own_separators():
+    """Session 37583: Turkish writes 1.986 kg and 3.680,00 EUR; both booking notices went out in English."""
+    english = "Hello,\n\nPX-ABC123 from STR to MIA (1,986 kg) is booked at 3680.00 EUR all-in."
+    names = ("PX-ABC123", "STR", "MIA")
+    assert compose.kept(english, "Merhaba,\n\nSTR-MIA PX-ABC123 (1.986 kg) 3.680,00 EUR.", names)
+    assert not compose.kept(english, "Merhaba,\n\nSTR-MIA PX-ABC123 (1.986 kg) 3.690,00 EUR.", names)
+
+
 def test_a_breakdown_asked_for_lists_the_parts_and_the_rate_per_kg_but_not_the_total_again():
     option = OPTION.model_copy(update={"security": Decimal("34.00"), "total": Decimal("1234.00")})
     request = "Please break the price down into air freight, fuel and security surcharge.\n\nBest regards\nDr. Eva Huber\nOperations"
