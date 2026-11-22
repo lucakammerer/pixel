@@ -194,7 +194,7 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
 
     loop = asyncio.get_running_loop()
     # A dry run holds outgoing bids. Replays report whether a later captured reply can still arrive.
-    late = not ctx.settings.dry_run and getattr(ctx.mailbox, "late_mail", True)
+    late = not ctx.settings.dry_run and getattr(ctx.mailbox, "late_mail", True) and not is_import(ctx, message.session_id)
     wait = (deadline.hard_at - now()).total_seconds() if late else 0.0
     until = loop.time() + max(0.0, wait)
     failed = waiting = False
@@ -226,6 +226,18 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     finally:
         if sourcing is not None:
             sourcing.cancel()
+
+
+def is_import(ctx: Context, session_id: int) -> bool:
+    """A lane into the airports we export from, from one we do not: an import is out of scope (R36), no later price
+    comes, and its answer is due at once (round 159 waited to `hard_at` and kept 47.81 of 60 points)."""
+    from pixel.pricing import session, store
+
+    rfq = session.rfq(ctx, session_id)
+    if rfq is None or not rfq.origin:
+        return False
+    origins, _ = store.airports(ctx)
+    return rfq.origin not in origins and rfq.destination in origins
 
 
 async def _no_price_reply(ctx: Context, message: Message, deadline: Deadline) -> None:

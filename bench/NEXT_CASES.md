@@ -160,3 +160,29 @@ scripted portals in `tests/test_booking.py`, `tests/test_router.py` and `tests/t
 | — | acceptance after a requote | escalation (86) | | `quotes.for_session` takes the newest sent quote and its rate id | | `crm/quotes.py` | | covered by reading, no test |
 | — | tracking API down | — | | there is no tracking API: tracking reads our CRM (R23, R25) | | | | n/a |
 
+
+## Several shipments in one mail (22.11.2026, matrix)
+
+Lost or held six times (89, 90 no answer; 113, 150 `one_of_two`; 127, 151 held to 100 s). The reading is a one-factor
+matrix in `uv run python -m tools.simulate --family shipments` (cells and their known gaps in
+`tests/fixtures/rfqs/simulate-known-gaps.json`); pricing and timing are regression tests in
+`tests/test_rfq_review_regressions.py`. Open, with owner:
+
+| Cell | Today | Required | Fix belongs in | Owner |
+| --- | --- | --- | --- | --- |
+| `lanes=same_lane` | second shipment not quoted | both | `extract.shipments` | Cost |
+| `lanes=two_postcodes` (D12) | each line's postcode read, every shipment from the first one's airport | each from its own zone airport | `agent.handle` (`store.airport_of`) | Cost |
+| `layout=paragraphs`, `table`, `also` | one shipment quoted | all | `extract.shipments` | Cost |
+| `layout=subject` | one shipment quoted | all | `extract.shipments` | Cost |
+| `layout=attachment_each`, `attachment_sections` | one shipment quoted | all | `extract.shipments`, `_shipment_sources` | Cost |
+| `wishes=cheapest_fastest`, `exclude_one`, `arrive_by_one` | the mail's wish on every shipment | each shipment's own | `extract.shipments` | Cost |
+| a lane no source prices | that shipment and the sum left out | unknown: the scorer prices every lane | `agent._with_shipments` | Accuracy |
+| one lane's rate API 503, its truckers silent | not measured | each priced from the sheet, rate card or zone | `engine.options` | Accuracy |
+| accept both, accept "the second one", accept one and decline the other | one booking per session, always of the first shipment's option (`booking.book`, `quotes.for_session`) | a booking per accepted shipment | `booking.py`, `crm/quotes.py` | Shared |
+| a change of one shipment's weight | `agent.requote` prices one request | that shipment again, the others kept | `agent.requote` | Shared |
+| a trucker's answer outside its thread (no `in_reply_to`) | `bids.record` takes the carrier's latest request: every answer lands on the last shipment, the first has no trucker and its door quote falls back without pickup | matched by weight to its own shipment | `bids.record` | Accuracy |
+| `tools/replay.py --session` of a door mail for several shipments | the carriers' answers point at the live ids of our requests, so they land as above; offline neither quote is reproduced | the replay maps a stored answer's thread to its own new request | `tools/replay.py` | Speed |
+
+Measured right: two, three and four shipments, a door pickup for all, bullets, German, a currency for all, by rules;
+another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
+lane priced in one reply with the sum: tests above.
