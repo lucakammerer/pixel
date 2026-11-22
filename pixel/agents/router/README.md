@@ -39,6 +39,9 @@ kind, `by` (`rules` or `model`) and the rule that decided.
 7. A new thread that names a weight or volume, or two upper-case three-letter codes: `customer_rfq`.
 8. Any other mail in a customer's thread (a colleague before our quote): `customer_reply`.
 
+An explicit dated lane suspension or reopening from a listed airline reaches the tariff handler without a file.
+A pending or partial response in the airline's booking thread reaches the booking handler for review.
+
 `classify` asks `llm.ask_json` (purpose `route`, at most 20 output tokens) only when none of these match. When that
 call fails, a new thread becomes `customer_rfq` (a missed request costs the whole request, R1) and anything else
 `other`.

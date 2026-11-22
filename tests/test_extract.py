@@ -1150,6 +1150,22 @@ async def test_a_departure_airport_the_customer_asks_for_wins_over_the_pickup_zo
     assert (await extract.extract(ctx, mail(body), DEADLINE)).origin == "BBB"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We need to ship to Chicago (ORD) 900 kg, 3.5 cbm; please collect from our warehouse in 63450 Hanau.",
+        "Commercial invoice attached. Please collect from our warehouse in 63450 Hanau.",
+        "Please collect from our warehouse in 63450 Hanau for export to Chicago, USA.",
+        "Delivery to SGN airport; pickup from 63450 Hanau.",
+        "Ship to JFK. Please collect from our warehouse in 63450 Hanau, Germany.",
+        "Please collect from our warehouse in 63450 Hanau, consignee is ACME Inc, 10001 New York, USA.",
+    ],
+)
+def test_a_label_or_country_in_another_clause_keeps_the_pickup_postcode(text):
+    # #334 read "invoice", "ship to" or "USA" anywhere before or after the postcode and lost it.
+    assert extract._pickup(text) == (True, "63450")
+
+
 async def test_a_pickup_abroad_asks_nothing_and_the_model_names_the_nearest_of_our_airports(conn, monkeypatch, emitted):
     async def no_question(*args, **kw):
         raise AssertionError("the customer gave the address")

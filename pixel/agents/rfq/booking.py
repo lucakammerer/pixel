@@ -15,7 +15,7 @@ from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus,
 from pixel.core import db, events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
-from pixel.pricing import calc, portal_rates, selection, session
+from pixel.pricing import availability, calc, portal_rates, selection, session
 
 NO_PRICE_ACK = re.compile(
     r"(?:understood[,.]?\s+)?(?:thanks|thank you)(?: for (?:letting me know|the update))?[.!]?",
@@ -112,9 +112,7 @@ async def handle_reply(ctx: Context, message: Message) -> None:
 
         await tracking.handle(ctx, message)
         return
-    if act == "nothing" or (
-        read.intent == "thanks" and read.phase == "open" and _acknowledges_no_price(ctx, message)
-    ):
+    if act == "nothing" or (read.intent == "thanks" and read.phase == "open" and _acknowledges_no_price(ctx, message)):
         return
     if act == "cancel":
         await cancel(ctx, sent, message)
@@ -165,10 +163,13 @@ def _acknowledges_no_price(ctx: Context, message: Message) -> bool:
     own = followup.own_words(message)
     if not NO_PRICE_ACK.fullmatch(extract._unsigned(own).strip() or own):
         return False
-    return ctx.db.execute(
-        "SELECT 1 FROM messages WHERE id=? AND session_id=? AND direction='out' AND purpose='no_price'",
-        (message.in_reply_to, message.session_id),
-    ).fetchone() is not None
+    return (
+        ctx.db.execute(
+            "SELECT 1 FROM messages WHERE id=? AND session_id=? AND direction='out' AND purpose='no_price'",
+            (message.in_reply_to, message.session_id),
+        ).fetchone()
+        is not None
+    )
 
 
 async def _request(ctx: Context, session_id: int, quote: Quote | None) -> Rfq | None:
@@ -215,6 +216,8 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
             payload={"shipment": shipment.id, "rate_id": booking.rate_id, "carrier": booking.carrier},
         )  # fmt: skip
 
+    if booking.carrier.casefold() in availability.suspended_carriers(ctx, quote.rfq):
+        return _failed(ctx, booking, "carrier suspended new bookings on this lane")
     if booking.via == "email" or not booking.rate_id:
         return await _book_by_mail(ctx, quote, booking, "booking by email")
     try:
@@ -330,13 +333,17 @@ async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to:
 
 async def _confirmation_text(ctx: Context, message: Message) -> str:
     attached = await extract._attachments(ctx, message) if message.attachments else []
-    return "\n".join([message.body, *(line for _, lines in attached for line in lines)])
+    own = extract.HISTORY.split(message.body, maxsplit=1)[0]
+    return "\n".join([own, *(line for _, lines in attached for line in lines)])
 
 
 async def confirmed_references(ctx: Context, message: Message) -> tuple[str | None, str | None]:
     """The airline's booking reference and ours, from the subject, the body or an attached confirmation."""
-    text = await _confirmation_text(ctx, message)
-    match = CONFIRMED.search(message.subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
+    return _references(message.subject, await _confirmation_text(ctx, message))
+
+
+def _references(subject: str, text: str) -> tuple[str | None, str | None]:
+    match = CONFIRMED.search(subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
     # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
     ours = OURS.search(text)
     return (match.group(1).strip(".,:;") if match else None), (ours.group(1) if ours else None)
@@ -345,9 +352,11 @@ async def confirmed_references(ctx: Context, message: Message) -> tuple[str | No
 async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told. An
     answer that refuses ("could not be confirmed", in the mail or its attachment) fails the booking for a person."""
-    from pixel.agents.router.agent import BOOKED, REFUSED  # router imports crm, which this module imports too
+    # router imports crm, which this module imports too
+    from pixel.agents.router.agent import BOOKED, REFUSED, booking_pending
 
-    reference, ours = await confirmed_references(ctx, message)
+    text = await _confirmation_text(ctx, message)
+    reference, ours = _references(message.subject, text)
     booking = (
         (reference and bookings.by_reference(ctx, reference))
         or (ours and bookings.by_team_reference(ctx, ours))
@@ -361,13 +370,24 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
         return
     if booking.status == BookingStatus.CANCELLED:  # the airline's late confirmation of a booking the customer withdrew
         return
-    text = await _confirmation_text(ctx, message)
     if booking.status != BookingStatus.CONFIRMED and REFUSED.search(text):
         _failed(ctx, booking, "the airline refused the booking")
         events.emit(
             ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
             payload={"note": "The airline refused our booking: book another option", "shipment": booking.team_reference},
         )  # fmt: skip
+        return
+    if booking_pending(f"{message.subject}\n{text}"):
+        if (
+            booking.status == BookingStatus.REQUESTED
+            and not booking.booking_reference
+            and reference
+            and re.fullmatch(r"BK-[A-Z0-9]{4,}", reference, re.IGNORECASE)
+        ):
+            bookings.save(ctx, booking.model_copy(update={"booking_reference": reference}))
+        events.emit(ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
+                    payload={"note": "Airline response does not confirm the whole booking",
+                             "shipment": booking.team_reference, "booking_reference": reference})  # fmt: skip
         return
     # Only what says so confirms: an answer in our booking thread with a form, terms or "request received" attached
     # reaches this handler too and confirms nothing.

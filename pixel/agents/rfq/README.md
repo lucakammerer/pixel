@@ -113,6 +113,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
   Older `quote.prose` events can contain opening and closing text. The quote renderer only uses the name.
+- `booking.py` `handle_confirmation` leaves a waitlisted or partially confirmed booking in its existing state
+  and records the airline reference, when available, so a later standalone confirmation can match.
+  `book` checks for an active lane suspension before placing a new booking.
 - `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
