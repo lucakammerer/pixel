@@ -49,6 +49,7 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | 28 | `oversize-freighter-only` | "320 x 150 x 25 cm … longer than 300 cm" | cheapest, silent | capable carrier once data names it | data first | L |
 | 29 | `dg-lithium-in-body` | "lithium ion batteries, UN 3480, class 9" in the body only | **pass**: DGD and MSDS named | — | — | — |
 | 30 | `not-dg-declared` | "this is NOT dangerous goods, no lithium, no UN number" | **pass**: no DG paragraph | — | — | — |
+| 31 | out of scope by mode (live, round 177, lost) | "port-to-port sea freight ... FCL in 1 x 40ft container", "DEHAM to AEJEA" | **fixed #465** for English and German wording with no word of air | the plain answer, no price | open, generalize: sea in another language (model read), courier or express, "air or sea, whichever is cheaper", sea-air, UN/LOCODEs only, a sea mail that says "air" somewhere | `orchestrator.out_of_scope` | S |
 
 ## Axis D: truckers and the pickup place
 
@@ -147,7 +148,7 @@ round 166.
 | Drill | Right of 60 | Beyond the baseline | Cause | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- | --- |
 | `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 50 | baseline | 161, 149, 132 (Korean) and 171, 131 (Turkish): no quote, the rules read no destination or door pickup in them ("DFW (Dallas, US)까지", "ATL’ye", a postcode in a Turkish clause); 167 (Korean lots with "each"): the guess quotes 1964.76 against 4745.69; 168, 174: "we deliver to Düsseldorf Airport (DUS) ourselves", #463 open; 143, 139: a crosscheck against an attachment whose bytes the database does not hold (not measurable offline) | `extract.by_rules`, the guess path of `read_request` | Cost (`extract.py`), generalize |
-| E1 `portal_429` (every rate read 429, `Retry-After: 60`) | 3 | 47 | a 429 that outlasts the deadline (`RateLimited`) never asks the rate card | `portal_rates._read`, #462 open (drill 4 to 29 of 60 on the older window) | Accuracy |
+| `portal_429` (every rate read 429, `Retry-After: 60`) | 48 | 2, as `portal_down` (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
 | E4 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page), `airlines_silent` | 48 | 2 | 172 and 152: the change after our quote gets no requote; the quote before it was right | the requote path (`agents/rfq/agent.py`), cause not yet read | Accuracy |
 | `mail_twice`, `mail_late` (90 s) | 50 | 0 | — | — | — |
 | E3 `truckers_silent` | 49 | 1 | round 108: the pickup memory holds no answer of that zone within 24 h (D5's open part) | `pickup.estimates` | Accuracy |

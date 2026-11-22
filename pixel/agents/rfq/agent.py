@@ -10,7 +10,7 @@ from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, 
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
-from pixel.core.orchestrator import Deadline, deadline_for, is_import
+from pixel.core.orchestrator import Deadline, deadline_for, out_of_scope
 from pixel.crm import quotes
 from pixel.pricing import calc, engine, pickup, portal_rates, selection, session, store
 
@@ -425,7 +425,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
                     "missing": list(rfq.missing)})  # fmt: skip
         return None
     rfq = await served_airports(ctx, rfq, message, text=text, deadline=deadline)
-    if is_import(ctx, rfq.session_id):  # out of scope: no airline asked, the orchestrator declines at once
+    if out_of_scope(ctx, rfq.session_id):  # out of scope: no airline asked, the orchestrator declines at once
         return None
     novel = poller.spawn(ctx, novelty.check(ctx, rfq, text, message.subject, extract._text(message)))  # within WAIT_S
     # The one gateway call per quote (R28): when rules read the request, it writes the prose slots (R31);

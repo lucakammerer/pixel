@@ -554,8 +554,8 @@ def _read_with_answer(raw: dict, answer: str, deadline) -> Rfq | None:
 
 def audit_followups() -> list[Followup]:
     """Each captured request, asked one question that the customer answers with each answer of
-    `rfqs/followup-answers.json`; {other} is the next captured request's destination that differs from this one's,
-    so no airport is written here. Beside the row's fields, {other} is never the origin or the destination."""
+    `rfqs/followup-answers.json`; {other} is the next captured request's destination that differs from this one's
+    destination and origin, so no airport is written here. Beside the row's fields, {other} is never the origin or the destination."""
     rows = [r for r in _jsonl(RFQ_FIXTURES / "live.jsonl") if (MAILS / r["fixture"]).exists()]
     data = json.loads((RFQ_FIXTURES / "followup-answers.json").read_text())
     answers, gaps = data["answers"], data.get("known_gaps", {})
@@ -564,7 +564,9 @@ def audit_followups() -> list[Followup]:
         exp, raw = row["expected"], json.loads((MAILS / row["fixture"]).read_text())
         dest = exp.get("destination")
         others = [r["expected"].get("destination") for r in rows[i + 1 :] + rows[:i]]
-        other = next((o for o in others if o and o != dest), None)
+        # Never the request's own origin either: a door request in zone 28 leaves from HAM whatever the answer says.
+        own = getattr(_read_with_answer(raw, "", deadline), "origin", None)
+        other = next((o for o in others if o and o not in (dest, own)), None)
         if not dest or not other or row.get("known_gap") or UNREAD in exp.values():
             continue
         for name, answer in answers.items():

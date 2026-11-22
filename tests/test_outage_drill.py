@@ -11,13 +11,7 @@ ROUND_166 = Path(__file__).parent / "fixtures" / "sessions" / "round-166-accepte
 BEST = Decimal("2913.96")  # the scorer's best for round 166 (`feedback.best`), our accepted quote
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        *(n for n in outage_drill.DRILLS if n != "portal_429"),
-        pytest.param("portal_429", marks=pytest.mark.xfail(strict=True, reason="bench/NEXT_CASES.md E1")),
-    ],
-)
+@pytest.mark.parametrize("name", outage_drill.DRILLS)
 def test_round_166_is_quoted_within_5_per_cent_in_time_when(name):
     raws = json.loads(ROUND_166.read_text())
     state = json.loads(ROUND_166.with_suffix(".state.json").read_text())
