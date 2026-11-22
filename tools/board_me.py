@@ -15,10 +15,11 @@ from pixel.core import events
 from pixel.core.context import Context
 
 RUNS = Path(__file__).parent.parent / "bench" / "RUNS.md"
-COLUMNS = ("round", "sent_at", "answered_at", "seconds", "verdict", "reason", "accuracy", "cost", "time", "bonus",
-           "total", "booked", "commit", "note")  # fmt: skip
+COLUMNS = ("round", "sent_at", "answered_at", "seconds", "verdict", "reason", "teams", "factor", "accuracy", "cost",
+           "time", "bonus", "total", "booked", "commit", "note")  # fmt: skip
 KINDS = ("accuracy", "time", "cost", "humanity", "booking", "tracking", "adjustment")  # as the board lists them
 HIDDEN = ("accuracy", "time")  # left out of each row until the scores are revealed
+RARE = "Rare rounds (one to three teams accepted by the scorer) we were accepted in:"
 BONUS = ("humanity", "booking", "tracking", "adjustment")  # the RUNS.md column "Bonus"
 
 
@@ -73,6 +74,28 @@ def normalize(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def rounds_of(public: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Per closed round of the public board: `teams` the scorer accepted, the board's points `factor` and `rare`,
+    whether so few teams were accepted that `few_winners` multiplies the round (one to as many teams as it lists
+    factors)."""
+    factors = len(((public.get("rules") or {}).get("few_winners") or {}).get("factors") or [])
+    return {
+        str(r["round_no"]): {"teams": r.get("accepted"), "factor": r.get("factor"),
+                             "rare": 1 <= (r.get("accepted") or 0) <= factors}
+        for r in public.get("rounds") or []
+        if r.get("status") == "closed" and not r.get("voided")
+    }  # fmt: skip
+
+
+def rare(scores: list[dict[str, Any]]) -> dict[str, Any]:
+    """Rounds the scorer accepted one to three teams in: how many, how many of them it accepted our quote in, and
+    the points those rounds gave us (as the board reports them, its factor included)."""
+    rows = [s for s in scores if s.get("rare")]
+    won = [s for s in rows if s.get("verdict") == "accepted"]
+    return {"rounds": len(rows), "won": len(won),
+            "points": sum((Decimal(str(s["total"])) for s in won if s.get("total") is not None), Decimal(0))}  # fmt: skip
+
+
 def _stored(ctx: Context) -> dict[str, dict[str, Any]]:
     rows = ctx.db.execute("SELECT payload FROM events WHERE kind = 'score' ORDER BY id").fetchall()
     return {str(p["round"]): p for p in (json.loads(r["payload"]) for r in rows)}
@@ -103,7 +126,13 @@ def write_runs(scores: list[dict[str, Any]], path: Path = RUNS) -> int:
     text = path.read_text(encoding="utf-8")
     head, sep, rest = text.partition("\n## ")
     lines = head.rstrip("\n").split("\n")
-    start = next(i for i, line in enumerate(lines) if line.startswith("| ---")) + 1
+    old_rare = next((i for i, line in enumerate(lines) if line.startswith(RARE)), None)
+    if old_rare is not None:
+        del lines[old_rare : old_rare + 2]
+    summary = rare(scores)
+    table = next(i for i, line in enumerate(lines) if line.startswith("| Round"))
+    lines[table:table] = [f"{RARE} {summary['won']} / {summary['rounds']}, {summary['points']} points.", ""]
+    start = table + 4
     existing = {}
     for line in lines[start:]:
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
@@ -129,7 +158,12 @@ def write_runs(scores: list[dict[str, Any]], path: Path = RUNS) -> int:
 async def run(ctx: Context, path: Path = RUNS) -> int:
     """Stores a `score` event for every new or changed row; returns how many it stored."""
     stored, changed = _stored(ctx), 0
+    try:
+        info = rounds_of(await ctx.board.public())
+    except Exception:  # noqa: BLE001  the rare-round columns stay empty, the rows still land
+        info = {}
     scores = [normalize(r) for r in rows_of(await ctx.board.me())]
+    scores = [s | info.get(str(s["round"]), {}) for s in scores]
     for score in scores:
         if score["round"] is None:
             continue
