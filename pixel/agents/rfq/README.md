@@ -132,7 +132,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`calc.price_tariff`); the signature with the signer's full name. No
   filler line, smiley or P.S.: rounds 29 to 46 carried them to formal and casual mails alike and won no human
   award. `sign_off` answers the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off
-  goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does. Code formats every
+  goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does in one language (a bilingual
+  "Viele Gruesse / Many greetings" gets the sign-off of the mail's language). Code formats every
   number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
   proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
   is rendered with the rule-based greeting (R9, P1).
@@ -222,7 +223,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
-  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`), except to a formal customer.
+  signature (`compose.signature`); the booking mail ends on a welcome without a smiley (`booking.THANKS`; it already opens with the thank-you), except to a formal customer.
   They stay in the request's language for the whole thread, also when the customer accepts in English: a language
   without `booking.CUSTOMER` text gets the English notice translated (`compose.localize`, at most
   `booking.TRANSLATE_WAIT_S`), sent only when `compose.kept` finds every reference, name and figure; the question

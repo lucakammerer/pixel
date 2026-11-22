@@ -265,7 +265,10 @@ def test_the_mail_is_written_in_the_customers_register():
     _, both = compose.render(
         rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Gruesse / Many greetings\nDeniz"
     )
-    assert "Viele Grüße,\nLena Berger\n" in both and "P.S." not in both
+    # Round 172: their closing gives its own English, so ours stays in the mail's language.
+    assert "Best regards,\nLena Berger\n" in both and "P.S." not in both
+    _, own = compose.render(rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Grüße\nDeniz")
+    assert "\n\nViele Grüße\nLena Berger\n" in own
 
 
 def test_the_customers_own_closing_is_answered_in_kind():

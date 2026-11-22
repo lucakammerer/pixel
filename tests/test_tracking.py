@@ -152,7 +152,8 @@ async def test_the_answer_names_the_town_of_the_pickup_the_desk_asked_about(pipe
 @pytest.mark.parametrize(
     ("closing", "bye"),
     [
-        ("Viele Gruesse / Many greetings\nDeniz Yilmaz", "Viele Grüße\nLena Berger"),
+        ("Viele Gruesse / Many greetings\nDeniz Yilmaz", "Best regards\nLena Berger"),
+        ("Viele Grüße\nDeniz Yilmaz", "Viele Grüße\nLena Berger"),
         ("Best greetings from Regensburg\nTobias Auer", "Best regards to Regensburg\nLena Berger"),
         ("Sara\nLindqvist Medtech", "Best regards\nLena Berger"),
     ],

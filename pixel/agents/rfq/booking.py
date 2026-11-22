@@ -540,11 +540,12 @@ CUSTOMER = {
                      "{origin} à {destination} ({weight} kg). Votre référence {reference} est clôturée.",
     },
 }  # fmt: skip
-# The quote's voice carries on into its booking mail: a thank-you a person adds, once per thread.
+# The quote's voice carries on into its booking mail: a welcome a person adds, once per thread. The mail already
+# opens with a thank-you, so no second one.
 THANKS = {
-    "en": " Thanks again, great to have you on board! 😊",
-    "de": " Nochmals danke, schön, dass Sie mit uns fliegen! 😊",
-    "fr": " Encore merci, ravis de vous compter parmi nos clients ! 😊",
+    "en": " Great to have you on board.",
+    "de": " Schön, dass Sie mit uns fliegen.",
+    "fr": " Ravis de vous compter parmi nos clients.",
 }
 AIR_ONLY = {
     "en": "for airport-to-airport transport, excluding pickup",
