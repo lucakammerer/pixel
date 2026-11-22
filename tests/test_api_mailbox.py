@@ -64,3 +64,42 @@ def test_a_captured_mail_maps_without_gaps():
     raw = json.loads((MAILS / "bid-decline-lane.json").read_text())
     assert mapping_gaps(raw) == []
     assert to_message(raw, "in").sent_at.isoformat() == raw["received_at"]
+
+
+@pytest.mark.parametrize(
+    ("change", "gap"),
+    [
+        ({"received_at": "Sun, 22 Nov 2026 01:00:00 +0000"}, None),
+        ({"received_at": 1795309200000}, None),
+        ({"received_at": "1795309200"}, None),
+        ({"received_at": "yesterday-ish"}, "received_at (unreadable)"),
+        ({"references": ["<abc@host>", 9]}, "references (unreadable)"),
+        ({"in_reply_to": "<abc@host>"}, "in_reply_to (unreadable)"),
+        ({"attachments": [{"filename": "list.pdf"}, {"id": 3, "filename": "ok.pdf"}]}, "attachments (without id)"),
+    ],
+)
+@respx.mock
+async def test_one_mail_in_an_unreadable_shape_never_stops_the_poll(config, change, gap):
+    good = {"id": 10, "from": "a@b.c", "to": "us@x", "subject": "s", "body": "b", "received_at": "2026-11-22T01:00:00Z"}
+    odd = {**good, "id": 11, **change}
+    respx.get("https://api.test/v1/mailbox/messages").mock(
+        return_value=httpx.Response(200, json={"messages": [good, odd, {**good, "id": 12}]})
+    )
+    messages, next_since_id = await Mailbox(make_client(config)).poll(0)
+    assert [m.id for m in messages] == [10, 11, 12]
+    assert next_since_id == 12
+    assert messages[1].sent_at.year == 2026 or gap == "received_at (unreadable)"
+    assert (gap in mapping_gaps(odd)) if gap else mapping_gaps(odd) == []
+
+
+@respx.mock
+async def test_a_mail_without_an_id_is_skipped_and_listed(config):
+    good = {"id": 10, "from": "a@b.c", "to": "us@x", "subject": "s", "body": "b", "received_at": "2026-11-22T01:00:00Z"}
+    respx.get("https://api.test/v1/mailbox/messages").mock(
+        return_value=httpx.Response(200, json={"messages": [good, {"id": None, "subject": "?"}, {**good, "id": 12}]})
+    )
+    mailbox = Mailbox(make_client(config))
+    messages, next_since_id = await mailbox.poll(0)
+    assert [m.id for m in messages] == [10, 12]
+    assert next_since_id == 12
+    assert mailbox.skipped == [{"id": None, "error": "TypeError"}]

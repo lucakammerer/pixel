@@ -3,8 +3,9 @@
 import base64
 import hashlib
 import hmac
+import re
 from datetime import UTC, datetime
-from email.utils import parseaddr
+from email.utils import parseaddr, parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -21,11 +22,38 @@ MAX_ATTACHMENTS = 5
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 
+EPOCH_MS = 10**11  # an epoch above this is in milliseconds: in seconds it lies past the year 5000
+
+
 def _time(value: Any) -> datetime:
-    if isinstance(value, int | float):
-        return datetime.fromtimestamp(value, UTC)
-    parsed = datetime.fromisoformat(str(value))
+    """ISO 8601, an RFC 2822 date header, or an epoch in seconds or milliseconds; ValueError for anything else."""
+    text = str(value).strip()
+    if isinstance(value, int | float) or re.fullmatch(r"\d+(?:\.\d+)?", text):
+        number = float(text)
+        return datetime.fromtimestamp(number / 1000 if number > EPOCH_MS else number, UTC)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(text)
+        except (TypeError, ValueError, IndexError):
+            raise ValueError(f"unreadable time {text[:40]!r}") from None
     return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _readable_time(value: Any) -> datetime | None:
+    try:
+        return _time(value)
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def _int(value: Any) -> int | None:
+    """An id as the API sends it, or None: a reference like "<abc@host>" names no mail we can look up."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 SENDER = ("from", "sender", "from_address")
@@ -38,8 +66,18 @@ def _first(raw: dict[str, Any], keys: tuple[str, ...]) -> Any:
 
 
 def mapping_gaps(raw: dict[str, Any]) -> list[str]:
-    """Fields `to_message` had to guess because the mail did not carry them under any name we know."""
-    return [keys[0] for keys in (SENDER, RECIPIENT, STORED_AT) if _first(raw, keys) is None]
+    """Fields `to_message` had to guess because the mail did not carry them under any name we know, or carried them
+    in a shape it cannot read (a time, a reference, an attachment without its id)."""
+    gaps = [keys[0] for keys in (SENDER, RECIPIENT, STORED_AT) if _first(raw, keys) is None]
+    if (stored_at := _first(raw, STORED_AT)) is not None and _readable_time(stored_at) is None:
+        gaps.append("received_at (unreadable)")
+    if raw.get("in_reply_to") is not None and _int(raw["in_reply_to"]) is None:
+        gaps.append("in_reply_to (unreadable)")
+    if any(_int(r) is None for r in raw.get("references") or ()):
+        gaps.append("references (unreadable)")
+    if any(not isinstance(a, dict) or _int(a.get("id")) is None for a in raw.get("attachments") or ()):
+        gaps.append("attachments (without id)")
+    return gaps
 
 
 def _address(value: object) -> str:
@@ -49,9 +87,11 @@ def _address(value: object) -> str:
 
 
 def to_message(raw: dict[str, Any], direction: str) -> Message:
-    """The only place that knows the API's mail fields. `session_id` is set by the poller. Tolerant on purpose: a
-    mail it cannot fully read still gets a deadline (from now) instead of blocking the mailbox; see `mapping_gaps`."""
+    """The only place that knows the API's mail fields. `session_id` is set by the poller. Tolerant on purpose, field
+    by field: a mail it cannot fully read still gets a deadline (from now) instead of blocking the mailbox; a
+    reference or an attachment it cannot read is left out; see `mapping_gaps`. Only a mail without an id raises."""
     stored_at = _first(raw, STORED_AT)
+    sent_at = _readable_time(stored_at) if stored_at is not None else None
     return Message(
         id=int(raw["id"]),
         session_id=int(raw["id"]),
@@ -60,18 +100,19 @@ def to_message(raw: dict[str, Any], direction: str) -> Message:
         to=_address(_first(raw, RECIPIENT)),
         subject=raw.get("subject") or "",
         body=raw.get("body") or "",
-        in_reply_to=raw.get("in_reply_to"),
-        references=tuple(int(r) for r in raw.get("references") or ()),
+        in_reply_to=_int(raw.get("in_reply_to")),
+        references=tuple(r for r in map(_int, raw.get("references") or ()) if r is not None),
         attachments=tuple(
             Attachment(
                 id=int(a["id"]),
-                filename=a.get("filename", ""),
-                content_type=a.get("content_type", ""),
-                size=int(a.get("size") or 0),
+                filename=str(a.get("filename") or ""),
+                content_type=str(a.get("content_type") or ""),
+                size=_int(a.get("size")) or 0,
             )
             for a in raw.get("attachments") or ()
+            if isinstance(a, dict) and _int(a.get("id")) is not None
         ),
-        sent_at=_time(stored_at) if stored_at is not None else datetime.now(UTC),
+        sent_at=sent_at or datetime.now(UTC),
         raw=raw,
     )
 
@@ -96,16 +137,25 @@ def signed(secret: str, timestamp: str, body: bytes, signature: str) -> bool:
 class Mailbox:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
+        self.skipped: list[dict[str, Any]] = []  # mails the last poll could not map at all; the poller reports them
 
     async def poll(self, since_id: int, limit: int = 200) -> tuple[list[Message], int]:
-        """Mail to us with id > since_id, oldest first, and `next_since_id`."""
+        """Mail to us with id > since_id, oldest first, and `next_since_id`. One mail that cannot be mapped is left
+        out and listed in `skipped`, never the whole page: else every later request waits behind it for good."""
         response = await request(
             self.client, "GET", "/v1/mailbox/messages", params={"since_id": since_id, "limit": limit}
         )
         body = response.json()
-        messages = [to_message(raw, "in") for raw in body.get("messages") or body.get("items") or []]
-        next_since_id = body.get("next_since_id") or max((m.id for m in messages), default=since_id)
-        return messages, int(next_since_id)
+        messages, self.skipped, ids = [], [], [since_id]
+        for raw in body.get("messages") or body.get("items") or []:
+            if isinstance(raw, dict) and (raw_id := _int(raw.get("id"))) is not None:
+                ids.append(raw_id)
+            try:
+                messages.append(to_message(raw, "in"))
+            except Exception as e:  # noqa: BLE001  one unreadable mail must not stop the mailbox (R1)
+                self.skipped.append({"id": raw.get("id") if isinstance(raw, dict) else None, "error": type(e).__name__})
+        next_since_id = _int(body.get("next_since_id")) or max(ids)
+        return messages, next_since_id
 
     async def send(
         self,
