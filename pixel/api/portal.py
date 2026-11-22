@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -161,10 +162,13 @@ class Portal:
         self.window_reset_at: datetime | None = None  # from the last 429's Retry-After
 
     def _read_limits(self, response: httpx.Response) -> None:
+        """Read each quota hint independently, keeping the last usable value if a header is missing or invalid."""
         if (limit := response.headers.get("X-RateLimit-Limit")) is not None:
-            self.rate_limit = int(limit)
+            with suppress(ValueError):
+                self.rate_limit = int(limit)
         if (remaining := response.headers.get("X-RateLimit-Remaining")) is not None:
-            self.rate_remaining = int(remaining)
+            with suppress(ValueError):
+                self.rate_remaining = int(remaining)
 
     async def lanes(self) -> list[Lane]:
         """Not rate limited: cache it, refresh on a schedule and after a failed quote."""
