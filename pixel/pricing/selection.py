@@ -135,3 +135,11 @@ def select(
     options = [option for option in options if meets_schedule(rfq, option)] or options
     options = required(options, only, None if rfq.arrive_by else arrive_by, ready)
     return min(options, key=_fastest if rfq.preference == Preference.FASTEST else _cheapest)
+
+
+def within_cap(total: Decimal, currency: str, cap: Decimal, cap_currency: str | None, strict: bool) -> bool:
+    """A customer's "book it if the all-in stays below EUR 1,500": our quoted total meets their cap. "below" is
+    strict, "up to" is not; a cap in another currency than the quote's is not met here (a person converts)."""
+    if cap_currency and cap_currency != currency:
+        return False
+    return total < cap if strict else total <= cap
