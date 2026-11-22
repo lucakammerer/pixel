@@ -102,6 +102,18 @@ def with_pickup(option: RateOption, pickup: Decimal, trucker: str) -> RateOption
     )
 
 
+def insurance_premium(value: Decimal, share_pct: Decimal, rate_pct: Decimal, minimum: Decimal = Decimal(0)) -> Decimal:
+    """Goods value x insured share x premium rate, at least the minimum premium."""
+    return money(max(value * share_pct / 100 * rate_pct / 100, minimum))
+
+
+def with_insurance(option: RateOption, premium_eur: Decimal) -> RateOption:
+    """The option's all-in with the insurance premium (in EUR) added once, in the option's currency."""
+    premium = premium_eur if option.currency == "EUR" else money(premium_eur / option.fx_eur)
+    total = money(option.total + premium)
+    return option.model_copy(update={"total": total, "total_eur": to_eur(total, option.currency, option.fx_eur)})
+
+
 def to_eur(amount: Decimal, currency: str, fx_eur: Decimal | None) -> Decimal:
     if currency == "EUR":
         return money(amount)
