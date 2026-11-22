@@ -1,0 +1,40 @@
+[
+  {
+    "id": 56183,
+    "from": "hofmann-textilwerk@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "FRA–TLV hava kargo teklifi",
+    "body": "Merhaba,\n\nUmarım haftanız iyi geçiyordur. Frankfurt (FRA) çıkışlı, Tel Aviv, IL (TLV) varışlı bir gönderimiz için hava kargo teklifi rica ediyorum.\n\nSpor ekipmanları 2026-11-26 tarihinde hazır olacak. Gönderiyi Frankfurt (FRA) havalimanına biz teslim edeceğiz. Toplam 7 parça, brüt ağırlığı 324 kg ve hacmi 1.96 cbm.\n\nBu gönderi için en hızlı seçeneği istiyoruz. En erken hangi uçuşa yetişebileceğimizi ve TLV’ye tahmini varış zamanını paylaşabilir misiniz? Teklifinizi tüm masraflar dahil EUR olarak iletebilirseniz sevinirim.\n\nŞimdiden teşekkürler, iyi çalışmalar!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T09:45:21.949876+00:00",
+    "attachments": []
+  },
+  {
+    "id": 56250,
+    "from": "solace-air-cargo@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Rate request FRA-TLV, 324 kg",
+    "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: FRA-TLV.\nWe fly DUS-ATL, FRA-DEL, FRA-JFK, FRA-MIA, FRA-SYD, FRA-TPE, HAM-BOG, MUC-GRU, MUC-MEX, MUC-NRT, STR-MEL, STR-MIA, STR-TLV.\n\nBest regards\nSolace Air Cargo\nsolace-air-cargo@hackloop.mail",
+    "in_reply_to": 56189,
+    "references": [
+      56189
+    ],
+    "received_at": "2026-11-22T09:45:52.435969+00:00",
+    "attachments": []
+  },
+  {
+    "id": 56284,
+    "from": "hofmann-textilwerk@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: FRA–TLV hava kargo teklifi",
+    "body": "Thank you for your offer, but it’s not the option I asked for, so I’ll have to pass.\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+    "in_reply_to": 56252,
+    "references": [
+      56183,
+      56252
+    ],
+    "received_at": "2026-11-22T09:46:01.661626+00:00",
+    "attachments": []
+  }
+]

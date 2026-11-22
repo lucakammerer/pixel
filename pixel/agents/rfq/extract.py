@@ -689,12 +689,17 @@ def _language(text: str, said: object = None, attached: str = "") -> str:
 
 def _preference(text: str) -> Preference:
     """A superlative the customer wrote decides; without one, a hurry they describe means fastest."""
+    return stated_preference(text) or Preference.CHEAPEST
+
+
+def stated_preference(text: str) -> Preference | None:
+    """The wish the rules read; None when no wording of theirs says it (the default, cheapest, then applies)."""
     text = NOT_URGENT.sub("", text)
     if FASTEST.search(text):
         return Preference.FASTEST
-    if CHEAPEST.search(text) or PRICE_FIRST.search(text) or not HURRY.search(text):
+    if CHEAPEST.search(text) or PRICE_FIRST.search(text):
         return Preference.CHEAPEST
-    return Preference.FASTEST
+    return Preference.FASTEST if HURRY.search(text) else None
 
 
 # A customer ruling an airline out (round 42: "Please do not offer <airline> (<code>) for this shipment or for any of
