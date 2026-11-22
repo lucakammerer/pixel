@@ -7,12 +7,14 @@ the options the session had; the result is a `feedback` event in that session. F
 the trucker the scorer took, and `pickup_rule` picks the balanced rule that agrees with those most often.
 
 What the service cannot correct itself goes out: `attention` lists what went wrong lately, `alert` calls
-PIXEL_ALERT_URL with what cost or may cost points, once per kind of issue and deployed commit and only for what
-happened since this process started, so the same fault is reported again only after new code had its chance.
+PIXEL_ALERT_URL with what cost or may cost points, once per session (an issue without one: once per kind and
+deployed commit) and only for what happened since this process started. An alert carries codes and numbers only:
+the scorer's reason, the round, our quoted and the best price where known, never text from a mail.
 """
 
 import asyncio
 import json
+import re
 import sqlite3
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -237,18 +239,44 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
     return issues
 
 
+def _code(value: Any) -> str | None:
+    code = re.sub(r"[\s-]+", "_", str(value or "").strip().lower())
+    return code if re.fullmatch(r"[a-z0-9_]{1,40}", code) else None
+
+
+def _brief(ctx: Context, issue: dict[str, Any]) -> dict[str, Any]:
+    """The alert line of one issue: codes and numbers only, never free text from a mail."""
+    p, session_id = issue["detail"], issue["session"]
+    quoted = p.get("quoted")
+    if quoted is None and session_id and issue["issue"] in ("rejected", "no_answer", "lost_points"):
+        option = _quoted(ctx, session_id)
+        quoted = option.total_eur if option else None
+    best = p.get("best")
+    reason = _code(p.get("reason")) if issue["issue"] != "missed" else "missed"
+    if reason is None and quoted is not None and best is not None and Decimal(str(quoted)) != Decimal(str(best)):
+        reason = "too_high" if Decimal(str(quoted)) > Decimal(str(best)) else "too_low"
+    return {"issue": issue["issue"], "session": session_id, "at": issue["at"],
+            "reason": reason or _code(p.get("verdict")) or issue["issue"], "round": p.get("round"),
+            "quoted": str(quoted) if quoted is not None else None,
+            "best": str(best) if best is not None else None}  # fmt: skip
+
+
 async def alert(ctx: Context) -> int:
-    """Reports issues not yet reported for this commit. Returns how many kinds it reported."""
+    """Reports each lost session once (an issue without a session once per kind and commit). Returns how many."""
     if not ctx.settings.alert_url:
         return 0
     sent = json.loads(db.get(ctx.db, ALERTED) or "{}")
-    new = {i["issue"]: i for i in reversed(attention(ctx.db, ALERT_MINUTES))
-           if i["issue"] in REPAIRABLE and i["at"] >= STARTED and f"{i['issue']}@{VERSION}" not in sent}  # fmt: skip
+
+    def key(i: dict[str, Any]) -> str:
+        return f"session:{i['session']}" if i["session"] else f"{i['issue']}@{VERSION}"
+
+    new = {key(i): i for i in reversed(attention(ctx.db, ALERT_MINUTES))
+           if i["issue"] in REPAIRABLE and i["at"] >= STARTED and key(i) not in sent}  # fmt: skip
     if not new:
         return 0
-    sent.update({f"{issue}@{VERSION}": i["at"] for issue, i in new.items()})
+    sent.update({k: i["at"] for k, i in new.items()})
     db.put(ctx.db, ALERTED, json.dumps(sent))  # before the call: a hook that fails must not be called every poll
-    await post(ctx, [{"issue": i["issue"], "session": i["session"], "at": i["at"]} for i in new.values()])
+    await post(ctx, [_brief(ctx, i) for i in new.values()])
     return len(new)
 
 
