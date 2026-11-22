@@ -129,6 +129,20 @@ PICKUP_SPAN = re.compile(
 )
 WAITING = re.compile(r"\b(?:waiting|wartezeit|standzeit)\b", re.IGNORECASE)
 VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
+OFFER_UNTIL = re.compile(
+    r"^\s*(?:(?:this\s+)?(?:rate|price|offer|quote|preis|angebot|offre|prix)\s+(?:is\s+)?)?"
+    r"(?:valid\s+(?:until|through)|good\s+(?:until|through)|g(?:ü|ue)ltig\s+bis|valable\s+jusqu['’]au)"
+    r"\s*:?\s*(.+)$",
+    re.IGNORECASE,
+)
+OFFER_FOR = re.compile(
+    r"^\s*(?:(?:(?:this\s+)?(?:rate|price|offer|quote)\s+(?:is\s+)?)?(?:valid|good)\s+for"
+    r"|(?:(?:preis|angebot)\s+)?g(?:ü|ue)ltig\s+für|(?:(?:offre|prix)\s+)?valable\s+pendant|(?:العرض\s+)?صالح\s+لمدة)"
+    r"\s*:?\s*(\d+(?:[.,]\d+)?)\s*(?:(?P<minutes>minutes?|mins?|minuten|دقائق|دقيقة)"
+    r"|(?P<hours>hours?|hrs?|h|stunden?|heures?|ساعات|ساعة)|(?P<days>days?|tage|jours?))\s*\.?\s*$",
+    re.IGNORECASE,
+)
+SECONDS_PER_EXPIRY_UNIT = {"minutes": 60, "hours": 3600, "days": 86400}
 # Only currency codes: "950.00 EUR per AWB" or "2.10 EUR/KGS" is a price, never an exchange rate.
 FX = re.compile(
     rf"1\s*({CURRENCY})\s*=\s*(\d+(?:[.,]\d+)?)\s*EUR|(\d+(?:[.,]\d+)?)\s*EUR\s*(?:per|/)\s*(?:1\s*)?({CURRENCY})\b"
@@ -245,7 +259,8 @@ def _pickup_hours(body: str) -> int | None:
     """The pickup time in whole hours: stated in hours, or on a pickup line in days or minutes ("Lead time 2 days
     from order to collection", "Abholung in 90 Minuten"); an offer's validity is never one."""
     text = _own_text(body)
-    if match := PICKUP_HOURS.search(text) or HOURS.search(VALIDITY_HOURS.sub("", text)):
+    pickup_lines = "\n".join(line for line in text.splitlines() if not OFFER_FOR.fullmatch(line))
+    if match := PICKUP_HOURS.search(text) or HOURS.search(VALIDITY_HOURS.sub("", pickup_lines)):
         return calc.pickup_hours(Decimal(match.group(1).replace(",", ".")), "hours")
     for line in text.splitlines():
         if (
@@ -257,6 +272,35 @@ def _pickup_hours(body: str) -> int | None:
             unit = "minutes" if re.match(r"m", m["unit"], re.IGNORECASE) else "days"
             return calc.pickup_hours(Decimal(m[1].replace(",", ".")), unit)
     return None
+
+
+def _utc_expiry(value: str) -> datetime | None:
+    value = value.strip().removesuffix(".")
+    if value.upper().endswith((" UTC", " GMT")):
+        value = value[:-3] + "+0000"
+    for fmt in (None, "%d %b %Y %H:%M %z", "%d.%m.%Y %H:%M %z"):
+        try:
+            expiry = datetime.strptime(value, fmt) if fmt else datetime.fromisoformat(value)
+            if expiry.tzinfo is not None:
+                return expiry.astimezone(UTC)
+        except (ValueError, OverflowError):
+            continue
+    return None
+
+
+def _offer_expiry(text: str, received_at: datetime) -> datetime | None:
+    """An unambiguous deadline in the carrier's own words. Relative validity starts at mailbox receipt."""
+    found = set()
+    for line in text.splitlines():
+        if absolute := OFFER_UNTIL.fullmatch(line):
+            found.add(_utc_expiry(absolute[1]))
+        elif relative := OFFER_FOR.fullmatch(line):
+            try:
+                seconds = Decimal(relative[1].replace(",", ".")) * SECONDS_PER_EXPIRY_UNIT[relative.lastgroup]
+                found.add(received_at.astimezone(UTC) + timedelta(seconds=int(seconds)))
+            except ArithmeticError:
+                found.add(None)
+    return found.pop() if len(found) == 1 else None
 
 
 def _rate(text: str) -> Decimal:
@@ -331,7 +375,10 @@ def _fx(text: str, currency: str) -> Decimal | None:
     return None
 
 
-def _option(rfq: Rfq, message: Message, total: Decimal, currency: str, fx: Decimal | None, days: int) -> RateOption:
+def _option(
+    rfq: Rfq, message: Message, total: Decimal, currency: str, fx: Decimal | None, days: int,
+    *, valid_until: datetime | None = None,
+) -> RateOption:  # fmt: skip
     chargeable = calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
     total = calc.money(total)
     return RateOption(
@@ -347,6 +394,7 @@ def _option(rfq: Rfq, message: Message, total: Decimal, currency: str, fx: Decim
         fx_eur=None if currency == "EUR" else fx,
         total_eur=calc.to_eur(total, currency, fx),
         transit_days=days,
+        valid_until=valid_until,
         evidence_message_id=message.id,
     )
 
@@ -365,7 +413,7 @@ def parse(
     days = _days(text)
     if total <= 0 or (currency != "EUR" and (fx is None or fx <= 0)) or (needs_transit and days is None):
         return None
-    return _option(rfq, message, total, currency, fx, days or 0)
+    return _option(rfq, message, total, currency, fx, days or 0, valid_until=_offer_expiry(text, message.sent_at))
 
 
 def _desk_rows(text: str) -> str:
@@ -531,7 +579,8 @@ async def _read_with_model(
     transit = _days(f"Transit {duration}") or (int(duration) if duration.isdigit() else None)
     if total <= 0 or (currency != "EUR" and fx is None) or (needs_transit and not transit):
         return None
-    return _option(rfq, message, total, currency, fx, transit or 0)
+    expiry = _offer_expiry(_own_text(message.body), message.sent_at)
+    return _option(rfq, message, total, currency, fx, transit or 0, valid_until=expiry)
 
 
 CHECK_WAIT_S = 3  # gpt-4.1-mini answers in about 1 s; a bid must not miss `collect`'s cutoff waiting for it

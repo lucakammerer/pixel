@@ -582,8 +582,9 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
         text += THANKS[lang]
     body = "\n\n".join([compose.greeting(lang, name, request), text,
                         compose.signature(bye, ctx.settings.signer)])  # fmt: skip
+    english = body
     if lang != quote.rfq.language:  # the thread's language, also when the customer's reply is English
-        english, names = body, (quote.option.origin, quote.option.destination, *facts.values())
+        names = (quote.option.origin, quote.option.destination, *facts.values())
         body = await compose.localize(ctx, quote.rfq.language, quote.session_id, body, TRANSLATE_WAIT_S,
                                       lambda text: compose.kept(english, text, names), "booking.translate")  # fmt: skip
     subject = compose.reply_subject(compose.customer_subject(ctx, quote.rfq.message_id)) or quote.subject
@@ -591,7 +592,7 @@ async def _tell_customer(ctx: Context, quote: Quote, reply_to: int | None, what:
         await outbox.send(
             ctx, to=quote.rfq.customer, subject=subject, body=body,
             session_id=quote.session_id, in_reply_to=reply_to or quote.sent_message_id or quote.rfq.message_id,
-            purpose="booking",
+            purpose="booking", english=english,
         )  # fmt: skip
     except outbox.NotSent:
         return  # outbox emitted mail.held; the draft waits in the sessions UI

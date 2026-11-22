@@ -1,0 +1,95 @@
+[
+  {
+    "id": 50491,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "CGN → SCL 최단 소요시간 항공운임 견적 문의",
+    "body": "안녕하세요,\n\n잘 지내시죠? 인쇄 홍보물 항공 운송 건으로 견적 부탁드립니다. 화물은 2026-11-26에 출고 가능하고, Cologne 공항(CGN)까지는 저희가 직접 반입하겠습니다. 도착 공항은 SCL (Santiago, CL)입니다. 이번에는 가장 빠른 옵션으로 부탁드립니다.\n\n화물 내역은 아래와 같습니다. 개별 포장 기준 수치에는 each를 표시했습니다.\n\n로트 1: 카톤 4개, 총중량 each 162 kg (순중량 each 147 kg), 크기 each 60 x 40 x 134 cm\n로트 2: 케이스 6개, 총중량 each 28 kg (순중량 each 25 kg), 크기 each 80 x 60 x 150 cm\n로트 3: 드럼 3개, 합산 총중량 407 kg (합산 순중량 382 kg), 합산 부피 3.62 cbm\n\n로트는 나누지 않고 항공화물운송장 한 장으로 함께 보내려고 합니다. 모든 비용을 포함한 EUR 금액 하나로 견적 부탁드립니다.\n\n구매팀에서 견적서를 보관해야 해서, 회신하실 때 PDF로 첨부해 주시면 감사하겠습니다.\n\n좋은 하루 보내세요!\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T07:49:42.970724+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50550,
+    "from": "aurelia-air-cargo@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Rate request CGN-SCL, 1223 kg",
+    "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: CGN-SCL.\nWe fly CGN-NBO, CGN-ORD, DUS-MIA, DUS-RUH, DUS-YYZ, FRA-LIM, FRA-SCL, FRA-TLV, MUC-CAI, MUC-SIN, MUC-YYZ, STR-EZE, STR-LAX, STR-MEL.\n\nBest regards\nAurelia Air Cargo\naurelia-air-cargo@hackloop.mail",
+    "in_reply_to": 50497,
+    "references": [
+      50497
+    ],
+    "received_at": "2026-11-22T07:50:15.603303+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50551,
+    "from": "helix-air-freight@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Rate request CGN-SCL, 1223 kg",
+    "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: CGN-SCL.\nWe fly CGN-LOS, CGN-SYD, DUS-RUH, FRA-LAX, FRA-PVG, FRA-SCL, HAM-HKG, MUC-HKG, MUC-PVG, MUC-SGN, STR-ORD, STR-PVG.\n\nBest regards\nHelix Air Freight\nhelix-air-freight@hackloop.mail",
+    "in_reply_to": 50498,
+    "references": [
+      50498
+    ],
+    "received_at": "2026-11-22T07:50:15.603500+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50610,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: CGN → SCL 최단 소요시간 항공운임 견적 문의",
+    "body": "Thank you for your offer. That works for us, please go ahead and book it.\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": 50570,
+    "references": [
+      50491,
+      50570
+    ],
+    "received_at": "2026-11-22T07:50:46.398493+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50628,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: CGN → SCL 최단 소요시간 항공운임 견적 문의",
+    "body": "Lena님, 예약해 주셔서 감사합니다! 항공사 확인이 나오면 소식 부탁드려요.\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": 50619,
+    "references": [
+      50491,
+      50570,
+      50610,
+      50619
+    ],
+    "received_at": "2026-11-22T07:50:58.759249+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50640,
+    "from": "borealis-freight-airways@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Booking BK-BB1IEVPG confirmed",
+    "body": "Hello,\n\nyour booking BK-BB1IEVPG is confirmed.\n\nBooking reference: BK-BB1IEVPG\nYour reference: PX-A2A2AF\nAirline: Borealis Freight Airways (BX)\nLane: CGN-SCL\nPrice: 4745.69 EUR\nStatus: booked and ready to ship\n\nKind regards,\nBorealis Freight Airways bookings\n",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T07:51:17.177928+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50649,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: CGN → SCL 최단 소요시간 항공운임 견적 문의",
+    "body": "Lena님, 예약이 확정됐다니 반갑네요! 예약 진행해 주셔서 감사합니다.\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": 50641,
+    "references": [
+      50491,
+      50570,
+      50641
+    ],
+    "received_at": "2026-11-22T07:51:28.982499+00:00",
+    "attachments": []
+  }
+]

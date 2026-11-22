@@ -90,6 +90,8 @@ async def _reading(ctx: Context, session_id: int) -> Rfq | str:
     raw = json.loads(row["data"])["raw"]
     if raw.get("attachments"):
         return "its attachments are not stored"
+    if ctx.db.execute("SELECT 1 FROM messages WHERE session_id = ? AND purpose = 'question'", (session_id,)).fetchone():
+        return "we asked the customer: offline there is no answer"
     message = to_message(raw, "in")
     token = timing.clock.set(lambda: message.sent_at)
     try:
@@ -226,7 +228,8 @@ async def ledger(db: str, rounds: list[int] | None) -> None:
         print("| Round | Verdict | Wish | Quoted then | Scorer's best | Today | Today | What today's code changes |")
         print("| --- | --- | --- | --- | --- | --- | --- | --- |")
         all_rows = scored(ctx.db)
-        count = dict.fromkeys(("accepted, quoted as sent", "accepted, quoted otherwise", "no session or quote"), 0)
+        count = dict.fromkeys(("accepted, quoted as sent", "accepted, quoted otherwise",
+                               "accepted, today within 5 % of the best the points give", "no session or quote"), 0)  # fmt: skip
         for number in sorted(
             all_rows, reverse=True
         ):  # newest first: a reading left in the copy is never an earlier one's
@@ -250,8 +253,11 @@ async def ledger(db: str, rounds: list[int] | None) -> None:
                 then.carrier,
                 then.trucker,
             )
-            if row["verdict"] == "accepted" and not lost:
-                count["accepted, quoted as sent" if same else "accepted, quoted otherwise"] += 1
+            if row["verdict"] == "accepted":
+                if not lost:
+                    count["accepted, quoted as sent" if same else "accepted, quoted otherwise"] += 1
+                if pick is not None and window(row, then.total_eur, pick.total_eur).startswith("passes"):
+                    count["accepted, today within 5 % of the best the points give"] += 1
             if not (rounds or lost) and same:
                 continue
             best = (
