@@ -38,7 +38,7 @@ def _fx_eur(ctx: Context, tariff: LaneTariff) -> Decimal | None:
 
 def sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
     found = []
-    for tariff in store.lookup(ctx, rfq.origin, rfq.destination, rfq.received_at.date()):
+    for tariff in store.lookup(ctx, rfq.origin, rfq.destination, calc.ready_day(rfq)):
         try:
             fx = None if tariff.currency == "EUR" else _fx_eur(ctx, tariff)
             option = calc.price_tariff(tariff, rfq, fx)

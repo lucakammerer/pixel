@@ -69,6 +69,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses `pricing/calc.py`
   `arrival` for the delivery date including pickup. The fallback waits for a compliant quote until the deadline
   and `novelty.py` `with_note` identifies the available alternative if it misses the requested timing.
+  `pricing/engine.py` `sheet_options` prices only sheet versions valid on the ready date.
+  `pricing/session.py` `for_request` applies the same rule to stored sheet prices.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English, German or French, written as a clerk writes to
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,

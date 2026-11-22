@@ -3,7 +3,7 @@
 import asyncio
 import io
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal as D
 
 import httpx
@@ -14,9 +14,9 @@ from pixel.agents.rfq import compose
 from pixel.agents.tariffs import agent as tariffs
 from pixel.api.client import ApiError
 from pixel.api.portal import Lane, _option
-from pixel.contracts import LlmResult, Preference
+from pixel.contracts import LaneTariff, LlmResult, Preference, Source
 from pixel.core import events
-from pixel.pricing import bids, calc, engine, portal_rates, selection, store
+from pixel.pricing import bids, calc, engine, portal_rates, selection, session, store
 from tests.test_bids import FakePortal, deadline, kinds, mail, rfq
 from tests.test_outbox import make_ctx
 from tests.test_portal import RATE
@@ -217,3 +217,28 @@ async def test_a_usd_sheet_is_priced_with_its_stated_or_the_newest_portal_rate(c
         assert option is None
     else:
         assert (option.currency, option.fx_eur, option.total_eur) == ("USD", D(fx), calc.money(option.total * D(fx)))
+
+
+def test_future_shipment_uses_the_tariff_valid_on_its_ready_day(ctx):
+    request = rfq()
+    today = request.received_at.date()
+    future = request.model_copy(update={"ready_on": today + timedelta(days=7)})
+    old = LaneTariff(
+        carrier="Example Air", origin=future.origin, destination=future.destination, currency="EUR",
+        valid_from=today, valid_to=today + timedelta(days=6), version="old", transit_days=3,
+        minimum=D(100), breaks=((D(0), D(1)),), fuel_per_kg=D(0), security_per_kg=D(0), source="old.txt",
+    )  # fmt: skip
+    store.upsert(ctx, [old])
+    [old_option] = engine.sheet_options(ctx, request)
+    assert session.for_request(ctx, future) == []
+    assert engine.sheet_options(ctx, future) == []
+
+    portal = old_option.model_copy(update={"source": Source.PORTAL})
+    events.emit(ctx, "option.found", "pricing", session_id=future.session_id,
+                payload={"option": portal.model_dump(mode="json")})  # fmt: skip
+    revised = old.model_copy(update={"valid_from": future.ready_on, "valid_to": future.ready_on,
+                                     "version": "revised", "minimum": D(200)})  # fmt: skip
+    store.upsert(ctx, [revised])
+    [sheet] = engine.sheet_options(ctx, future)
+    assert (sheet.dataset_version, sheet.total) == ("revised", D(200))
+    assert session.for_request(ctx, future) == [portal, sheet]
