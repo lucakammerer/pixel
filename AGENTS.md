@@ -53,7 +53,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
-  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `board_me.py`, `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -102,6 +102,7 @@ uv run python -m tools.simulate                 # generated mails and attachment
 tools/kpi_pr.sh <pull request>                  # the same online on the live host, posted as a comment
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
 uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts
+uv run python -m tools.check_precision <database>   # per check rule: fired, the rounds accepted and not, by the scorer's reason
 uv run python -m tools.card_proof <database>    # the rate card against every portal rate in that database, offline
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
@@ -135,14 +136,20 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
      latest arrival priced 41 % too high (#306): no CI or deploy check catches that, only a repro does.
    - **Everything else** (`docs/`, `bench/`, `tests/`, fixtures, `pixel/ui/`, `compose.py` wording, `tools/`): merge it
      at once (`gh pr merge --merge`); the review follows after the merge.
-   - **`URGENT`** (a round is being lost now): merge at once whatever it touches; the review thread checks it within
-     the round.
+   - **`URGENT`** means one thing: the cause can hit the next round too (a running series), and the pull request holds
+     the lost session as a replay test that failed before the fix. Then merge at once whatever it touches; the review
+     thread checks it within the round. Only one thread merges into the read and price path, the review thread:
+     `URGENT` does not lift that for a second thread at the same time.
 2. **CI runs on `main`** (`.github/workflows/ci.yml`). Whoever merged watches that run and fixes forward or reverts
    within the same round if it fails.
 3. Update with `main` once, right before the local run. No second rebase unless GitHub reports a conflict.
 4. **Reviews of everything else happen after the merge.** A finding becomes a follow-up pull request under the same
    rule.
-5. **The host deploys itself, no model and no Mac:** `pixel-cd.timer` runs `deploy/cd.sh` every 30 s as root on
+5. **A fix for a lost round closes its class, not its instance:** the one-factor variations of the cause in
+   `tools/simulate.py` or `tools/benchmark_generalization.py`, with the next step of escalation (the same fault on
+   another endpoint, another carrier of the same fact), in the same pull request or the one right after. Until then
+   the class is listed as open in `bench/NEXT_CASES.md`.
+6. **The host deploys itself, no model and no Mac:** `pixel-cd.timer` runs `deploy/cd.sh` every 30 s as root on
    the live host. It fetches `origin/main` into its own clone `/opt/pixel/cd/repo` (read-only deploy key of the user
    pixel) and always takes the newest commit, never one that does not hold the live commit: a commit deployed by hand
    stays live until main holds it, at most 10 minutes. When every changed path is under `docs/`, `bench/`, `tests/`,
@@ -156,8 +163,7 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
    to `deploy/cd.sh`, `deploy/pixel-cd.*` or `deploy/pixel.service` only logs that it differs; install it on the host
    under the job's lock and by rename, never in place, because `sh` reads a running script as it goes:
    `sudo flock /opt/pixel/cd/lock sh -c 'install -m 755 <file> /opt/pixel/cd/cd.sh.new && mv /opt/pixel/cd/cd.sh.new /opt/pixel/cd/cd.sh'`. One line per decision in `/opt/pixel/cd/cd.log`; `touch /opt/pixel/cd/PAUSE` pauses
-   it. A fix for a round we just lost may go live from its branch first (pause the job, `tools/deploy.sh`); it is
-   merged right after.
+   it. An `URGENT` fix may go live from its branch first (pause the job, `tools/deploy.sh`); it is merged right after.
 
 `tools/kpi_pr.sh` measures a branch against `main` on the live host with the real portal and gateway.
 

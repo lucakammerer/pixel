@@ -12,7 +12,7 @@ One line per setup change (R33): when, what failed, what it was, the commit that
 
 | When | Symptom | Cause | Fix |
 | --- | --- | --- | --- |
-| 21.11. 19:30 UTC | 891 poll `error` events, `429: one poll per 5 seconds` | the mailbox limits polls to one per 5 s; we poll every 1 s | open, Speed (`core/poller.py`, `PIXEL_POLL_SECONDS`) |
+| 21.11. 19:30 UTC | poll `error` events, `429: one poll per 5 seconds`, about 700 an hour | the mailbox limits polls to one per 5 s; we polled every 1 s | b72af35 (22.11. 00:23 UTC): `core/poller.py` `run` learns the interval from the 429 (`POLL_LIMIT`). Since then 7 to 14 such events an hour (3549 in all by 22.11. 06:43 UTC), which is noise, not a fault: `run` starts every restart at `PIXEL_POLL_SECONDS` and learns the limit again from one 429, and a poll exactly 5 s after the last can arrive early; the push delivers the mail, the next poll follows 5 s later, and `feedback.attention` leaves `poll` errors out |
 
 ## Voice loop (R31, R30)
 
