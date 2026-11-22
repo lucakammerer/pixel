@@ -8,7 +8,7 @@ import pytest
 from test_extract import DEADLINE, captured
 
 from pixel import llm
-from pixel.agents.rfq import compose, dangerous, extract
+from pixel.agents.rfq import compose, dangerous, extract, novelty
 from pixel.config import settings
 from pixel.contracts import LlmResult, Message, Preference, RateOption, Rfq, Source
 from pixel.core.context import Context
@@ -228,6 +228,20 @@ def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
     # Round 27 asked for "the earliest available pickup" too: answered as a pickup date, not only implied.
     _, body = compose.render(rfq("en"), pickup, request=request + " Please confirm the earliest available pickup.")
     assert "We can collect on Wednesday 25 November" in body and "Sunday 29 November" in body
+
+
+@pytest.mark.parametrize(
+    ("language", "request_", "ref"),
+    [
+        ("en", "Please quote our purchase order reference PO-2026-4471 in your offer.", "PO-2026-4471"),
+        ("en", "Kindly show our order no. 88123/B on the quotation.", "88123/B"),
+        ("de", "Bitte geben Sie unsere Bestellnummer 4500123456 im Angebot an.", "4500123456"),
+    ],
+)
+def test_the_customers_own_reference_stands_in_the_mail(language, request_, ref):
+    _, body = compose.render(rfq(language), OPTION, request=request_)
+    assert ref in body and body.count("1234.57 EUR") == 1
+    assert not novelty.leftover(request_)
 
 
 def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
