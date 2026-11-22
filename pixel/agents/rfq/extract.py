@@ -129,7 +129,7 @@ HURRY = re.compile(
 )
 DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
-    r"|collection from|collect from|abhol\w*|ab werk|ab haus"
+    r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.
     r"|(?:please|kindly|could you|can you|would you)\s+(?:also\s+)?"

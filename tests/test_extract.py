@@ -349,6 +349,10 @@ def test_a_pickup_time_window_keeps_the_door_pickup(text):
     assert extract._pickup(text) == (True, "61391")
 
 
+def test_exw_with_an_address_is_a_door_pickup():
+    assert extract._pickup("Sold on EXW terms, ex works our plant at Hauptstr. 1, 61391 Town.") == (True, "61391")
+
+
 def lot(pieces, weight, per_piece=False, unit="kg", cbm=None, dims=None):
     return {"pieces": pieces, "weight": weight, "weight_unit": unit, "weight_per_piece": per_piece,
             "volume_cbm": cbm, "volume_per_piece": False, "dimensions": dims}  # fmt: skip
