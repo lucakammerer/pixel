@@ -14,7 +14,7 @@ R1, R4, R9–R17, R22–R24, R26–R29, R31.
 
 In: the RFQ `Message` and its `Deadline`; later the customer's reply and the airline's confirmation. Out: a `Quote`
 (sent through `core/outbox.py` `send_quote`), a `Booking` and a `Shipment`. Emits `rfq.extracted`,
-`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`, `rfq.novelty`.
+`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`, `rfq.novelty`, `quote.unmet`.
 
 ## Implementation
 
@@ -302,6 +302,24 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   a failed call goes to `PIXEL_ALERT_URL` at once (`novel_requirement`, with the sentences), not after the verdict.
   `handle` waits for it at most until `target_at`; `_quote` reads the last `rfq.novelty`, so the fallback and a
   requote follow it too, without waiting.
+- `unmet.py` (R33): the last reader before the first quote of a session leaves. `novelty.py` reads the sentences
+  no rule consumes and `check.py` knows the kinds we already lost; the lost first rounds also sat in sentences a
+  rule did consume (round 15's pickup "from our warehouse", rounds 89 and 113's two shipments) or in none (round
+  70's language). So `settle`, called by `agent.py` `handle` between `_settled` and `outbox.send_quote`, sends
+  the request as the session holds it (the mail's own words and what its documents gave, at most `MAX_CHARS`) and
+  the exact subject and body about to leave, with the name of the offer PDF they carry, to `PIXEL_MODEL_CHECK`
+  once (`quote.unmet`, at most `WAIT_S` = 8 s, 300 output tokens). `read` returns every ask the reply does not
+  meet with the customer's own sentence and a class (`wording`, `price`, `selection`, `scope`); an ask whose
+  sentence does not stand in the request is dropped. It never changes the reply's text: a model sentence in a
+  quote could claim a service we did not price. In `on` every open ask goes to `PIXEL_ALERT_URL` at once
+  (`unmet_ask`: the classes and whether the quote is held, never text) and shows in `feedback.attention`; a
+  `price`, `selection` or `scope` ask (`HELD`) also holds the quote until `target_at` (`_hold`; a takeover or a
+  quote sent by a person ends it), then it leaves as it is. Reading and holding end by `repair_by`, before the
+  orchestrator takes the request over. One call per session (`_asked`), never in the fallback or a requote;
+  `settle` never raises: a failed, late or malformed answer is an `error` event and the quote leaves. A call
+  costs 0.002 to 0.0025 USD, about 1 of the 40 cost points of a quote, and about 2 s. `PIXEL_UNMET`: `off` (the
+  default, no call), `log` (read and record, no hold or alert) or `on`; `tools.bench_unmet` scores the prompt on
+  `tests/fixtures/unmet-asks.json`.
 
 ## Pitfalls
 
