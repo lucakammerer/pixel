@@ -1263,3 +1263,12 @@ def test_the_insurance_terms_a_request_states_give_its_premium(text, premium):
     """Round 91 priced the premium on the customer's terms; written another way, the same terms give the same premium."""
     value, _, share, rate, minimum = extract.insurance(text)
     assert calc.insurance_premium(value, share, rate, minimum) == Decimal(premium)
+
+
+def test_a_past_shipment_beside_the_request_is_not_its_cargo():
+    """Round 101 set an earlier offer beside the request; a past shipment's weight is no figure of this one."""
+    rfq = extract.by_rules(
+        mail("Please quote DUS to RUH, 4 pieces, 990 kg gross, 5.75 cbm. Last month we shipped 1250 kg to RUH."),
+        DEADLINE,
+    )
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(990), Decimal("5.75"), 4)
