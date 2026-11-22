@@ -744,3 +744,12 @@ async def test_a_pickup_in_another_currency_without_its_rate_takes_the_rate_a_pr
 )
 def test_alternatives_and_side_prices_are_never_added_up(body):
     assert bids.parse(mail("air@x", body), rfq()) is None
+
+
+def test_a_rate_the_answer_names_is_its_own_and_never_borrowed():
+    """A rate of exactly 1 was unread and another carrier's 0.8301 taken instead: an answer that names its exchange
+    rate in words the rules cannot read goes to the model."""
+    stated = bids.parse(mail("air@x", "All-in USD 1,000.00, transit 3 days.\nExchange rate: 1 USD = 1 EUR"), rfq())
+    assert (stated.total, stated.fx_eur) == (D("1000.00"), D(1))
+    unread = "All-in USD 1,000.00, transit 3 days.\nExchange rate: one dollar is ninety euro cents."
+    assert bids.parse(mail("air@x", unread), rfq(), known_fx=lambda currency: D("0.8301")) is None

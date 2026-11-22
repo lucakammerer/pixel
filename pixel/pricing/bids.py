@@ -128,7 +128,13 @@ PICKUP_SPAN = re.compile(
 )
 WAITING = re.compile(r"\b(?:waiting|wartezeit|standzeit)\b", re.IGNORECASE)
 VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
-FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
+FX = re.compile(
+    r"1\s*([A-Z]{3})\s*=\s*(\d+(?:[.,]\d+)?)\s*EUR|(\d+(?:[.,]\d+)?)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})"
+)
+# An answer that names its exchange rate in a form `FX` cannot read borrows none (`known_fx`): the model reads it.
+RATE_NAMED = re.compile(
+    r"\b(?:exchange|conversion)\s+rate|\bwechselkurs|\btaux\s+de\s+change|\btipo\s+de\s+cambio", re.IGNORECASE
+)
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
 OFF_PORTAL = re.compile(r"not on the portal\b.*?(?P<email>[\w.+-]+@[\w-]+(?:\.[\w-]+)*)", re.IGNORECASE)
@@ -352,7 +358,8 @@ def parse(
     if DECLINE.search(text) or not (price := _price(text, rfq)):
         return None
     total, currency = price
-    fx = None if currency == "EUR" else _fx(text, currency) or (known_fx and known_fx(currency))
+    borrow = known_fx if known_fx and not RATE_NAMED.search(text) else None
+    fx = None if currency == "EUR" else _fx(text, currency) or (borrow and borrow(currency))
     days = _days(text)
     if total <= 0 or (currency != "EUR" and (fx is None or fx <= 0)) or (needs_transit and days is None):
         return None
