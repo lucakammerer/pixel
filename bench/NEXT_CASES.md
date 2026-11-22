@@ -231,21 +231,22 @@ Measured right: two, three and four shipments, a door pickup for all, bullets, G
 another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.
 
-## Axis R: the scorer's checks (22.11.2026, live database to round 192)
+## Axis R: the scorer's checks (22.11.2026, final scored round 198)
 
-What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (185 rounds,
-8 to 192: 134 accepted, 45 rejected and 6 with no answer) and the requests and replies behind the losses.
+What the scorer reads from our first reply. The latest `score` per round records 147 accepted, 45 rejected
+and six with no answer across 198 rounds. We paired `feedback` with the requests and replies for all losses.
+Rounds 1 to 7 were accepted in `score` before session-linked feedback began. The final round was accepted.
 
 ### The rubric, as far as the verdicts prove it
 
 | # | Check | Reason when it fails | Proof | What it reads |
 | --- | --- | --- | --- | --- |
-| 1 | a reply in the thread before the request expires | `no answer` (6: 69, 86, 87, 89, 90, 107) | — | any mail with `in_reply_to` |
-| 2 | the reply is in the customer's language | `wrong_language` (3: 70, 72, 156) | 156: an English question, then an English no-price reply to a Korean mail failed on language, not as a decline, so this check runs before 3 | the reply's text, also a no-price reply |
+| 1 | an eligible answer in the thread before the request expires | `no answer` (6: 69, 86, 87, 89, 90, 107) | a permitted clarification may precede the quote (103, 131, 132) | reply threading via `in_reply_to` and the deadline |
+| 2 | the reply is in the customer's language | `wrong_language` (3: 70, 72, 156) | 156: an English question followed by an English no-price reply to a Korean mail. The recorded failure was language | the reply's text, including a no-price reply |
 | 3 | an in-scope request gets a price | `declined_in_scope` (3: 96, 104, 122) | all three: our "could not obtain a freight rate" reply. A question is not scored: the simulated customer answers it within about 11 s and the quote after it counts (103, 131, 132 accepted; 82, 113 scored on price and count). 104 lost because the answer ("pickup from 40043, select the departure airport") was not priced | a price in the first reply that holds one, or a no-price reply |
 | 4 | an out-of-scope request gets no price | `out_of_scope_quoted` (1: 177, sea FCL); the plain decline of an import was accepted (159) | — | a price in the reply |
 | 5 | the offer is attached as a PDF that holds the price, when asked | `no_pdf_offer` (4: 76 to 79) | 78: a PDF without `%%EOF` counted as none | the attachment, parsed |
-| 6 | every shipment of the mail has its own price | `one_of_two` (2: 113, 150) | both: two numbered shipments, "a separate all-in price for each"; we priced the first | the number of totals |
+| 6 | every separately requested shipment has its own price | `one_of_two` (2: 113, 150) | both rejected replies priced the first of two. 127, 151 and 196 were accepted with both prices and an added sum despite wording asking for separate rather than combined prices | distinct shipment totals |
 | 7 | an airline the customer ruled out is not offered | `excluded_airline` (1: 42) | — | the airline named in the reply |
 | 8 | dangerous goods the documents reveal are answered with the documents they need | `dg_docs_missing` (1: 10) | the mail said "non-dangerous", the packing list `PL_53839.xlsx` said otherwise | named documents (DGD, MSDS) |
 | 9 | the total stays within 5 % below the scorer's best (Price) | `too_low` (18) | round 13 was 2.67 % below the best and earned 33 of 45 (about 4.5 points per %). Insurance terms stated in the request count in the all-in (91) | the all-in total in EUR |
@@ -253,8 +254,8 @@ What the scorer reads from our first reply, reconstructed from the latest `feedb
 | 11 | the option or reply fulfils the customer's stated wish | `not_what_was_asked` (2: 186, 192) | 186 asked for the fastest option and an arrival estimate. The reply offered the cheapest and omitted the estimate. In 192 the new mail asked for cheapest, quoted the old subject with "Fastest", and got the quickest option with an arrival date. The two rounds establish that choosing by the current wish matters; an independent arrival check remains unproven | the option against the current wish |
 | — | the airline and the trucker are **not** compared | — | 172: our airline differed from the scorer's at the same total, 45 of 45; 13: another trucker, accepted | — |
 
-Order: 1, then 2 before 3 (round 156). The order of 5 to 8 and 11 relative to the two price thresholds remains
-unproven. Those losses carry no `best`.
+Round 156 reported language first when both language and scope could have failed. General check order and the
+precedence of 5 to 8 and 11 relative to the price thresholds remain unproven. Those losses carry no `best`.
 
 ### The timeline and its pattern
 
@@ -275,9 +276,9 @@ from then on **combined** with older ones: 156 is Korean + an "import" by the bu
 pounds and cubic feet + an arrival deadline + the buyer's "import" + PDF. Price levers move the same way from endpoint
 to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123).
 
-### Wishes we recognised and only noted (every `rfq.novelty` through round 192)
+### Wishes we recognised and only noted (every `rfq.novelty` through round 198)
 
-13 distinct sessions, 112 to 186, with a nonempty `mapped.conditions` or `mapped.documents`. Each row compares
+15 distinct sessions, 112 to 196, with a nonempty `mapped.conditions` or `mapped.documents`. Each row compares
 the first offer and stored attachment receipt with the request and verdict. A session can appear in several rows.
 Round 192 had no mapped novelty. Its new preference for cheapest lost to the quoted subject of an earlier
 request for fastest. Hot repair A's #529 reads the preference from the new request with that subject removed.
@@ -294,6 +295,7 @@ The captured replay now selects Tamarind at EUR 2854.83. The fix was live before
 | one air waybill, lots not split | 167 (ko) | priced as one | the sentence noted; `compose.ONE_AWB` answers only English and German | accepted | content |
 | earliest flight and estimated arrival | 186 (tr) | transit duration given | neither question answered. The model output mapped the ready date and fastest wish | `not_what_was_asked`; the reason does not separate the two omissions from the option | yes, the arrival estimate |
 | pieces, EUR, all-in | 132, 171 | in the quote | noted | accepted | no |
+| separate prices in the same reply rather than a combined price | 196 | both shipment prices in the reply | the exact condition was repeated and the reply also gave their combined sum | accepted, as were 127 and 151 with both prices and a sum | yes, reply format. The scorer accepted all three observed examples |
 
 Ranked predictions of `not_what_was_asked` from the kinds only noted, each stepped in every direction:
 
@@ -304,6 +306,7 @@ Ranked predictions of `not_what_was_asked` from the kinds only noted, each stepp
 | N3 | the offer PDF ask becomes a request for the customer to send a document | stubs `["PDF", "견적서"]`, `["shipper's declaration", "PDF"]`, and empty. The carrier's bid PDF supplies sourcing data. A customer's real DGD in PDF form still needs to be requested when required | wrong content, accepted twice. Empty stub produces no request | give the note the direction of each document request | Checklist |
 | N4 | a wish no option can meet | offline `agent._quote` with both a required airline and an impossible arrival gives both alternative notes when the RFQ carries the fields. The same inputs stubbed in novelty's `only_airlines` and `arrive_by` give neither note. A compatible airline and date correctly give neither note | model-only alternative disclosure open | check the selected option against the same requirements used for selection | Checklist (review thread merges) |
 | N5 | one air waybill or separate air waybills | the answer renderer confirms English "One AWB for all lots". Korean round 167 gets a note only and French "une seule LTA" gets no sentence. The opposite "two separate air waybills" triggers a one-AWB promise | wrong confirmation for the opposite case. Korean and French confirmation missing | `compose.ONE_AWB` | Checklist |
+| N6 | separate quotes with an explicit request against a combined price | live 196 named both prices and the sum. 127 and 151 also passed with a sum. The opposite, one consignment with one overall amount, was accepted in 62, 153 and 158 | response format differs from the request in 196. Evidence for a scorer rejection is weak | `compose.shipments` and `agent._with_shipments` | Checklist |
 
 Arrival was explicitly requested in 52 of the 179 first mails through round 186. In the offline replay of 186,
 stubbing its recorded ready date and using the corrected fastest option gives an estimated arrival of 28 November.
