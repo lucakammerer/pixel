@@ -9,7 +9,8 @@ import httpx
 
 from pixel.agents.rfq import compose, extract, followup
 from pixel.api.client import ApiError
-from pixel.api.portal import BookingUnavailable, PortalBooking, RateExpired
+from pixel.api.mailbox import RATEDESK, TRACKING
+from pixel.api.portal import BookingUnavailable, NotOnPortal, PortalBooking, RateExpired, RateLimited
 from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus, Rfq
 from pixel.core import db, events, outbox
 from pixel.core.context import Context
@@ -60,6 +61,7 @@ AIRLINE_REFERENCE = re.compile(r"\bbooking reference:?\s*(\S+)", re.IGNORECASE)
 OURS = re.compile(r"\byour reference:?\s*(\S+?)[.,;]?\s*$", re.IGNORECASE | re.MULTILINE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 REQUEST_WAIT_S, REQUEST_POLL_S = 20.0, 0.5
+REBOOKABLE = (404, 409)  # a portal answer to a booking that a fresh rate id can fix
 
 
 def intent(text: str) -> str:
@@ -173,8 +175,9 @@ async def _request(ctx: Context, session_id: int, quote: Quote | None) -> Rfq | 
 
 
 async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resume: bool = False) -> Booking:
-    """Creates the shipment (its CRM id is the `team_reference`), books by `rate_id`; on 410 fetches a fresh
-    rate and books that; on 503 or without a rate_id books by email with the carrier. Tells the customer."""
+    """Creates the shipment (its CRM id is the `team_reference`), books by `rate_id`; on 410, 404 or 409 fetches a
+    fresh rate and books that; on 503, without a rate_id or when no fresh rate comes (the rate API down or capped)
+    books by email with the carrier. Tells the customer."""
     quote = quotes.get(ctx, quote_id)
     if quote is None:
         raise KeyError(quote_id)
@@ -207,23 +210,32 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
         return await _book_by_mail(ctx, quote, booking, "booking by email")
     try:
         done = await _portal_book(ctx, booking.rate_id, booking.team_reference)
-    except RateExpired:
+    except BookingUnavailable as e:
+        return await _book_by_mail(ctx, quote, booking, e.hint)
+    except (RateExpired, ApiError) as e:
+        # 410 expired, 404 unknown (a rate id from the desk or the browser page the bookings API does not know),
+        # 409 booked under another reference: a fresh rate for the same airline books instead.
+        if isinstance(e, ApiError) and e.status not in REBOOKABLE:
+            return _failed(ctx, booking, repr(e))
+        why = "rate expired" if isinstance(e, RateExpired) else f"portal booking {e.status}"
         try:
             fresh = await portal_rates.refresh(ctx, quote.option)
             events.emit(
                 ctx, "option.found", "crm", session_id=quote.session_id,
-                payload={"why": "rate expired, fresh rate for booking", "option": fresh.model_dump(mode="json")},
+                payload={"why": f"{why}, fresh rate for booking", "option": fresh.model_dump(mode="json")},
             )  # fmt: skip
             booking = booking.model_copy(update={"rate_id": fresh.rate_id})
             _save(ctx, booking, "booking")
             done = await _portal_book(ctx, fresh.rate_id, booking.team_reference)
-        except BookingUnavailable as e:
-            return await _book_by_mail(ctx, quote, booking, e.hint)
-        except (RateExpired, ApiError, httpx.HTTPError) as e:
-            return _failed(ctx, booking, f"fresh rate: {e!r}")
-    except BookingUnavailable as e:
-        return await _book_by_mail(ctx, quote, booking, e.hint)
-    except (ApiError, httpx.HTTPError) as e:  # 404 unknown rate_id, 409 booked under another reference
+        except BookingUnavailable as e2:
+            return await _book_by_mail(ctx, quote, booking, e2.hint)
+        except (RateExpired, NotOnPortal, RateLimited, ApiError) as e2:
+            # The rate API is down or capped while the customer's rate id expired (the 503 streak since round 93):
+            # the airline books by mail. A rate hint names the desk, never an airline, so its address is not used.
+            return await _book_by_mail(ctx, quote, booking, f"{why}, no fresh rate: {type(e2).__name__}")
+        except httpx.HTTPError as e2:
+            return _failed(ctx, booking, f"fresh rate: {e2!r}")
+    except httpx.HTTPError as e:
         return _failed(ctx, booking, repr(e))
 
     booking = booking.model_copy(
@@ -367,9 +379,11 @@ async def _book_by_mail(ctx: Context, quote: Quote, booking: Booking, why: str) 
 
 
 def _airline_address(ctx: Context, carrier: str, hint: str) -> str | None:
-    found = EMAIL.search(hint or "")
-    if found:
-        return found.group(0).rstrip(".")
+    """The address the portal's message names, else the carrier list's. The rate desk and the tracking desk book
+    nothing."""
+    for found in EMAIL.finditer(hint or ""):
+        if (address := found.group(0).rstrip(".")).lower() not in (RATEDESK, TRACKING):
+            return address
     row = ctx.db.execute("SELECT email FROM carriers WHERE LOWER(name) = LOWER(?)", (carrier,)).fetchone()
     return row["email"] if row else None
 
