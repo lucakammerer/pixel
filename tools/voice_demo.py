@@ -22,7 +22,17 @@ US = "team@hackloop.mail"
 def seed(ctx) -> int:
     """Seeds two realistic booked shipments/orders plus one open RFQ so both the Order Status Call demo
     (`/crm/shipments` and `/sessions/{id}`) and carrier/customer follow-up calls work immediately."""
-    from pixel.contracts import Booking, BookingStatus, Preference, Quote, QuoteStatus, RateOption, Rfq, Shipment, Source
+    from pixel.contracts import (
+        Booking,
+        BookingStatus,
+        Preference,
+        Quote,
+        QuoteStatus,
+        RateOption,
+        Rfq,
+        Shipment,
+        Source,
+    )
     from pixel.core import events
     from pixel.crm import bookings, quotes, shipments
     from pixel.pricing import store
@@ -49,7 +59,7 @@ def seed(ctx) -> int:
             "body": "Hi,\n\nPlease quote fastest air freight from FRA to JFK for 420 kg, 1.8 cbm.\n\nMira Petersen\nNordlicht Audio GmbH",
             "origin": "FRA",
             "destination": "JFK",
-            "weight": Decimal("420"),
+            "weight": Decimal(420),
             "volume": Decimal("1.8"),
             "carrier": "Cobalt Skylift",
             "price": Decimal("1485.00"),
@@ -67,7 +77,7 @@ def seed(ctx) -> int:
             "body": "Hello,\n\nWe need air freight from MUC to ORD, 265 kg, 1.1 cbm.\n\nJonas Kessler\nKessler Feinmechanik",
             "origin": "MUC",
             "destination": "ORD",
-            "weight": Decimal("265"),
+            "weight": Decimal(265),
             "volume": Decimal("1.1"),
             "carrier": "Helix Air Freight",
             "price": Decimal("1120.50"),

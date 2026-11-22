@@ -271,6 +271,7 @@ async def test_order_status_call_rings_picks_up_and_updates_shipment_live(ctx):
 
 async def test_calls_sse_stream_delivers_ringing_turn_and_shipment_update(ctx):
     import json
+
     from pixel.contracts import Shipment
     from pixel.crm import shipments
     from pixel.voice.routes import stream
