@@ -31,9 +31,9 @@ ORIGIN_LABEL = re.compile(
 # "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
 DEST_LABEL = re.compile(
     rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)à(?!\w)"
-    # "Luftfracht zum Flughafen SGN" (round 74): only after air freight in the clause; "Wir liefern die Ware selbst zum
-    # Flughafen MUC" is the truck's.
-    rf"|\b(?:luftfracht\w*|flug(?!hafen)\w*|flieg\w*|geflogen)\b[^\n.;!?,]{{0,40}}?\bzu[mr](?=\s+flughafen\b)"
+    # "Luftfracht zum Flughafen SGN" (round 74): only right after the air word; "Für den Flug liefern wir die Ware
+    # selbst zum Flughafen MUC" is the truck's.
+    rf"|\b(?:luftfracht\w*|flug|fliegen|geflogen)\s+zu[mr](?=\s+flughafen\b)"
     # Spanish, Italian, Portuguese "a GRU", only right before a code that ends the clause: never the English article
     rf"|(?<!\w)a(?=\s+(?-i:[A-Z]{{3}})\s*(?:[.,;:!?(\n]|$))"
     rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
@@ -52,7 +52,8 @@ ON_CARRIAGE = re.compile(
 TRUCK_LEG = re.compile(
     r"(?i:\b(?:truck\w*|lorry|lkw|by\s+road|collect\w*|pick\w*[\s-]?up|deliver\w*|bring\w*|haul\w*|transport\w*"
     r"|abhol\w*|anliefer\w*|zustell\w*))"
-    r"(?:(?!(?i:\b(?:air(?!port)\w*|fl[iy]\w*|ship\w*|freight|luft\w*|arriv\w*|ankunft|destination|ziel\w*)\b))"
+    # "Luftfracht" may be the truck verb's object ("bringen Sie die Luftfracht zum Flughafen FRA"): no flight word
+    r"(?:(?!(?i:\b(?:air(?!port)\w*|fl[iy]\w*|ship\w*|freight|arriv\w*|ankunft|destination|ziel\w*)\b))"
     r"[^.;!?\n]){0,60}?(?i:\b(?:to|zum|zur)\s+(?:the\s+)?)"
     r"(?:(?i:airport|flughafen)\s+(?=[A-Z]{3}\b)|(?=[A-Z]{3}\s+(?i:airport|flughafen)\b))"  # never a bare "to JFK"
     rf"{CODE}"
@@ -2016,6 +2017,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     rfq, prose = _earlier(ctx, mail, deadline) or rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
+    if rfq is not None and rfq.destination == rfq.origin:  # the truck's airport read as the destination: the model reads
+        rfq = None
     if rfq is not None and files and ctx.settings.model_check:
         documented = frozenset(f for f, names in evidence.items() if names and "mail" not in names)
         rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline, documented)
@@ -2047,7 +2050,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = rules(guess=True)
-            if guessed is None or not (guessed := apply_pickup(guessed)).origin:
+            if guessed is None or not (guessed := apply_pickup(guessed)).origin or guessed.destination == guessed.origin:
                 raise
             events.emit(
                 ctx,

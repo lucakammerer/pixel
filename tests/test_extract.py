@@ -156,6 +156,36 @@ def test_the_airport_the_truck_goes_to_is_no_destination(text, destination):
     assert extract._destination_only(text) == destination
 
 
+def test_the_air_freight_the_truck_brings_zum_flughafen_is_no_destination():
+    text = "Abholung in 60311 Town. Bitte bringen Sie die Luftfracht zum Flughafen AAA, Ziel Singapur. 300 kg, 1,2 cbm."
+    assert extract._destination_only(text) is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Abholung in 60311 Town, Vorlauf der Luftfracht zum Flughafen AAA per Lkw. Ziel Singapur. 300 kg, 1,2 cbm.",
+        "Abholung in 60311, Zustellung der Luftfracht zum Flughafen AAA. Ziel Singapur. 300 kg, 1,2 cbm.",
+        "Abholung bei uns in 60311 Town und Transport der Luftfrachtsendung zum Flughafen AAA. Bestimmungsort ist"
+        " Singapur. 300 kg, 1,2 cbm.",
+        "Abholung in 60311. Vor dem Flug muss die Ware zum Flughafen AAA. Empfänger in Singapur. 300 kg, 1,2 cbm.",
+    ],
+)
+async def test_a_destination_the_rules_read_where_the_cargo_departs_is_left_to_the_model(conn, monkeypatch, body):
+    asked = []
+
+    async def down(ctx, **kw):
+        asked.append(kw["purpose"])
+        raise RuntimeError("no model")
+
+    monkeypatch.setattr(llm, "ask_json", down)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("60311"), "area": "Town", "airport": "AAA"}])
+    with pytest.raises(RuntimeError):  # never AAA to AAA
+        await extract.extract(ctx, mail(body), DEADLINE)
+    assert asked == ["rfq.extract"]
+
+
 async def test_a_german_door_request_names_its_destination_zum_flughafen(conn, monkeypatch, emitted):
     async def boom(ctx, **kw):
         raise AssertionError("no model call expected")
