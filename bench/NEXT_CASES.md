@@ -682,6 +682,14 @@ was created at 21:09 UTC. That record does not establish whether the trucker sti
 Final selection at or after expiry, the combined validity shown in the quote, and first use at booking
 remain open. Owner: supply for price validity, after the quote for the booking flow.
 
+Round 196 was the first after rollout with priced carrier bids. It arrived at 10:46:06 UTC, after the
+10:34:34 UTC service start with #496. All ten pickup offers stated an 11:01 UTC deadline and had no
+attachments. The standalone deadline was stored correctly. The other nine, including the chosen
+EUR 324.30 pickup, placed the deadline in a paragraph and have no stored deadline. The quote was sent at
+10:46:38 UTC and was accepted. The selected pickup deadline had not elapsed at send. The offline cases
+cover a clause after pickup time and a deadline sentence followed by a reference or booking note.
+Expected: retain that deadline and keep pickup time and price unchanged. Owner: supply.
+
 ### Bid validity variants
 
 The next snapshot, through event 19080 and round 181, adds four inbound census rows, three portal events and two
