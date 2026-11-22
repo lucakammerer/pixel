@@ -271,9 +271,10 @@ def test_a_clean_quote_is_logged_without_an_issue(conn):
 
     ctx = make_ctx(conn)
     mail = ingest_rfq(ctx)
-    request = rfq(session_id=mail.session_id, message_id=mail.id, customer=mail.sender)
-    _session(ctx, request, [airline("1483.43")])
-    agent._quote(ctx, request, [airline("1483.43")], None, fallback=False)
+    # the mail's own figures: 676 kg and 5.79 cbm, chargeable 966.93 kg
+    request = rfq(weight="676", volume="5.79", session_id=mail.session_id, message_id=mail.id, customer=mail.sender)
+    _session(ctx, request, [airline("1483.43", kg="966.93")])
+    agent._quote(ctx, request, [airline("1483.43", kg="966.93")], None, fallback=False)
     [checked] = _checked(conn)
     assert not checked["blocking"]
     assert feedback.attention(conn, 5) == []

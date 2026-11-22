@@ -1,10 +1,11 @@
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
-from pixel.agents.rfq import check, compose, dangerous, extract, novelty
+from pixel.agents.rfq import check, compose, dangerous, extract, novelty, repair
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
@@ -15,6 +16,12 @@ from pixel.pricing import calc, engine, portal_rates, selection, session, store
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
 TRANSLATE_WAIT_S = 10
+REPAIR_MARGIN_S = 15  # repairs end this long before the orchestrator takes the request over (`Deadline.recovery_at`)
+FALLBACK_REPAIR_S = 15  # what the deadline fallback may spend on repairs
+REPRICE_PORTAL_S = 8.0  # a corrected reading reads the portal again for at most this long
+FOLLOWUP_WAIT_S = 5.0  # how long a quote waits for a newer customer mail in its thread to be read
+FOLLOWUP_POLL_S = 0.5
+SECOND_READ_CLOSE = Decimal("0.01")  # the prose call's figure agrees within this share of the rules' figure
 AIRPORTS_WAIT_S = 5.0
 AIRPORTS_SYSTEM = (
     "You check the airports of an air freight request. A code read from the mail is on none of the lanes we "
@@ -118,40 +125,245 @@ def _insurance(ctx: Context, rfq: Rfq, request: str, options: list[RateOption], 
     return calc.to_eur(calc.insurance_premium(value, share, rate, minimum), currency, fx)
 
 
-def _check(ctx: Context, rfq: Rfq, quote: Quote, insurance_eur: Decimal = Decimal(0)) -> None:
-    """The last look before the quote can leave (`check.py`): a `quote.checked` event with what it found. It never
-    holds or changes the quote; a BLOCK finding is an issue for `feedback.alert`, so a person sees it at once.
-    PIXEL_PRECHECK=off skips it. Never raises."""
+def _check(ctx: Context, rfq: Rfq, quote: Quote, insurance_eur: Decimal = Decimal(0)) -> list[check.Finding]:
+    """The look at the drafted quote (`check.py`): a `quote.checked` event with what it found, the findings returned.
+    It never changes the quote; a BLOCK finding is an issue for `feedback.alert`, so a person sees it at once, and
+    `repair.settle` looks again at the text that leaves. PIXEL_PRECHECK=off skips it. Never raises."""
     if ctx.settings.precheck == "off":
-        return
+        return []
     try:
-        row = ctx.db.execute("SELECT data FROM messages WHERE id = ?", (rfq.message_id,)).fetchone()
-        message = Message.model_validate_json(row["data"]) if row else None
-        request = extract._text(message) if message else ""
-        files = tuple(a.filename for a in message.attachments) if message else ()
-        document_weight = None
-        if files:
-            evidence = ctx.db.execute(
-                "SELECT json_extract(payload, '$.document_weight_kg') AS weight FROM events"
-                " WHERE session_id = ? AND message_id = ? AND kind = 'rfq.evidence' ORDER BY id DESC LIMIT 1",
-                (rfq.session_id, rfq.message_id),
-            ).fetchone()
-            if evidence and evidence["weight"] is not None:
-                document_weight = Decimal(evidence["weight"])
-        findings = check.run(
-            quote,
-            request,
-            session.for_request(ctx, rfq),
-            files,
-            document_weight=document_weight,
-            insurance_eur=insurance_eur,
-        )
+        findings = _findings(ctx, rfq, quote, insurance_eur)
+        if compose.language_of(rfq) != rfq.language:  # the draft is English until `_in_language` translates it
+            findings = [f for f in findings if f.rule != "language_sent"]
         events.emit(ctx, "quote.checked", "rfq", session_id=rfq.session_id,
                     payload={"quote": quote.id, "blocking": check.blocking(findings), "fallback": quote.fallback,
                              "total": str(quote.total), "findings": check.as_payload(findings)})  # fmt: skip
+        return findings
     except Exception as exc:  # noqa: BLE001  the check must never cost the quote
         events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
                     payload={"where": "check", "error": f"{type(exc).__name__}: {exc}"})  # fmt: skip
+        return []
+
+
+def _findings(ctx: Context, rfq: Rfq, quote: Quote, insurance_eur: Decimal = Decimal(0)) -> list[check.Finding]:
+    """`check.run` on `quote` with what the session knows: the customer's mail, its files, the corroborated
+    document weight and every option found."""
+    request, files = repair.request(ctx, rfq)
+    document_weight = None
+    if files:
+        evidence = ctx.db.execute(
+            "SELECT json_extract(payload, '$.document_weight_kg') AS weight FROM events"
+            " WHERE session_id = ? AND message_id = ? AND kind = 'rfq.evidence' ORDER BY id DESC LIMIT 1",
+            (rfq.session_id, rfq.message_id),
+        ).fetchone()
+        if evidence and evidence["weight"] is not None:
+            document_weight = Decimal(evidence["weight"])
+    return check.run(
+        quote,
+        request,
+        session.for_request(ctx, rfq),
+        files,
+        document_weight=document_weight,
+        insurance_eur=insurance_eur,
+    )
+
+
+def _premium(ctx: Context, quote: Quote) -> Decimal:
+    """The insurance premium in EUR `_quote` added to this quote, from its `quote.drafted` event."""
+    row = ctx.db.execute(
+        "SELECT json_extract(payload, '$.insurance_eur') AS premium FROM events WHERE session_id = ?"
+        " AND kind = 'quote.drafted' AND json_extract(payload, '$.quote_id') = ? ORDER BY id DESC LIMIT 1",
+        (quote.session_id, quote.id),
+    ).fetchone()
+    return Decimal(row["premium"]) if row and row["premium"] else Decimal(0)
+
+
+async def _settled(
+    ctx: Context,
+    rfq: Rfq,
+    options: list[RateOption],
+    prose: compose.Prose | None,
+    *,
+    fallback: bool,
+    translate_by: datetime | None,
+    repair_by: datetime | None,
+    extend: Callable[[Quote], Awaitable[Quote]] | None = None,
+    later: bool = False,
+) -> Quote:
+    """Draft, `extend` (the mail's further shipments), translate, then `repair.settle`: the check runs on the text
+    that leaves, and a BLOCK it can mend is mended before `repair_by`, every rebuild extended the same way. The quote
+    returned is the one the CRM holds. `later`: the figures are a later mail's (a requote), so no reading repair."""
+
+    async def draft_of(rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, by: datetime | None) -> Quote:
+        quote = _quote(ctx, rfq, options, prose, fallback)
+        return await _in_language(ctx, await extend(quote) if extend else quote, by)
+
+    async def build(draft: repair.Draft) -> Quote:
+        by = translate_by if repair_by is None else min(filter(None, (translate_by, repair_by)))
+        return await draft_of(draft.rfq, draft.options, draft.prose, by)
+
+    quote = await draft_of(rfq, options, prose, translate_by)
+    settled = await repair.settle(
+        ctx,
+        quote,
+        repair.Draft(rfq, list(options), prose),
+        build,
+        lambda q: _findings(ctx, q.rfq, q, _premium(ctx, q)),
+        by=repair_by,
+        reprice=None
+        if later or _later_figures(ctx, rfq)
+        else lambda changed: _repriced(ctx, changed, deadline_for(changed.received_at, ctx.settings), repair_by),
+    )
+    quotes.save(ctx, settled)
+    return settled
+
+
+async def _repriced(ctx: Context, rfq: Rfq, deadline: Deadline, by: datetime | None) -> list[RateOption]:
+    """The request priced again after a repair corrected its weight or volume: the sheets at once, the portal for at
+    most REPRICE_PORTAL_S and never past `by`, the pickups found so far. Airline bids were given for the old weight
+    and take no part; with no sheet or portal price the repair has nothing to offer."""
+    found = engine.sheet_options(ctx, rfq)
+    wait = REPRICE_PORTAL_S if by is None else min(REPRICE_PORTAL_S, (by - timing.now()).total_seconds())
+    if ctx.portal is not None and wait > 0:
+        try:
+            found += await asyncio.wait_for(portal_rates.options(ctx, rfq, deadline), wait)
+        except Exception as exc:  # noqa: BLE001  the sheets still price it
+            events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
+                        payload={"where": "repair:reprice", "error": type(exc).__name__})  # fmt: skip
+    pickups = [o for o in session.for_request(ctx, rfq) if o.trucker]
+    options = engine.combine(rfq, found + pickups, feedback.pickup_rule(ctx), ctx)
+    return [o for o in options if o.trucker] if rfq.door_pickup else options
+
+
+def _later_figures(ctx: Context, rfq: Rfq) -> bool:
+    """Whether the request's figures may come from a later mail than the one the check reads (`repair.request`): an
+    answer to our question (round 104) or a customer's change (round 86). The check still reads; a reading repair
+    would set the old figures back."""
+    return bool(
+        ctx.db.execute(
+            "SELECT 1 FROM messages a JOIN messages q ON q.id = a.in_reply_to WHERE a.session_id = ?"
+            " AND a.direction = 'in' AND q.purpose = 'question' LIMIT 1",
+            (rfq.session_id,),
+        ).fetchone()
+        or ctx.db.execute(
+            "SELECT 1 FROM events WHERE session_id = ? AND kind = 'followup.read'"
+            " AND json_extract(payload, '$.changes') NOT IN ('{}', '') LIMIT 1",
+            (rfq.session_id,),
+        ).fetchone()
+    )
+
+
+def _unread_followups(ctx: Context, rfq: Rfq) -> list[int]:
+    """The customer's mails in this thread newer than the request that no handler has finished (`mail_work`), not
+    counting an answer to our question, which `extract._ask` reads itself (rounds 86 and 104: a later mail that
+    changed the request went unread)."""
+    rows = ctx.db.execute(
+        "SELECT m.id FROM messages m LEFT JOIN mail_work w ON w.message_id = m.id WHERE m.session_id = ?"
+        " AND m.direction = 'in' AND m.id > ? AND lower(m.sender) = lower(?) AND COALESCE(w.completed, 0) = 0"
+        " AND NOT EXISTS (SELECT 1 FROM messages q WHERE q.id = m.in_reply_to AND q.purpose = 'question')",
+        (rfq.session_id, rfq.message_id, rfq.customer),
+    ).fetchall()
+    return [r["id"] for r in rows]
+
+
+async def _followup_wait(ctx: Context, rfq: Rfq, until: datetime) -> None:
+    """A newer customer mail in the thread may change what we quote: wait at most FOLLOWUP_WAIT_S, never past `until`,
+    for its handler (`booking.handle_reply` prices a change again and answers it, `outbox.quoted` then holds this
+    quote back). Still unread after that: a `quote.followup_wait` event, which a person sees; the quote goes out."""
+    if not (unread := _unread_followups(ctx, rfq)):
+        return
+    loop = asyncio.get_running_loop()
+    end = loop.time() + max(0.0, min(FOLLOWUP_WAIT_S, (until - timing.now()).total_seconds()))
+    while (left := _unread_followups(ctx, rfq)) and not outbox.quoted(ctx, rfq.session_id) and loop.time() < end:
+        await asyncio.sleep(min(FOLLOWUP_POLL_S, max(0.0, end - loop.time())))
+    events.emit(ctx, "quote.followup_wait", "rfq", session_id=rfq.session_id,
+                payload={"unread": unread, "still_unread": left, "superseded": outbox.quoted(ctx, rfq.session_id)})  # fmt: skip
+
+
+def _agrees(read: object, rules: Decimal | str) -> bool:
+    if isinstance(rules, str):
+        return str(read).strip().upper() == rules
+    try:
+        value = Decimal(str(read))
+    except (ArithmeticError, ValueError):
+        return True  # no figure: nothing to disagree with
+    return abs(value - rules) <= max(Decimal("0.01"), abs(rules) * SECOND_READ_CLOSE)
+
+
+async def _second_read(ctx: Context, rfq: Rfq, message: Message, text: str, deadline: Deadline) -> Rfq:
+    """The prose call, which runs on every request the rules read, also reads the destination, weight and volume
+    (`compose.prose`). It is never taken itself: where it disagrees with the rules, the larger model reads the
+    request (`extract._crosscheck`), whose weight or volume wins only when code reads that figure as a gross total
+    with its unit. A changed reading is priced again (`_repriced`); with no price for it the rules' reading stands."""
+    row = ctx.db.execute(
+        "SELECT payload FROM events WHERE session_id = ? AND kind = 'rfq.second_read' ORDER BY id DESC LIMIT 1",
+        (rfq.session_id,),
+    ).fetchone()
+    figures = (json.loads(row["payload"]).get("figures") or {}) if row else {}
+    pairs = (("weight_kg", rfq.weight_kg), ("volume_cbm", rfq.volume_cbm))  # what a second reading can change
+    dissent = [f for f, ours in pairs if figures.get(f) not in (None, "", 0) and not _agrees(figures[f], ours)]
+    if not dissent:
+        return rfq
+    events.emit(ctx, "rfq.second_read", "rfq", session_id=rfq.session_id,
+                payload={"dissent": dissent, "rules": {f: str(v) for f, v in pairs}})  # fmt: skip
+    if ctx.settings.second_read != "on" or not ctx.settings.model_check:
+        return rfq
+    marker = events.emit(ctx, "rfq.second_read", "rfq", session_id=rfq.session_id, payload={"escalated": True}).id
+    read, _ = await extract._crosscheck(ctx, rfq, message, text, [("mail", text)], deadline)
+    row = ctx.db.execute(
+        "SELECT payload FROM events WHERE session_id = ? AND kind = 'rfq.crosscheck' AND id > ? ORDER BY id DESC LIMIT 1",
+        (rfq.session_id, marker),
+    ).fetchone()
+    differs = (json.loads(row["payload"]).get("differs") or {}) if row else {}
+    # Only the cargo figures, and only one code reads in the customer's own words too (a gross total `_crosscheck`
+    # took, or a plain reading `check` makes: one figure, figures times pieces, lots added up): on a mail alone
+    # the rules' wish and pieces are tested best.
+    own = extract.own_words(text)
+    update = {}
+    for field, readings in (
+        ("weight_kg", check.weight_readings(own)),
+        ("volume_cbm", check.volume_readings(own, rfq.pieces)),
+    ):
+        model = getattr(read, field) if getattr(read, field) != getattr(rfq, field) else None
+        if model is None and field in differs:
+            try:
+                model = Decimal(differs[field][1])
+            except (ArithmeticError, ValueError, IndexError):
+                model = None
+        if model is not None and any(_agrees(model, r) for r in readings):
+            update[field] = next(r for r in readings if _agrees(model, r))
+    return rfq.model_copy(update=update)
+
+
+async def _read_again(
+    ctx: Context, rfq: Rfq, options: list[RateOption], message: Message, text: str, deadline: Deadline
+) -> tuple[Rfq, list[RateOption]]:
+    """`_second_read`, and the request priced again when it changed the weight or volume; the airline prices for
+    the old chargeable weight are left out from then on (`option.vetoed`), so the fallback prices the new one."""
+    read = await _second_read(ctx, rfq, message, text, deadline)
+    if (read.weight_kg, read.volume_cbm) == (rfq.weight_kg, rfq.volume_cbm):
+        return rfq, options
+    fresh = await _repriced(ctx, read, deadline, _repair_by(deadline))
+    if not fresh:
+        return rfq, options
+    old_kg, new_kg = (
+        calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm),
+        calc.chargeable_kg(read.weight_kg, read.volume_cbm),
+    )
+    if old_kg != new_kg:
+        events.emit(ctx, "option.vetoed", "rfq", session_id=rfq.session_id,
+                    payload={"kind": "chargeable", "kg": str(old_kg), "rule": "second_read"})  # fmt: skip
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
+                payload=read.model_dump(mode="json"))  # fmt: skip
+    return read, fresh
+
+
+def _repair_by(deadline: Deadline) -> datetime:
+    """Repairs end REPAIR_MARGIN_S before the orchestrator takes over, or before `hard_at` for a request first seen
+    after that (`orchestrator.quote_with_deadline` then keeps its handler until `hard_at`)."""
+    margin = timedelta(seconds=REPAIR_MARGIN_S)
+    soon = deadline.recovery_at - margin
+    return soon if timing.now() < soon else deadline.hard_at - margin
 
 
 def _noted(ctx: Context, rfq: Rfq, quote: Quote) -> Quote:
@@ -209,10 +421,12 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         rfq = await asyncio.wait_for(asyncio.shield(novel), max((deadline.target_at - timing.now()).total_seconds(), 0))
     except Exception:  # noqa: BLE001, S110  late: the quote goes out as the rules read it
         pass
-    quote = _quote(ctx, rfq, options, prose, fallback=False)
-    if others:
-        quote = await _with_shipments(quote, others, pricing, deadline)
-    quote = await _in_language(ctx, quote, deadline.hard_at)
+    if task is not None and task.done() and not others and ctx.settings.second_read != "off":
+        rfq, options = await _read_again(ctx, rfq, options, message, text, deadline)
+    await _followup_wait(ctx, rfq, _repair_by(deadline))
+    extend = (lambda q: _with_shipments(q, others, pricing, deadline)) if others else None
+    quote = await _settled(ctx, rfq, options, prose, fallback=False, translate_by=deadline.hard_at,
+                           repair_by=_repair_by(deadline), extend=extend)  # fmt: skip
     sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent
@@ -245,8 +459,8 @@ async def requote(ctx: Context, message: Message, rfq: Rfq) -> Quote | None:
             events.emit(ctx, "error", "rfq", session_id=rfq.session_id, message_id=message.id,
                         payload={"error": "requote found no price"})  # fmt: skip
             return None
-        quote = _quote(ctx, rfq, options, compose.stored(ctx, rfq.session_id), fallback=False)
-        quote = await _in_language(ctx, quote, deadline.hard_at)
+        quote = await _settled(ctx, rfq, options, compose.stored(ctx, rfq.session_id), fallback=False,
+                               translate_by=deadline.hard_at, repair_by=deadline.hard_at, later=True)  # fmt: skip
         sent = await outbox.send_quote(ctx, quote, reply_to=message.id)
     finally:
         ctx.db.execute("DELETE FROM kv WHERE key = ?", (pending,))
@@ -339,7 +553,8 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
         return None
     if rfq.required_carriers and not allow_partial and not selection.requested_options(rfq, options):
         return None
-    return await _in_language(ctx, _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True))
+    return await _settled(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True, translate_by=None,
+                          repair_by=timing.now() + timedelta(seconds=FALLBACK_REPAIR_S))  # fmt: skip
 
 
 async def _in_language(ctx: Context, quote: Quote, by: datetime | None = None) -> Quote:

@@ -733,8 +733,8 @@ def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
 
 
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
-# Outlook's header without an address counts only with its dated "Sent:" next to "From:", or a rule over "Subject:"
-# or "Sent:": a request laid out as "From: FRA / To: ORD" or "Von: FRA / Datum: ab 25.11." stays the customer's.
+# Outlook's header without an address counts only by its dated "Sent:", next to "From:" or under a rule: a request
+# laid out as "From: FRA / To: ORD" or "Von: FRA / Datum: ab 25.11." stays the customer's.
 SENT = r"(?:sent|gesendet)[ \t]*:[^\n]*(?:\b(?:19|20)\d\d\b|\b\d{1,2}:\d\d)"
 HISTORY = re.compile(
     r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht"
@@ -747,7 +747,7 @@ HISTORY = re.compile(
     r"|.{0,120}(?:写道|寫道)[:：]\s*$|>"
     rf"|(?:from|von)[ \t]*:[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*{SENT}"
     rf"|{SENT}[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*(?:from|von)[ \t]*:"
-    rf"|[-_]{{3,}}[ \t]*\n[ \t]*(?:subject|betreff)[ \t]*:|[-_]{{3,}}[ \t]*\n[ \t]*{SENT})",
+    rf"|[-_]{{3,}}[ \t]*\n[ \t]*{SENT})",
     re.IGNORECASE | re.MULTILINE,
 )
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)

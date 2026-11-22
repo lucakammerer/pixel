@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 from decimal import Decimal
 
 from pixel.api.mailbox import RATEDESK
@@ -140,6 +141,15 @@ def combine(
             for o in airline]  # fmt: skip
 
 
+async def _reread(ctx: Context, rfq: Rfq, deadline: Deadline, now: asyncio.Event) -> None:
+    """`portal_rates.reread`; its failure must not cancel the other price sources of the TaskGroup."""
+    try:
+        await portal_rates.reread(ctx, rfq, deadline, now)
+    except Exception as e:  # noqa: BLE001
+        events.emit(ctx, "error", "pricing", session_id=rfq.session_id,
+                    payload={"where": "portal_reread", "error": type(e).__name__})  # fmt: skip
+
+
 async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption]:
     """Every priced option for the request: sheets (instant), portal and bids in parallel, pickup added for
     door-to-port. Emits `option.found` per option as it arrives, so the fallback always has the best so far."""
@@ -178,6 +188,8 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         if desk_id is None and (down or not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
         mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
+        reread_now = asyncio.Event()
+        reread = group.create_task(_reread(ctx, rfq, deadline, reread_now)) if down else None
         pending_desk = (
             (desk_id or _desk_enquiry(ctx, rfq)) if down and selection.requested_options(rfq, sheets) else None
         )
@@ -187,6 +199,11 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
             offers = await bids.collect(ctx, rfq.session_id, deadline, mailed, pending_desk=pending_desk)
         elif mailed:
             offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
+        if reread is not None:
+            reread_now.set()
+            by = min(deadline.received_at + timedelta(seconds=bids.DESK_CUTOFF_S), deadline.hard_at)
+            await asyncio.wait({reread}, timeout=max(0.0, (by - timing.now()).total_seconds()))
+            reread.cancel()
         pickups = await pickup_task
         offers = [o for o in offers if o.source in (Source.BID, Source.RATEDESK)]
         published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL]

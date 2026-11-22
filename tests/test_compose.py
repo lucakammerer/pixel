@@ -139,7 +139,10 @@ async def test_prose_is_stored_for_the_fallback(ctx, monkeypatch):
     assert prose == compose.Prose(first_name="Anna")
     assert compose.stored(ctx, 1) == prose
     assert calls[0]["purpose"] == "quote.prose" and calls[0]["max_output_tokens"] == 150
-    assert calls[0]["schema"]["required"] == ["first_name"]
+    # the same call reads the cargo beside the name, a second reader for `agent._second_read`
+    assert calls[0]["schema"]["required"] == ["first_name", "destination", "weight_kg", "volume_cbm"]
+    row = ctx.db.execute("SELECT payload FROM events WHERE kind = 'rfq.second_read'").fetchone()
+    assert json.loads(row[0])["figures"] == {"destination": None, "weight_kg": None, "volume_cbm": None}
     assert compose.customer_subject(ctx, 1) == "Machine parts to BBB"
 
 

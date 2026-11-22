@@ -126,6 +126,25 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
   Older `quote.prose` events can contain opening and closing text. The quote renderer only uses the name.
+  The same call reads the destination, the gross weight and the volume beside the name (`SECOND_READ`, an
+  `rfq.second_read` event), a second reader on every request the rules read, for about 30 output tokens more.
+- `agent.py` `_read_again` / `_second_read`: where that second reader disagrees with the rules on the weight or
+  volume by more than 1 % (a destination it reads otherwise is only logged: no second reading moves the lane),
+  gpt-4.1 reads the request (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, only
+  then: about 0.0027 USD). Its weight or volume is taken only when it is one `check.weight_readings` or
+  `check.volume_readings` gives from the customer's own words (a figure, figures times pieces, lots added up); the
+  second reader itself, the destination, the wish and the pieces never move the request. A changed figure is priced
+  again (`_repriced`: the sheets, the portal for at most `REPRICE_PORTAL_S`, the pickups found; airline bids were
+  given for the old weight) and the airline prices of the old chargeable weight are left out (`option.vetoed`,
+  `kind: chargeable`); with no price for it, the rules' reading stands. Not on a mail of several shipments.
+  `PIXEL_SECOND_READ`: `on`, `log` (the dissent is an event, no gpt-4.1 call; the default until a live hour shows how
+  often the larger model was right) or `off` (the prose call reads the name alone, as before). Known weakness for
+  `on`: `check.weight_readings` and `volume_readings` also yield partial or other figures of the mail ("Last shipment
+  was 800 kg", a per-piece weight times a count), so a model dissent that matches one of them would be priced.
+- `agent.py` `_followup_wait`: a newer mail of the customer in the thread that no handler has finished
+  (`mail_work`; the answer to our question excluded) holds the quote at most `FOLLOWUP_WAIT_S`, so a change is read
+  and priced again by `booking.handle_reply` (`outbox.quoted` then holds this quote back); still unread, the quote
+  goes out and `quote.followup_wait` names the mail.
 - `booking.py` `handle_confirmation` leaves a waitlisted or partially confirmed booking in its existing state
   and records the airline reference, when available, so a later standalone confirmation can match.
   `book` checks for an active lane suspension before placing a new booking.
@@ -182,16 +201,42 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier shipment left out, per-piece figures times their
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
   (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
-  a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67).
+  a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67), an airline the customer ruled out
+  while another is allowed (`_excluded`, round 42), insurance terms stated but no premium in the all-in (`_insured`,
+  round 91), a mail not in the customer's script or clearly not in their language, read from their own words and not
+  from `rfq.language` (`_language_sent`, rounds 70 and 72; on the draft only once it is no longer to be translated),
+  an offer PDF that is not whole or lacks the total (`_offer_pdf`, rounds 76 and 78), a volume no plain reading of
+  the mail's own figures gives while the volume decides the chargeable weight (`_volume_accounting`: cbm, m3, cubic
+  feet, litres, dimensions times the pieces on their line, sums; round 79's 95 cubic feet priced as 95 cbm; only a
+  WARN when the request has attachments, which may govern).
   When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
   `compose.insured` confirms coverage in the mail alongside the single all-in amount.
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.
   WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
-  implausible price per kg, the language, an expired rate. The check never holds or changes a quote; every result
+  implausible price per kg, the language, an expired rate. The check itself never changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
+- `repair.py`: verify, repair, check again, inside the round. `agent._settled` drafts, translates and hands the
+  quote to `settle`, which runs the check on the text that leaves (`quote.checked`, `stage: "sent"`). For a BLOCK
+  with an entry in `REPAIRS` it builds the quote again with one thing changed: the distrusted bid or the ruled-out
+  airline left out (`option.vetoed`; `pricing/session.py` `options` no longer offers it, so the deadline fallback
+  inherits it), the customer's language read again from their own words (a new `rfq.extracted`), the fixed phrases
+  instead of model-written slots, the dangerous-goods note put back after a translation, and a weight or volume the
+  mail does not explain read again (`_reading`): the lots' sum, the one reading code makes, or among several the
+  one `critic` picks (one gpt-4.1 call, 80 output tokens, at most `CRITIC_WAIT_S`, only on such a BLOCK; taken only
+  when the words it quotes stand in the request, give that reading alone and the reading is one of code's: an
+  `rfq.critic` event), then priced again by `agent._repriced` and recorded as with the second reader. Never when
+  the figures may be a later mail's (`agent._later_figures`: an answer to our question, a customer's change, a
+  requote): the check reads the first mail and would set the old figures back; it still checks and alerts. A
+  reading the guard turns down leaves its prices out (`option.vetoed`, `rule: <rule>:rejected`). The new quote is kept only
+  when its check blocks on fewer rules and on none the old one passed (`_better`); each attempt is a
+  `quote.repaired` event. No model call but `critic` (a language without our text uses the checked translation),
+  at most `MAX_STEPS` repairs, none past `agent._repair_by` (15 s before the orchestrator takes over) or
+  `FALLBACK_REPAIR_S` in the fallback; a repair that raises keeps the quote as it was. `PIXEL_REPAIR`: `on`,
+  `detect` (the check on the sent text, no change) or `off`. A BLOCK without a repair (pickup missing, a reading with no
+  price for it, insurance whose premium cannot be priced) still goes out as it is and alerts a person.
 - `novelty.py` (R33): a requirement no rule reads yet, caught in the round it first appears. `leftover` keeps the
   sentences of the mail and its documents that none of the extractors' patterns (`CONSUMED`), no airline ruled out by
   name and more than the frame of a request (`FRAME_WORDS`) account for; the subject, the signature and lines of names
@@ -296,9 +341,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
   to the model. Outlook's header without an address ends the customer's words too (`HISTORY`, `SENT`), but only by
   what a quoted header alone has: "From:"/"Von:" within a few lines of a "Sent:"/"Gesendet:" with a year or a time,
-  or a rule over "Subject:"/"Betreff:" or such a "Sent:". Without it our own quote below a thank-you ("we will book
-  it for you") read as an acceptance; any field after a rule, or "Datum:" after "Von:", would cut a request laid out
-  as "From: FRA / To: ORD" (#186).
+  or a rule over such a "Sent:". Without it our own quote below a thank-you ("we will book it for you") read as an
+  acceptance; any field after a rule, or "Datum:" after "Von:", would cut a request laid out as "From: FRA / To: ORD"
+  (#186).
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a

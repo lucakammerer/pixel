@@ -17,9 +17,10 @@ import re
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
 
-from pixel.agents.rfq import compose
+from pixel.agents.rfq import compose, extract
 from pixel.agents.rfq.extract import DG_DOCUMENTS, number, own_words, shipments
 from pixel.contracts import Preference, Quote, RateOption, Source
+from pixel.core import pdf
 from pixel.pricing.calc import CBM_KG, insurance_in_currency
 from pixel.pricing.selection import TRUST, allowed, implausible
 
@@ -61,7 +62,7 @@ def run(
         if rule in (_weight, _accounting) and document_weight == quote.rfq.weight_kg:
             continue
         try:
-            kwargs = {"insurance_eur": insurance_eur} if rule in (_arithmetic, _best_price) else {}
+            kwargs = {"insurance_eur": insurance_eur} if rule in (_arithmetic, _best_price, _insured) else {}
             findings.extend(rule(quote, request, list(options), attachments, **kwargs))
         except Exception as exc:  # noqa: BLE001  a broken rule must never cost the quote
             findings.append(Finding(rule.__name__.lstrip("_"), WARN, f"check failed: {type(exc).__name__}: {exc}"))
@@ -156,12 +157,18 @@ def _implausible(q: Quote, request: str, options: list[RateOption], files: tuple
     """The quote holds no bid `selection.implausible` distrusts (round 67: a trucker's waiting charge per hour
     quoted as the pickup, rejected as too low). `engine.combine` leaves such a bid out; this catches a path that
     did not."""
+    return [Finding("implausible_bid", BLOCK, f"{p.trucker or p.carrier} at {p.total_eur} EUR is below {TRUST} times "
+                                              "the cheapest other price of its kind")
+            for p in distrusted(q, options)][:1]  # fmt: skip
+
+
+def distrusted(q: Quote, options: list[RateOption]) -> list[RateOption]:
+    """The session's options the quote is built from (its airline, its trucker) that `selection.implausible`
+    distrusts: what `repair` leaves out."""
     o = q.option
     held = [p for p in options if (o.trucker and p.trucker == o.trucker)
             or (p.trucker is None and (p.source, p.carrier) == (o.source, o.carrier))]  # fmt: skip
-    return [Finding("implausible_bid", BLOCK, f"{p.trucker or p.carrier} at {p.total_eur} EUR is below {TRUST} times "
-                                              "the cheapest other price of its kind")
-            for p in held if implausible(p, allowed(q.rfq, options) or options)][:1]  # fmt: skip
+    return [p for p in held if implausible(p, allowed(q.rfq, options) or options)]
 
 
 def _per_kg(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
@@ -345,6 +352,18 @@ def _close(a: Decimal, b: Decimal) -> bool:
     return abs(a - b) <= max(Decimal("0.5"), b * Decimal("0.005"))
 
 
+def weight_readings(text: str) -> set[Decimal]:
+    """Every gross weight in kg a plain reading of `text` gives (`explanations`, the lots added up); empty when it
+    writes no weight."""
+    figures = masses(text)
+    if not figures:
+        return set()
+    ways = explanations(figures, listed(text))
+    if (lots := lot_weight(text)) is not None:
+        ways.add(lots)
+    return ways
+
+
 def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
     """The priced weight is one the mail's own figures explain, else BLOCK. A mail that writes no weight at all
     only warns: the weight may come from an attachment the check cannot read."""
@@ -353,9 +372,7 @@ def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[
     figures = masses(text)
     if not figures:  # nothing to hold the weight against: an attachment, a mail we could not load
         return [Finding("weight_unexplained", WARN, f"priced on {weight} kg, the mail writes no weight")]
-    ways = explanations(figures, listed(text))
-    if (lots := lot_weight(text)) is not None:
-        ways.add(lots)
+    ways = weight_readings(text)
     if any(_close(weight, w) for w in ways):
         return []
     if any(_close(weight, part.weight_kg) for part in shipments(q.rfq, text)):  # one of several shipments, each quoted
@@ -364,6 +381,92 @@ def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[
     each = [f for f in figures if f.per_piece == 0]
     hint = "; a weight per piece without a piece count" if each else ""
     return [Finding("weight_unexplained", BLOCK, f"priced on {weight} kg; the mail's figures give {shown}{hint}")]
+
+
+# --- volume accounting: the priced volume must be one the mail's own figures explain --------------------------------
+#
+# The mirror of the weight accounting (round 79: "95.00 cubic feet" priced as 95 cbm; rounds 33 to 35: the mail's
+# volume over the packing list's). Every volume figure the customer wrote: cbm or m3, cubic feet, litres, and
+# dimensions times the pieces on their line. It matters only when the volume decides the chargeable weight.
+
+VOLUME_FIGURE = re.compile(
+    r"(?P<num>\d[\d.,']*\d|\d)\s*(?P<unit>cbm\b|m3\b|m³|cubic\s+met\w*|kubikmeter\b|cubic\s+f(?:ee|oo)t\b|cu\.?\s*ft\b"
+    r"|ft3\b|ft³|lit(?:er|re)s?\b|ltrs?\b)",
+    re.IGNORECASE,
+)
+VOLUME_LABEL = re.compile(
+    r"\b(?:volume|volumen|cbm)(?:\s+(?:gesamt|insgesamt|total))?(?:\s*\((?:cbm|m3|m³)\))?\s*:\s*(?P<num>\d[\d.,']*\d|\d)"
+    r"(?![\d.,']*\s*[a-z])",
+    re.IGNORECASE,
+)
+FT3 = Decimal("0.028316846592")
+CBM_CLOSE = Decimal("0.01")
+
+
+def _cbm(raw: str, unit: str) -> Decimal | None:
+    value = number(raw, False)
+    if value is None or value <= 0:
+        return None
+    u = unit.lower()
+    if "f" in u:
+        return value * FT3
+    if u.startswith("l"):
+        return value / 1000
+    return value
+
+
+def volume_readings(text: str, pieces: int | None = None) -> set[Decimal]:
+    """Every volume in cbm a plain reading of `text` gives: each stated figure, a figure per piece times the pieces
+    on its line, the sum of all stated figures, each set of dimensions alone, times the pieces on its line and times
+    the request's pieces, and the sum of all dimension lines."""
+    stated, each, dims_lines = [], [], []
+    for line in text.splitlines():
+        if len(line) > LINE_MAX * 2:
+            continue
+        hits = [(m.group("num"), m.group("unit"), m) for m in VOLUME_FIGURE.finditer(line)]
+        hits += [(m.group("num"), "cbm", m) for m in VOLUME_LABEL.finditer(line)]
+        counts = [int(c) for c in MASS_COUNT.findall(line)]
+        for raw, unit, m in hits:
+            if (v := _cbm(raw, unit)) is None:
+                continue
+            before, after = line[: m.start()], line[m.end() :]
+            if MASS_EACH_BEFORE.search(before[-25:]) or MASS_EACH_AFTER.match(after):
+                each.extend(v * c for c in counts or ([pieces] if pieces else []))
+                each.append(v)
+            else:
+                stated.append(v)
+        for m in extract.DIMS.finditer(line):
+            *sides, unit = m.groups()
+            volume = Decimal(1)
+            for side in sides:
+                volume *= number(side, thousands=False) / extract._per_m(unit)
+            dims_lines.append((volume, counts[0] if counts else None))
+    out = set(stated) | set(each)
+    if len(stated) > 1:
+        out.add(sum(stated, Decimal(0)))
+    for volume, count in dims_lines:
+        out |= {volume, *(volume * n for n in (count, pieces) if n)}
+    if len(dims_lines) > 1:
+        out.add(sum((v * (c or 1) for v, c in dims_lines), Decimal(0)))
+    return out
+
+
+def _volume_accounting(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """The priced volume is one the mail's own figures explain when the volume decides the chargeable weight, else
+    BLOCK; a volume the mail does not write is the attachment's (WARN when there is one)."""
+    r = q.rfq
+    text = own_words(request)
+    ways = volume_readings(text, r.pieces)
+    if any(abs(r.volume_cbm - w) <= max(CBM_CLOSE, w * CBM_CLOSE) for w in ways):
+        return []
+    drives = max([r.volume_cbm, *ways], default=Decimal(0)) * CBM_KG > r.weight_kg
+    if not drives:
+        return []
+    if not ways:  # nothing to hold the volume against: an attachment, the subject, a default
+        return []
+    shown = ", ".join(f"{w.quantize(Decimal('0.01'))} cbm" for w in sorted(ways)[:6])
+    level = WARN if files else BLOCK  # a packing list may govern: the evidence says so, the check cannot read it
+    return [Finding("volume_unexplained", level, f"priced on {r.volume_cbm} cbm; the mail's figures give {shown}")]
 
 
 NEGATED = r"(?<!non-)(?<!non )(?<!no )(?<!not )(?<!kein )(?<!keine )(?<!nicht )"
@@ -467,6 +570,64 @@ def _language(q: Quote, request: str, options: list[RateOption], files: tuple[st
     return []
 
 
+def _excluded(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """Round 42: an airline the customer ruled out is rejected as excluded_airline. `selection.select` quotes one
+    only when every airline is ruled out (R1); with an allowed airline among the options that is a BLOCK."""
+    r, o = q.rfq, q.option
+    if not r.excluded_carriers or allowed(r, [o]):
+        return []
+    others = [
+        a for a in allowed(r, options) if a.trucker is None and (a.origin, a.destination) == (r.origin, r.destination)
+    ]
+    level = BLOCK if others else WARN
+    return [Finding("excluded_carrier", level, f"{o.carrier} is ruled out by the customer"
+                                               + (f"; {others[0].carrier} is allowed" if others else "; no other airline"))]  # fmt: skip
+
+
+def _insured(
+    q: Quote, request: str, options: list[RateOption], files: tuple[str, ...], *, insurance_eur: Decimal
+) -> list[Finding]:
+    """Round 91: a request that states its insurance terms is scored with the premium in the all-in (too_low)."""
+    if insurance_eur > 0 or not extract.insurance(own_words(request)):
+        return []
+    return [Finding("insurance_missing", BLOCK, "the request states insurance terms, the all-in holds no premium")]
+
+
+def _language_sent(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """Rounds 70 and 72 (wrong_language): read the language of the customer's own words and of the finished mail,
+    after any translation, independently of `rfq.language`. A script the mail does not share (Chinese answered in
+    English) blocks; for Latin scripts only a clear lead of the request's common words over every other language."""
+    said = own_words(request)
+    if extract.ASKED_LANGUAGE.search(extract._unsigned(said)):
+        return []  # "please answer in English": the language they ask for, which `extract._language` reads
+    body = ours(q.body)
+    asked, wrote = extract._script(said), extract._script(body)
+    if asked and asked != wrote:
+        return [Finding("language_sent", BLOCK, f"the customer writes {asked}, the mail is not in that script")]
+    if asked or wrote:
+        return []
+    counts = extract.words_of(extract._unsigned(said))
+    lang = max(counts, key=counts.get)
+    second = max((n for other, n in counts.items() if other != lang), default=0)
+    if counts[lang] < 6 or counts[lang] < second * 3:
+        return []
+    ours_counts = compose._words_lang(body)
+    reads = max(ours_counts, key=ours_counts.get)
+    if reads != lang and ours_counts[reads] >= 8 and ours_counts[reads] > ours_counts.get(lang, 0) * 2:
+        return [Finding("language_sent", BLOCK, f"the customer writes {lang}, the mail reads {reads}")]
+    return []
+
+
+def _offer_pdf(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """Rounds 76 and 78 (no_pdf_offer): the PDF `outbox.send_quote` attaches must be whole and hold the total."""
+    data = pdf.offer(q)
+    if not data.startswith(b"%PDF") or not data.rstrip().endswith(b"%%EOF"):
+        return [Finding("offer_pdf", BLOCK, "the offer PDF is not a whole PDF file")]
+    if compose.money(q.total).encode() not in data:
+        return [Finding("offer_pdf", BLOCK, f"the offer PDF does not hold the total {compose.money(q.total)}")]
+    return []
+
+
 def _validity(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
     until = q.option.valid_until
     if until is not None and until <= q.created_at:
@@ -481,4 +642,4 @@ def _pct(value: Decimal, best: Decimal) -> str:
 
 
 RULES = (_required, _lane, _arithmetic, _chargeable, _pickup, _best_price, _implausible, _per_kg, _weight, _accounting,
-         _dangerous, _text, _language, _validity)  # fmt: skip
+         _dangerous, _text, _language, _validity, _excluded, _insured, _language_sent, _offer_pdf, _volume_accounting)  # fmt: skip
