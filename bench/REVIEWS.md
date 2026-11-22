@@ -5,6 +5,11 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #512 | lucakammerer | fae5b97 | ok after merge, URGENT (B) | the model's cheapest/fastest wish decides only where no rule read one; live 3 rules readings without a wish, none sounds fastest; open: "a quick reply" could be read as fastest, the replay gate cannot see it |
+| #506 | lucakammerer | da30b5f | close (B) | the last reader on by default: never ran live (0 `quote.unmet` events), certain cost and hold, gain only with a person in the hold; first `log` for a measured live hour |
+| #503 | lucakammerer | 5c6c5ff | ok (B), gated with #499 | a requote keeps only rates for the changed chargeable weight; live every sheet, portal and bid option carries its reading's `chargeable_kg`, the filter drops no valid price |
+| #499 | lucakammerer | 78a11f4 | ok (B), gated with #503 | a second option only when asked for as such; 0 of 323 live requests fire it; the second total is a WARN `text_amounts`, never a block |
+| #494 | lucakammerer | 78b0364 | close (B), followed by #505 | Spanish, Italian, Dutch, Portuguese yes words booked 12 negated, conditional or put-off replies ("não aceitamos", "Wij accepteren … niet", "Si aceptamos …") |
 | #469 | lucakammerer | 2a9a2f6 | own, fix forward of #465 | an air request that sets sea aside ("not by sea", "our sea freight is too slow", "pas de LCL") was declined; 0 of 167 live requests declined by mode before and after |
 | #465 | lucakammerer | 9587f0c | ok after merge, URGENT, fixed forward (#469) | round 177's sea FCL request declined at once; no live request declined by mode; set-aside mentions declined air requests |
 | #461 | lucakammerer | 478d64b | ok | stuck alert at 45 s: about 7 more alerts in 18 h (28 of 158 answers after 45 s, 21 after 90 s) |
