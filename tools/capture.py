@@ -22,10 +22,12 @@ import asyncio
 import json
 import re
 import sqlite3
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 from pixel.contracts import Event
+from pixel.pricing import pickup
 from tools import replay
 
 ROOT = Path(__file__).parent.parent
@@ -50,7 +52,7 @@ PICKUP = (
     "currency",
     "total_eur",
     "transit_days",
-)  # what `feedback.pickup_rule` reads
+)  # what `feedback.pickup_rule` and `pickup._answers` read
 HISTORY = ("rfq.extracted", "quote.prose", "quote.sent")  # of the customer's earlier sessions
 
 
@@ -82,6 +84,8 @@ def state(conn: sqlite3.Connection, session_id: int) -> dict:
         (*earlier, *HISTORY, first),
     )
     trucked = {e["session_id"] for e in events if e["kind"] == "feedback" and '"trucker"' in e["payload"]}
+    since = (datetime.fromisoformat(arrived["received_at"]) - timedelta(hours=pickup.MEMORY_H)).isoformat()
+    remembered: set[int] = set()
     newest: dict[tuple, dict] = {}
     for e in _rows(
         conn,
@@ -98,14 +102,14 @@ def state(conn: sqlite3.Connection, session_id: int) -> dict:
             events.append(e)  # the rate card of the lane
         elif e["kind"] == "option.found" and o.get("fx_eur") is not None:
             newest[("fx", o["source"], o["currency"])] = e  # `engine._fx_eur`, `bids.known_fx`: the newest rate
-        elif (
-            e["kind"] == "option.found"
-            and e["session_id"] in trucked
-            and o.get("trucker")
-            and o.get("pickup_hours") is not None
-        ):
-            events.append(e | {"payload": json.dumps({"option": {k: o[k] for k in PICKUP}})})  # `feedback.pickup_rule`
+        elif e["kind"] == "option.found" and o.get("trucker") and (e["ts"] >= since or e["session_id"] in trucked):
+            # `pickup._answers`, the price memory of a zone's truckers, and `feedback.pickup_rule`
+            events.append(e | {"payload": json.dumps({"option": {k: o.get(k) for k in PICKUP}})})
+            remembered.add(e["session_id"])
     events += newest.values()
+    events += _rows(conn, "SELECT * FROM events WHERE id < ? AND (kind = 'option.vetoed' AND ts >= ? OR kind ="
+                    f" 'rfq.extracted' AND session_id IN ({','.join('?' * len(remembered))}))",
+                    (first, since, *remembered))  # fmt: skip
     customers = "SELECT * FROM messages WHERE id IN ({})".format(",".join("?" * len(earlier)))
     firsts = _rows(
         conn,
@@ -175,9 +179,10 @@ def verdict(conn: sqlite3.Connection, session_id: int) -> dict:
     return json.loads(row[0]) if row else {}
 
 
-def quoted(events: list[Event]) -> dict | None:
-    """The first quote that left: lane, totals, airline, trucker and the language it was read in. None: no quote."""
-    sent = next((e for e in events if e.kind == "quote.sent"), None)
+def quoted(events: list[Event], nth: int = 0) -> dict | None:
+    """The first quote that left (`nth`: a later one, the answer to a changed request): lane, totals, airline,
+    trucker and the language it was read in. None: no such quote."""
+    sent = next(iter([e for e in events if e.kind == "quote.sent"][nth:]), None)
     if sent is None:
         return None
     here = [e for e in events if e.session_id == sent.session_id and e.id < sent.id]

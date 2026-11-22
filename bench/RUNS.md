@@ -543,6 +543,15 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 09:30, generalize cycles 1 and 2 (live snapshot to mail 50649, round 167). `tools.capture` (#454): a
+  stored session as a fixture with the state and portal answers it met; its replay reproduces 51 of the last 60
+  scored rounds to the cent or within rounding, the rest read by the model (Korean, Turkish, a crosscheck, a requote).
+  The state now also holds the pickup memory (#443). Outage drills on the last 60 accepted rounds, offline: gateway
+  down 54, mail twice or 90 s late 54, airlines and desk silent 54, truckers silent 52, portal API and page down 29,
+  every rate read 429 4 (axis E in `NEXT_CASES.md`, E1 first). New live shape: round 167, Korean "2026-11-26에 출고
+  가능" (ready date, read by #450). Review notes: #450 (reply-by date as arrival) and #431 (truck leg as destination)
+  fixed with their counter-examples. Open: E1 (Accuracy, pull request next), E2 (Accuracy), E3 (Accuracy), Korean and
+  Turkish requests without the model (Cost).
 - 22.11. 07:10 UTC, unseen-shape cycles 43 to 46 (live to round 159). Losses: 150 (one_of_two, covered on main by
   #424) and 156 (no quote: main's #433, #436; wrong_language: the Korean question was refused by `compose.kept`,
   most likely for the signer's name, so it went out in English. #440 signs below the translation in code). 159, an

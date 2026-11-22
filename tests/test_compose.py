@@ -426,6 +426,21 @@ async def test_a_chinese_request_is_answered_in_chinese_or_in_checked_english(ct
     assert await compose.translate(ctx, rfq("fr"), OPTION, english, 5) == english  # our own text, no call
 
 
+async def test_a_translation_with_control_characters_is_refused(ctx, monkeypatch):
+    """Session 51345: the Turkish booking notice came back as "Say\x013n" for "Sayın", the mailbox answered 500 and
+    the customer never heard of the confirmed booking. Every translated mail goes through `localize`."""
+    good = "Sayın Anna,\nGüzel haberler: BK-1 onaylandı."
+
+    async def fake_ask(ctx, **kw):
+        return LlmResult(data={"body": good.replace("ı", "\x013").replace("ü", "\x00fc")}, model="m", tokens_in=1,
+                         tokens_out=1, cost_usd=Decimal(0))  # fmt: skip
+
+    monkeypatch.setattr(llm, "ask_json", fake_ask)
+    assert await compose.localize(ctx, "tr", None, "Dear Anna", 5, lambda text: True, "booking.translate") == (
+        "Dear Anna"
+    )
+
+
 @pytest.mark.parametrize(
     ("request_text", "garbled"),
     [
