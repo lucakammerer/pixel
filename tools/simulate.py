@@ -359,6 +359,30 @@ def _spoken_file(lines: list[list[str]]) -> bytes:
     return "\n".join(" ".join(cells) for cells in lines).encode()
 
 
+SPOKEN_MONEY = {"EUR": "euros", "USD": "dollars", "GBP": "pounds", "CHF": "francs"}
+
+
+def _said(text: str) -> str:
+    """A price as a voice message's transcript says it: "EUR 1,234.56" is "1234 euros and 56 cents"; an exchange rate
+    keeps its figures: "1 USD = 1.277 EUR" is "1 dollars = 1.277 euros"."""
+
+    def name(code: str) -> str:
+        return SPOKEN_MONEY.get(bids.SYMBOLS.get(code, code), code)
+
+    def say(m: re.Match) -> str:
+        units, cents = divmod(bids._amount(m.group("n1") or m.group("n2")), 1)
+        return f"{int(units)} {name(m.group('c1') or m.group('c2'))}" + (
+            f" and {int(cents * 100)} cents" if cents else ""
+        )
+
+    def line(text: str) -> str:
+        if bids.FX.search(text):
+            return re.sub(rf"\b({'|'.join(SPOKEN_MONEY)})\b", lambda m: name(m[1]), text)
+        return bids.PRICED.sub(say, text)
+
+    return "\n".join(line(t) for t in text.splitlines())
+
+
 def other_kind_cases() -> list[Case]:
     """Each other kind's decisive fact only in the attachment, in every format the RFQ documents come in, and said in
     a voice message (rounds 65 and 67 brought requests and offers as mp3)."""
@@ -498,7 +522,7 @@ CARRIERS = {"airline": ("Kestrel Air Cargo", "kestrel@carrier.example"),
             "trucker": ("Nordwind Trucking", "nordwind@carrier.example")}  # fmt: skip
 BID_AXES = {
     "carrier": tuple(CARRIERS),
-    "place": ("body", "pdf", "docx", "xlsx", "txt", "csv", "both"),
+    "place": ("body", "pdf", "docx", "xlsx", "txt", "csv", "both", "mp3"),
     "layout": ("sentence", "unlabelled", "keyvalue", "table", "letter", "quotation", "components", "per_kg",
                "per_kg_total"),
     "distractor": ("none", "per_hour", "per_day", "per_pallet", "per_piece", "validity", "fx_line", "second_lane",
@@ -620,7 +644,10 @@ def _bid_case(i: int, axes: dict[str, str], seed: int) -> Case:
     fmt = rng.choice(tuple(WRITERS)) if place == "both" else place
     name = f"offer-Q{rng.randint(1000, 9999)}.{fmt}"
     text = "\n".join("  ".join(c) for c in lines)
-    if place != "body":  # a pdf wraps a long line as a letter does
+    if place == "mp3":  # a voice message says the offer (round 65's truckers)
+        name = "voice-message.mp3"
+        files.append((name, _said(text).encode()))
+    elif place != "body":  # a pdf wraps a long line as a letter does
         wrap = fmt == "pdf"
         doc = [w for c in lines for w in ([[t] for t in textwrap.wrap(c[0], 90)] if wrap and len(c) == 1 else [c])]
         files.append((name, WRITERS[fmt](doc)))
