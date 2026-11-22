@@ -104,7 +104,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   China" allowed, "arrival airport" a label), never a reply-by or a details-by date, never a past shipment
   (`ARRIVAL_CONTEXT`, the last words before "arrival") and never a date before the request; a date without a year is
   this year's unless that lies more than half a year back (`_stated_date`). A sentence the rule leaves, and one with a coming date it does not take,
-  is read by `novelty.py`, whose date counts only as written. `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
+  is read by `novelty.py`, whose date counts only as written. The same call reads the cheapest or fastest wish in
+  any language (`wish`); it selects only where `extract.stated_preference` read none, and a rule that read one wins
+  (`wish_conflict` on `rfq.novelty` when the two differ; round 186). `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
   `pricing/calc.py` `arrival` for the delivery date including pickup. When no price meets the timing, the quote goes
   out at once with the best one and `novelty.py` `with_note` names the alternative: bids were collected until
   `target_at`, so a later price that meets it is unlikely.
