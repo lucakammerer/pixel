@@ -136,6 +136,8 @@ async def test_a_request_stamped_an_hour_early_still_gets_its_quote(conn, monkey
     stored_at = datetime.fromisoformat(row["sent_at"])
     deadline = orchestrator.deadline_for(stored_at, config)
     assert deadline.expires_at > datetime.now(UTC) + timedelta(minutes=5)
+
+
 async def test_a_mail_that_never_stores_is_skipped_after_a_few_polls(conn, monkeypatch):
     config = dataclasses.replace(settings(), poll_seconds=0.001)
     mailbox = FakeMailbox(["rfq-door-no-origin.json", "synthetic-tracking.json"])

@@ -32,9 +32,13 @@ def test_cheapest_and_fastest():
 
 
 def test_schedule_filters_air_transit_and_delivery_date_with_pickup():
-    request = rfq(Preference.CHEAPEST).model_copy(update={
-        "ready_on": date(2026, 12, 1), "arrive_by": date(2026, 12, 5), "max_transit_days": 3,
-    })
+    request = rfq(Preference.CHEAPEST).model_copy(
+        update={
+            "ready_on": date(2026, 12, 1),
+            "arrive_by": date(2026, 12, 5),
+            "max_transit_days": 3,
+        }
+    )
     slow = opt("Slow", "300", 4)
     pickup = opt("Pickup", "400", 3).model_copy(update={"trucker": "Truck"})
     express = opt("Express", "600", 2)
