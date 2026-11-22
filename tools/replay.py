@@ -11,6 +11,8 @@ and gateway are real, mail still is not, and the scorer counts the spend in that
 on a fresh database, or with `--db` on a copy of that database, never on the file itself: tariffs, carriers, zones
 and the mails we sent take part, and what the replayed mails left behind (their sessions, quotes and events) is
 removed from the copy first. The mail's stored time is moved to now, so its deadline starts with the replay.
+A model call the live service made with the same prompt is answered with what it returned then (`llm.call` `answer`,
+from the `--db` or the captured `.state.json`), free; any other model call fails as offline.
 """
 
 import argparse
@@ -37,6 +39,7 @@ from pixel.config import settings
 from pixel.contracts import Event, Message
 from pixel.core import db as store
 from pixel.core import events, orchestrator, poller, timing
+from pixel.llm import prompt_hash
 from pixel.pricing import calc
 
 
@@ -72,17 +75,27 @@ def _offline(request: httpx.Request) -> httpx.Response:
     return httpx.Response(503, json={"detail": "replay is offline"})
 
 
+def answers(conn: sqlite3.Connection, session_id: int) -> dict[str, dict]:
+    """What the model returned to the session's calls live, by prompt hash (`llm.prompt_hash`)."""
+    rows = conn.execute("SELECT payload FROM events WHERE session_id = ? AND kind = 'llm.call'", (session_id,))
+    return {p["prompt"]: p["answer"] for (raw,) in rows if "answer" in (p := json.loads(raw))}
+
+
 def _recorded(portal: dict):
     """The portal as it answered a captured session: the lanes and rates it gave (`option.found`; a rate read at the
-    next weight break is billed there) and the airlines' weight breaks; every other read an outage as offline."""
-    rates, brackets = portal.get("rates", []), portal.get("brackets", {})
+    next weight break is billed there) and the airlines' weight breaks; the gateway with the model's recorded answer
+    to the same prompt (`answers`, no tokens, no cost); every other call an outage as offline."""
+    rates, brackets, said = portal.get("rates", []), portal.get("brackets", {}), portal.get("answers", {})
 
     def answer(request: httpx.Request) -> httpx.Response:
         path, q = request.url.path, request.url.params
+        if path == "/v1/gateway/chat/completions" and (hit := prompt_hash(json.loads(request.content))) in said:
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(said[hit])}}],
+                                             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0}})  # fmt: skip
         if path == "/v1/portal/brackets" and q["airline"] in brackets:
             breaks = ", ".join(brackets[q["airline"]])  # numbers, as the portal sends them
             return httpx.Response(200, text=f'{{"breaks_kg": [{breaks}]}}')
-        if path == "/v1/portal/ports":
+        if path == "/v1/portal/ports" and "rates" in portal:  # `--db` alone records no portal: offline
             lanes: dict[tuple[str, str], dict[str, str]] = {}
             for o in rates:
                 lanes.setdefault((o["origin"], o["destination"]), {})[o["carrier_code"]] = o["carrier"]
@@ -271,7 +284,7 @@ def seeded(state: dict[str, list[dict]]) -> str:
     conn = store.connect(path)
     store.init(conn)
     for table, rows in state.items():
-        if table == "portal":
+        if table in ("portal", "answers"):
             continue
         for row in rows:
             conn.execute(f"INSERT INTO {table} ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
@@ -285,7 +298,7 @@ def state_of(fixture: Path) -> tuple[str | None, dict]:
     mail fixture without one."""
     path = fixture.with_suffix(".state.json")
     state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
-    return (seeded(state), state.get("portal", {})) if state else (None, {})
+    return (seeded(state), state.get("portal", {}) | {"answers": state.get("answers", {})}) if state else (None, {})
 
 
 async def fixture(path: Path) -> list[Event]:
@@ -323,6 +336,9 @@ def main() -> None:
     else:
         parser.error("a fixture, --session or --capture")
     db, portal = state_of(args.fixture) if args.fixture and not args.db else (args.db, {})
+    if args.session and args.db:
+        with sqlite3.connect(f"file:{args.db}?mode=ro", uri=True) as conn:
+            portal = {"answers": answers(conn, args.session)}
     raise SystemExit(asyncio.run(replay(raws, args.online, db, portal)))
 
 
