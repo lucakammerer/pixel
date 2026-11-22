@@ -140,8 +140,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
   is rendered with the rule-based greeting (R9, P1).
 - `compose.py` `answers` (R31): what the request asked beyond the price, answered by code in a paragraph of its
-  own: the earliest arrival (`ready_date`: only a date the request calls ready, plus a day for a pickup, plus the
-  transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
+  own: the earliest arrival (`ready_date`: only a date the request calls ready, plus the transit, the pickup adding
+  no day (`calc.arrival`, round 179); in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
   when they ask for the earliest departure, the pickup date said outright when they ask for the earliest pickup
   (`PICKUP_ASK`), one air
   waybill for all lots, that the drop-off cut-off follows with the airline's booking, and the all-in in its parts
