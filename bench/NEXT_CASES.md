@@ -131,6 +131,25 @@ one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window 
 Open and unverified: C5, C6, C8, C11, C14 and C16 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
 merged and the organisers turn that lever.
+## Axis E: outage drills (22.11.2026 09:30, live snapshot to round 167)
+
+`uv run python -m tools.outage_drill <database> --last 60`: each accepted round replayed offline on the state and
+portal answers it met (`tools/capture.py`), the rate card as it is today without the session's own reads, one
+dependency failing per drill. Right: a quote within 5 % of the scorer's best (`feedback.best`, else our accepted
+total) within 6 minutes of storage. Offline every model call fails, so each drill includes the gateway down. An
+airline or the rate desk asked by mail only because of the outage answers nothing (no such answer was recorded): the
+portal cells are the worst case of rounds 93 to 99. `tests/test_outage_drill.py` runs every drill on round 166.
+
+| Drill | Right of 60 | Beyond the baseline | Cause | Fix belongs in | Owner |
+| --- | --- | --- | --- | --- | --- |
+| `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 54 | baseline | 161, 149, 132 (Korean) and 131 (Turkish): no quote, the rules read no lane or weight in them; 152: the change mail of a requote is read by the model; 139: the request stands in an attachment whose bytes the database does not hold (not measurable offline) | `extract.by_rules` for Korean and Turkish requests | Cost (`extract.py`), generalize |
+| E1 `portal_429` (every rate read 429, `Retry-After: 60`) | 4 | 50 | `portal_rates._read` prices from the rate card only on `RatesUnavailable`; a 429 that outlasts the deadline (`RateLimited`) drops the airline, so the quote goes out from a sheet or bid (round 166: Danube 3111.28 against Aurelia 2913.96) | `portal_rates._read`: a `RateLimited` read priced from the card like an outage | Accuracy, pull request from generalize |
+| E2 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page) | 29 | 25 | the card never read the lane (round 141 HAM-RUH: no read before or since), so a fastest request gets a sheet airline (861.28 against 1182.28) or the cheapest a dearer one; the card reads only lanes requests asked for | `rate_card.run`: every lane of `/v1/portal/ports`, not only the requested ones | Accuracy |
+| `mail_twice`, `mail_late` (90 s), `airlines_silent` (airlines and desk) | 54 | 0 | — | — | — |
+| E3 `truckers_silent` | 52 | 2 | rounds 108 and 100: the pickup memory holds no answer of that zone within 24 h (D5's open part), the pickup goes out excluded or estimated low | `pickup.estimates` | Accuracy |
+
+Not drilled yet: a tariff version changing within a round; booking and tracking down (no effect on the quote, axis B).
+
 ## Axis B: booking, tracking and the flow after the quote (22.11.2026, 02:00 to 03:30)
 
 What happens after our quote is not priced by the scorer, but it decides the tracking +10 on a booked shipment (R30),
