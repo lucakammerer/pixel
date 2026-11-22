@@ -101,7 +101,9 @@ def _now() -> datetime:
     return timing.now()
 
 
-READ_TIMEOUT_S = 4.0  # a portal read that takes longer is an outage, not a slow answer (rounds 120, 123)
+# A rate read that takes longer is an outage, not a slow answer (rounds 120, 123). 10 s, not less: no read time of a
+# healthy portal is measured, and `engine`'s late window (1 + 4 + LATE_503_S 10 s) still asks the desk for a hang.
+READ_TIMEOUT_S = 10.0
 PAGE_TRIES = 3  # a sum we cannot read or the page refuses costs one fresh page load
 GLYPH = re.compile(r"<g\b[^>]*>(.*?)</g>", re.DOTALL)
 STROKE = re.compile(r'<line x1="(-?[\d.]+)" y1="(-?[\d.]+)" x2="(-?[\d.]+)" y2="(-?[\d.]+)"')
@@ -182,7 +184,7 @@ class Portal:
 
     async def lanes(self) -> list[Lane]:
         """Not rate limited: cache it, refresh on a schedule and after a failed quote."""
-        response = await self.client.get("/v1/portal/ports", timeout=READ_TIMEOUT_S)
+        response = await self.client.get("/v1/portal/ports")
         if response.status_code != 200:
             raise ApiError(response.status_code, _detail(response))
         return [
@@ -195,7 +197,7 @@ class Portal:
         ]
 
     async def brackets(self, airline: str) -> tuple[int, ...]:
-        response = await self.client.get("/v1/portal/brackets", params={"airline": airline}, timeout=READ_TIMEOUT_S)
+        response = await self.client.get("/v1/portal/brackets", params={"airline": airline})
         if response.status_code == 404:
             raise NotOnPortal(_detail(response))
         if response.status_code != 200:
