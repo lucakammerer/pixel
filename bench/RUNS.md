@@ -543,6 +543,12 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 10:35 UTC, round 192 request history. All four incoming mails since cursor 57813 routed as live to
+  mail 58011. The accepted total of round 191 is 3002.00 EUR; the replay without its attachment remains 2538.40.
+  Round 192's initial replay reproduced the rejected 3707.22 EUR quote. Hot Repair A shipped #529 and its
+  captured regression test now selects 2854.83 on Tamarind. Seven request-history variants pass (opposite
+  preference, another sender, older booking, forwarded history, German, and Turkish with imperial units);
+  the fresh quoted word and the wish only in an attachment remain rules-only gaps owned by Cost.
 - 22.11. 10:26 UTC, generalize outage cycle (C16). Round 56 provides a recorded version change and a scorer
   reference of 6158.54 EUR. With no new version read, either a portal outage or a 429 gave 5442.11 EUR in time.
   With the first read of the new version for another airline, a forced outage gave 6167.74 EUR; with both

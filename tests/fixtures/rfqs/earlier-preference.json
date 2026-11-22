@@ -1,0 +1,70 @@
+{
+  "earlier": {
+    "origin": "AAA",
+    "destination": "BBB",
+    "weight_kg": "200",
+    "volume_cbm": "1",
+    "pieces": 2
+  },
+  "cases": [
+    {
+      "name": "current-cheapest",
+      "old_subject": "Fastest air freight: AAA to BBB",
+      "current": "The new destination is CCC. Please quote the cheapest option.",
+      "prefer": "cheapest"
+    },
+    {
+      "name": "current-fastest",
+      "old_subject": "Cheapest air freight: AAA to BBB",
+      "current": "The new destination is CCC. Please quote the fastest option.",
+      "prefer": "fastest"
+    },
+    {
+      "name": "forwarded-history",
+      "old_subject": "Air freight: AAA to BBB",
+      "current": "The new destination is CCC. Please quote the cheapest option.\n\n-----Original Message-----\nPlease quote the fastest option for the older shipment.",
+      "prefer": "cheapest"
+    },
+    {
+      "name": "earlier-request-already-booked",
+      "old_subject": "Fastest air freight: AAA to BBB",
+      "current": "The new destination is CCC. The cheapest option will do.",
+      "earlier_state": "booked",
+      "prefer": "cheapest"
+    },
+    {
+      "name": "other-sender",
+      "old_subject": "Fastest air freight: AAA to BBB",
+      "current": "The new destination is CCC. Please quote the cheapest option.",
+      "sender": "ops@example.com",
+      "prefer": null
+    },
+    {
+      "name": "current-german",
+      "old_subject": "Fastest air freight: AAA to BBB",
+      "current": "Ziel ist CCC. Bitte die günstigste Option.",
+      "prefer": "cheapest"
+    },
+    {
+      "name": "current-turkish-and-imperial",
+      "old_subject": "Fastest air freight: AAA to BBB",
+      "current": "The new destination is CCC. Brüt 440.92 lb, hacim 35.31 cubic feet. En ucuz seçeneği istiyoruz.",
+      "prefer": "cheapest"
+    },
+    {
+      "name": "current-quoted-word",
+      "old_subject": "Cheapest air freight: AAA to BBB",
+      "current": "The new destination is CCC. Please quote the “fastest” option this time.",
+      "prefer": "fastest",
+      "known_gap": "Cost: QUOTED_SUBJECT removes the current quoted wish along with the old subject."
+    },
+    {
+      "name": "current-wish-in-attachment",
+      "old_subject": "Cheapest air freight: AAA to BBB",
+      "current": "The new destination is CCC. Please follow the attached instructions.",
+      "attachment": "Please quote the fastest option for this shipment.",
+      "prefer": "fastest",
+      "known_gap": "Cost: the earlier-shipment reader misses a new preference given only in an attachment."
+    }
+  ]
+}

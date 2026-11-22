@@ -33,6 +33,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `rfqs/followup-answers.json`: answers to our one question, each naming another airport beside the request's;
   benchmark section 15 appends each to every captured request and requires the same fields. `known_gaps`:
   `"<answer>:<fixture>"` read wrong today, each ending `Owner: <role>.`
+- `rfqs/earlier-preference.json`: mutations of round 192, a new request quoting the prior shipment's subject.
+  The earlier shipment supplies its cargo, and the test checks that selection follows the new words.
 - `sessions/<name>.json` and `<name>.state.json`: a live session written by `tools/capture.py`. The first holds its
   incoming mails as the API returned them (`tools.replay` replays it); the second the rows it met on arrival
   (tariffs, carriers, zones, the rate card of its lane, our mails of the session, the customer's earlier requests,

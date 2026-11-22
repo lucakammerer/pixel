@@ -1,0 +1,11 @@
+{
+  "id": 995092,
+  "from": "logistics@main-elektro.hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "항공 운임 견적 요청",
+  "body": "안녕하세요. 항공 운임 견적 부탁드립니다.\n출발 공항은 PVG\n도착 공항은 FRA\n총 중량 220 kg, 총 부피 1.1 m³.\n감사합니다.",
+  "in_reply_to": null,
+  "references": [],
+  "received_at": "2026-11-22T10:00:00+00:00",
+  "attachments": []
+}
