@@ -196,3 +196,10 @@ def test_etd_eta_is_no_lane(pipe):
     assert agent.match(pipe.ctx, text, "tracking@hackloop.mail")[0] == [medtech]
     text = "Our customer buyer@acme.example asks for the ETD/ETA of FRA - JFK."
     assert agent.match(pipe.ctx, text, "tracking@hackloop.mail")[0] == [acme]
+
+
+def test_a_cancelled_shipment_is_answered_as_cancelled(pipe):
+    s = shipped(pipe.ctx, 1, "buyer@acme.example", "CGN", "ORD", 676).model_copy(update={"status": "cancelled"})
+    for variant in ("c", "scored"):
+        text = agent.answer([s], s.id, "Where is it?", variant=variant)
+        assert "cancel" in text and "in status" not in text and "ready to ship" not in text

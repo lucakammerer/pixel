@@ -217,3 +217,25 @@ async def test_no_key_in_any_event(conn):
     payloads = " ".join(r[0] for r in conn.execute("SELECT payload FROM events"))
     assert "must not leak" in payloads
     assert KEY not in payloads
+
+
+async def test_a_mailbox_5xx_on_the_quote_is_sent_again_not_lost(conn, monkeypatch):
+    monkeypatch.setattr(outbox, "RESEND_BACKOFF_S", (0.0,))
+    failures = [ApiError(503, "mailbox busy"), ApiError(502, "bad gateway"), ApiError(0, "ReadTimeout")]
+    ctx = make_ctx(conn, FakeMailbox(failures))
+    rfq = ingest_rfq(ctx)
+    await outbox.send_quote(ctx, make_quote(rfq))
+    assert ctx.mailbox.sent == [rfq.sender]
+    assert outbox.quoted(ctx, rfq.session_id)
+    assert kinds(ctx).count("mail.resend") == 3
+
+
+async def test_resending_stops_when_its_time_is_up(conn, monkeypatch):
+    monkeypatch.setattr(outbox, "RESEND_BACKOFF_S", (0.0,))
+    monkeypatch.setattr(outbox, "RESEND_S", 0.0)
+    ctx = make_ctx(conn, FakeMailbox([ApiError(503, "mailbox busy")] * 5))
+    rfq = ingest_rfq(ctx)
+    with pytest.raises(ApiError):
+        await outbox.send_quote(ctx, make_quote(rfq))
+    assert not outbox.quoted(ctx, rfq.session_id)  # the claim is free for the fallback
+    assert kinds(ctx).count("mail.resend") == 0

@@ -34,6 +34,7 @@ STATUS = {
     "booked": "is booked with {carrier}{under}; the airline's confirmation is still to come",
     "confirmed": "is booked with {carrier}, and the airline has confirmed it{under}",
     "failed": "could not be booked with {carrier} yet; a colleague is already on it and will be in touch",
+    "cancelled": "was cancelled at your request; the booking with {carrier}{under} no longer stands",
 }
 # Variant "b" states the status in the record's words, the block's other facts are in the prose already.
 CONFIRMED = "is confirmed by {carrier}{under}, booked and ready to ship"
@@ -43,6 +44,7 @@ RECORD = {
     "booked": "booked with {carrier}, waiting for the airline's confirmation",
     "confirmed": "confirmed by {carrier}, booked and ready to ship",
     "failed": "not booked: the booking with {carrier} failed and a colleague is on it",
+    "cancelled": "cancelled at the customer's request, booking with {carrier} withdrawn",
 }
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December"]  # fmt: skip
