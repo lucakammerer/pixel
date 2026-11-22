@@ -53,6 +53,18 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | 32 | latest arrival on a door request (live, round 179, lost too_high) | ready 27.11., "need to be at ORD by 2026-11-29", pickup in 51871 | **fixed #472**: the pickup adds no day, Aurelia (2 d) 1074.69 instead of Meridian (1 d) 1410.83 | the cheapest option with ready + transit ≤ the date | open, generalize: whether the scorer counts the ready day itself, a trucker's pickup time over 24 h, weekends, "arrive before" (exclusive) against "by" | `calc.arrival`, `selection.meets_schedule` | S |
 | 33 | the selection wish in a language no rule reads (live, round 186, lost not_what_was_asked) | "Bu gönderi için en hızlı seçeneği istiyoruz" | **fixed #508** (Turkish, Korean, Chinese, Japanese wording) and **#512** (the novelty call's `wish` where no rule read one) | the fastest airline | open, generalize: a wish only in an attachment the novelty call does not see, a wish in a sentence a rule consumed for another fact, the model's wish on the 16 live requests with none stated (unmeasured, no recorded `wish`) | `novelty.check`, `extract.stated_preference` | S |
 
+## Reusing an earlier shipment's details (round 192)
+
+The new request asks for cheapest and cites an earlier subject with "Fastest". #529 takes that selection
+from the request's own words. The captured round now quotes Tamarind at 2854.83 EUR instead of the two-day
+Elbflug at 3707.22 EUR. `tests/test_earlier_preferences.py` exercises either direction, a different sender,
+an earlier shipment already booked, forwarded history, German, and Turkish with pounds and cubic feet together.
+
+Two rules-only cases remain open (Cost, `extract._earlier`): a current word in quotes ("fastest") is removed by
+the same pattern as the older subject, and a current wish only in an attachment is skipped by the earlier
+shipment reader. The attachment's cross-check was disabled for this drill. Neither variation has a scored
+outcome in the snapshot.
+
 ## Axis D: truckers and the pickup place
 
 What the organisers can turn on the pickup leg next, as of 22.11.2026 03:30. Live so far: pickups with no place
