@@ -216,10 +216,10 @@ Measured right: two, three and four shipments, a door pickup for all, bullets, G
 another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.
 
-## Axis R: the scorer's checks (22.11.2026, live database to round 187)
+## Axis R: the scorer's checks (22.11.2026, live database to round 192)
 
-What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (180 rounds,
-8 to 187: 130 accepted, 44 rejected and 6 with no answer) and the requests and replies behind the losses.
+What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (185 rounds,
+8 to 192: 134 accepted, 45 rejected and 6 with no answer) and the requests and replies behind the losses.
 
 ### The rubric, as far as the verdicts prove it
 
@@ -235,7 +235,7 @@ What the scorer reads from our first reply, reconstructed from the latest `feedb
 | 8 | dangerous goods the documents reveal are answered with the documents they need | `dg_docs_missing` (1: 10) | the mail said "non-dangerous", the packing list `PL_53839.xlsx` said otherwise | named documents (DGD, MSDS) |
 | 9 | the total stays within 5 % below the scorer's best (Price) | `too_low` (18) | round 13 was 2.67 % below the best and earned 33 of 45 (about 4.5 points per %). Insurance terms stated in the request count in the all-in (91) | the all-in total in EUR |
 | 10 | the total stays within 5 % above the scorer's best (Price) | `too_high` (10) | round 179 quoted a 1-day service when a cheaper 2-day service met the limit. For several shipments the scorer uses the sum (62, 127, 151, 153, 158, accepted) | the all-in total in EUR |
-| 11 | the option or reply fulfils the customer's stated wish | `not_what_was_asked` (1: 186) | 186 asked for "en hızlı seçenek" (fastest) and an estimated arrival. The reply offered the cheapest, repeated the wish in a note and omitted the arrival. The verdict does not identify which clauses it checked | the option or content against the wish |
+| 11 | the option or reply fulfils the customer's stated wish | `not_what_was_asked` (2: 186, 192) | 186 asked for the fastest option and an arrival estimate. The reply offered the cheapest and omitted the estimate. In 192 the new mail asked for cheapest, quoted the old subject with "Fastest", and got the quickest option with an arrival date. The two rounds establish that choosing by the current wish matters; an independent arrival check remains unproven | the option against the current wish |
 | — | the airline and the trucker are **not** compared | — | 172: our airline differed from the scorer's at the same total, 45 of 45; 13: another trucker, accepted | — |
 
 Order: 1, then 2 before 3 (round 156). The order of 5 to 8 and 11 relative to the two price thresholds remains
@@ -252,7 +252,7 @@ unproven. Those losses carry no `best`.
 | 96 (00:43) | 3 decline, while the rate API was down (93 to 99) | 96, 104, 122 | 1.7 h |
 | 113 (02:23) | 6 two shipments | 113, 150 | 6.5 h |
 | 177 (08:50) | 4 another mode of transport | 1 so far | 56 min |
-| 186 (09:46) | 11 a wish only noted, in a language the rules do not read | 1 so far | — |
+| 186 (09:46) | 11 a wish only noted, in a language the rules do not read | 186 and 192 | — |
 
 The pattern: every new check is one more field of the generator's request (an attachment fact, an exclusion, a
 language, an attachment wish, a shipment count, a mode), introduced alone in one round, repeated for 1 to 4 rounds, and
@@ -260,10 +260,12 @@ from then on **combined** with older ones: 156 is Korean + an "import" by the bu
 pounds and cubic feet + an arrival deadline + the buyer's "import" + PDF. Price levers move the same way from endpoint
 to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123).
 
-### Wishes we recognised and only noted (every `rfq.novelty` through round 187)
+### Wishes we recognised and only noted (every `rfq.novelty` through round 192)
 
 13 distinct sessions, 112 to 186, with a nonempty `mapped.conditions` or `mapped.documents`. Each row compares
 the first offer and stored attachment receipt with the request and verdict. A session can appear in several rows.
+Round 192 had no mapped novelty. Its new preference for cheapest lost to the quoted subject of an earlier
+request for fastest. Hot repair A owns the request-reading fix.
 
 | Kind of wish | Sessions (round) | Acted | Only noted | The scorer | Changes the right option or content |
 | --- | --- | --- | --- | --- | --- |
@@ -286,6 +288,15 @@ Ranked predictions of `not_what_was_asked` from the kinds only noted, each stepp
 | N3 | the offer PDF ask becomes a request for the customer to send a document | stubs `["PDF", "견적서"]`, `["shipper's declaration", "PDF"]`, and empty. The carrier's bid PDF supplies sourcing data. A customer's real DGD in PDF form still needs to be requested when required | wrong content, accepted twice. Empty stub produces no request | give the note the direction of each document request | Checklist |
 | N4 | a wish no option can meet | offline `agent._quote` with both a required airline and an impossible arrival gives both alternative notes when the RFQ carries the fields. The same inputs stubbed in novelty's `only_airlines` and `arrive_by` give neither note. A compatible airline and date correctly give neither note | model-only alternative disclosure open | check the selected option against the same requirements used for selection | Checklist (review thread merges) |
 | N5 | one air waybill or separate air waybills | the answer renderer confirms English "One AWB for all lots". Korean round 167 gets a note only and French "une seule LTA" gets no sentence. The opposite "two separate air waybills" triggers a one-AWB promise | wrong confirmation for the opposite case. Korean and French confirmation missing | `compose.ONE_AWB` | Checklist |
+
+Arrival was explicitly requested in 52 of the 179 first mails through round 186. In the offline replay of 186,
+stubbing its recorded ready date and using the corrected fastest option gives an estimated arrival of 28 November.
+The current composer leaves out that date. A candidate that uses `rfq.ready_on` also gives the same estimate in
+the reply and PDF when the date is written out in the body, supplied only in an attachment, or supplied in an
+attachment that supersedes the mail date. A reply-by date alone still produces no estimate. The quote's
+translation remains model-dependent. A translation stub that keeps the price and transit but drops the date
+passes `compose.translated_ok`. Changes to the ready date in a later mail are owned by Axis B
+(`followup.changes` reads cargo and routing changes but no schedule fields).
 
 ### The 20 most likely next checks
 
