@@ -123,6 +123,8 @@ tr.chosen td{background:var(--sunk)}
 .evgroup>summary .what{font-weight:400;color:var(--muted)}.evgroup>summary .d{color:var(--muted)}
 .evgroup>summary:hover .what{text-decoration:underline}.evgroup[open]>summary .kind{visibility:hidden}
 .evgroup>.ev{background:var(--sunk);border-bottom:1px solid var(--line)}.evgroup>.ev:last-child{border-bottom:0}
+.evearlier>.ev,.evearlier>.evgroup{background:none;border-bottom:1px solid var(--line)}
+.evearlier[open]>summary{border-bottom:1px solid var(--line)}
 .ev pre{white-space:pre-wrap;margin:8px 0 2px;padding:12px 14px;background:var(--sunk);border-radius:6px;font-size:13px;
 font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
 .draft{padding:16px 18px}.draft+.draft{border-top:1px solid var(--line)}
@@ -327,8 +329,8 @@ LABELS = {
 # one line, so a new kind folds by default.
 KEY = frozenset({
     "mail.in", "mail.out", "mail.held", "rfq.extracted", "rfq.dangerous_goods", "quote.sent",
-    "quote.fallback", "quote.missed", "quote.stuck", "tracking.answered", "followup.read", "error", "call.started",
-    "call.ended", "call.answer", "call.transcript", "shipment.updated", "feedback", "score", "attachment.unreadable",
+    "quote.fallback", "quote.missed", "quote.stuck", "tracking.answered", "followup.read", "error", "call.answer",
+    "call.transcript", "shipment.updated", "feedback", "score", "attachment.unreadable",
 })  # fmt: skip
 KEY_PREFIXES = ("customer.", "booking.", "human.", "tariff.")
 
@@ -354,9 +356,12 @@ def minor_summary(kinds: list[str]) -> str:
     return f"<span class=what>{len(kinds)} automatic {noun}</span> <span class=d>· {parts}</span>"
 
 
+LATEST = 6  # entries the timeline shows; earlier ones fold into one line at its top
+
+
 def group_events(evs: list[Event], rows: list[str], minor: list[bool]) -> str:
     """The timeline: every row of `evs` in order, with each run of background rows (`minor`) folded into one
-    <details>."""
+    <details>, and every entry before the LATEST folded into one more at the top."""
     out: list[str] = []
     run: list[int] = []
 
@@ -378,7 +383,14 @@ def group_events(evs: list[Event], rows: list[str], minor: list[bool]) -> str:
             flush()
             out.append(rows[i])
     flush()
-    return "".join(out)
+    if len(out) <= LATEST:
+        return "".join(out)
+    earlier = out[:-LATEST]
+    return (
+        f"<details class='evgroup evearlier'><summary class=ev><span class=t></span><div><span class=what>"
+        f"Show {len(earlier)} earlier entries</span></div><span class='kind mono'>show all</span></summary>"
+        + "".join(earlier) + "</details>" + "".join(out[-LATEST:])
+    )  # fmt: skip
 
 
 def kind_class(kind: str) -> str:

@@ -7,7 +7,7 @@ Only the first quote for the request counts.
 ## From incoming email to sent quote
 
 1. Open **Requests → Open** and select the customer thread. **Activity** lists the customer's mail, the quote and
-   booking; each run of automatic steps (carrier mail, priced options, model calls) is one line you can expand.
+   booking, newest last, with only the six latest entries open and the rest behind **Show earlier entries**; each run of automatic steps (carrier mail, priced options, model calls) is one line you can expand.
    Expand the incoming email and confirm it asks for an air-freight quote. Tracking questions, tariff updates, and carrier bids belong to their own handlers.
 2. While PIXEL works, **PIXEL is on it** shows its four steps and how far it got. Select **Take over** there or at
    the top. The session shows **You’re handling this request**: PIXEL holds its quote for you and sends nothing to
