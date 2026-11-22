@@ -214,6 +214,16 @@ def test_each_further_shipment_and_their_sum_are_no_second_amount():
     assert "text_amounts" in rules(check.run(wrong, request, [option]), check.BLOCK)
 
 
+def test_lots_with_a_stated_volume_and_lots_with_dimensions_add_up_together():
+    """Round 153: 0.70 cbm stated for one lot, dimensions for two; the rules' 1.8952 cbm was right and still blocked."""
+    request = ("Lot 1: 1 drum, together 130 kg gross (114 kg net), together 0.70 cbm\n"
+               "Lot 2: 3 cartons, each 23 kg gross (20 kg net), each 60 x 40 x 126 cm\n"
+               "Lot 3: 8 crates, each 28 kg gross (24 kg net), each 60 x 40 x 15 cm")  # fmt: skip
+    option = airline("2097.91", kg="423")
+    q = quote(rfq(weight="423", volume="1.8952", pieces=12), option)
+    assert "volume_unexplained" not in rules(check.run(q, request, [option]))
+
+
 def test_the_total_twice_or_missing_blocks():
     option = airline("1599.41")
     q = quote(rfq(), option)
