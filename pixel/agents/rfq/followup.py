@@ -15,6 +15,7 @@ from pixel.contracts import BookingStatus, Message, Quote, QuoteStatus, Rfq
 from pixel.core import events
 from pixel.core.context import Context
 from pixel.crm import bookings
+from pixel.pricing import calc
 from pixel.pricing.pickup import zone_of
 
 # Asks for a new price whatever changed, also a date or a detail our price does not depend on: the scorer then scores
@@ -117,6 +118,11 @@ def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: li
     return found
 
 
+def _priced(rfq: Rfq, cargo: dict) -> bool:
+    stated = calc.chargeable_kg(cargo.get("weight_kg", rfq.weight_kg), cargo.get("volume_cbm", rfq.volume_cbm))
+    return stated == calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
+
+
 async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | None, said: str) -> Followup:
     """`said` is the reply's accept, decline or other (`booking.reply_intent`). A change wins over an acceptance
     ("book it, but it is 320 kg now" books nothing at the old weight). Emits `followup.read`."""
@@ -129,6 +135,9 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         if message.attachments and not _cargo(_stated(own)):
             documents = ["\n".join(lines) for _, lines in await extract._attachments(ctx, message)]
         found = changes(rfq, own, ours, documents)
+        # An acceptance that restates the cargo at the weight we priced books: only another price is a change.
+        if said == "accept" and found.keys() <= {"weight_kg", "volume_cbm", "pieces"} and _priced(rfq, found):
+            found = {}
     # "The updated offer works, please book" accepts: only a changed field outweighs an acceptance or a decline.
     if found or (UPDATE.search(own) and said == "other"):
         intent = "change"
