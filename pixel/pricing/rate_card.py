@@ -95,7 +95,8 @@ def airlines(ctx: Context, origin: str, destination: str) -> list[str]:
 
 def option(ctx: Context, rfq: Rfq, code: str) -> RateOption | None:
     """The airline's price from the card at the current version, or None when the card lacks the bracket the
-    chargeable weight falls in."""
+    chargeable weight falls in, or a read at the current version found the airline off the portal (404): an older
+    version's rate would price an airline the portal no longer offers."""
     steps = breaks(ctx, code)
     if not steps:
         return None
@@ -105,6 +106,8 @@ def option(ctx: Context, rfq: Rfq, code: str) -> RateOption | None:
     for (origin, destination, c, bracket), by_version in rates.items():
         if (origin, destination, c) != (rfq.origin, rfq.destination, code):
             continue
+        if current in by_version and not by_version[current]["total"]:
+            return None
         usable = [(v, r) for v, r in by_version.items() if v in factors and r["total"]]
         if usable:
             v, read = next(((v, r) for v, r in usable if v == current), usable[-1])

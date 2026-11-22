@@ -89,7 +89,13 @@ async def _read(
 
 
 def _card(ctx: Context, rfq: Rfq, code: str) -> RateOption | None:
-    if (card := rate_card.option(ctx, rfq, code)) is not None:
+    try:
+        card = rate_card.option(ctx, rfq, code)
+    except Exception as exc:  # noqa: BLE001  the card's failure must not take the TaskGroup's other sources with it
+        events.emit(ctx, "error", "pricing", session_id=rfq.session_id,
+                    payload={"where": "rate_card", "error": type(exc).__name__})  # fmt: skip
+        return None
+    if card is not None:
         events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                     payload={"option": card.model_dump(mode="json"), "why": "rate card"})  # fmt: skip
     return card
