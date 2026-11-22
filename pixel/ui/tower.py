@@ -22,7 +22,7 @@ background:radial-gradient(1100px 640px at 50% 44%,#302a28 0%,var(--t-bg) 50%,#1
 .tower canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .tower::after{content:"";position:absolute;inset:0;pointer-events:none;background:
 linear-gradient(180deg,rgba(31,27,26,.7),transparent 22%,transparent 62%,rgba(31,27,26,.92))}
-.tower .say{position:absolute;z-index:2;left:max(24px,calc(50vw - 596px));right:max(24px,calc(50vw - 596px));bottom:104px;
+.tower .say{position:absolute;z-index:2;left:max(24px,calc(50vw - 596px));right:max(24px,calc(50vw - 596px));bottom:44px;
 display:flex;align-items:flex-end;justify-content:space-between;gap:24px;pointer-events:none}
 .tower h1{margin:0;font-size:clamp(22px,5.8vw,64px);line-height:1;letter-spacing:-.04em;font-weight:500;color:var(--t-ink)}
 .tower h1 em{font-style:normal;color:var(--t-accent)}
@@ -41,7 +41,7 @@ transform:translateY(6px);transition:opacity .18s,transform .18s;pointer-events:
 .tower .card .bar{height:3px;background:rgba(255,236,224,.14);border-radius:3px;margin:12px 0;overflow:hidden}
 .tower .card .bar b{display:block;height:100%;background:var(--t-accent)}
 .tower .card a{color:var(--t-ink);font-weight:500}.tower .card a span{color:var(--t-accent)}
-@media (max-width:640px){.tower .say{flex-direction:column;align-items:flex-start;bottom:64px}.tower .now{padding:0}}
+@media (max-width:640px){.tower .say{flex-direction:column;align-items:flex-start;bottom:32px}.tower .now{padding:0}}
 @media (prefers-reduced-motion:reduce){.tower .now i::after{animation:none}}
 </style>
 <section class="tower" id="tower" aria-label="Live map of PIXEL's shipments">
@@ -141,7 +141,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
 function resize(){const b=root.getBoundingClientRect();W=b.width;H=b.height;DPR=Math.min(2,window.devicePixelRatio||1);
   for(const c of [landCv,fx]){c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);}
   const rows=LAT_TOP-LAT_BOT;S=Math.min(Math.max(W/SPAN,H*.62/rows),H*.96/rows);
-  OX=W/2-(LON_C-LON_MIN)*S;OY=Math.max(H*.06,(H-rows*S)/2-H*.02);
+  OX=W/2-(LON_C-LON_MIN)*S;OY=Math.max(130,(H-rows*S)/2+40);
   for(const f of flights)f.r=route(f.l.o,f.l.d);if(quoting)quoting.r=route(quoting.l.o,quoting.l.d);drawLand();}
 addEventListener('resize',()=>{clearTimeout(resize.t);resize.t=setTimeout(resize,120);});
 resize();setInterval(drawLand,60000);
