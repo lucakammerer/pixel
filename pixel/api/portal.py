@@ -42,7 +42,17 @@ class NotOnPortal(Exception):
 
 
 class RatesUnavailable(NotOnPortal):
-    """503 from /rates: the rate API is down for every airline, not this airline off the portal (rounds 27 to 29)."""
+    """503 from /rates: the rate API is down for every airline, not this airline off the portal (rounds 27 to 29).
+    `page`: why the browser page gave no rate either, its status and first words (round 120: 403 "Just a moment...")."""
+
+    def __init__(self, hint: str, page: str | None = None):
+        super().__init__(hint)
+        self.page = page
+
+
+def _refusal(response: httpx.Response) -> str:
+    words = " ".join(re.sub(r"<[^>]*>", " ", response.text).split())
+    return f"{response.status_code} {words[:80]}"
 
 
 class RateExpired(Exception):
@@ -208,9 +218,10 @@ class Portal:
                 await self._wait(retry_after, not_after, attempt)
                 continue
             if response.status_code == 503:
-                if self.page_url and (option := await self._page_rate(params)):
-                    return option
-                raise RatesUnavailable(_detail(response))
+                page = await self._page_rate(params) if self.page_url else None
+                if isinstance(page, RateOption):
+                    return page
+                raise RatesUnavailable(_detail(response), page)
             if response.status_code == 404:
                 raise NotOnPortal(_detail(response))
             if response.status_code != 200:
@@ -218,14 +229,17 @@ class Portal:
             return _option(response.json())
         raise RateLimited(0)
 
-    async def _page_rate(self, params: dict[str, str]) -> RateOption | None:
+    async def _page_rate(self, params: dict[str, str]) -> RateOption | str | None:
         """R21: the same rate from the portal's browser page, which stays up when the rate API is down (rounds 93
         to 97: the airlines and the desk did not answer by mail either). Every rate needs a fresh page load: it
-        names the form's fields anew and draws a sum to solve. None when the page gives no rate."""
+        names the form's fields anew and draws a sum to solve. Without a rate, the last refusal (`_refusal`) or None."""
         values = {"origin": params["origin"], "destination": params["destination"], "airline": params["airline"],
                   "weight": params["weight_kg"], "volume": params["volume_cbm"]}  # fmt: skip
+        refused = None
         for _ in range(PAGE_TRIES):
             load = await self.client.post(self.page_url, headers={"X-Portal-Step": "load"})
+            if load.status_code != 200:
+                return _refusal(load)
             try:
                 form = load.json()
                 answer = solve_sum(base64.b64decode(form["answer"]["image"].partition(",")[2]).decode())
@@ -247,9 +261,10 @@ class Portal:
                     raise NotOnPortal(str(body.get("error"))[:500])
                 if body.get("html"):
                     return _option(page_rate(body["html"]))
+                refused = _refusal(response)
             except (ValueError, ArithmeticError, LookupError, TypeError, StopIteration, AttributeError):
-                return None  # not the page we know: the caller reports the API's 503
-        return None
+                return _refusal(load)  # not the page we know: the caller reports the API's 503
+        return refused
 
     async def _wait(self, seconds: float, not_after: datetime | None, attempt: int) -> None:
         if attempt > 0 or (not_after is not None and _now() + timedelta(seconds=seconds) >= not_after):

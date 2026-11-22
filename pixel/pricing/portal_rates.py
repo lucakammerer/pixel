@@ -58,7 +58,8 @@ async def _read(ctx: Context, rfq: Rfq, deadline: Deadline, code: str, name: str
         )
     except (NotOnPortal, RateLimited, ApiError, httpx.HTTPError) as exc:
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
-                    payload={"source": "portal", "carrier": name, "error": type(exc).__name__, "hint": str(exc)})  # fmt: skip
+                    payload={"source": "portal", "carrier": name, "error": type(exc).__name__, "hint": str(exc)}
+                    | ({"page": exc.page} if getattr(exc, "page", None) else {}))  # fmt: skip
         return None
     events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
