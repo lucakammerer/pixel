@@ -372,6 +372,40 @@ async def attachment_lines(ctx: Context, message: Message, attachment: Attachmen
     return None
 
 
+SCAN_PAGES = 3  # a photographed request or offer is a page or two; more would only cost tokens
+
+
+async def attachment_images(ctx: Context, message: Message) -> tuple[bytes, ...]:
+    """The attachments code cannot read as text, as JPEG pages for the model: a photo, a scanned pdf. A pdf with text
+    is read as text and never sent."""
+    pages: list[bytes] = []
+    for attachment in message.attachments:
+        suffix = Path(attachment.filename).suffix.lower()
+        if suffix not in IMAGES and suffix != ".pdf":
+            continue
+        try:
+            content = await ctx.mailbox.attachment(message.id, attachment.id)
+            if suffix in IMAGES:
+                pages.append(await asyncio.to_thread(_jpeg, content))
+                continue
+            try:
+                _lines(attachment.filename, content)
+            except Unreadable:
+                pages += await asyncio.to_thread(_pdf_pages, content)
+        except Exception as e:  # noqa: BLE001  a broken file must not lose the mail
+            events.emit(ctx, "error", "attachments", session_id=message.session_id, message_id=message.id,
+                        payload={"where": "attachment_images", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
+    return tuple(pages[:SCAN_PAGES])
+
+
+def _jpeg(content: bytes) -> bytes:
+    from PIL import Image
+
+    with Image.open(io.BytesIO(content)) as image, io.BytesIO() as stream:
+        image.convert("RGB").save(stream, format="JPEG")
+        return stream.getvalue()
+
+
 def speech_model():
     """The local speech model, loaded once. The app loads it at start, so no request waits for its download."""
     from faster_whisper import WhisperModel
