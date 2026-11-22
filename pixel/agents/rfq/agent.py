@@ -118,6 +118,10 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     compose.render -> outbox.send_quote. Sends at `deadline.target_at` at the latest unless waiting can
     still change the answer and `hard_at` is not reached."""
     rfq, text = await extract.read_request(ctx, message, deadline)
+    if not rfq.destination and (first := extract.first_shipment(rfq, text)):
+        rfq = first
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
+                    payload=rfq.model_dump(mode="json"))  # fmt: skip
     if REQUIRED & set(rfq.missing):
         events.emit(ctx, "error", "rfq", session_id=rfq.session_id, payload={"error": "unreadable request",
                     "missing": list(rfq.missing)})  # fmt: skip

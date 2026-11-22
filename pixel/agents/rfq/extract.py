@@ -279,6 +279,28 @@ def _label_reach(pattern: re.Pattern, text: str) -> dict[str, int]:
     return reach
 
 
+SHIPMENT_LINE = re.compile(r"^\s*\d+[.)]\s+([A-Z]{3})\b(.*)$", re.MULTILINE)
+
+
+def first_shipment(rfq: Rfq, text: str) -> Rfq | None:
+    """Session 25795: one mail, two shipments to two airports ("1. GRU ... 1281 kg, 3.76 cbm / 2. TLV ..."), so no
+    one destination. Rather than no answer, the first shipment is quoted with its own airport and cargo."""
+    lines = [(code, rest) for code, rest in SHIPMENT_LINE.findall(text) if _airport(code)]
+    if len({code for code, _ in lines}) < 2:
+        return None
+    code, rest = lines[0]
+    pieces = _pieces(rest)
+    weight, volume = _weight(rest, pieces), _volume(rest, pieces)
+    if not weight:
+        return None
+    update = {"destination": code, "weight_kg": weight, "missing": tuple(m for m in rfq.missing if m != "destination")}
+    if volume:
+        update["volume_cbm"] = volume
+    if pieces:
+        update["pieces"] = pieces
+    return rfq.model_copy(update=update)
+
+
 def _destination_only(text: str) -> str | None:
     """The one destination of a mail that names no origin airport (door-to-port). A code both labels reach belongs to
     the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
