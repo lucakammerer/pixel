@@ -286,3 +286,25 @@ async def test_takeover_does_not_repeat_the_extraction_call(conn):
         await asyncio.gather(task, return_exceptions=True)
     calls = [p for p in gateway.purposes if p == "rfq_extract"]
     assert len(calls) == 1
+
+
+async def test_a_sea_freight_request_gets_no_price_and_its_answer_at_once(conn, monkeypatch):
+    """Round 177: "port-to-port sea freight ... FCL in 1 x 40ft container" was read as air HAM-DXB and quoted from
+    the portal; the scorer rejected it as out_of_scope_quoted. We quote air only: no price, one plain answer."""
+    ctx = make_ctx(conn)
+    message = ingest_rfq(ctx, "rfq-sea-freight-fcl.json")
+    fake_clock(monkeypatch, message, ctx, before_hard_s=200)
+    quote = make_quote(message)
+
+    async def handle(ctx, message, deadline):
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=message.id, payload=quote.rfq.model_dump(mode="json"))
+        events.emit(ctx, "option.found", "pricing", session_id=message.id,
+                    payload={"option": quote.option.model_dump(mode="json")})  # fmt: skip
+        return None
+
+    monkeypatch.setattr(rfq_agent, "handle", handle)
+    assert orchestrator.out_of_scope(ctx, message.id)
+    await asyncio.wait_for(orchestrator.quote_with_deadline(ctx, message), timeout=1)
+    assert "quote.sent" not in kinds(ctx)
+    assert ctx.mailbox.sent == [message.sender]
+    assert not orchestrator.out_of_scope(ctx, ingest_rfq(ctx).id)
