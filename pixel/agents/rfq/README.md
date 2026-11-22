@@ -137,6 +137,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`outbox.send_quote(reply_to=...)`, its own claim). While it prices, `outbox.quoted` is true and a quote of the
   older facts is held as `superseded`, also when the change came before our first quote. Round 86: the scorer scored
   our answer to the change mail, not the first quote.
+- An acceptance on a condition ("if the all-in stays below EUR 3,200, please book", "falls der Preis unter 3.200 €
+  bleibt, bitte buchen") is `followup.read` intent `conditional`, read before any acceptance: `followup.conditional`
+  reads the cap, `selection.within_cap` compares it with our total ("below" strict, "up to" not, another currency
+  never), and `handle_reply` books only when it is met; otherwise, or when the condition is not a price, a person.
+  It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
 - `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
   the selected billed weight, and so is a rate id the bookings API does not know (404, a desk or browser-page id)
   or one taken (409). A 503, an option without a rate id, or an expired rate while the rate API is down or capped
@@ -263,7 +268,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
   to the model.
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
-  the pickup zone's airport unless the mail names the origin code itself.
+  the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
+  for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
+  code after "not" or "instead of" is ruled out).
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
   excludes attachments that name a different origin or destination airport (another shipment, #164). For weight
   and volume, an explicit email correction takes precedence, and "use the weight in this email" keeps the mail's.

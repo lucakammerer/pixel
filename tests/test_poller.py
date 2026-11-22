@@ -136,3 +136,21 @@ async def test_a_request_stamped_an_hour_early_still_gets_its_quote(conn, monkey
     stored_at = datetime.fromisoformat(row["sent_at"])
     deadline = orchestrator.deadline_for(stored_at, config)
     assert deadline.expires_at > datetime.now(UTC) + timedelta(minutes=5)
+async def test_a_mail_that_never_stores_is_skipped_after_a_few_polls(conn, monkeypatch):
+    config = dataclasses.replace(settings(), poll_seconds=0.001)
+    mailbox = FakeMailbox(["rfq-door-no-origin.json", "synthetic-tracking.json"])
+    poison = mailbox.mails[0].id
+    real_ingest = poller.ingest
+
+    def ingest(ctx, message, stored_after=None):
+        if message.id == poison:
+            raise RuntimeError("disk says no")
+        return real_ingest(ctx, message, stored_after)
+
+    monkeypatch.setattr(poller, "ingest", ingest)
+    seen = []
+    await run_briefly(Context(config, conn, mailbox, None, None, None), seen)
+    assert seen == [mailbox.mails[1].id]
+    assert mailbox.since.count(0) == poller.INGEST_TRIES
+    errors = [r[0] for r in conn.execute("SELECT payload FROM events WHERE kind = 'error'")]
+    assert any("skipped after" in e for e in errors)

@@ -22,6 +22,7 @@ POLL_PAGE = 200
 # How far a stored time may lie past the evidence before it is corrected: clocks and the API's own lag.
 AHEAD_SLACK = timedelta(seconds=5)
 POLL_SLACK = timedelta(seconds=10)
+INGEST_TRIES = 3  # a mail that cannot be stored after this many polls is skipped, so it cannot block every later one
 
 
 def session_of(ctx: Context, message: Message) -> int:
@@ -142,11 +143,15 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
     interval = ctx.settings.poll_seconds
     failing = False
     complete_at = None  # when the last complete poll started: a mail it did not hold was stored after it
+    tries: dict[int, int] = {}
     while True:
         started = timing.now()
         try:
             messages, next_since_id = await ctx.mailbox.poll(since_id, POLL_PAGE)
             failing = False
+            for skipped in getattr(ctx.mailbox, "skipped", ()):
+                emit(ctx, "error", "poller", payload={"where": "mapping", "error": f"mail {skipped['id']} skipped: "
+                                                      f"{skipped['error']}, check api/mailbox.py to_message"})  # fmt: skip
         except Exception as e:  # noqa: BLE001
             if not failing:  # one event per outage, not one per second
                 emit(ctx, "error", "poller", payload={"where": "poll", "error": f"{type(e).__name__}: {e}"})
@@ -164,8 +169,14 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
         complete_at = started if len(messages) < POLL_PAGE else None
         for message in messages:
             if not accept(ctx, message, on_message, stored_after):
-                # Preserve the last durable cursor so a transient storage failure cannot lose this mail.
-                break
+                # Preserve the last durable cursor so a transient storage failure cannot lose this mail, but only a
+                # few times: a mail that never stores would hold every later request behind it (R1).
+                tries[message.id] = tries.get(message.id, 0) + 1
+                if tries[message.id] < INGEST_TRIES:
+                    break
+                emit(ctx, "error", "poller", message_id=message.id,
+                     payload={"where": "ingest", "error": f"skipped after {INGEST_TRIES} tries"})  # fmt: skip
+            tries.pop(message.id, None)
             since_id = message.id
             db.put(ctx.db, SINCE_KEY, str(since_id))
         else:

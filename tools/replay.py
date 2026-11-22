@@ -203,6 +203,12 @@ async def _run(raws: list[dict], online: bool, db: str | None, as_live: bool) ->
         ctx.db.close()
 
 
+def raws_of(fixture: dict | list[dict]) -> list[dict]:
+    """A fixture is one mail, or a list: the request first, then the carriers' answers at their own times. An
+    answer that lists the request in `references` joins its session, as a reply to our bid request does live."""
+    return fixture if isinstance(fixture, list) else [fixture]
+
+
 async def replay(raws: list[dict], online: bool, db: str | None = None) -> int:
     for event in await run(raws, online, db):
         usage = {"tokens_in": event.tokens_in, "tokens_out": event.tokens_out, "cost_usd": event.cost_usd,
@@ -228,7 +234,7 @@ def main() -> None:
         raws = _stored(db_path, "SELECT data FROM messages WHERE session_id = ? AND direction = 'in' ORDER BY id",
                        args.session)  # fmt: skip
     elif args.fixture:
-        raws = [json.loads(args.fixture.read_text())]
+        raws = raws_of(json.loads(args.fixture.read_text()))
     else:
         parser.error("a fixture, --session or --capture")
     raise SystemExit(asyncio.run(replay(raws, args.online, args.db)))
