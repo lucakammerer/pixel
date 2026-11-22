@@ -50,6 +50,7 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | 29 | `dg-lithium-in-body` | "lithium ion batteries, UN 3480, class 9" in the body only | **pass**: DGD and MSDS named | — | — | — |
 | 30 | `not-dg-declared` | "this is NOT dangerous goods, no lithium, no UN number" | **pass**: no DG paragraph | — | — | — |
 | 31 | out of scope by mode (live, round 177, lost) | "port-to-port sea freight ... FCL in 1 x 40ft container", "DEHAM to AEJEA" | **fixed #465** for English and German wording with no word of air | the plain answer, no price | open, generalize: sea in another language (model read), courier or express, "air or sea, whichever is cheaper", sea-air, UN/LOCODEs only, a sea mail that says "air" somewhere | `orchestrator.out_of_scope` | S |
+| 32 | latest arrival on a door request (live, round 179, lost too_high) | ready 27.11., "need to be at ORD by 2026-11-29", pickup in 51871 | **fixed #472**: the pickup adds no day, Aurelia (2 d) 1074.69 instead of Meridian (1 d) 1410.83 | the cheapest option with ready + transit ≤ the date | open, generalize: whether the scorer counts the ready day itself, a trucker's pickup time over 24 h, weekends, "arrive before" (exclusive) against "by" | `calc.arrival`, `selection.meets_schedule` | S |
 
 ## Axis D: truckers and the pickup place
 
