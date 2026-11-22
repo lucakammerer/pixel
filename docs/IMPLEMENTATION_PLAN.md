@@ -89,6 +89,7 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                   sheets   publish local prices                         option.found
                   portal   actual weight, then the next break           option.found
                   bids     mail carriers with outstanding prices        bid.requested → bid.received
+                           portal outage + sheet price: pending desk until 115 s   bid.desk_wait
                   pickup   mail truckers for a door-to-port request     option.found
                 selection.select → compose.render → outbox.send_quote  quote.sent
   recovery      unanswered after 150 s or handler exits                quote.recovery
