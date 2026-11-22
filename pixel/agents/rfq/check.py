@@ -217,7 +217,11 @@ def lot_weight(text: str) -> Decimal | None:
         if gross[0].group(2):  # "2 x 300 kg": the factor is written next to the figure
             total += kg * int(gross[0].group(2))
         else:
-            each = bool(gross[0].group(1)) or bool(EACH_AFTER.match(line, gross[0].end()))
+            each = bool(
+                gross[0].group(1)
+                or EACH_AFTER.match(line, gross[0].end())
+                or MASS_EACH_BEFORE.search(line[start.end() : gross[0].start()])
+            )
             total += kg * (int(head.group(1)) if each else 1)
         lots += 1
     return total if lots >= 2 else None
@@ -252,7 +256,11 @@ MASS_LABEL = re.compile(  # "Gross weight: 480" without a unit is read as kg by 
 )
 MASS_NET = re.compile(r"\s*(?:kg|kgs)?\s*\)?\s*(?:net|netto|nett)\b|\s*\(\s*net", re.IGNORECASE)
 MASS_NET_BEFORE = re.compile(r"(?:net|netto|nett)(?:\s+weight|gewicht)?\s*[:=]?\s*$", re.IGNORECASE)
-MASS_EACH_BEFORE = re.compile(r"(?:each|apiece|je|à|per\s+\w+|pro\s+\w+)\s*(?:of\s+)?$", re.IGNORECASE)
+# Also the gross figure in the bracket of a per-piece net one: "each 142 kg net (160 kg gross)".
+MASS_EACH_BEFORE = re.compile(
+    r"(?:each|apiece|je|à|per\s+\w+|pro\s+\w+)\s*(?:of\s+)?(?:\d[\d.,']*\s*kgs?\s*(?:net|netto|nett)\s*\(\s*)?$",
+    re.IGNORECASE,
+)
 MASS_EACH_AFTER = re.compile(
     r"\s*(?:gross\s*|brutto\s*)?(?:each|apiece|je|per\s+(?:piece|unit|pc|carton|case|drum|pallet|box|crate|stück)"
     r"|pro\s+(?:stück|palette|karton))\b",
@@ -546,6 +554,11 @@ def _text(q: Quote, request: str, options: list[RateOption], files: tuple[str, .
     if q.currency not in q.body:
         found.append(Finding("text_total", BLOCK, f"the currency {q.currency} is not in the mail"))
     others = [min(r) for r in amounts(body) if q.total not in r and r != {Decimal(0)}]
+    if others and len(parts := shipments(q.rfq, own_words(request))) > 1:
+        # Round 125: each further shipment's price, then their sum when every one has a price (`compose.shipments`).
+        prices, rest = others[: len(parts) - 1], others[len(parts) - 1 :]
+        if not rest or rest == [q.total + sum(prices)]:
+            others = []
     if others:
         found.append(
             Finding("text_amounts", BLOCK, f"other amounts with a currency in the mail: {others}, the quote is {total}")

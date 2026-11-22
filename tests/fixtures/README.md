@@ -78,6 +78,15 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   about one of them, each with the shipment a person matches from the desk's facts. The benchmark's
   `TRACKING_CHANGES` changes each question one way (weight notation, lane separator, company form); it must find the
   same shipment or ask for the reference, never name another.
+
+
+  `rfqs/simulate-known-gaps.json`: the classes read wrong today, by axis values, each ending `Owner: <role>.`;
+  `tests/test_generalization.py` fails on a wrong case outside them and on a gap that reads right.
+- `scored-rounds.json`: every scored round of 21.11. with a known best price (32; rounds 11 and 14 are left out:
+  their pickup bids were stored for an origin read before the one we quoted), each with the request's pricing
+  fields, every option found before our quote and the scorer's best total, airline and trucker from
+  `GET /v1/board/me`. `tests/test_scored_rounds.py` requires today's pickup choice and selection to give exactly
+  that, in either order of the options. Of the balanced rules only `times_the_best` fits all 32.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 

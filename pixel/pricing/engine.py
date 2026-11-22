@@ -10,6 +10,7 @@ from pixel.core.orchestrator import Deadline
 from pixel.pricing import availability, bids, calc, pickup, portal_rates, selection, session, store
 
 PORTAL_HEAD_START_S = 1.0
+LATE_503_S = 10.0  # round 122: the 503 came after the head start and the desk was never asked
 
 
 def _found(ctx: Context, rfq: Rfq, option: RateOption) -> None:
@@ -188,6 +189,12 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         if desk_id is None and (down or not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
         mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
+        if desk_id is None and not down and not portal_task.done():
+            remaining = (deadline.target_at - timing.now()).total_seconds()
+            await asyncio.wait({portal_task}, timeout=max(0.0, min(LATE_503_S, remaining)))
+            down = _portal_down(ctx, rfq)
+            if down and _desk_enquiry(ctx, rfq) is None:
+                mailed += await bids.request(ctx, rfq, [("Rate desk", RATEDESK)])
         reread_now = asyncio.Event()
         reread = group.create_task(_reread(ctx, rfq, deadline, reread_now)) if down else None
         pending_desk = (

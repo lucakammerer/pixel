@@ -20,9 +20,12 @@ READY = datetime(2026, 11, 27, tzinfo=UTC).date()
 
 def request(name: str) -> tuple[str, str, Rfq]:
     message = to_message(json.loads((MAILS / name).read_text(encoding="utf-8")), "in")
+    text = extract._text(message)
+    ready_on, arrive_by, _ = extract.schedule(text, message.sent_at.date())  # the dates as the rules read them
     rfq = Rfq(session_id=1, message_id=1, customer=message.sender, origin="DUS", destination="JFK",
-              weight_kg=Decimal(1540), received_at=message.sent_at, deadline_at=message.sent_at)  # fmt: skip
-    return extract._text(message), message.subject, rfq
+              weight_kg=Decimal(1540), received_at=message.sent_at, deadline_at=message.sent_at,
+              ready_on=ready_on, arrive_by=arrive_by)  # fmt: skip
+    return text, message.subject, rfq
 
 
 def option(carrier: str, total: int, days: int) -> RateOption:
@@ -57,7 +60,7 @@ async def test_a_request_the_rules_read_whole_takes_no_call(conn, monkeypatch):
 async def test_an_unseen_requirement_moves_the_selection_names_the_papers_and_alerts_at_once(conn, monkeypatch):
     async def answer():
         return {"exclude_airlines": [], "only_airlines": ["Kestrel Air Cargo", "Ghost Air"], "arrive_by": "2026-12-01",
-                "documents": ["customs documents"], "conditions": ["goods value EUR 5000"]}  # fmt: skip
+                "ready_on": None, "documents": ["customs documents"], "conditions": ["goods value EUR 5000"]}  # fmt: skip
 
     asked, posted = gateway(monkeypatch, answer)
     ctx = Context(replace(settings(), alert_url="http://alert"), conn, None, None, None, None)
@@ -90,3 +93,34 @@ async def test_a_hanging_gateway_never_holds_the_quote_and_still_alerts(conn, mo
     assert await asyncio.wait_for(novelty.check(ctx, rfq, text, subject), 1) == rfq
     await asyncio.gather(*ctx.tasks)
     assert posted[0]["mapped"] == {"error": "TimeoutError"} and novelty.mapped(ctx, 1) == {}
+
+
+async def test_a_date_no_field_holds_is_read_by_the_model_and_fills_only_the_empty_ready_date(conn, monkeypatch):
+    async def answer():
+        return {"exclude_airlines": [], "only_airlines": [], "arrive_by": None, "ready_on": "2026-11-26",
+                "documents": [], "conditions": []}  # fmt: skip
+
+    asked, _ = gateway(monkeypatch, answer)
+    ctx = Context(settings(), conn, None, None, None, None)
+    text, subject, rfq = request("synthetic-ready-date-unread.json")
+    read = await novelty.check(ctx, rfq, text, subject, text)
+    assert "Die Abholung ist ab dem 26.11.2026 möglich." in asked[0]["user"]
+    assert read.ready_on == datetime(2026, 11, 26).date()
+    ruled = rfq.model_copy(update={"ready_on": datetime(2026, 11, 25).date()})
+    assert (await novelty.check(ctx, ruled, text, subject, text)).ready_on == ruled.ready_on  # the rules' date wins
+
+
+def test_dates_the_rules_read_set_aside_or_left_behind_are_accounted_for():
+    text, _, rfq = request("synthetic-ready-date-unread.json")
+    assert novelty.unread_dates(text, rfq) == ["Die Abholung ist ab dem 26.11.2026 möglich."]
+    said = text.replace(
+        "Die Abholung ist ab dem 26.11.2026 möglich.", "Bitte Ihr Angebot bis 24.11. Letzte Sendung am 3.11."
+    )
+    assert novelty.unread_dates(said, rfq) == []
+
+
+def test_a_dangerous_goods_line_with_n_o_s_is_read_whole():
+    """Sessions 33097 and 38213: "n.o.s." split the packing list's DG line, and "(contains phosphoric acid)" cost a
+    model call and a note in the quote though the DG rule had read the line."""
+    line = "Dangerous goods: UN1760, Class 8, Corrosive liquid, n.o.s. (contains phosphoric acid)"
+    assert novelty.leftover(line) == []

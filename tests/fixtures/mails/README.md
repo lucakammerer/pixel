@@ -36,6 +36,8 @@ Captured carrier answers, each to a request in the wording of `pixel/pricing/bid
 
 `synthetic-novel-requirement.json` is `rfq-port-to-port.json` with two requirements no rule reads: only one airline,
 at JFK by a date, and the customs documents named (`tests/test_novelty.py`).
+`synthetic-ready-date-unread.json` is round 118's request with its ready date in words no rule reads ("Die Abholung
+ist ab dem 26.11.2026 möglich"): the model must be asked and fill the ready date (`tests/test_novelty.py`).
 
 Captured mails of a request, from the request to the confirmed booking:
 
@@ -102,6 +104,10 @@ person (`tools.benchmark_generalization --stub`). It is read by `extract.py` `by
 Requests with dangerous goods, captured with their attachment (`content_base64`, fetched from the API: `--capture`
 stores the mail without the file). The mail says "general cargo, non-dangerous"; the attachment declares them:
 
+- `rfq-door-competitor-offer.json`: round 101, door-to-port DUS-RUH, fastest, with "another forwarder has already
+  offered us about 1620 EUR all-in" beside the request. Ignored; accepted at the best price.
+- `rfq-door-budget.json`: round 102, door-to-port STR-MEL, cheapest, with "our budget for this shipment is around
+  3300 EUR all-in" beside the request. Ignored.
 - `rfq-dg-packing-list.json`: an xlsx packing specification with "Dangerous goods: UN1133, Class 3, Adhesives".
   Our quote did not mention it and was rejected (`dg_docs_missing`); `customer-declines-dg.json` is the decline.
 - `rfq-dg-instruction-bullets.json`: a pdf shipper's letter of instruction with "UN1950, Class 2.1, Aerosols,

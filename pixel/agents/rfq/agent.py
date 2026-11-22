@@ -418,7 +418,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
                     "missing": list(rfq.missing)})  # fmt: skip
         return None
     rfq = await served_airports(ctx, rfq, message, text=text, deadline=deadline)
-    novel = poller.spawn(ctx, novelty.check(ctx, rfq, text, message.subject))  # beside the bids, bounded by WAIT_S
+    novel = poller.spawn(ctx, novelty.check(ctx, rfq, text, message.subject, extract._text(message)))  # within WAIT_S
     # The one gateway call per quote (R28): when rules read the request, it writes the prose slots (R31);
     # when the model read it, the same call already drafted them.
     # The prose may hold the quote at most PROSE_WAIT_S after it started, and never past target_at: a slow or

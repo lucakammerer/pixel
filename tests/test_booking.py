@@ -594,6 +594,11 @@ async def test_changed_cargo_after_the_quote_is_requoted_in_reply_to_the_change(
         ("Falls der Preis unter 300 € bleibt, bitte direkt buchen.", False),  # used to book: "3." split the sentence
         ("If it stays below USD 400, please book it.", False),  # another currency: a person converts
         ("If you can guarantee departure on Monday, please book.", False),
+        ("We'll book if you can get it to 400 EUR or less.", True),  # a cap after its amount
+        ("Please proceed provided the price is max. 400 EUR.", True),  # "max." ended the sentence
+        ("If you can match 400 EUR, go ahead and book.", True),
+        ("Book if the all-in stays within a budget of 300 EUR.", False),
+        ("Please book if the dates match 2026-11-27.", False),  # a date is no cap: a person
     ],
 )
 async def test_a_conditional_acceptance_books_only_when_our_total_meets_its_cap(pipe, accepted, text, books):

@@ -202,6 +202,18 @@ def test_a_second_amount_in_the_mail_blocks():
     assert "text_amounts" in rules(check.run(q, PLAIN, [option]), check.BLOCK)
 
 
+def test_each_further_shipment_and_their_sum_are_no_second_amount():
+    """Round 125: two shipments in one mail, each quoted with the sum of both; only another amount still blocks."""
+    request = "Fastest from MUC, each quoted:\n1. To SGN, 6 pieces, 1592 kg, 6.77 cbm.\n2. To ICN, 7 pieces, 813 kg, 6.04 cbm."
+    option = airline("5810.80")
+    q = quote(rfq(), option)
+    shipments = "For the shipment to ICN I would go with Ibisair Cargo: 3439.60 EUR all-in."
+    sent = q.model_copy(update={"body": q.body + f"\n\n{shipments} All shipments together: 9250.40 EUR all-in."})
+    assert "text_amounts" not in rules(check.run(sent, request, [option]))
+    wrong = q.model_copy(update={"body": q.body + f"\n\n{shipments} All shipments together: 9999.00 EUR all-in."})
+    assert "text_amounts" in rules(check.run(wrong, request, [option]), check.BLOCK)
+
+
 def test_the_total_twice_or_missing_blocks():
     option = airline("1599.41")
     q = quote(rfq(), option)
