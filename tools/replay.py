@@ -243,6 +243,8 @@ async def _run(
         if as_live:
             later = [asyncio.create_task(feed(raw, wait=True)) for raw in raws[1:]]
             await feed(raws[0], wait=False)
+            # a later mail (a change after our quote: the scorer scores its requote) is fed too, on the replay clock
+            await asyncio.gather(*later)
         else:
             for raw in raws:
                 await feed(raw, wait=False)
