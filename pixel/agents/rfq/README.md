@@ -104,6 +104,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   with the rate per kg chargeable weight when they ask for a breakdown (`breakdown`, only when the parts add up to the
   total, `calc.per_kg`). Any doubt gives "". A signed "Dr. Eva Huber" is greeted as Eva (`TITLE`), never as the
   role line under her name.
+- `compose.py` `greeting` greets the colleague a customer names as the offer's addressee ("please address the
+  offer to my colleague Mr. Jens Hartmann": "Dear Mr. Hartmann,", `addressee`), in the quote and the booking mails.
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model reads the customer's signed first name
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
