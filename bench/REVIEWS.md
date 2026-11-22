@@ -5,6 +5,15 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #469 | lucakammerer | 2a9a2f6 | own, fix forward of #465 | an air request that sets sea aside ("not by sea", "our sea freight is too slow", "pas de LCL") was declined; 0 of 167 live requests declined by mode before and after |
+| #465 | lucakammerer | 9587f0c | ok after merge, URGENT, fixed forward (#469) | round 177's sea FCL request declined at once; no live request declined by mode; set-aside mentions declined air requests |
+| #461 | lucakammerer | 478d64b | ok | stuck alert at 45 s: about 7 more alerts in 18 h (28 of 158 answers after 45 s, 21 after 90 s) |
+| #462 | lucakammerer | 1f07718 | ok, conflict resolved on the branch | a 429 past the target prices from the card; #452's guards hold; kpi identical |
+| #431 | lucakammerer | 33e4cbd | ok after two closes | the truck's airport read as the destination (FRA→FRA by rules in 3 of 10 door requests on `main`); the first fix lost real destination changes in later mails |
+| #460 | lucakammerer | 6b61223 | ok | wording only; a bilingual closing is not mirrored |
+| #457 | lucakammerer | f161660 | ok, URGENT | a translation with control characters made the mailbox answer 500; now refused, the English text leaves |
+| #450 | lucakammerer | e36ebae | ok after a close | a reply-by date read as a latest arrival, also with the reply word after the verb (5 repros); `main` reads no CJK arrival |
+| #459, #454 | lucakammerer | f69abc2, 1367633 | ok after merge | tools only; replay without `portal` behaves as before; no key in the captured fixture |
 | #453 | Konstantin-mody | 8b41a05 | ok | UI only; every page renders in `tools.preview`; the dashboard stays in the nav |
 | #443 | lucakammerer | 4a7b98d | ok, fixed on the branch | a vetoed trucker price came back through the memory (265.00 for 260.00); fit moved to `calc.py`; unbounded scan, 0.70 s at 292k events, now 0.09 s; 0 of 111 door sessions had a real answer the estimate would replace |
 | #445 | lucakammerer | dc27f4f | ok, fixed on the branch | a second gateway call per quote by default (kpi 69 to 79) and model text claiming an unpriced insurance in the quote; now off by default, reads and alerts only |
