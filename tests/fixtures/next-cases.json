@@ -1,0 +1,354 @@
+{
+ "_": "Predicted new kinds of requirement (bench/NEXT_CASES.md), one mail each in next-cases/, replayed offline on the start kit with `tools.replay`. 'expected' is what a right answer does, worked by hand from the kit; 'today' what the replay of 22.11.2026 did. 'known_gap' ends with its owner; delete it when the case reads right. No test reads this file yet.",
+ "cases": [
+  {
+   "fixture": "next-cases/latest-arrival-date.json",
+   "expected": {
+    "carrier": "Helix Air Freight",
+    "total": "2132.80",
+    "currency": "EUR"
+   },
+   "today": "Kestrel Airways 1512.80 EUR: arrives Tue 1 Dec, after the customer's Mon 30 Nov.",
+   "known_gap": "`extract.read_request` keeps no arrival deadline and `selection.select` filters only by excluded airline Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/max-transit-days.json",
+   "expected": {
+    "carrier": "Vega Skyfreight",
+    "total": "1685.10",
+    "currency": "EUR"
+   },
+   "today": "Elbflug Air Freight 1430.90 EUR, 5 days.",
+   "known_gap": "No transit limit is read or applied; same fix as latest-arrival-date (ready date + transit against a limit in `selection.select`) Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/preferred-airline-only.json",
+   "expected": {
+    "carrier": "Vega Skyfreight",
+    "total": "3221.50",
+    "currency": "EUR"
+   },
+   "today": "Cobalt Skylift 2346.00 EUR.",
+   "known_gap": "Only exclusions are read (`excluded_carriers`); 'Vega Skyfreight only' needs the mirror rule and an allow-filter in `selection.select` Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/ready-after-tariff-validity.json",
+   "expected": {
+    "no_option_from": "sheets valid to 2026-11-30",
+    "note": "price from the portal, a bid or a sheet valid on 2026-12-04"
+   },
+   "today": "Elbflug Air Freight 864.00 EUR from the November sheet.",
+   "known_gap": "`pricing/store.py` `lookup` takes a sheet valid today, not on the ready date Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/customer-reference-in-quote.json",
+   "expected": {
+    "total": "2247.00",
+    "currency": "EUR",
+    "body_contains": [
+     "PO-2026-4471"
+    ]
+   },
+   "today": "Price right, reference missing.",
+   "known_gap": "`compose.render` never echoes the customer's reference Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/cost-breakdown-required.json",
+   "expected": {
+    "total": "1501.20",
+    "currency": "EUR",
+    "body_contains": [
+     "1042.20",
+     "399.60",
+     "59.40",
+     "2.78"
+    ]
+   },
+   "today": "Price right, total only; greeting 'Hello Operations' takes the role line as a name.",
+   "known_gap": "`compose.render` states the total only, no freight, fuel and security amounts or rate per kg; `compose.greeting` reads the signature's role as the name Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/currency-usd.json",
+   "expected": {
+    "currency": "USD",
+    "total_eur": "803.40",
+    "note": "converted at the dataset's USD rate"
+   },
+   "today": "803.40 EUR.",
+   "known_gap": "`rfq.agent._fx_for` converts only with an option of this request that is priced in USD; sheets in EUR leave the quote in EUR Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/quote-validity-requested.json",
+   "expected": {
+    "total": "847.00",
+    "currency": "EUR",
+    "body_states": "validity, e.g. until 29 November (sheet valid to 30.11.)"
+   },
+   "today": "Price right, no validity sentence.",
+   "known_gap": "`compose.render` does not answer a validity question Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/incoterm-exw-implies-pickup.json",
+   "expected": {
+    "origin": "MUC",
+    "door_pickup": true,
+    "pickup_postcode": "80809",
+    "air": "Helix Air Freight 1635.00 EUR + pickup"
+   },
+   "today": "Rules return None, model path (offline: no quote).",
+   "known_gap": "`extract` rules read no incoterm; EXW with an address means door pickup Owner: Cost."
+  },
+  {
+   "fixture": "next-cases/door-to-door-dap.json",
+   "expected": {
+    "origin": "HAM",
+    "destination": "DXB",
+    "carrier": "Orion Cargo Air",
+    "total": "1029.00",
+    "currency": "EUR",
+    "body_states": "delivery from DXB to the door is not included"
+   },
+   "today": "Lane read as DXB-HAM, no price, no quote at all (quote.missed).",
+   "known_gap": "`extract` takes 'from DXB airport to the door' as the lane; the fallback then has nothing to send (R1) Owner: Cost."
+  },
+  {
+   "fixture": "next-cases/dims-per-piece-mixed.json",
+   "expected": {
+    "weight_kg": "600",
+    "volume_cbm": "1.652",
+    "carrier": "Vega Skyfreight",
+    "total": "1920.00",
+    "currency": "EUR"
+   },
+   "today": "Weight 390 ('210 kg each' counted once), 1478.10 EUR: 23% too low.",
+   "known_gap": "`extract` piece lines: 'each' after the dimensions in a bullet is not multiplied by the count Owner: Cost."
+  },
+  {
+   "fixture": "next-cases/non-stackable.json",
+   "expected": {
+    "weight_kg": "600",
+    "volume_cbm": "3.972",
+    "carrier": "Vega Skyfreight",
+    "total": "2122.64",
+    "currency": "EUR",
+    "assumption": "non-stackable pieces billed at 160 cm loading height; the scorer's rule is unknown"
+   },
+   "today": "Volume 3.78, 2020.03 EUR; weight 390 (same bug as dims-per-piece-mixed).",
+   "known_gap": "No non-stackable rule in `extract` or `calc` Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/dg-lithium-in-body.json",
+   "expected": {
+    "total": "2380.00",
+    "currency": "EUR",
+    "body_contains": [
+     "DGD",
+     "MSDS"
+    ]
+   },
+   "today": "Pass: DG read from the body, DGD and MSDS named."
+  },
+  {
+   "fixture": "next-cases/not-dg-declared.json",
+   "expected": {
+    "total": "2380.00",
+    "currency": "EUR",
+    "body_lacks": [
+     "dangerous goods"
+    ]
+   },
+   "today": "Pass: no DG paragraph."
+  },
+  {
+   "fixture": "next-cases/insurance-requested.json",
+   "expected": {
+    "total": "1512.80",
+    "currency": "EUR",
+    "body_states": "insurance priced or plainly not included"
+   },
+   "today": "Price right, insurance not mentioned.",
+   "known_gap": "`compose.render` ignores services asked for outside the price (insurance, customs, screening, cooling) Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/temperature-controlled.json",
+   "expected": {
+    "total": "2247.00",
+    "currency": "EUR",
+    "body_states": "temperature control +2/+8 °C addressed; carrier capable once data names it"
+   },
+   "today": "Cheapest without a word on cooling.",
+   "known_gap": "No carrier capability data and no statement in `compose.render` Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/export-customs-included.json",
+   "expected": {
+    "total": "1501.20",
+    "currency": "EUR",
+    "body_states": "export clearance priced or plainly not included"
+   },
+   "today": "Silent on customs.",
+   "known_gap": "Same as insurance-requested Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/unknown-consignor-screening.json",
+   "expected": {
+    "total": "1430.90",
+    "currency": "EUR",
+    "body_states": "screening priced or plainly not included"
+   },
+   "today": "Silent on screening.",
+   "known_gap": "Same as insurance-requested Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/cheapest-and-fastest-both.json",
+   "expected": {
+    "options": [
+     {
+      "carrier": "Kestrel Airways",
+      "total": "1512.80",
+      "transit_days": 4
+     },
+     {
+      "carrier": "Helix Air Freight",
+      "total": "2132.80",
+      "transit_days": 2
+     }
+    ]
+   },
+   "today": "Fastest only (Helix 2132.80 EUR).",
+   "known_gap": "`selection.select` returns one option and `compose.render` writes one Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/two-lanes-one-mail.json",
+   "expected": {
+    "options": [
+     {
+      "lane": "FRA-SGN",
+      "carrier": "Orion Cargo Air",
+      "total": "2380.00"
+     },
+     {
+      "lane": "STR-YYZ",
+      "carrier": "Cobalt Skylift",
+      "total": "2340.00"
+     }
+    ]
+   },
+   "today": "Rules return None, model path (offline: no quote); one Rfq per session.",
+   "known_gap": "`Rfq` holds one lane; two shipments in one mail need one reply with both totals (R4) Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/split-shipment.json",
+   "expected": {
+    "options": [
+     {
+      "weight_kg": "450",
+      "total": "1600.00"
+     },
+     {
+      "weight_kg": "300",
+      "total": "1137.00"
+     }
+    ],
+    "total": "2737.00",
+    "currency": "EUR"
+   },
+   "today": "First part only, 1600.00 EUR (extracted_by guess).",
+   "known_gap": "No split read; each part must be priced on its own (two air waybills) Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/departure-airport-forced.json",
+   "expected": {
+    "origin": "MUC",
+    "door_pickup": true,
+    "pickup_postcode": "65189",
+    "air": "Helix Air Freight 1635.00 EUR + pickup to MUC"
+   },
+   "today": "Origin FRA from the pickup zone, Elbflug 1140.00 EUR.",
+   "known_gap": "`extract` lets the zone's airport override an explicitly named airport of departure; `pickup.py` asks truckers for the zone's airport Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/reply-in-other-language.json",
+   "expected": {
+    "total": "803.40",
+    "currency": "EUR",
+    "language": "de"
+   },
+   "today": "Reply in English.",
+   "known_gap": "`extract` language ignores 'please reply in German' Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/book-immediately-under-cap.json",
+   "expected": {
+    "total": "1430.90",
+    "currency": "EUR",
+    "booked": true,
+    "body_contains": [
+     "booking reference"
+    ]
+   },
+   "today": "Quote only, no booking.",
+   "known_gap": "`booking.py` books only on a reply; a standing order under a price cap in the request is not read Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/pickup-outside-zones.json",
+   "expected": {
+    "origin": "MUC",
+    "door_pickup": true,
+    "note": "Salzburg has no zone; nearest served airport MUC, pickup by bid"
+   },
+   "today": "Rules return None, model path (offline: no quote).",
+   "known_gap": "`pricing/pickup.py` knows only the zone table; a postcode abroad has no airport Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/quote-copy-to-colleague.json",
+   "expected": {
+    "total": "2247.00",
+    "currency": "EUR",
+    "greeting": "Mr. Hartmann"
+   },
+   "today": "Greets Frank Maier.",
+   "known_gap": "`compose.greeting` ignores 'address the offer to my colleague' Owner: Frontend."
+  },
+  {
+   "fixture": "next-cases/oversize-freighter-only.json",
+   "expected": {
+    "total": "864.00",
+    "currency": "EUR",
+    "body_states": "a 320 cm piece needs a freighter; carrier capable once data names it"
+   },
+   "today": "Cheapest without a remark.",
+   "known_gap": "No piece-length limits in the data or the code Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/customer-chargeable-stated-wrong.json",
+   "expected": {
+    "weight_kg": "380",
+    "total": "1086.17",
+    "currency": "EUR"
+   },
+   "today": "Weight read 400 (the customer's chargeable, by guess); price right here because volume decides.",
+   "known_gap": "`extract` takes a stated chargeable weight as gross Owner: Cost."
+  },
+  {
+   "fixture": "next-cases/pickup-within-hours.json",
+   "expected": {
+    "door_pickup": true,
+    "pickup_postcode": "63450",
+    "note": "only truckers with pickup time <= 24 h compete"
+   },
+   "today": "Air Orion 2380.00 EUR; trucker choice not measurable offline (no bids).",
+   "known_gap": "`selection.balanced` ignores a pickup time limit Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/direct-flight-only.json",
+   "expected": {
+    "total": "1635.00",
+    "currency": "EUR",
+    "note": "direct options only once the data says which are direct"
+   },
+   "today": "Helix 1635.00 EUR, the wish ignored.",
+   "known_gap": "No routing data in sheets or portal yet Owner: Accuracy."
+  }
+ ]
+}

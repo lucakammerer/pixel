@@ -66,6 +66,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   disagreeing) that no captured mail, kit sheet, pickup offer or generated case covers yet, keyed
   `"<kind> <channel>"`, each note ending `Owner: <role>.`. A cell with neither fails the benchmark and the tests, and
   so does a listed cell that a case covers now: its note goes in the same commit.
+- `next-cases/` and `next-cases.json`: written requests for the new kinds of requirement we expect next
+  (`bench/NEXT_CASES.md`), each with a hand-worked expected answer, today's offline replay and a `known_gap` while it
+  fails. Outside `mails/` so that neither `tools.kpi` nor the benchmark gates on them; no test reads them yet.
 - `bid-plausibility.json`: every bid with peers of its kind from the scored rounds of 21.11.2026, read right, and
   round 67's misread trucker bid with the quote a right reading gives (`selection.implausible`).
 - `tracking-questions.json`: the live CRM's booked shipments of 21.11. and the 44 tracking questions the desk sent
