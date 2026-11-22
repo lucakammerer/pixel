@@ -539,8 +539,16 @@ original attachments. Owner: supply.
 | T7a. Missing portal dataset version | Carry the source's dataset version when it supplies one | Four options in round 100 lack it, including the one used in an accepted quote. The raw response is unavailable. | Unknown whether the source supplied the version. Owner: supply. |
 
 The validity probes run through the real bid recorder with no gateway, using `rfqs/bid-validity.json`. These
-findings verify the read separately from availability before send. Reuse before, at and after expiry, competing
-later replies and the same cases after a booking remain open. Owner: supply. No change to accepted quote rate.
+findings describe the baseline before validity was retained. The reader now passes all 14 probes. The four new
+probes cover an ISO timestamp with an offset, conflicting deadlines, a missing timezone, and a trucker's validity
+duration with no pickup time. The desk still passes all 22 layouts. Among 65 selected bids with an explicit UTC
+expiry in the body, none was expired at send. For 153 of 154 portal quotes in the next snapshot, the option holds
+the most recently observed version on its lane, carrier and billed weight. Round 100 has no recorded version.
+
+Open for T1 and T2: validity only in a separate attachment beside a price in the body, or in a scan the rules
+cannot read. Open for T11: expiry before use, a later correction, and the same cases after a booking. The
+individual pickup bid now keeps its stated expiry. The quote's combined air and pickup validity still needs
+the earlier of the two. Owner: supply. The change has no expected effect on offer totals or accepted quote rate.
 
 Steps already covered by this census include air versus truck versus desk, body versus attachment, reply linked
 to an enquiry versus a separate desk thread, and source received before the quote versus a fresh rate read for

@@ -58,6 +58,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `api/portal.py` reads the same rate from the portal's browser page; `pricing/engine.py` starts carrier sourcing
   when the portal is slow or unavailable, asks the desk on the first outage answer, and `pricing/portal_rates.py`
   reads the airlines it could not price again at 15, 45, 75 and 105 seconds.
+- `pricing/bids.py` `_offer_expiry` retains a carrier bid's stated expiry in `option.found`. It reads the
+  carrier's own text, including a text attachment when the price is in that attachment. A relative expiry is
+  measured from receipt. A validity duration stays separate from pickup hours and air transit.
 
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
   weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly

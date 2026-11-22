@@ -26,6 +26,9 @@ Decimal only; a model never computes, compares or writes a price (P1).
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
   code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
   business days alike, and a range ("2-3 days") its first figure.
+  `_offer_expiry` keeps an explicit timestamp with its offset, or starts a stated validity duration at mailbox
+  receipt. It stores the deadline in UTC on the individual bid. Conflicting dates or a timestamp without a time
+  zone leave expiry unknown. This is separate from transit or pickup time.
 - **Rate card** (`rate_card.option`): on any outage answer, a dropped connection or a failed lane list, a portal
   airline at every portal rate read so far, one per bracket (`calc.card_breaks`: total / weight read x the version's
   factor), priced like a sheet without minimum or surcharges, the higher breaks included. A dataset version changes
