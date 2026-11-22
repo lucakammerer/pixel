@@ -27,8 +27,9 @@ Decimal only; a model never computes, compares or writes a price (P1).
   code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
   business days alike, and a range ("2-3 days") its first figure.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
-  and validity it states. `engine.options` asks after a rate read returns 503 or when no other source can price the
-  lane. During an outage with a sheet price, `bids.collect` gives a pending desk reply until 115 seconds from receipt.
+  and validity it states. `engine.options` asks on any outage answer (a 5xx, Cloudflare's 403, a read that timed out)
+  or when no other source can price the lane. During an outage, `bids.collect` gives a pending desk reply until 115
+  seconds from receipt, also on a lane no sheet prices.
 - **Pickup** (`calc.with_pickup`): a trucker's price in EUR (a price in another currency at the rate the answer states, else at the newest rate a priced source stated for it, `bids.known_fx`), added to every airline option, converted into the
   option's currency with its exchange rate when that is not EUR. Truckers price by zone and quote only with a
   five-digit postcode: a pickup known by its town alone is asked with the zone's first one (`bids._postcode`; two
