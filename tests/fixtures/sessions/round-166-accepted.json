@@ -1,0 +1,121 @@
+[
+  {
+    "id": 50140,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote to YYZ",
+    "body": "Hi there,\n\nHope your week’s going well! I’m arranging the flight for our buyer’s import from Germany to YYZ (Toronto, CA). Could you quote your cheapest air freight option for this import shipment?\n\nThe goods will be ready for pickup on 2026-11-24 at our site in Dortmund, Germany (postcode 44975). Could you arrange the truck from our site to the airport and include it in your all-in price in EUR?\n\nIt’s printed marketing material: 4 pieces, with a gross weight of 940 kg and a total volume of 8.44 cbm.\n\nThanks for taking a look!\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T07:43:37.174113+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50247,
+    "from": "vogelsberg-haulage@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Pickup request 44975 to DUS",
+    "body": "Hello,\n\nThanks for your request. Our fixed price for pickup and delivery to DUS airport is 227.95 EUR. Pickup takes 22 hours, and the price is valid until 22 Nov 2026 07:58 UTC.\n\nOffer reference: TRK-16187. No booking is required.\n\nBest regards,\nVogelsberg Haulage",
+    "in_reply_to": 50146,
+    "references": [
+      50146
+    ],
+    "received_at": "2026-11-22T07:44:08.683313+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50248,
+    "from": "ibisair-cargo@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Rate request DUS-YYZ, 940 kg",
+    "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: DUS-YYZ.\nWe fly CGN-ORD, DUS-HKG, DUS-NBO, FRA-ATL, FRA-BKK, FRA-BOG, HAM-DEL, HAM-GRU, HAM-JFK, HAM-SYD, MUC-ICN, MUC-MEX, MUC-MIA, MUC-PEK, MUC-SIN, STR-BOM, STR-YYZ.\n\nBest regards\nIbisair Cargo\nibisair-cargo@hackloop.mail",
+    "in_reply_to": 50149,
+    "references": [
+      50149
+    ],
+    "received_at": "2026-11-22T07:44:08.683522+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50249,
+    "from": "flinkwagen-logistik@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Pickup request 44975 to DUS",
+    "body": "Hi PIXEL Air Freight team,\n\nThanks for reaching out! We can pick up your shipment and deliver it to DUS Airport for 316.42 EUR.\n\nPickup time: 15 hours. This price is valid until 22 Nov 2026 07:58 UTC.\n\nYour offer reference is TRK-16186. No booking is needed.\n\nBest,\nFlinkwagen Logistik",
+    "in_reply_to": 50147,
+    "references": [
+      50147
+    ],
+    "received_at": "2026-11-22T07:44:08.683053+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50250,
+    "from": "schwabenbote-transporte@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Pickup request 44975 to DUS",
+    "body": "Hello,\n\nThank you for your request. Our price for pickup and delivery to DUS airport is 221.85 EUR.\n\nPickup time: 20 hours\nPrice valid until: 22 Nov 2026 07:58 UTC\nOffer reference: TRK-16188\n\nNo booking is required.\n\nBest regards,\nSchwabenbote Transporte",
+    "in_reply_to": 50148,
+    "references": [
+      50148
+    ],
+    "received_at": "2026-11-22T07:44:08.683736+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50352,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Air freight quote to YYZ",
+    "body": "Hi there,\n\nHope your week’s going well! Thanks for the offer—it looks good, and I’d like to place the shipment with you. Another forwarder has quoted 9 percent less for the same shipment. Is there any chance you could match that?\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": 50251,
+    "references": [
+      50140,
+      50251
+    ],
+    "received_at": "2026-11-22T07:44:33.474075+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50362,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Air freight quote to YYZ",
+    "body": "Thanks for getting back to me—that’s fine, and I’m happy to accept your offer. Please go ahead and book the shipment now.\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": 50353,
+    "references": [
+      50140,
+      50251,
+      50352,
+      50353
+    ],
+    "received_at": "2026-11-22T07:44:45.657038+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50385,
+    "from": "aurelia-air-cargo@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Booking BK-60BLKGKC confirmed",
+    "body": "Hello,\n\nyour booking BK-60BLKGKC is confirmed.\n\nBooking reference: BK-60BLKGKC\nYour reference: PX-710140\nAirline: Aurelia Air Cargo (AU)\nLane: DUS-YYZ\nPrice: 2692.11 EUR\nStatus: booked and ready to ship\n\nKind regards,\nAurelia Air Cargo bookings\n",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T07:45:06.940983+00:00",
+    "attachments": []
+  },
+  {
+    "id": 50396,
+    "from": "weidner-spielwaren@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Air freight quote to YYZ",
+    "body": "Hi Lena,\n\nThanks for getting the booking confirmed! Hope your week’s going well.\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+    "in_reply_to": 50386,
+    "references": [
+      50140,
+      50251,
+      50386
+    ],
+    "received_at": "2026-11-22T07:45:17.989065+00:00",
+    "attachments": []
+  }
+]

@@ -21,6 +21,7 @@ KINDS = (
     "quote.drafted", "quote.sent", "quote.fallback", "quote.recovery", "quote.waiting", "quote.missed", "quote.prose", "rfq.crosscheck", "bid.crosscheck", "prose.raw",
     "quote.stuck",  # core/watchdog.py: open past its STUCK_AFTER, alerted once
     "rate_card.read", "rate_card.paused",  # pricing/rate_card.py: one portal rate read for the card; a pause after an error
+    "pickup.estimated",  # pricing/pickup.py `estimates`: no trucker priced the pickup, the price memory did
     "quote.checked",  # agents/rfq/check.py: what the check found on the draft, and (`stage: sent`) on the text that leaves
     "quote.repaired",  # agents/rfq/repair.py: one repair of a BLOCK finding, kept or not
     "option.vetoed",  # agents/rfq/repair.py: an option a repair left out; pricing/session.py no longer offers it
@@ -28,6 +29,7 @@ KINDS = (
     "rfq.second_read",  # agents/rfq/agent.py `_second_read`: the prose call's figures against the rules' reading
     "quote.followup_wait",  # agents/rfq/agent.py `_followup_wait`: a newer customer mail still unread before the quote
     "rfq.novelty",  # agents/rfq/novelty.py: sentences no rule read, and what they ask of the quote
+    "quote.unmet",  # agents/rfq/unmet.py: the customer's asks the text about to leave does not meet
     "customer.accepted", "customer.declined", "customer.excludes",
     "followup.read",  # agents/rfq/followup.py: a customer's later mail in their thread, its phase, intent and changes
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",

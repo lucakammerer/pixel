@@ -26,11 +26,12 @@ Decimal only; a model never computes, compares or writes a price (P1).
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
   code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
   business days alike, and a range ("2-3 days") its first figure.
-- **Rate card** (`rate_card.option`): during a 503, a portal airline at every portal rate read so far, one per
-  bracket (`calc.card_breaks`: total / weight read x the version's factor), priced like a sheet without minimum or
-  surcharges, the higher breaks included. A dataset version changes every rate by one factor (v3 equals v1,
-  v1+ef9a74 is x1.15, v1+a19eb0 x1.30): `calc.version_factor`, the median ratio over brackets read in both versions,
-  scales older reads to the current one. No rate id: `booking.book` reads a fresh rate first.
+- **Rate card** (`rate_card.option`): on any outage answer, a dropped connection or a failed lane list, a portal
+  airline at every portal rate read so far, one per bracket (`calc.card_breaks`: total / weight read x the version's
+  factor), priced like a sheet without minimum or surcharges, the higher breaks included. A dataset version changes
+  every rate by one factor (v3 equals v1, v1+ef9a74 is x1.15, v1+a19eb0 x1.30): `calc.version_factor`, the median
+  ratio over brackets read in both versions, scales older reads to the current one. An airline a read at the current
+  version found off the portal (404) gets no card price. No rate id: `booking.book` reads a fresh rate first.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
   and validity it states. `engine.options` asks on any outage answer (a 5xx, Cloudflare's 403, a read that timed out)
   or when no other source can price the lane. During an outage, `bids.collect` gives a pending desk reply until 115
@@ -39,6 +40,13 @@ Decimal only; a model never computes, compares or writes a price (P1).
   option's currency with its exchange rate when that is not EUR. Truckers price by zone and quote only with a
   five-digit postcode: a pickup known by its town alone is asked with the zone's first one (`bids._postcode`; two
   postcodes of one zone got the same price and pickup time).
+- **Pickup memory** (`pickup.estimates`): no trucker answered by the target time. Each of the zone's truckers is
+  priced from its answers in that zone over the last `pickup.MEMORY_H` hours (an answer its own request distrusted
+  or a repair left out does not count) as a line, base + rate × chargeable kg (`calc.pickup_line`): the rate is the
+  median of the rates between every two answers, the base the median of what each answer leaves, so one answer at
+  another price level does not move it. A trucker with one answer in the zone (or none at two weights) gets that
+  price scaled by (F + kg) / (F + its kg), F the median base / rate over all lines known (`calc.pickup_fixed_kg`);
+  without any line, the price as it was (`calc.pickup_estimate`). Its pickup hours are those of its last answer.
 - **Cargo insurance** (`calc.with_insurance`): the premium on the customer's stated terms is added to the all-in
   total in the quote's currency. The quote checker includes the premium in its arithmetic and comparison price.
 - **EUR** (`calc.to_eur`): amount × the rate's own exchange rate (EUR per unit), rounded to cents.

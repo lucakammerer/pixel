@@ -712,8 +712,8 @@ INTRO = {
 WISH_WORD = {"en": "cheapest", "de": "günstigste", "fr": "moins chère"}
 FROM = {"en": " from {}", "de": " ab {}", "fr": " au départ de {}"}
 DOOR = {
-    "en": " Please collect them at our site in {town} (postcode {pc}) and arrange the truck to the airport.",
-    "de": " Bitte holen Sie sie an unserem Standort in {pc} {town} ab und organisieren Sie den LKW zum Flughafen.",
+    "en": " They are ready for pickup at our site in {town} (postcode {pc}); please arrange the truck to the airport.",
+    "de": " Bitte organisieren Sie die Abholung an unserem Standort in {pc} {town} und den LKW zum Flughafen.",
     "fr": " Merci de les enlever sur notre site à {town} (code postal {pc}) et d'organiser le camion jusqu'à l'aéroport.",
 }
 CLOSE = {"en": "\n\nPlease send all prices in one reply.\n\nBest regards\nMira Petersen\nNordlicht Audio",
@@ -730,7 +730,8 @@ def _shipments_case(i: int, axes: dict[str, str], seed: int) -> Case:
     rng = random.Random(seed * 100_000 + i)
     count, lanes, layout, wishes = int(axes["count"]), axes["lanes"], axes["layout"], axes["wishes"]
     lang = layout if layout in ("de", "fr") else "en"
-    zones = rng.sample(_zones(), 2)
+    first = rng.choice(_zones())
+    zones = [first, rng.choice([z for z in _zones() if z["airport"] != first["airport"]])]
     door = lanes in ("door", "door_and_port", "two_postcodes")
     origin = zones[0]["airport"] if door else rng.choice(ORIGINS)
     dests = rng.sample(DESTINATIONS, count)

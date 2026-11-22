@@ -13,7 +13,7 @@ OPEN, CLOSE = 8, 18  # office hours, local time
 
 CSS = """<style>
 .uses{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
-.use{background:var(--sunk);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.use{background:var(--sunk);border:1px solid var(--line);border-radius:20px;overflow:hidden}
 .use.wide{grid-column:1/-1}
 .use .figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;background:var(--surface);
 padding:18px 20px;border-bottom:1px solid var(--line);text-align:center}
@@ -25,7 +25,7 @@ font-variant-numeric:tabular-nums}
 .use .ps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .use .p,.use .s{border-radius:12px;padding:16px 16px 18px;font-size:13px;line-height:1.5}
 .use .p{background:var(--surface);border:1px solid var(--line);color:var(--ink-2)}
-.use .s{background:var(--navy);color:#e8ecf6;box-shadow:0 10px 24px -12px rgba(39,52,86,.6)}
+.use .s{background:var(--navy);color:#f5efe9}
 .use .p h4,.use .s h4{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;margin:0 0 8px}
 .use .p h4{color:var(--ink)}.use .s h4{color:#fff}
 .use h4 svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;

@@ -294,6 +294,41 @@ async def test_a_503_prices_the_airline_from_the_rate_card_at_the_current_versio
     ]
 
 
+@pytest.mark.parametrize("failure", ["connection reset", "lane list"])
+async def test_any_outage_prices_the_airline_from_the_rate_card(ctx, offline, failure):  # noqa: F811
+    """A dropped connection is no RatesUnavailable, and the lane list failed with the rates in rounds 46 and 47:
+    neither asked the card."""
+    if failure == "lane list":
+        offline.get("/v1/portal/ports").respond(503, json={"detail": "The rate API is unavailable."})
+    else:
+        offline.get("/v1/portal/ports").respond(200, json=PORTS)
+        offline.get("/v1/portal/rates").mock(side_effect=httpx.ConnectError("connection reset"))
+    db.put(ctx.db, "rate_card.breaks.A1", '["0", "1000"]')
+    events.emit(ctx, rate_card.KIND, "pricing", payload={
+        "origin": "AAA", "destination": "BBB", "code": "A1", "carrier": "Air One", "kg": "100", "total": "650.00",
+        "currency": "EUR", "fx_eur": None, "transit_days": 2, "version": "v1"})  # fmt: skip
+    found = await portal_rates.options(ctx, rfq(), deadline())
+    assert [(o.carrier, o.total_eur, o.rate_id) for o in found] == [("Air One", D("650.00"), None)]
+
+
+@pytest.mark.parametrize("kg", ["1000", "800"])
+async def test_the_card_gives_no_price_for_an_airline_the_current_version_found_off_the_portal(ctx, offline, kg):  # noqa: F811
+    """A v1 rate scaled by Air Two's factor priced Air One at 3900.00, although Air One's read at v2 answered 404; at
+    800 kg the same rate came in as the cheaper higher break."""
+    answer_rates(offline, "503")
+    for code, name, version, read_kg, total in [
+        ("A1", "Air One", "v1", "100", "650.00"), ("A1", "Air One", "v1", "1000", "3000.00"),
+        ("A2", "Air Two", "v1", "100", "650.00"),
+        ("A2", "Air Two", "v2", "100", "845.00"), ("A1", "Air One", "v2", "1000", None),
+    ]:  # fmt: skip
+        db.put(ctx.db, f"rate_card.breaks.{code}", '["0", "1000"]')
+        events.emit(ctx, rate_card.KIND, "pricing", payload={
+            "origin": "AAA", "destination": "BBB", "code": code, "carrier": name, "kg": read_kg, "total": total,
+            "currency": "EUR", "fx_eur": None, "transit_days": 2, "version": version})  # fmt: skip
+    found = await portal_rates.options(ctx, rfq().model_copy(update={"weight_kg": D(kg)}), deadline())
+    assert "Air One" not in [o.carrier for o in found]
+
+
 async def test_the_rate_card_reads_the_bracket_requests_need_once_the_request_is_answered(ctx, offline, monkeypatch):  # noqa: F811
     answer_rates(offline, "healthy")
     offline.get("/v1/portal/brackets").respond(200, json={"breaks_kg": [0, 1000]})

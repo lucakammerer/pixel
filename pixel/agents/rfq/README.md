@@ -14,7 +14,7 @@ R1, R4, R9–R17, R22–R24, R26–R29, R31.
 
 In: the RFQ `Message` and its `Deadline`; later the customer's reply and the airline's confirmation. Out: a `Quote`
 (sent through `core/outbox.py` `send_quote`), a `Booking` and a `Shipment`. Emits `rfq.extracted`,
-`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`, `rfq.novelty`.
+`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`, `rfq.novelty`, `quote.unmet`.
 
 ## Implementation
 
@@ -45,8 +45,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30
   from receipt; a request first seen after 2:30 (a restart, a poll backlog) keeps `handle` until `hard_at`, because
   recovery asks no airline. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
-  A door request waits for a priced trucker until `hard_at`. If pickup is
-  still unpriced at that point, the reply states the airport-to-airport price and excludes pickup. A zone hint
+  A door request no trucker priced within its bid window, or by `target_at` in the fallback, takes the zone's
+  truckers at the prices their earlier answers give (`pricing/pickup.py` `estimates`, `docs/calc.md`); a real answer
+  after that comes too late. Only where none of them answered in the zone within `pickup.MEMORY_H` hours does it
+  wait until `hard_at`; if pickup is still unpriced at that point, the reply states the airport-to-airport price and
+  excludes pickup. A zone hint
   used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
   when the postcode is missing, including when the quoted pickup price is for the zone pending address confirmation.
 - `pricing/bids.py` `parse` binds the amount to its label and unit. `pricing/calc.py` multiplies rates per kg by
@@ -65,7 +68,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `extract.py` `shipments`: a mail with numbered or bulleted shipment lines to different airports (rounds 89 and
-  90, "Shipment 1: FRA to SGN ...") gives one `Rfq` per line with its own airport, lane and cargo. `agent.py` `handle`
+  90, "Shipment 1: FRA to SGN ...") gives one `Rfq` per line with its own airport, lane and cargo; a line that names
+  its own pickup or says the customer delivers it to the airport sets that shipment's pickup alone. `by_rules` reads
+  such a mail as its first shipment when the mail names one origin or a pickup (rounds 89 to 151 each cost the
+  model's read, and with the gateway down no quote at all). `agent.py` `handle`
   quotes the first and prices the others beside it; `_with_shipments` adds each one's price and, when all have one,
   their sum in a paragraph of the same quote (R4). The quote's option, PDF details and booking stay the first's.
 - `extract.py` `excluded_airlines`, `_carrier_requirements`: an airline the customer rules out (a sentence with a negation that
@@ -299,6 +305,24 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   a failed call goes to `PIXEL_ALERT_URL` at once (`novel_requirement`, with the sentences), not after the verdict.
   `handle` waits for it at most until `target_at`; `_quote` reads the last `rfq.novelty`, so the fallback and a
   requote follow it too, without waiting.
+- `unmet.py` (R33): the last reader before the first quote of a session leaves. `novelty.py` reads the sentences
+  no rule consumes and `check.py` knows the kinds we already lost; the lost first rounds also sat in sentences a
+  rule did consume (round 15's pickup "from our warehouse", rounds 89 and 113's two shipments) or in none (round
+  70's language). So `settle`, called by `agent.py` `handle` between `_settled` and `outbox.send_quote`, sends
+  the request as the session holds it (the mail's own words and what its documents gave, at most `MAX_CHARS`) and
+  the exact subject and body about to leave, with the name of the offer PDF they carry, to `PIXEL_MODEL_CHECK`
+  once (`quote.unmet`, at most `WAIT_S` = 8 s, 300 output tokens). `read` returns every ask the reply does not
+  meet with the customer's own sentence and a class (`wording`, `price`, `selection`, `scope`); an ask whose
+  sentence does not stand in the request is dropped. It never changes the reply's text: a model sentence in a
+  quote could claim a service we did not price. In `on` every open ask goes to `PIXEL_ALERT_URL` at once
+  (`unmet_ask`: the classes and whether the quote is held, never text) and shows in `feedback.attention`; a
+  `price`, `selection` or `scope` ask (`HELD`) also holds the quote until `target_at` (`_hold`; a takeover or a
+  quote sent by a person ends it), then it leaves as it is. Reading and holding end by `repair_by`, before the
+  orchestrator takes the request over. One call per session (`_asked`), never in the fallback or a requote;
+  `settle` never raises: a failed, late or malformed answer is an `error` event and the quote leaves. A call
+  costs 0.002 to 0.0025 USD, about 1 of the 40 cost points of a quote, and about 2 s. `PIXEL_UNMET`: `off` (the
+  default, no call), `log` (read and record, no hold or alert) or `on`; `tools.bench_unmet` scores the prompt on
+  `tests/fixtures/unmet-asks.json`.
 
 ## Pitfalls
 

@@ -66,7 +66,7 @@ Seen: live / escalation of a live lever / never.
 | D2 | `pickup-postcode-beside-phone-number` | escalation (15 to 18) | "63450 Hanau" with "Tel. +49 6181 12345" in the signature | **fixed #334**: 2548.40 (before: rules gave up, offline unanswered) | 2548.40 | `extract.pickup_postcodes` | — |
 | D3 | `pickup-postcode-abroad-matches-a-zone` | never | "20121 Milano, Italy" | **partial #334**: no longer zone 20 (before: HAM-SGN 2480.00, Hamburg truckers); now the model reads the origin | the scorer's airport for a pickup abroad (unknown) | `pricing/pickup.py` with next case 22 | M |
 | D4 | `trucker-price-in-usd-without-rate` | escalation (A: desk in USD) | "for 152.30 USD", no rate | **fixed #337** once any source stated a USD rate (offline none: 2562.62) | 2520.12 at 0.92 | `bids.known_fx` | — |
-| D5 | `trucker-all-silent` | escalation (A: airlines and desk silent, 93 to 97) | no trucker answers | 2380.00 airport-to-airport, pickup excluded, at 315 s: too low by the pickup | the zone's pickup priced | a learned zone price, proof needed first | M |
+| D5 | `trucker-all-silent` | escalation (A: airlines and desk silent, 93 to 97) | no trucker answers | **fixed** (pickup memory): the zone's truckers at the price their earlier answers give, once one of them answered in that zone (before: 2380.00 airport-to-airport, pickup excluded, at 315 s: too low by the pickup). Proof on the live database of 22.11. 06:43, every request priced only from the answers before it: 72 of 104 door-to-port requests estimated (the rest the first in their zone), pickup error median 0.3 %, 90th percentile 22 %, the balanced trucker of the real bids in 68 of 72; total within 5 % of the quoted total 69 of 69 (1 %: 57), of the scorer's best 52 of 52 (1 %: 44), against 11 of 69 and 8 of 52 with the pickup excluded; pickup hours one value per trucker and zone in all 103 pairs answered twice | the zone's pickup priced | `pickup.estimates`; open: a zone no trucker ever answered | — |
 | D6 | `trucker-answers-late` | escalation | an answer at 160 s | 2562.62 at 100 s without it (1.7% high) | 2520.12 | `bids.collect` pickup wait; data on live answer delays first | S |
 | D7 | `trucker-standard-and-express` | never | "Standard: 140.00 EUR, 30 hours / Express: 210.00 EUR, 4 hours" | model reads one; offline 2555.00 | each offer a bid: 2590.00 (assumption) | `bids.parse` one option per offer line | S-M |
 | D8 | `trucker-base-plus-per-kg` | never (layouts state the split) | "base charge of 65.00 EUR plus 0.13 EUR per kg" | model call; offline 2590.00 | 2562.00 | `bids._price` sums base and per-kg | S |
@@ -115,6 +115,8 @@ Rank = likelihood × how badly we fail today × how cheap the fix is (each 1 to 
 | C11 | `out-of-order-visibility` | 91012 visible before 91011, 91011's push lost | new | 91011 is never polled again | every Nth poll from a few ids back; `ingest` drops duplicates | `poller.run` | S | 1×3×2 |
 | C8 | `push-timestamp-format` | `X-Webhook-Timestamp` in ms or ISO | new | 401 / 500, the 1 s poll takes it: latency only | read like a stored time | `webhook.hook` | S | 2×1×3 |
 | C14 | `large-attachment` | 9.5 MB, 400-page scan as the only document | new | unmeasured; parse unbounded, no Rfq at takeover | bounded parse; what is read by then counts | `extract._attachments` | M | 1×3×1 |
+| C15 | `portal-all-down` | the lane list fails with the rates (live: rounds 46, 47), or a rate read drops its connection | live | **fixed**: before, neither asked the rate card; rounds 120 to 123 replayed on the live database priced the fastest airline from it either way | the airline priced from the card | `portal_rates.options`, `_read` | S | 2×3×3 |
+| C16 | `version-change-in-outage` | the dataset version changes while the rate API is down | esc. | the card prices the old version: 11.8 % off in the one rate it met (`tools.card_proof`, `new version`), a lost round | a factor for the new version without a portal read | `rate_card` | M | 1×3×1 |
 | — | pushes stop | the webhook subscription is dropped | new | covered: the poll is the safety net (`test_poller`) | — | — | — | — |
 | — | push twice / out of order | same push repeated or an older one after a newer | new | covered: stored once by id (`test_webhook`) | — | — | — | — |
 | — | poll 429 with a slower minimum | "one poll per 5 seconds" | live (22.11. 01:23) | covered: interval learned from the 429 | — | — | — | — |
@@ -126,7 +128,7 @@ Cost points in a gateway outage (R28): a failed call logs 0 USD, and an 18-minut
 points for any of its quotes. A full outage therefore costs the window's cost points whatever we do. In a partial
 one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window above zero.
 
-Open and unverified: C5, C6, C8, C11 and C14 have no fix. C6, C8 and C11 come from code reading, C14 is not
+Open and unverified: C5, C6, C8, C11, C14 and C16 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
 merged and the organisers turn that lever.
 ## Axis B: booking, tracking and the flow after the quote (22.11.2026, 02:00 to 03:30)
@@ -170,10 +172,8 @@ matrix in `uv run python -m tools.simulate --family shipments` (cells and their 
 
 | Cell | Today | Required | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- |
-| every cell with a door pickup, as all five live door mails | rules give up, the model reads the first shipment; with the gateway down, no quote | rules read the first shipment and split | `extract.by_rules` | Cost |
 | `lanes=same_lane` | second shipment not quoted | both | `extract.shipments` | Cost |
-| `lanes=door_and_port` | the airport delivery priced with a truck | that one port to port | `extract.shipments` | Cost |
-| `lanes=two_postcodes` (D12) | every shipment from the first pickup | each from its own zone airport | `extract.shipments`, `agent.handle` | Cost |
+| `lanes=two_postcodes` (D12) | each line's postcode read, every shipment from the first one's airport | each from its own zone airport | `agent.handle` (`store.airport_of`) | Cost |
 | `layout=paragraphs`, `table`, `also` | one shipment quoted | all | `extract.shipments` | Cost |
 | `layout=subject` | one shipment quoted | all | `extract.shipments` | Cost |
 | `layout=attachment_each`, `attachment_sections` | one shipment quoted | all | `extract.shipments`, `_shipment_sources` | Cost |
@@ -182,7 +182,9 @@ matrix in `uv run python -m tools.simulate --family shipments` (cells and their 
 | one lane's rate API 503, its truckers silent | not measured | each priced from the sheet, rate card or zone | `engine.options` | Accuracy |
 | accept both, accept "the second one", accept one and decline the other | one booking per session, always of the first shipment's option (`booking.book`, `quotes.for_session`) | a booking per accepted shipment | `booking.py`, `crm/quotes.py` | Shared |
 | a change of one shipment's weight | `agent.requote` prices one request | that shipment again, the others kept | `agent.requote` | Shared |
+| a trucker's answer outside its thread (no `in_reply_to`) | `bids.record` takes the carrier's latest request: every answer lands on the last shipment, the first has no trucker and its door quote falls back without pickup | matched by weight to its own shipment | `bids.record` | Accuracy |
+| `tools/replay.py --session` of a door mail for several shipments | the carriers' answers point at the live ids of our requests, so they land as above; offline neither quote is reproduced | the replay maps a stored answer's thread to its own new request | `tools/replay.py` | Speed |
 
-Measured right: two, three and four shipments; another origin per line; bullets; German and French; a currency for
-all (all via the model's read of the first shipment). Bids per lane, a lane still pricing at the target and every
+Measured right: two, three and four shipments, a door pickup for all, bullets, German, a currency for all, by rules;
+another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.

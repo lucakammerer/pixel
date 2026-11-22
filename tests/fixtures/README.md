@@ -23,6 +23,12 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `rfqs/followup-answers.json`: answers to our one question, each naming another airport beside the request's;
   benchmark section 15 appends each to every captured request and requires the same fields. `known_gaps`:
   `"<answer>:<fixture>"` read wrong today, each ending `Owner: <role>.`
+- `sessions/<name>.json` and `<name>.state.json`: a live session written by `tools/capture.py`. The first holds its
+  incoming mails as the API returned them (`tools.replay` replays it); the second the rows it met on arrival
+  (tariffs, carriers, zones, the rate card of its lane, our mails of the session, the customer's earlier requests,
+  the scorer's truckers) and the portal's rates and weight breaks as the API gave them, which the replay serves
+  again. A model call fails offline and attachment bytes are not stored. `round-166-accepted` is the session
+  `tests/test_capture.py` replays end to end: portal rate, its next weight break, trucker bids.
 - `replay-gate.json`: round 155's session as the live database held it (request mail, reading, every option found,
   the sent quote, pickup zone), which `tests/test_replay_gate.py` builds into a database for `tools/replay_gate.py`.
 - `thread-followups.json`: round 86's session with every mail that can arrive later in it, by sender, phase and
@@ -91,6 +97,13 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   that, in either order of the options. Of the balanced rules only `times_the_best` fits all 32.
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
+
+- `unmet-asks.json`: for the last reader (`pixel/agents/rfq/unmet.py`), stored rounds with the request as the
+  session held it, the reply we sent, the files it carried and the asks a right reader lists (`expected`: class
+  and the customer's sentence): the first round of each new requirement we lost (rounds 10, 15, 42, 70, 76, 89,
+  91, 113; round 89's reply is our question, no quote left), and accepted rounds of the same kinds (73, 80, 109,
+  127), where nothing is unmet. `tools/bench_unmet.py` scores the prompt on them through the gateway;
+  `tests/test_unmet.py` only checks that each expected answer is one the reader can return.
 
 A row or variant may carry `known_gap`: the reference answer is right and the code is not yet. The note names what
 the code does, why it matters for the price, and ends with `Owner: <role>.`. The benchmark reports it as a gap

@@ -1445,6 +1445,25 @@ async def test_a_mail_with_one_line_per_shipment_asks_no_destination(conn, monke
     assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.pickup_zone) == ("CCC", "RUH", Decimal(749), "80")
 
 
+async def test_a_door_request_for_several_shipments_is_read_by_rules(conn, monkeypatch):
+    """Rounds 89 to 151: the rules read no door request for several shipments, so each cost the model's read, and
+    with the gateway down it got no quote at all. A line the customer delivers itself stays port to port."""
+
+    async def down(ctx, **kw):
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(llm, "ask_json", down)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "80", "area": "Munich", "airport": "CCC"}])
+    request = poller.ingest(ctx, captured("rfq-door-two-shipments.json"))
+    rfq, text = await extract.read_request(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert rfq.extracted_by == "rules"
+    assert [(p.origin, p.destination, p.weight_kg, p.door_pickup) for p in extract.shipments(rfq, text)] == [
+        ("CCC", "RUH", Decimal(749), True), ("CCC", "DXB", Decimal(1239), True)]  # fmt: skip
+    own = text.replace("DXB (Dubai, AE):", "DXB (Dubai, AE), we bring it to the airport ourselves:")
+    assert [(p.door_pickup, p.pickup_postcode) for p in extract.shipments(rfq, own)] == [(True, "80602"), (False, None)]
+
+
 async def _model(data: dict) -> LlmResult:
     return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
 

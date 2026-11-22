@@ -437,9 +437,14 @@ def shipments(rfq: Rfq, text: str) -> list[Rfq]:
         if not (weight := _weight(rest, pieces)):
             return []
         origin, code = _lane(rest) or (rfq.origin, code)
+        door, postcode = _pickup(rest)  # a line's own pickup or own delivery stands for that shipment alone
+        if not (door or OWN_DELIVERY.search(rest)):
+            door, postcode = rfq.door_pickup, rfq.pickup_postcode
+        postcode = postcode or (rfq.pickup_postcode if door else None)
         found.append(rfq.model_copy(update={
             "origin": origin, "destination": code, "weight_kg": weight, "pieces": pieces,
             "volume_cbm": _volume(rest, pieces) or Decimal(0), "missing": tuple(m for m in rfq.missing if m != "destination"),
+            "door_pickup": door, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode) if postcode else None,
         }))  # fmt: skip
     return found
 
@@ -1057,11 +1062,15 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
     if guess:
         weight = weight or _largest(WEIGHT, figures, thousands=True)
         volume = volume or _largest(VOLUME, figures, thousands=False)
-    elif volume is None and (DIMS.search(figures) or any(p.search(figures) for p in VOLUME)):
+    origins = {c for c in ORIGIN_LABEL.findall(text) if _airport(c)}
+    several = cargo is None and (lane is None or weight is None) and bool(lane or door or len(origins) == 1)
+    if several:  # rounds 89 to 151: one line per shipment, each read by `shipments`; the first is the request
+        lane, weight = lane or (origins.pop() if len(origins) == 1 else "", ""), weight or Decimal(0)
+    elif not guess and volume is None and (DIMS.search(figures) or any(p.search(figures) for p in VOLUME)):
         return None  # a volume is given but not certain: under-reading it under-prices the chargeable weight
     if lane is None or weight is None:
         return None
-    return Rfq(
+    rfq = Rfq(
         session_id=message.session_id,
         message_id=message.id,
         customer=message.sender,
@@ -1080,6 +1089,7 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
         deadline_at=deadline.expires_at,
         missing=("pickup_postcode",) if door and not postcode and not _abroad_pickup(text) else (),
     )
+    return next(iter(shipments(rfq, text)), None) if several else rfq
 
 
 # Round 114 split it in two: "the same shipment again? My earlier request, "...", was for YYZ".

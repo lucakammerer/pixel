@@ -6,13 +6,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
-from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, repair
+from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, repair, unmet
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline, deadline_for, is_import
 from pixel.crm import quotes
-from pixel.pricing import calc, engine, portal_rates, selection, session, store
+from pixel.pricing import calc, engine, pickup, portal_rates, selection, session, store
 
 REQUIRED = {"origin", "destination", "weight_kg"}
 PROSE_WAIT_S = 10
@@ -468,6 +468,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     extend = (lambda q: _with_shipments(ctx, q, others, pricing, deadline)) if others else None
     quote = await _settled(ctx, rfq, options, prose, fallback=False, translate_by=deadline.hard_at,
                            repair_by=repair_by, extend=extend)  # fmt: skip
+    await unmet.settle(ctx, quote, text, deadline, repair_by)
     sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent
@@ -598,6 +599,8 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
     if rfq is None:
         return None
     stored = session.for_request(ctx, rfq)
+    if timing.now() >= deadline_for(rfq.received_at, ctx.settings).target_at:  # the truckers had their time
+        stored += pickup.estimates(ctx, rfq, stored)
     options = engine.combine(rfq, stored, feedback.pickup_rule(ctx), ctx) or engine.combine(
         rfq, engine.expired_sheet_options(ctx, rfq) + stored, feedback.pickup_rule(ctx), ctx
     )  # a cargo ready after its sheets run out: an expired sheet's price beats no answer (R1)
