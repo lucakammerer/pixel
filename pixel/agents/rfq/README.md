@@ -112,8 +112,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "required delivery date", "transit time: max 4 days", "no more than 4 days in transit", "can be collected from".
   A ready date also as "cargo ready date:", "ready to go on", "available for collection as of", "pick-up possible
   from", "earliest collection:", "Abholung frühestens am", "ist ab dem ... abholbereit", and with ordinals ("Nov 28th",
-  "the 28th of November"). It picks the sheet version as well as the arrival, so a missed one can price an old
-  tariff.
+  "the 28th of November"), and in Korean, Chinese or Japanese as an ISO date right beside the pickup word
+  ("2026-11-24부터 픽업 가능", "2026-11-23 可以提货", "픽업은 2026-11-24부터"; a date further off, often a delivery or
+  reply date, is left alone: `READY_CJK`), a latest arrival as "2026-12-01까지 도착" or "2026-12-01前到达"
+  (`ARRIVE_BY_CJK`). It picks the sheet version as well as the arrival, so a missed one can price an old tariff.
   Only the goods, the shipment or "it" set an arrival limit ("will be delivered to FRA by" is our pickup side, "the
   offer has to be in our system by" a reply deadline). `novelty.leftover` splits sentences at ";" and ", and" so a
   read limit does not hide an unread requirement in the same sentence.
@@ -132,7 +134,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`calc.price_tariff`); the signature with the signer's full name. No
   filler line, smiley or P.S.: rounds 29 to 46 carried them to formal and casual mails alike and won no human
   award. `sign_off` answers the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off
-  goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does. Code formats every
+  goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does in one language (a bilingual
+  "Viele Gruesse / Many greetings" gets the sign-off of the mail's language). Code formats every
   number and name; two to three phrasings per sentence, picked by session, so two quotes do not read alike. `check`
   proves the finished mail holds the total exactly once with its currency, carrier and transit; on failure the mail
   is rendered with the rule-based greeting (R9, P1).
@@ -222,7 +225,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
-  signature (`compose.signature`); the booking mail ends on a thank-you (`booking.THANKS`), except to a formal customer.
+  signature (`compose.signature`); the booking mail ends on a welcome without a smiley (`booking.THANKS`; it already opens with the thank-you), except to a formal customer.
   They stay in the request's language for the whole thread, also when the customer accepts in English: a language
   without `booking.CUSTOMER` text gets the English notice translated (`compose.localize`, at most
   `booking.TRANSLATE_WAIT_S`), sent only when `compose.kept` finds every reference, name and figure; the question
@@ -381,6 +384,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "bultos", "colli", "volumes", "stuks"; "más/mais rápida", "più veloce", "snelste" fastest and "más económica",
   "più economica", "goedkoopste", "mais barata" cheapest. Read by rules without the wish words, a fastest request
   would have been quoted cheapest. Portuguese is still answered in English (`_language`).
+- A German request names its destination "Luftfracht zum Flughafen SGN" too (round 74, read by the model before), only
+  right after the air word: "Für den Flug liefern wir die Ware selbst zum Flughafen MUC", "bringen Sie die Luftfracht
+  zum Flughafen FRA" and "Lkw zum Flughafen FRA" are the truck leg and no destination (`DEST_LABEL`, `TRUCK_LEG`). No
+  verb list is complete, so a destination the rules read where the cargo departs (its origin, a door request's zone
+  airport) is none: `read_request` leaves the request to the model, `followup.changes` sees no change.
 - A request can point to the customer's earlier one: "the same shipment as in my earlier request, "Air freight
   quote request: STR to MEL" ... the new destination is LAX" (round 103, accepted on the earlier cargo; round 104,
   "the same shipment as in my request", lost when the model read no weight). `_earlier` takes the earlier request of
@@ -493,6 +501,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).
+- A door request's truck leg is no destination either: "arrange the truck from our site to BBB airport. The goods
+  go to Singapore" named no destination code, and the rules took BBB (`TRUCK_LEG`: a code named as an airport,
+  before any flight or arrival word, also "Lkw zum Flughafen FRA"; a bare "deliver them to JFK" stays the
+  destination). The truck's code leaves the destinations: one other labelled code is the destination, none
+  sends the mail to the model. Of 155 live requests only round 74 reads differently.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
   or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
