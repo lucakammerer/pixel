@@ -5,6 +5,7 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #481 | lucakammerer | 563d5e1 | ok after a fix by C (taken over from B) | a weight after "Bestellung"/"commande" without a space or in kilos ("450kg", "300 kilos", "1200 x 800") became "Your reference"; 0 of 2144 live mails read differently |
 | #489 | lucakammerer | d05530e | ok after a note, docs conflict resolved | per-piece weights in Korean/Turkish read as totals by rules ("7 parça, her biri 195 kg" → 195 kg); now the model reads them without a total; the wish part went live alone as #508 (round 186) |
 | #496 | lucakammerer (supply) | e00a507 | ok | bid expiry read; nothing selects on it; validity no longer read as pickup hours |
 | #492 | lucakammerer | 5999341 | ok, follow-up of the close of #474 | no resend on a lost response or 500/502/504; English fallback only on a 4xx and never for the question before the quote |
