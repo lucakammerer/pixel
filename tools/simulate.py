@@ -730,7 +730,8 @@ def _shipments_case(i: int, axes: dict[str, str], seed: int) -> Case:
     rng = random.Random(seed * 100_000 + i)
     count, lanes, layout, wishes = int(axes["count"]), axes["lanes"], axes["layout"], axes["wishes"]
     lang = layout if layout in ("de", "fr") else "en"
-    zones = rng.sample(_zones(), 2)
+    first = rng.choice(_zones())
+    zones = [first, rng.choice([z for z in _zones() if z["airport"] != first["airport"]])]
     door = lanes in ("door", "door_and_port", "two_postcodes")
     origin = zones[0]["airport"] if door else rng.choice(ORIGINS)
     dests = rng.sample(DESTINATIONS, count)
