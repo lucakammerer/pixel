@@ -1441,11 +1441,16 @@ def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
     were missed."""
     if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
         return rfq
+    update = {}
     if rfq.door_pickup and (asked := _asked_departure(ctx, text)):
         airport = asked
     elif rfq.origin and (not rfq.door_pickup or names_code(text, rfq.origin)):
-        return rfq
-    return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
+        if not rfq.door_pickup or rfq.origin in store.zone_airports(ctx):
+            return rfq
+        if not rfq.destination:  # round 156: "the buyer imports it, air freight to MIA" read MIA as the departure
+            update = {"destination": rfq.origin}
+    missing = tuple(m for m in rfq.missing if m not in ("origin", *update))
+    return rfq.model_copy(update={"origin": airport, **update, "missing": missing})
 
 
 def _declared(lines: list[str]) -> str | None:
