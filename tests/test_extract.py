@@ -1352,6 +1352,11 @@ def test_a_unit_followed_by_a_korean_particle_is_read():
     assert round(extract._weight(text, 12)) == 920
 
 
+def test_the_english_article_a_names_no_destination():
+    text = "Please send a quote: pickup at our plant in 80331 Munich, a FRA departure is fine, destination ORD, 400 kg."
+    assert extract._destination_only(text) == "ORD"
+
+
 @pytest.mark.parametrize(
     ("pointer", "changed", "origin"),
     [
