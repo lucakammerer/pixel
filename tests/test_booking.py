@@ -608,3 +608,24 @@ async def test_the_airlines_answer_only_in_an_attachment_confirms_or_fails(pipe,
                                                                 content_type="text/plain", size=60),)})  # fmt: skip
     await booking.handle_confirmation(pipe.ctx, reply)
     assert bookings.get(pipe.ctx, b.id).status == status and len(pipe.sent) == told
+
+
+class Cancels(Portal):
+    def __init__(self, *script):
+        super().__init__(*script)
+        self.cancelled = []
+
+    async def cancel(self, booking_reference):
+        self.cancelled.append(booking_reference)
+
+
+async def test_a_cancellation_after_the_booking_cancels_at_the_portal_and_tells_the_customer(pipe, accepted):
+    # Round 88's fix emitted an event kind the log did not know: the portal cancelled, then the handler raised.
+    pipe.ctx.portal = Cancels(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    pipe.sent.clear()
+    body = "Please cancel the booking, the order was withdrawn."
+    await booking.handle_reply(pipe.ctx, mail(40, 1, subject="Re: Booked", body=body, in_reply_to=501))
+    b = bookings.for_session(pipe.ctx, 1)
+    assert pipe.ctx.portal.cancelled == ["BK-AB12CD34"] and b.status == BookingStatus.CANCELLED
+    assert kinds(pipe.ctx)[-1] == "booking.cancelled" and [s["to"] for s in pipe.sent] == ["buyer@acme.example"]
