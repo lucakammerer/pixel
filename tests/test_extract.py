@@ -858,6 +858,31 @@ async def test_an_answer_that_gives_every_fact_is_read_after_the_model_could_rea
         "AAA", "JFK", Decimal(959), Decimal("8.04"), "42925", Preference.FASTEST)  # fmt: skip
 
 
+async def test_the_asked_facts_come_from_the_answer_alone_when_the_rules_cannot_read_the_request(conn, monkeypatch):
+    async def only_the_new_destination(ctx, **kw):
+        data = {k: None for k in extract.SCHEMA["required"]} | {"destination": "BBB", "lots": [],
+                "preference": "fastest", "door_pickup": False, "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", only_the_new_destination)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("40043"), "area": "Town", "airport": "AAA"}])
+    body = ('Could you please quote the same shipment as in my request "Air freight quote request to CCC", sent on '
+            "2026-11-21 for CCC? The new destination is BBB. Please send your all-in price for the fastest option.")  # fmt: skip
+    request = poller.ingest(ctx, mail(body).model_copy(update={"id": 9200, "session_id": 9200}))
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        poller.ingest(ctx, request.model_copy(update={"id": 9202, "in_reply_to": 9201, "references": (9200, 9201),
+            "body": "The departure airport has not been specified. Please arrange pickup from our site in postcode "
+                    "40043, Germany. The shipment has a gross weight of 585 kg and a total volume of 5.01 m³."}))  # fmt: skip
+        return request.model_copy(update={"id": 9201, "direction": "out"})
+
+    monkeypatch.setattr(outbox, "send", send)
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pickup_postcode, rfq.missing) == (
+        "AAA", "BBB", Decimal(585), Decimal("5.01"), "40043", ())  # fmt: skip
+
+
 def test_in_before_a_word_is_no_inch():
     assert extract._volume("3 pallets 120x80x150 in total, 900 kg", 3) == Decimal("4.32")  # not 70.8 cbm in inches
 
@@ -1123,3 +1148,26 @@ async def test_a_departure_airport_the_customer_asks_for_wins_over_the_pickup_zo
     body = ("Please quote 480 kg, 1.6 cbm to Hong Kong (HKG), with truck collection from our site in 65189 Town.\n"
             "Please route via City (BBB), not AAA; our letter of credit names BBB.")  # fmt: skip
     assert (await extract.extract(ctx, mail(body), DEADLINE)).origin == "BBB"
+
+
+async def test_a_pickup_abroad_asks_nothing_and_the_model_names_the_nearest_of_our_airports(conn, monkeypatch, emitted):
+    async def no_question(*args, **kw):
+        raise AssertionError("the customer gave the address")
+
+    async def as_the_model_read_it(ctx, **kw):
+        assert "AAA, BBB" in kw["user"]
+        data = {"origin": "BBB", "destination": "HKG", "weight_kg": "480", "volume_cbm": "1.6", "pieces": 2,
+                "preference": "cheapest", "door_pickup": True, "pickup_postcode": "5020", "currency": "EUR",
+                "language": "en"}  # fmt: skip
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(extract, "_ask", no_question)
+    monkeypatch.setattr(llm, "ask_json", as_the_model_read_it)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(
+        ctx, [{"zone": "65", "area": "Town", "airport": "AAA"}, {"zone": "80", "area": "City", "airport": "BBB"}]
+    )
+    body = ("Please quote 2 crates to Hong Kong (HKG), 480 kg, 1.6 cbm, collected from our warehouse at "
+            "Alpenstrasse 48, 5020 Salzburg, Austria.\n\nBest regards\nAnna")  # fmt: skip
+    rfq = await extract.extract(ctx, mail(body), DEADLINE)
+    assert (rfq.origin, rfq.door_pickup, rfq.pickup_zone, rfq.missing) == ("BBB", True, None, ())

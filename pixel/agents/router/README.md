@@ -19,6 +19,8 @@ kind, `by` (`rules` or `model`) and the rule that decided.
 `agent.py` `rules`, first match wins:
 
 1. Sender is `tracking@hackloop.mail`: `tracking_question`. Sender is `ratedesk@hackloop.mail`: `ratedesk_reply`.
+   A new thread from an address that differs from an earlier customer's only by dots, dashes, underscores or `+`
+   (`_lookalike`): `other`, no reply at all, so no price leaves to an impostor.
 2. A mail in a customer thread from that thread's customer (`sessions.customer`): `customer_reply`, before or after
    our quote; `agents/rfq/followup.py` reads what it says. When it answers our question for a missing fact
    (`messages.purpose` `question`): `other`, the request's handler reads it.
@@ -36,6 +38,9 @@ kind, `by` (`rules` or `model`) and the rule that decided.
 6. It answers our quote: `customer_reply`.
 7. A new thread that names a weight or volume, or two upper-case three-letter codes: `customer_rfq`.
 8. Any other mail in a customer's thread (a colleague before our quote): `customer_reply`.
+
+An explicit dated lane suspension or reopening from a listed airline reaches the tariff handler without a file.
+A pending or partial response in the airline's booking thread reaches the booking handler for review.
 
 `classify` asks `llm.ask_json` (purpose `route`, at most 20 output tokens) only when none of these match. When that
 call fails, a new thread becomes `customer_rfq` (a missed request costs the whole request, R1) and anything else

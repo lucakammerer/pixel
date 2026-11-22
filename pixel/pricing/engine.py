@@ -6,7 +6,7 @@ from pixel.contracts import LaneTariff, RateOption, Rfq, Source
 from pixel.core import events, feedback, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import bids, calc, pickup, portal_rates, selection, session, store
+from pixel.pricing import availability, bids, calc, pickup, portal_rates, selection, session, store
 
 PORTAL_HEAD_START_S = 1.0
 
@@ -38,7 +38,10 @@ def _fx_eur(ctx: Context, tariff: LaneTariff) -> Decimal | None:
 
 def _priced(ctx: Context, rfq: Rfq, tariffs: list[LaneTariff], emit: bool = True) -> list[RateOption]:
     found = []
+    suspended = availability.suspended_carriers(ctx, rfq)
     for tariff in tariffs:
+        if tariff.carrier.casefold() in suspended:
+            continue
         try:
             fx = None if tariff.currency == "EUR" else _fx_eur(ctx, tariff)
             option = calc.price_tariff(tariff, rfq, fx)
@@ -116,6 +119,9 @@ def combine(
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all. A bid
     `selection.implausible` distrusts takes no part; with `ctx` it is recorded."""
     matching = [o for o in options if session.on_lane(o, rfq)]
+    if ctx is not None:
+        suspended = availability.suspended_carriers(ctx, rfq)
+        matching = [option for option in matching if option.trucker or option.carrier.casefold() not in suspended]
     peers = selection.allowed(rfq, matching) or matching  # an airline the customer ruled out is no yardstick
     distrusted = [o for o in matching if selection.implausible(o, peers)]
     for option in distrusted if ctx is not None else ():
@@ -138,9 +144,10 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     """Every priced option for the request: sheets (instant), portal and bids in parallel, pickup added for
     door-to-port. Emits `option.found` per option as it arrives, so the fallback always has the best so far."""
     sheets = sheet_options(ctx, rfq)
+    suspended = availability.suspended_carriers(ctx, rfq)
     carriers = [
         (name, email) for name, email in store.carriers(ctx, "airline", rfq.destination)
-        if selection.requested_carrier(rfq, name)
+        if selection.requested_carrier(rfq, name) and name.casefold() not in suspended
     ]  # fmt: skip
     priced = {o.carrier.casefold() for o in sheets if selection.requested_carrier(rfq, o.carrier, o.carrier_code)}
 
@@ -148,6 +155,7 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         return {
             option.carrier.casefold() for option in session.for_request(ctx, rfq)
             if not option.trucker and selection.requested_carrier(rfq, option.carrier, option.carrier_code)
+            and option.carrier.casefold() not in suspended
         }  # fmt: skip
 
     candidates = bids.worth_asking(ctx, rfq, [(n, e) for n, e in carriers if n.casefold() not in priced])

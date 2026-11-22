@@ -100,8 +100,10 @@ customer_reply      followup.read: phase, intent, changes                       
                     affirmative booking of a delivered quote → shipment → book by rate id or mail
                     tracking after the acceptance → tracking agent; thank-you → nothing
 booking_confirmation  "Booking … confirmed" → shipment confirmed → customer told         booking.confirmed
+                      pending or partial → retain status and reference; alert the operator
 tracking_question   CRM lookup → one identified shipment or a request for its reference   tracking.answered
 tariff              attachments → parse → validate → activate          tariff.ingested | tariff.failed
+                    dated carrier notice → new booking availability    carrier.availability
 feedback            core/feedback.py every 10 s: points per request, the option the scorer's best price was,
                     the balanced rule that fits; what needs repair goes to PIXEL_ALERT_URL        feedback
 watchdog            core/watchdog.py every 5 s: a request without our quote 90 s after it was stored
