@@ -45,8 +45,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30
   from receipt; a request first seen after 2:30 (a restart, a poll backlog) keeps `handle` until `hard_at`, because
   recovery asks no airline. `core/quote_recovery.py` `source` independently retries missing prices before the hard deadline.
-  A door request waits for a priced trucker until `hard_at`. If pickup is
-  still unpriced at that point, the reply states the airport-to-airport price and excludes pickup. A zone hint
+  A door request no trucker priced within its bid window, or by `target_at` in the fallback, takes the zone's
+  truckers at the prices their earlier answers give (`pricing/pickup.py` `estimates`, `docs/calc.md`); a real answer
+  after that comes too late. Only where none of them answered in the zone within `pickup.MEMORY_H` hours does it
+  wait until `hard_at`; if pickup is still unpriced at that point, the reply states the airport-to-airport price and
+  excludes pickup. A zone hint
   used for trucker bids stays separate from the customer's address. The quote asks for the address and postcode
   when the postcode is missing, including when the quoted pickup price is for the zone pending address confirmation.
 - `pricing/bids.py` `parse` binds the amount to its label and unit. `pricing/calc.py` multiplies rates per kg by
