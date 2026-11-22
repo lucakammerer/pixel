@@ -1785,6 +1785,89 @@ def test_a_currency_before_a_korean_particle_is_asked_for():
 
 
 @pytest.mark.parametrize(
+    "figures",
+    [
+        "7 parça, her biri 195 kg, toplam 3.2 cbm.",
+        "7 parça, parça başına 195 kg, toplam 3.2 cbm.",
+        "7 parça, adet başına 195 kg, toplam 3.2 cbm.",
+        "7 parça, adet başı 195 lb, toplam 3.2 cbm.",
+        "7 parça, her bir parça 195 kg, toplam 3.2 cbm.",
+        "7 parça, brüt toplam 1365 kg, her biri 1.95 cbm.",
+        "7 parça, brüt toplam 1365 kg, her biri 70 cubic feet.",
+        "화물은 스포츠 장비 4개이며, 각 159 kg, 부피는 1.44 cbm입니다.",
+        "총 4개, 개당 무게 159 kg, 부피는 1.44 cbm입니다.",
+        "총 4개, 박스당 159 kg, 부피는 1.44 cbm입니다.",
+        "총 4개, 각 팔레트 120 kg, 부피는 1.44 cbm입니다.",
+        "총 4개, 개당 중량 159 kg, 개당 부피 0.36 cbm",
+        "총 4개, 개당 중량 159 kg, 총부피 1.44 m³입니다.",
+        "Lot 1: 2 cartons, 개당 중량 159 kg, 0.72 cbm\nLot 2: 2 cartons, 320 kg, 0.72 cbm",
+    ],
+)
+def test_local_piece_measurements_need_a_total_for_the_same_field(figures):
+    assert extract.by_rules(mail(f"AAA-BBB\n{figures}"), DEADLINE) is None
+
+
+@pytest.mark.parametrize(
+    ("figures", "kg", "cbm"),
+    [
+        ("7 parça, her biri 195 kg, brüt toplam 1365 kg, toplam 3.2 cbm.", "1365", "3.2"),
+        ("총 4개, 개당 중량 159 kg, 총중량은 636 kg, 개당 부피 0.36 m3, 총부피 1.44 m3입니다.", "636", "1.44"),
+        ("총중량은 159 kg, 부피 1.44 m3입니다.", "159", "1.44"),
+        ("총중량은 159 kg, 부피 1.44 m³입니다.", "159", "1.44"),
+        ("총중량은 159 kg, 부피 1.44 m30입니다.", "159", "0"),
+    ],
+)
+def test_a_shipment_total_is_read_as_stated(figures, kg, cbm):
+    rfq = extract.by_rules(mail(f"AAA-BBB\n{figures}"), DEADLINE)
+    assert rfq is not None
+    assert (rfq.weight_kg, rfq.volume_cbm) == (Decimal(kg), Decimal(cbm))
+
+
+def test_pickup_is_not_needed_for_turkish_consignee_receipt():
+    body = (
+        "Yükü Town Havalimanı'na (AAA) biz teslim edeceğiz. BBB varışlı, 7 parça, 1365 kg. "
+        "Alıcı yükü BBB havalimanında teslim alacak. Factory 12345."
+    )
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert rfq is not None
+    assert (rfq.origin, rfq.destination, rfq.door_pickup, rfq.missing) == ("AAA", "BBB", False, ())
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Yükün bizden teslim alınması gerekmiyor.",
+        "Yük teslim alınmaya hazır değil.",
+        "픽업은 필요 없습니다.",
+        "픽업이 불필요합니다.",
+        "수하인이 BBB 공항에서 직접 픽업합니다.",
+        "Consignee BBB 공항에서 직접 집하합니다.",
+    ],
+)
+def test_a_refused_pickup_or_consignee_receipt_does_not_add_a_ground_leg(text):
+    rfq = extract.by_rules(mail(f"AAA-BBB, 159 kg. {text}"), DEADLINE)
+    assert rfq is not None
+    assert (rfq.door_pickup, rfq.pickup_postcode, rfq.missing) == (False, None, ())
+
+
+def test_an_origin_pickup_can_be_requested_beside_consignee_receipt():
+    body = "AAA-BBB, 159 kg. 수하인이 BBB 공항에서 직접 픽업합니다. 저희 사업장 12345에서 픽업 가능합니다."
+    assert extract._pickup(body) == (True, "12345")
+
+
+def test_a_per_piece_figure_in_an_older_mail_does_not_hide_the_request_total():
+    body = "AAA-BBB, 7 parça, toplam 1365 kg.\n\n-----Original Message-----\n7 parça, her biri 195 kg."
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert rfq is not None
+    assert rfq.weight_kg == Decimal(1365)
+
+
+def test_a_document_can_state_total_weight_without_stating_total_volume():
+    text = "총 4개, 개당 중량 159 kg, 총중량은 636 kg, 개당 부피 0.36 m3입니다."
+    assert extract._document_facts(text) == {"weight_kg": Decimal(636)}
+
+
+@pytest.mark.parametrize(
     ("text", "wish"),
     [
         ("Bu gönderi için en hızlı seçeneği istiyoruz.", Preference.FASTEST),  # round 186, quoted cheapest

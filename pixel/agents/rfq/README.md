@@ -465,10 +465,12 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - Korean and Turkish name the airport first and its direction after it: "DFW (Dallas, US)까지", "MIA (Miami, US)행",
   "SGN (Ho Chi Minh City, VN) varışlı", "ATL’ye", "AAA’dan" (`DEST_PARTICLE`, `ORIGIN_PARTICLE`), the customer's
   own delivery "Cologne 공항(CGN)까지는 저희가 직접 반입", "Havalimanı’na (STR) biz teslim edeceğiz" (`OWN_AIRPORT`); the
-  pickup "픽업", "alıma hazır", "teslim alınmaya hazır" (`DOOR`; "teslime hazır" is no pickup), pieces "4개",
-  "7 parça", the wish "가장 빠른", "en ucuz" (also 最快, 最も安い), and a unit or currency glued to a particle ("1.44
-  cbm입니다", "EUR로"). Rounds 126 to 171 were read by the model alone; the rules now read them as it did. Lots in Korean
-  ("로트 1: 카톤 4개, 총중량 each 162 kg", round 167) are still the model's.
+  pickup "픽업", "alıma hazır", "teslim alınmaya hazır" (`_has_pickup` checks the customer's leg and the words around
+  it; "픽업은 필요 없습니다" and the consignee's collection at arrival add no pickup), pieces "4개", "7 parça", and a
+  unit or currency glued to a particle ("1.44 cbm입니다", "1.44 m3입니다", "EUR로"). Rounds 126 to 171 were read by
+  the model alone; the rules now read these phrases. A local per-piece weight or volume ("개당 중량", "her biri") needs
+  an explicit shipment total for that field (`_total_figures`). Without it, the model reads the request, including
+  Korean lots ("로트 1: 카톤 4개, 총중량 each 162 kg", round 167).
 - The rules read no lane in a script they have no words for, so the model reads those requests alone (round 156,
   Korean: "MIA (Miami, US)행" came back as origin MIA with no destination; we asked and sent no quote). Before a
   destination is asked for, `extract.py` `_named_destination` takes the one airport only arrivals of ours use
