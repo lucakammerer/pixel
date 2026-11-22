@@ -149,8 +149,8 @@ round 166.
 | Drill | Right of 60 | Beyond the baseline | Cause | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- | --- |
 | `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 50 | baseline | 161, 149, 132 (Korean), 171, 131 and 126 (Turkish): the rules read no destination, pickup, pieces or wish in them, #489 open reads all six as the model did; 167 (Korean lots with "each", "로트 1: 카톤 4개"): the guess quotes 1964.76 against 4745.69, open, Cost; 168, 174 fixed by #463; 143, 139, 178: a document whose bytes the database does not hold (not measurable offline) | `extract.by_rules`, the lots in Korean | Cost (`extract.py`), generalize |
-| `portal_429` (every rate read 429, `Retry-After: 60`) | 48 | 2, as `portal_down` (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
-| E4 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page), `airlines_silent` | 48 | 2 | 172 and 152: the change after our quote gets no requote; the quote before it was right | the requote path (`agents/rfq/agent.py`), cause not yet read | Accuracy |
+| `portal_429` (every rate read 429, `Retry-After: 60`) | 49 | 2 (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
+| E4 `portal_429`, `portal_hangs` | 49 | 2 | 172 and 152: under a 429 or a hang the first request's rate reads land (from the card) after the customer's change; the requote quoted the cheaper price of the older weight (1585.45 against 2231.04). `portal_down` and `airlines_silent` are at the baseline: the drill scored the requote at a position the replay never reached (a first quote held as superseded) | `agent.requote`, #503 open (51 of 60 with it) | generalize |
 | `mail_twice`, `mail_late` (90 s) | 50 | 0 | — | — | — |
 | E3 `truckers_silent` | 49 | 1 | round 108: the pickup memory holds no answer of that zone within 24 h (D5's open part) | `pickup.estimates` | Accuracy |
 
