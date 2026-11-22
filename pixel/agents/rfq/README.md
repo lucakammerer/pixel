@@ -204,7 +204,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   no-price message without alerting an operator.
   `tools/followup_matrix.py` runs every sender, phase and intent (`tests/fixtures/thread-followups.json`) and
   the change mail in six languages, three unit systems and five attachment formats.
-- `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
+- `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (an airline's
+  rate for another chargeable weight is not one: under a rate API 429 the first request's reads land after the change
+  and the cheaper old-weight price was quoted, outage drill round 172) (with none,
   from the best the session holds, R1), and sends a quote with its PDF in reply to the change mail
   (`outbox.send_quote(reply_to=...)`, its own claim). While it prices, `outbox.quoted` is true and a quote of the
   older facts is held as `superseded`, also when the change came before our first quote. Round 86: the scorer scored

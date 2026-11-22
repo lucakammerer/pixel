@@ -506,7 +506,11 @@ async def requote(ctx: Context, message: Message, rfq: Rfq) -> Quote | None:
             "SELECT payload FROM events WHERE session_id = ? AND kind = 'option.found' AND id > ? ORDER BY id",
             (rfq.session_id, marker),
         ).fetchall()
-        fresh = [RateOption.model_validate(json.loads(r["payload"])["option"]) for r in rows]
+        # A rate for the older facts can land after the change (a read waiting out a 429, the rate card behind it):
+        # an airline's price for another chargeable weight is not one for this request.
+        kg = calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
+        fresh = [o for r in rows if (o := RateOption.model_validate(json.loads(r["payload"])["option"])).trucker
+                 or o.chargeable_kg == kg]  # fmt: skip
         rule = feedback.pickup_rule(ctx)
         options = engine.combine(rfq, fresh, rule, ctx) or engine.combine(rfq, session.for_request(ctx, rfq), rule, ctx)
         if rfq.door_pickup:
