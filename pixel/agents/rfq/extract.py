@@ -44,6 +44,14 @@ PRE_CARRIAGE = re.compile(
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
 )
+# The truck to the departure airport: "arrange the truck from our site to BBB airport. The goods go to Singapore" named
+# no destination code, and BBB was quoted as one. A code the trucking clause reaches before any flight word.
+TRUCK_LEG = re.compile(
+    r"(?i:\b(?:truck\w*|lorry|lkw|by\s+road|collect\w*|pick\w*[\s-]?up|deliver\w*|bring\w*|haul\w*|transport\w*))"
+    r"(?:(?!(?i:\b(?:air(?!port)\w*|fl[iy]\w*|ship\w*|freight|luft\w*|arriv\w*|ankunft|destination|ziel\w*)\b))"
+    r"[^.;!?\n]){0,60}?(?i:\b(?:to|zum|zur)\s+(?:the\s+)?(?:(?:airport|flughafen)\s+)?)"
+    rf"{CODE}"
+)
 
 # "1 250 kg": a space (also a no-break one) between thousands, not after a date's or a range's digits.
 NUM = r"((?<![\d.,\-/])\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?![\d.,'])|\d[\d.,']*)"
@@ -435,6 +443,7 @@ def _destination_only(text: str) -> str | None:
     the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
     "our truck goes to departure airport FRA" the origin."""
     to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
+    origin |= {code: 0 for code in TRUCK_LEG.findall(text) if _airport(code)}
     found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
     if set(origin) - found:
         return None
