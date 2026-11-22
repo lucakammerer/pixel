@@ -284,17 +284,21 @@ cousin of a live check; L = the dataset holds nothing the scorer could check it 
 | P19 | insurance, export customs, screening (`service_missing`) | M | the "include …" wishes the template already has for pickup | `insurance-requested`, `export-customs-included`, `unknown-consignor-screening` | right if the scorer accepts "not included" (unknown) |
 | P20 | temperature control, oversize, direct flights, non-stackable (`no_capable_carrier`) | L | `carrier-list.csv` holds no capability column; the scorer has nothing to compare against until a new version adds one | `temperature-controlled`, `oversize-freighter-only`, `direct-flight-only`, `non-stackable` | silent; becomes **wrong** the hour the data names it |
 
-### The table: every next case, 22.11. 11:20
+### The table: every next case, 22.11. 12:00
 
 `uv run python -m tools.checklist` replays every case of `next-cases.json` as `tools.kpi` does (start kit, no model)
 and holds the first reply that prices or declines against the checks its `expected` names: a price at all (3), the
-currency, one amount per option (6), words it must or must not hold (8, 7), greeting, language (2). Exit 1 on a wrong
+currency, one amount per option (6), words it must or must not hold (8, 7), greeting, language (2), and the attached
+PDF with every expected total (5). Exit 1 on a wrong
 case without a known gap. `-v` prints each reply; `body_states` was judged by hand on it.
 
 | Case | Check | Today | Verdict | Gap owner |
 | --- | --- | --- | --- | --- |
 | `currency-usd` | P1 currency | 803.40 EUR | wrong, blocked on data | Checklist: watch for the first non-EUR source |
 | `cheapest-and-fastest-both` | P2 two options | Helix 2132.80 only | wrong; fixed by the open pull request "two options" | Checklist (review thread merges) |
+| `combo-de-two-options-pdf` (new: German, two options, PDF) | P2, 2, 5 | Helix 2132.80 only, German, PDF without Kestrel's total | wrong; fixed with #479 | Checklist |
+| `combo-arrive-by-pdf-reference` (new: arrival, PDF, "our purchase order PO-2026-5512") | P9 reference | Helix 2132.80 right, PDF right, the reference not read | wrong; #481 open (also "Bestellung", "commande n°") | Checklist |
+| `cheapest-and-fastest-one-option` (new, the opposite of P2) | one amount | one amount | right | — |
 | `split-shipment` | P5 count | 1600.00, one amount | wrong | Cost (`extract.shipments`) |
 | `two-lanes-one-mail`, `pickup-two-sites`, `pickup-outside-zones`, `pickup-zone-not-listed`, `pickup-postcode-abroad-matches-a-zone` | 3 a price | offline a no-price reply after the failed model call | unknown (model) | Cost (`extract`), Accuracy (`pricing/pickup.py`) |
 | `book-immediately-under-cap` | P16 booked | quote only | wrong | After the quote (`booking.py`) |
@@ -315,6 +319,9 @@ Wrong outside a known gap: 0.
 | 5 PDF | two at once: PDF and several shipments | the PDF holds the mail's text, so every shipment's line and the sum | right (by reading `pdf._lines`) |
 | 5 PDF | another moment: asked in a later mail | the requote carries its own PDF (`outbox.send_quote`) | right (by reading) |
 | 6 count | another axis: two options instead of two shipments | `cheapest-and-fastest-both` | fixed in the open pull request |
+| P9 reference | another wording, two at once: "our purchase order PO-…" with an arrival limit and a PDF | `combo-arrive-by-pdf-reference` | wrong, #481 |
+| P9 reference | another language: "Bestellung 4500012345", "commande n° CMD-2231" | `tests/test_compose.py` | wrong before #481 |
+| P9 reference | opposite: "PO Box 1234", "in order to ship 450 kg", "Die Bestellung wird am 27.11. abgeholt" | same | no reference |
 | 6 count | opposite: "the cheapest and fastest option" (one option) | `tests/test_compose.py` `test_two_options_only_when_both_are_asked_for` | no second option |
 | 6 count | another language: German, French "two options" | same test | right |
 | 6 count | two dates, two pickup sites, two lanes | `split-shipment`, `pickup-two-sites`, `two-lanes-one-mail` | wrong or model, owners above |
