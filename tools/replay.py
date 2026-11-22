@@ -168,6 +168,39 @@ async def _no_booking(rate_id: str, team_reference: str) -> None:
     raise BookingUnavailable("replay: no portal booking")
 
 
+def _fresh_questions(conn: sqlite3.Connection, request_ids: list[int]) -> dict[int, int]:
+    """Remove archived questions so replay raises them afresh. Keep their parent IDs for incoming replies."""
+    marks = ", ".join("?" for _ in request_ids)
+    questions = dict(
+        conn.execute(
+            "SELECT id, in_reply_to FROM messages WHERE direction = 'out' AND purpose = 'question'"
+            f" AND in_reply_to IN ({marks})",
+            request_ids,
+        )
+    )
+    conn.executemany("DELETE FROM messages WHERE id = ?", [(old,) for old in questions])
+    return questions
+
+
+def _rebind_question(conn: sqlite3.Connection, message: Message, questions: dict[int, int]) -> Message:
+    """Relink a reply to the new receipt, or to its request when the replay did not ask."""
+    replacements = {}
+    for old in questions.keys() & {message.in_reply_to, *message.references}:
+        row = conn.execute(
+            "SELECT id FROM messages WHERE direction = 'out' AND purpose = 'question' AND in_reply_to = ?",
+            (questions[old],),
+        ).fetchone()
+        replacements[old] = row[0] if row else questions[old]
+    if not replacements:
+        return message
+    return message.model_copy(
+        update={
+            "in_reply_to": replacements.get(message.in_reply_to, message.in_reply_to),
+            "references": tuple(replacements.get(ref, ref) for ref in message.references),
+        }
+    )
+
+
 class _ReplaySelector(selectors.DefaultSelector):
     """On an offline event loop, the next timer is the next input. Skip the idle interval."""
 
@@ -243,11 +276,14 @@ async def _run(
     if not online:
         ctx.portal.client = ctx.gateway.client = ctx.board.client = client
     first = to_message(raws[0], "in").sent_at
+    questions = _fresh_questions(ctx.db, [int(raw["id"]) for raw in raws]) if as_live else {}
 
     async def feed(raw: dict, wait: bool) -> None:
         message = to_message(raw, "in")
         if wait:
             await asyncio.sleep((message.sent_at - first).total_seconds())
+        if questions:
+            message = _rebind_question(ctx.db, message, questions)
         stored = poller.ingest(ctx, message.model_copy(update={"sent_at": timing.now() - timedelta(seconds=late_s)}))
         if stored:
             await orchestrator.dispatch(ctx, stored)

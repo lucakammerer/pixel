@@ -38,6 +38,39 @@ def test_a_replay_on_a_copy_keeps_reference_data_and_forgets_the_replayed_sessio
     assert live.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 3
 
 
+@pytest.mark.parametrize("link", [{"in_reply_to": 8}, {"references": [8]}])
+@pytest.mark.parametrize("needs_question", [True, False])
+async def test_reply_follows_a_regenerated_question_or_its_request(tmp_path, link, needs_question):
+    path = str(tmp_path / "capture.sqlite3")
+    stored = db.connect(path)
+    db.init(stored)
+    stored.execute(
+        "INSERT INTO messages VALUES (8, 7, 'out', NULL, 'question', 'us@example.com', 'buyer@example.com',"
+        " 'Re: Request', '', 7, '2026-11-22T10:00:01+00:00', '{}')"
+    )
+    stored.close()
+    request = {
+        "id": 7, "from": "buyer@example.com", "to": "us@example.com",
+        "subject": "Request", "received_at": "2026-11-22T10:00:00+00:00",
+        "body": "Please quote AAA-BBB, 200 kg." if needs_question else "Please quote AAA-BBB, 200 kg, 1 cbm.",
+    }  # fmt: skip
+    reply = {
+        "id": 9, "from": "buyer@example.com", "to": "us@example.com",
+        "subject": "Re: Request", "received_at": "2026-11-22T10:00:09+00:00",
+        "body": "The volume is 1 cbm.",
+        **link,
+    }  # fmt: skip
+    events = await replay.run([request, reply], False, path, as_live=True)
+
+    questions = [e for e in events if e.kind == "mail.out" and e.payload.get("purpose") == "question"]
+    route = next(e for e in events if e.kind == "route" and e.message_id == reply["id"])
+    assert (route.session_id, route.payload["rule"]) == (
+        request["id"],
+        "thread:question" if needs_question else "thread:customer",
+    )
+    assert bool(questions) == needs_question
+
+
 async def test_a_replay_answers_the_model_with_its_recorded_reading_and_a_changed_prompt_misses(conn):
     class Live:
         async def chat(self, payload):

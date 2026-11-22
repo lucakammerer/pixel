@@ -29,7 +29,7 @@ class Pipeline:
             ctx.db.execute("UPDATE events SET ts = ? WHERE id = ?", (ts.isoformat(), event.id))
         return event
 
-    async def send(self, ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(self, ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         if self.held:
             raise outbox.NotSent("human")
         self.sent.append({"to": to, "subject": subject, "body": body, "session_id": session_id,

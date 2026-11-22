@@ -583,8 +583,7 @@
     ],
     "pdf": true
    },
-   "today": "Helix 2132.80, PDF attached; the reference PO-2026-5512 is not read: `pdf.REFERENCE` needs a word before the code.",
-   "known_gap": "a PO code alone is no reference: #481 open. Owner: Checklist."
+   "today": "Helix 2132.80, the reference PO-2026-5512 in mail and PDF."
   },
   {
    "fixture": "next-cases/cheapest-and-fastest-one-option.json",

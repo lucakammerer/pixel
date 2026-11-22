@@ -124,3 +124,28 @@ def test_a_dangerous_goods_line_with_n_o_s_is_read_whole():
     model call and a note in the quote though the DG rule had read the line."""
     line = "Dangerous goods: UN1760, Class 8, Corrosive liquid, n.o.s. (contains phosphoric acid)"
     assert novelty.leftover(line) == []
+
+
+async def test_the_wish_the_model_reads_decides_only_where_no_rule_read_one(conn, monkeypatch):
+    """Round 186: the rules missed "en hızlı seçenek", the model read it, it became a note and the cheapest airline
+    was quoted (not_what_was_asked). The model's wish now selects where the rules read none; a rule's wish wins."""
+
+    async def answer():
+        return {"exclude_airlines": [], "only_airlines": [], "arrive_by": None, "ready_on": None, "documents": [],
+                "conditions": [], "wish": "fastest"}  # fmt: skip
+
+    gateway(monkeypatch, answer)
+    ctx = Context(settings(), conn, None, None, None, None)
+    _, _, rfq = request("rfq-port-to-port.json")
+    read = await novelty.check(ctx, rfq, "Prosimy o najszybszą możliwą opcję dla tej przesyłki.", "Zapytanie")
+    assert read.preference == "fastest"
+    options = [option("Slow Air", 900, 3), option("Quick Air", 1200, 2)]
+    assert selection.select(read, options).carrier == "Quick Air"
+    kept = await novelty.check(ctx, rfq, "The cheapest option please.\nProsimy o najszybszą opcję.", "Zapytanie")
+    assert kept.preference == "cheapest"
+    assert (
+        ctx.db.execute(
+            "SELECT json_extract(payload, '$.wish_conflict') FROM events WHERE kind = 'rfq.novelty' ORDER BY id DESC"
+        ).fetchone()[0]
+        == "cheapest"
+    )

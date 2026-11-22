@@ -697,7 +697,11 @@ def bid_validity_cases() -> list[Case]:
     for row in fixture["cases"]:
         carrier, place = row["carrier"], row.get("place", "body")
         reading = dict(fixture[carrier])
-        lines = [reading.pop("price"), reading.pop("lead"), row["text"]]
+        lead = reading.pop("lead")
+        lines = [reading.pop("price"), row.get("lead", lead), row["text"]]
+        lines = [line for line in lines if line]
+        if "pickup_hours" in row:
+            reading["pickup_hours"] = row["pickup_hours"]
         body, files = "\n".join(lines), []
         if place != "body":
             body = "Our offer is in the attached document."

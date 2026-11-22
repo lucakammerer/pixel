@@ -12,8 +12,9 @@ import pytest
 
 from pixel import llm
 from pixel.agents.rfq import extract
-from pixel.contracts import LlmResult
+from pixel.contracts import LlmResult, Rfq
 from pixel.core import events
+from pixel.pricing import bids
 from tools import benchmark_generalization as bench
 from tools import simulate
 
@@ -95,6 +96,24 @@ def test_carrier_bids_are_read_right_or_refused():
     reads = bench.audit_bids()
     assert reads
     assert [f"{b.case_id}: {b.got}" for b in reads if not b.ok and not b.known_gap] == []
+
+
+async def test_a_model_read_bid_keeps_only_the_validity_from_its_text(monkeypatch):
+    case = next(c for c in simulate.bid_validity_cases() if c.axes["expiry"] == "absolute")
+    message = bench._message(case.subject, case.body)
+    request = Rfq(session_id=1, message_id=1, customer="bench", received_at=bench.NOW, deadline_at=bench.NOW,
+                  **case.request)  # fmt: skip
+    read = {"offer": True, "total": str(case.want["total"]), "components": [], "currency": case.want["currency"],
+            "transit_days": str(case.want["transit_days"]), "eur_per_unit": None}  # fmt: skip
+
+    async def model(ctx, **kwargs):
+        return LlmResult(data=read, model="test", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    found = await bids._read_with_model(None, message, request, needs_transit=True)
+    assert found.valid_until == case.want["valid_until"]
+    read["offer"] = False
+    assert await bids._read_with_model(None, message, request, needs_transit=True) is None
 
 
 def test_an_attachment_in_another_container_is_read_like_the_original_or_not_at_all():

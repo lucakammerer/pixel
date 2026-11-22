@@ -3,8 +3,8 @@
 uv run python -m tools.scope_cases            # the table as Markdown for bench/NEXT_CASES.md "Axis S: scope"
 
 Each mail in `tests/fixtures/next-cases/scope/` is replayed as live on a database that holds the start kit, no portal.
-Its expected kind of answer is in `tests/fixtures/next-cases/scope.json`: `quote`, or `no_price` (the plain answer
-without a price, or none for a mail that asks for nothing). Where the rules give up, the model reads the mail live;
+Its expected kind of answer is in `tests/fixtures/next-cases/scope.json`: `quote`, `decline` (the plain answer
+without a price), or `no_price` (a decline or no reply). Where the rules give up, the model reads the mail live;
 here its plausible answers are stubbed, never asked: the reading as an air request written by hand in the case
 (`air`: the nearest airports, as round 177's model did) and a reading that names no airport (`blank`). A case is
 right only when every plausible answer leads to the right kind; `split` when it depends on the answer. Exit 1 on a
@@ -70,6 +70,8 @@ def verdict(expected: str, got: str) -> str:
         return "right" if got == expected else "wrong"
     if expected == "quote":
         return "right" if last == "quote" else "wrong"
+    if expected == "decline" and got == "none":
+        return "wrong"
     return "right" if got in ("no_price", "none") else "late" if got == "no_price late" else "wrong"
 
 

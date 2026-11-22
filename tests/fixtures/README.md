@@ -7,6 +7,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   weight, freight after the minimum, both surcharges and the rounded total.
 - `tariffs/source_review.csv`: every start-kit source file with its lane count and format risks. What was compared:
   each file's lane count and `check()` findings, plus the sample lanes in `tariffs/expected.json`.
+- `tariffs/lifecycle/`: synthetic carrier mails and calculated spot prices before and after lane updates, withdrawals,
+  currency and unit changes, corrections and resends. Benchmark section 5 routes and ingests each mail, then reads
+  the rates directly or reuses the options a pending quote already holds.
 - `tariffs/variants/`: synthetic sheets in the kit's text layout with one change each (breaks, currency, decimal
   commas, dates, transit wording, column order, surcharge layout), written by `make_variants.py`, which computes the
   expected prices without `pixel/pricing/calc.py`. `variants.jsonl` says which outcomes are safe: parsed right, or
@@ -21,20 +24,31 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   header or the cell, German), with each priced airline read by hand; benchmark section 16 writes its own lines and
   each table into every attachment format behind a mail that only points to the file. It compares currency and
   expiry as well as total, transit and rate ID.
+- `ratedesk-probes.json`: synthetic desk replies in body, DOCX and XLSX with transit hours in a heading or a cell,
+  shared FX and a malformed date beside a valid airline row. The benchmark compares the hand-read rows and reports
+  known gaps with their owner.
 - `rfqs/bid-validity.json`: carrier offers with expiry in the body or an attachment, measured from the simulator's
   16:00 UTC receipt time, with expected timestamps written by hand. The departure date and quoted old offer are
   controls. `tools.simulate` runs each through `bids.record` offline.
 - `rfqs/followup-answers.json`: answers to our one question, each naming another airport beside the request's;
   benchmark section 15 appends each to every captured request and requires the same fields. `known_gaps`:
   `"<answer>:<fixture>"` read wrong today, each ending `Owner: <role>.`
+- `rfqs/earlier-preference.json`: mutations of round 192, a new request quoting the prior shipment's subject.
+  The earlier shipment supplies its cargo, and the test checks that selection follows the new words.
 - `sessions/<name>.json` and `<name>.state.json`: a live session written by `tools/capture.py`. The first holds its
   incoming mails as the API returned them (`tools.replay` replays it); the second the rows it met on arrival
   (tariffs, carriers, zones, the rate card of its lane, our mails of the session, the customer's earlier requests,
   the truckers' answers of the last 24 hours) and the portal's rates and weight breaks as the API gave them, which the replay serves
   again (a reading rounded since gets the rate times its weight), and under `answers` what the model returned live
   by prompt hash (recorded since 22.11.): the same prompt gets that answer, free; any other model call fails
-  offline. Attachment bytes are not stored. `round-166-accepted` is the session `tests/test_capture.py` replays end to end (portal rate, its next
-  weight break, trucker bids) and `tests/test_outage_drill.py` replays under every drill.
+  offline. The question's archived receipt lets the replay ask again and link the reply to the question it just
+  sent, or to the original request if it has enough facts. Attachment bytes are not stored. `round-166-accepted`
+  is the session `tests/test_capture.py` replays end to end (portal rate, its next weight break, trucker bids) and
+  `tests/test_outage_drill.py` replays under every drill. `round-56-version-rollover` saves the arrival state,
+  the scorer's best and the first recorded rates of the new version in `.expected.json`. It exercises the
+  portal outage both before and after those reads are available to the rate card (C16).
+  `round-167-korean-lots` holds the accepted Korean three-lot request, its scorer reference and hand-calculated
+  cargo totals. The gateway drill replays it with single and duplicate delivery; the English wording is a control.
 - `replay-gate.json`: round 155's session as the live database held it (request mail, reading, every option found,
   the sent quote, pickup zone), which `tests/test_replay_gate.py` builds into a database for `tools/replay_gate.py`.
 - `thread-followups.json`: round 86's session with every mail that can arrive later in it, by sender, phase and

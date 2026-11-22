@@ -1,0 +1,131 @@
+{
+  "carrier": "Testline Cargo",
+  "request": {"lane": "CGN-SYD", "weight_kg": "100", "received_at": "2026-11-21T16:00:00+00:00"},
+  "cases": [
+    {
+      "id": "one-lane-amendment",
+      "mails": [{"files": ["original.txt"]}, {"files": ["amended.txt"]}],
+      "checks": [
+        {"after": 2, "want": [["330.00", "EUR", "330.00"]]},
+        {"after": 2, "lane": "DUS-JFK", "want": [["430.00", "EUR", "430.00"]]}
+      ]
+    },
+    {
+      "id": "amendment-while-quote-pending",
+      "mails": [{"files": ["original.txt"]}, {"files": ["amended.txt"]}],
+      "checks": [
+        {"after": 1, "want": [["230.00", "EUR", "230.00"]]},
+        {"after": 2, "stored": true, "want": [["330.00", "EUR", "330.00"]]}
+      ],
+      "known_gap": "A same-day request can reuse the rate priced before a valid amendment. Owner: supply."
+    },
+    {
+      "id": "future-amendment-while-quote-pending",
+      "mails": [{"files": ["original.txt"]}, {"files": ["future.txt"]}],
+      "checks": [
+        {"after": 1, "ready": "2026-11-22", "want": [["230.00", "EUR", "230.00"]]},
+        {"after": 2, "stored": true, "ready": "2026-11-22", "want": [["430.00", "EUR", "430.00"]]}
+      ],
+      "known_gap": "The future-ready lookup drops the superseded stored option without pricing its replacement. Owner: supply."
+    },
+    {
+      "id": "old-sheet-arrives-late",
+      "mails": [{"files": ["original.txt"]}, {"files": ["past.txt"]}],
+      "checks": [{"after": 2, "want": [["230.00", "EUR", "230.00"]]}]
+    },
+    {
+      "id": "future-effective-date",
+      "mails": [{"files": ["original.txt"]}, {"files": ["future.txt"]}],
+      "checks": [
+        {"after": 2, "want": [["230.00", "EUR", "230.00"]]},
+        {"after": 2, "ready": "2026-11-22", "want": [["430.00", "EUR", "430.00"]]}
+      ]
+    },
+    {
+      "id": "two-versions-one-mail-two-files",
+      "mails": [{"files": ["original.txt", "future.txt"]}],
+      "checks": [
+        {"after": 1, "want": [["230.00", "EUR", "230.00"]]},
+        {"after": 1, "ready": "2026-11-22", "want": [["430.00", "EUR", "430.00"]]}
+      ]
+    },
+    {
+      "id": "two-versions-one-file",
+      "mails": [{"files": ["two-versions.txt"]}],
+      "checks": [
+        {"after": 1, "want": [["230.00", "EUR", "230.00"]]},
+        {"after": 1, "ready": "2026-11-22", "want": [["430.00", "EUR", "430.00"]]}
+      ],
+      "known_gap": "A source with two explicit periods is loaded as one tariff. The first period is lost. Owner: supply."
+    },
+    {
+      "id": "correction-of-correction-docx",
+      "mails": [{"files": ["original.txt"]}, {"files": ["amended.txt"]}, {"files": ["corrected.txt"], "format": "docx"}],
+      "checks": [{"after": 3, "want": [["380.00", "EUR", "380.00"]]}]
+    },
+    {
+      "id": "resend-of-superseded-sheet",
+      "mails": [{"files": ["original.txt"]}, {"files": ["amended.txt"]}, {"files": ["original.txt"]}],
+      "checks": [{"after": 3, "want": [["330.00", "EUR", "330.00"]]}],
+      "known_gap": "The same version hash updates its original row's ingestion time and can beat its later correction. Owner: supply."
+    },
+    {
+      "id": "currency-amendment",
+      "mails": [{"files": ["original.txt"]}, {"files": ["currency.txt"], "body": "Exchange rate: 1 USD = 0.80 EUR"}],
+      "checks": [{"after": 2, "want": [["330.00", "USD", "264.00"]]}]
+    },
+    {
+      "id": "amendment-per-100kg",
+      "mails": [{"files": ["original.txt"]}, {"files": ["per-100kg.txt"]}],
+      "checks": [{"after": 2, "want": [["330.00", "EUR", "330.00"]]}]
+    },
+    {
+      "id": "amendment-german-docx",
+      "mails": [{"files": ["original.txt"]}, {"files": ["german.txt"], "format": "docx"}],
+      "checks": [{"after": 2, "want": [["330.00", "EUR", "330.00"]]}],
+      "known_gap": "The German currency and validity headings of a DOCX amendment go unread. Owner: supply."
+    },
+    {
+      "id": "amendment-flat-security-charge",
+      "mails": [{"files": ["original.txt"]}, {"files": ["flat-charge.txt"]}],
+      "checks": [
+        {"after": 2, "want": [["330.00", "EUR", "330.00"]]},
+        {"after": 2, "weight_kg": "200", "want": [["650.00", "EUR", "650.00"]]}
+      ],
+      "known_gap": "The reader treats a flat 10 EUR security fee as per kg, and the rate sanity check then rejects the amendment. Owner: supply."
+    },
+    {
+      "id": "amendment-small-flat-security-charge",
+      "mails": [{"files": ["original.txt"]}, {"files": ["small-flat-charge.txt"]}],
+      "checks": [
+        {"after": 2, "want": [["322.00", "EUR", "322.00"]]},
+        {"after": 2, "weight_kg": "200", "want": [["642.00", "EUR", "642.00"]]}
+      ],
+      "known_gap": "A small flat security fee clears the rate sanity check and is multiplied by billed kg. Owner: supply."
+    },
+    {
+      "id": "one-lane-withdrawal",
+      "mails": [{"files": ["original.txt"]}, {"body": "With immediate effect we withdraw the rate for CGN-SYD. The DUS-JFK rates are unchanged."}],
+      "checks": [{"after": 2, "want": []}, {"after": 2, "lane": "DUS-JFK", "want": [["430.00", "EUR", "430.00"]]}],
+      "known_gap": "An explicit lane withdrawal in a text-only tariff update leaves the old lane price in use. Owner: supply."
+    },
+    {
+      "id": "dated-withdrawal-then-reopen",
+      "mails": [
+        {"files": ["original.txt"]},
+        {"body": "New bookings on CGN-SYD withdrawn effective 2026-11-21."},
+        {"body": "New bookings on CGN-SYD reopened effective 2026-11-21."}
+      ],
+      "checks": [
+        {"after": 2, "want": []},
+        {"after": 2, "lane": "DUS-JFK", "want": [["430.00", "EUR", "430.00"]]},
+        {"after": 3, "want": [["230.00", "EUR", "230.00"]]}
+      ]
+    },
+    {
+      "id": "future-dated-withdrawal",
+      "mails": [{"files": ["original.txt"]}, {"body": "New bookings on CGN-SYD withdrawn effective 2026-11-22."}],
+      "checks": [{"after": 2, "want": [["230.00", "EUR", "230.00"]]}]
+    }
+  ]
+}

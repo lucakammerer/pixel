@@ -21,6 +21,8 @@ HUMAN = "human"  # purpose of mail a person sends from the UI: passes a takeover
 RESEND_S = 60.0
 RESEND_BACKOFF_S = (0.5, 1.0, 2.0, 4.0)
 RESENT = ("no_price",)  # besides quotes: the one answer a request without a price gets
+UNCONNECTED = {"ConnectError", "ConnectTimeout", "PoolTimeout"}  # failed before the server: no mail
+SETTLED = "delivery-settled:"  # a failed send its `error` event reported: no `delivery_unconfirmed` at a restart
 
 
 class NotSent(Exception):
@@ -218,25 +220,27 @@ async def _deliver(
     *,
     quote: Quote | None = None,
     operator: bool = False,
+    english: str | None = None,
 ) -> Message:
     to = to.strip().lower()
     # Every quote carries itself as a PDF: a customer who asked for one rejects the quote without it (round 76).
     attachments = (
         ((f"offer-{quote.id}.pdf", "application/pdf", pdf.offer(quote, _reference(ctx, quote))),) if quote else ()
     )
-    # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
-    key = json.dumps(
-        [sid, purpose, to, parent, "" if purpose in ("tracking", "no_price") else body], ensure_ascii=False
-    )
-    if quote:
-        # A requote answers the customer's change mail: its own claim, so the first quote's never blocks it.
-        key = f"quote:{sid}" if parent == quote.rfq.message_id else f"quote:{sid}:{parent}"
-    elif purpose == HUMAN:
-        key = uuid.uuid4().hex
-    else:
-        key = hashlib.sha256(key.encode()).hexdigest()
+
+    def operation(text: str) -> str:
+        # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
+        key = json.dumps(
+            [sid, purpose, to, parent, "" if purpose in ("tracking", "no_price") else text], ensure_ascii=False
+        )
+        if quote:
+            # A requote answers the customer's change mail: its own claim, so the first quote's never blocks it.
+            return f"quote:{sid}" if parent == quote.rfq.message_id else f"quote:{sid}:{parent}"
+        return uuid.uuid4().hex if purpose == HUMAN else hashlib.sha256(key.encode()).hexdigest()
+
+    key = operation(body)
     payload = {"to": to, "subject": subject, "body": body, "in_reply_to": parent, "purpose": purpose}
-    resend_until, resends = asyncio.get_running_loop().time() + RESEND_S, 0
+    resend_until, resends, retried = asyncio.get_running_loop().time() + RESEND_S, 0, False
     while True:
         if sent := _claimed(ctx, key, quote is not None):
             return sent
@@ -264,12 +268,7 @@ async def _deliver(
         except ApiError as e:
             # Rejection, or failure before connecting, definitely produced no mail. A lost POST response is ambiguous,
             # except for a quote: only the first quote counts (R4), so a second one is harmless, a lost one is not.
-            if (
-                quote is not None
-                or 400 <= e.status < 500
-                or e.status == 0
-                and e.detail in {"ConnectError", "ConnectTimeout", "PoolTimeout"}
-            ):
+            if quote is not None or 400 <= e.status < 500 or e.status == 0 and e.detail in UNCONNECTED:
                 ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))
             if e.status == 429:
                 await asyncio.sleep(e.retry_after or 1.0)
@@ -278,7 +277,11 @@ async def _deliver(
                 ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))  # a 503 is an answer: not sent
             pause = RESEND_BACKOFF_S[min(resends, len(RESEND_BACKOFF_S) - 1)]
             resend = quote is not None or (purpose in RESENT and e.status == 503)
-            if resend and (e.status >= 500 or e.status == 0) and asyncio.get_running_loop().time() + pause < resend_until:
+            if (
+                resend
+                and (e.status >= 500 or e.status == 0)
+                and asyncio.get_running_loop().time() + pause < resend_until
+            ):
                 resends += 1
                 emit(ctx, "mail.resend", "outbox", session_id=sid,
                      payload={"purpose": purpose, "status": e.status, "try": resends + 1})  # fmt: skip
@@ -289,12 +292,29 @@ async def _deliver(
                      payload={"where": "attachment", "error": scrub(ctx, str(e))})  # fmt: skip
                 attachments = ()
                 continue
+            translated = english is not None and english != body and 400 <= e.status < 500
+            if quote is None:
+                # Not sent for sure (a 4xx, a 503, no connection: its row is gone above): once more, never a loop; a
+                # refused translation in English. A lost response or another 5xx may have been delivered: its row stays
+                # as the guard against a second mail, settled so that no restart reports it again (C15, session 51345).
+                refused = 400 <= e.status < 500 or e.status == 503 or e.status == 0 and e.detail in UNCONNECTED
+                if not refused:
+                    db.put(ctx.db, SETTLED + key, "failed")
+                elif not retried and (translated or not 400 <= e.status < 500):
+                    retried = True
+                    emit(ctx, "mail.resend", "outbox", session_id=sid,
+                         payload={"purpose": purpose, "status": e.status, "try": 2, "english": translated})  # fmt: skip
+                    if translated:
+                        body, key = english, operation(english)
+                        payload["body"] = body
+                    await asyncio.sleep(RESEND_BACKOFF_S[0])
+                    continue
             emit(
                 ctx,
                 "error",
                 "outbox",
                 session_id=sid,
-                payload={**payload, "where": "send", "error": scrub(ctx, str(e))},
+                payload={**payload, "where": "send", "error": scrub(ctx, str(e)), "retried": retried},
             )
             raise
         except (Exception, asyncio.CancelledError) as e:
@@ -320,9 +340,11 @@ async def send(
     session_id: int | None,
     in_reply_to: int | None = None,
     purpose: str,
+    english: str | None = None,
 ) -> Message:
-    """Send a non-quote. A replay of a delivered automatic action reuses its receipt."""
-    return await _deliver(ctx, to, subject, body, session_id, in_reply_to, purpose)
+    """Send a non-quote. A replay of a delivered automatic action reuses its receipt. `english`: the text `body`
+    translates, sent instead when the mailbox refuses the translation."""
+    return await _deliver(ctx, to, subject, body, session_id, in_reply_to, purpose, english=english)
 
 
 async def send_quote(ctx: Context, quote: Quote, *, operator: bool = False, reply_to: int | None = None) -> Quote:
@@ -380,6 +402,8 @@ def repair_receipts(ctx: Context) -> None:
                 ),
             )
     for row in ctx.db.execute("SELECT operation, session_id, purpose FROM mail_delivery WHERE sent_id IS NULL"):
+        if db.get(ctx.db, SETTLED + row["operation"]):
+            continue
         emit(
             ctx,
             "error",

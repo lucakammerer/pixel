@@ -543,6 +543,51 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 10:41 UTC, Korean lots and the gateway. On the captured round 167, the scorer's 4745.69 EUR used
+  1223 kg, 9.2264 cbm and 13 pieces. The parser's gateway fallback used 407 kg and 3.62 cbm and sent 2140.07
+  EUR once, with both ordinary and duplicate delivery. The English control reads all three lots. Cost owns
+  the Korean rule gap; the fixtures exercise it without a gateway.
+  Live cursor 58440: all 13 further mails routed as recorded. Round 193 reproduced the accepted 1412.50 EUR
+  quote. The next request reproduced its sent 638.12 EUR quote and had no attached scorer feedback in the copy.
+- 22.11. 10:35 UTC, round 192 request history. All four incoming mails since cursor 57813 routed as live to
+  mail 58011. The accepted total of round 191 is 3002.00 EUR; the replay without its attachment remains 2538.40.
+  Round 192's initial replay reproduced the rejected 3707.22 EUR quote. Hot Repair A shipped #529 and its
+  captured regression test now selects 2854.83 on Tamarind. Seven request-history variants pass (opposite
+  preference, another sender, older booking, forwarded history, German, and Turkish with imperial units);
+  the fresh quoted word and the wish only in an attachment remain rules-only gaps owned by Cost.
+- 22.11. 10:26 UTC, generalize outage cycle (C16). Round 56 provides a recorded version change and a scorer
+  reference of 6158.54 EUR. With no new version read, either a portal outage or a 429 gave 5442.11 EUR in time.
+  With the first read of the new version for another airline, a forced outage gave 6167.74 EUR; with both
+  reads it gave 6158.54 EUR. The normal-portal replay also gave 6158.54 EUR. The known gap stays with Accuracy:
+  every new-version read can fail before the rate card sees that the prices have changed.
+  Live cursor 57813: all 18 subsequent mails routed as recorded and both tracking statuses matched. Round
+  190 reproduced its accepted quote. Session 57502 gave 2538.40 EUR offline against 3002.00 EUR sent; the
+  attachment payload is absent from the snapshot. The captured quote does not establish the missing figures.
+- 22.11. 10:08 UTC, generalize audit (live to mail 56740, round 187 scored; cursor was 54466). Replayed all 68
+  incoming mails in 13 sessions with the recorded responses. Routing matched all 68 (8 RFQs, 32 bids, 18 replies,
+  5 booking confirmations and 5 tracking questions); tracking matched all 5 statuses. All six accepted rounds
+  (181–185 and 187) and the unscored request 56555 reproduced their sent totals. Packing attachments in rounds
+  184 and 187 lack stored bytes; the totals reproduced from the remaining evidence. The lost round, 186, quoted
+  Aurelia at 844.49 in three days. With #508's Turkish preference in main, the offline replay selects Fjordline at
+  1194.71 in two days.
+  Review on #489: 29 added cases include the opposite interpretation (shipment totals alongside per-piece
+  figures), the consignee instead of the sender, an earlier quoted mail, a document, Korean and Turkish, lb and
+  cubic feet, and per-piece weight beside a total in m³. A local per-piece figure defers to extraction unless
+  the same field has a shipment total. The updated rules read seven more of 188 stored requests; two add only
+  the stated piece count. Replay gate: 49 of 50 on both heads, with round 159 missing a quote event.
+  The refreshed outage drill on main (60 accepted rounds through 187) gives 50 in time and within 5% for each
+  of gateway down, gateway timeout, portal rate limits, portal timeouts and silent truckers. Every drill misses
+  the same ten rounds. Six Korean or Turkish requests had no quote, round 167 needs Korean lot totals, and
+  rounds 139, 143 and 178 lack their attachment bytes.
+  By mail 57261, 22 more incoming mails were replayed. Rounds 188 and 189 were accepted, and 189 and the next
+  unscored request reproduced their totals. The tracking status matched. The one routing difference is mail 56829
+  in round 189: the replay sends its own question, but the reply references the original question ID, so the
+  router sees a customer reply instead of `thread:question`. The extracted pickup and quoted total matched.
+  A fresh capture now keeps the question receipt and relinks replies at delivery time. The routing difference
+  disappeared across all 22 mails with the same totals and tracking status. Tests cover a direct reply and a
+  references-only reply, with and without a regenerated question.
+  Open: #489 and #492 for review; Korean lots without the gateway (round 167, Cost); C16 (Accuracy), where
+  `tools.card_proof` showed the cached price was 11.765% below the first observed rate of a new dataset version.
 - 22.11. 11:15, generalize cycles 4 and 5 (live to mail 54466, round 179; cursor was 49317). Every one of the 149
   incoming mails since the cursor replayed with `tools.capture` and compared, mail by mail: the route live and in the
   replay is the same for all 149; the 12 tracking questions answered with the same statuses; 52343 and 54267 (a
