@@ -35,6 +35,9 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    each (`TRACKING_CHANGES`) against the live CRM's shipments: the same shipment, or a question back, never another.
 15. Follow-up answers: every captured request with the customer's answer appended as `read_request` appends it,
    each naming another airport beside the request's (`rfqs/followup-answers.json`): every field stays the request's.
+17. Later mails in a session: every sender, phase and intent of `thread-followups.json`, and the change mail in
+   every language, unit system and attachment format (`tools/followup_matrix.py`): the router's kind, and for a
+   customer's mail the intent, the changed fields and what the session does.
 16. Rate desk answer in an attachment: the captured answer as its own lines or a table (`ratedesk-layouts.json`), in
    pdf, xlsx, docx, txt and csv, behind a mail that only points to the file: the same airlines, rates and rate ids.
 
@@ -1200,6 +1203,10 @@ def open_gaps() -> dict[str, list[str]]:
         if r.right is False and r.known_gap and r.known_gap not in seen_gaps:
             seen_gaps.add(r.known_gap)
             found.append((f"document conflict {key}", r.known_gap))
+    from tools import followup_matrix
+
+    notes = {r.known_gap: r.case_id for r in followup_matrix.audit() if not r.ok and r.known_gap}
+    found += [(f"later mail {case}", note) for note, case in notes.items()]
     covered = channel_coverage()
     uncovered = [(f"channel {k}", note) for k, note in channel_gaps().items() if not covered.get(tuple(k.split()))]
     found += sorted(uncovered, key=lambda gap: gap[1])  # one note's cells together: printed once
@@ -1433,8 +1440,19 @@ def main() -> int:
         elif f.known_gap:
             print(f"    ok   {f.answer}: {f.fixture} reads right now, remove its known gap")
 
+    from tools import followup_matrix
+
+    later = followup_matrix.audit()
+    later_wrong = [r for r in later if not r.ok and not r.known_gap]
+    print(f"\n[17] Later mails in a session: {sum(r.ok for r in later)}/{len(later)} read and acted on right, "
+          f"{sum(not r.ok and bool(r.known_gap) for r in later)} known gaps")  # fmt: skip
+    for r in later:
+        if not r.ok:
+            print(f"    {'GAP ' if r.known_gap else 'FAIL'} {r.case_id}: want {r.want}, got {r.got}")
+
     failed = bool(
-        prices.failures
+        later_wrong
+        or prices.failures
         or sources.failures
         or wrong
         or partial.failures

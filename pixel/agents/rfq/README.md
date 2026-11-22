@@ -86,15 +86,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
 - Every customer mail later in the thread goes through `followup.py` `read`, by rules and without a model call: the
-  phase it meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `declined`), its intent
-  (`change`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states differently
-  (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup postcode;
-  beside a word of change the preference or currency; never a hypothetical question, our own chargeable or billed
-  weight quoted back, or a signature's postcode). A `followup.read` event records each. `booking.py` `handle_reply`
-  acts on it: a change, or a plain ask for an updated offer, in phase `open`, `quoted` or `declined` is priced again
-  on the session's newest reading (`session.rfq`) with the changes applied; a change wins over an acceptance ("book
-  it, but it is 320 kg now"), cargo restated at the chargeable weight we priced is none (`followup.py` `_priced`); a change after the acceptance goes to a person with what changed; a tracking question
-  after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
+  phase it meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `cancelled`, `declined`), its
+  intent (`change`, `cancel`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states
+  differently (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup
+  postcode; beside a word of change the preference or currency; never a hypothetical question, our own chargeable or
+  billed weight quoted back, or a signature's postcode). A `followup.read` event records each. `followup.action` is
+  the one table of what the session does, `booking.py` `handle_reply` does it: a change, or a plain ask for an updated
+  offer without an acceptance, in phase `open`, `quoted` or `declined` is priced again on the session's newest reading
+  (`session.rfq`) with the changes applied; a change wins over an acceptance ("book it, but it is 320 kg now"),
+  cargo restated at the chargeable weight we priced is none (`followup.py` `_priced`); a cancellation (`CANCELS`, en/de/fr/es/it; it wins over "Auftrag") after the acceptance cancels the booking
+  (`cancel`), before it declines the quote; a change after the acceptance goes to a person with what changed; a
+  tracking question after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
+  `tools/followup_matrix.py` runs every sender, phase and intent (`tests/fixtures/thread-followups.json`) and
+  the change mail in six languages, three unit systems and five attachment formats.
 - `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
   from the best the session holds, R1), and sends a quote with its PDF in reply to the change mail
   (`outbox.send_quote(reply_to=...)`, its own claim). While it prices, `outbox.quoted` is true and a quote of the

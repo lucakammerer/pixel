@@ -2,9 +2,11 @@
 
 Round 86: the customer changed the cargo ten seconds after our quote and asked for an updated offer; the scorer scored
 our answer to that mail and saw none. A mail's place in the thread says little: what it says decides. `read` gives the
-phase the mail meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `declined`), its intent
-(`change`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it changes, from its own words
-and else from an attached document. `booking.handle_reply` acts on it. No model call."""
+phase the mail meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `cancelled`, `declined`), its
+intent
+(`change`, `cancel`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it changes, from its own
+words and else from an attached document; `action` is what the session does with it, `booking.handle_reply` does it.
+No model call."""
 
 import re
 from dataclasses import dataclass, field
@@ -24,6 +26,8 @@ UPDATE = re.compile(
     r"\b(?:update|revise|adjust|redo|amend)\w*\s+(?:\w+\s+){0,2}(?:offer|quote|quotation|price|rate)"
     r"|\b(?:updated|revised|new|adjusted|amended)\s+(?:offer|quote|quotation|price)|\bre-?quote"
     r"|\bangebot\w*\s+(?:\w+\s+){0,3}(?:aktualisier|anpass|überarbeit|neu)\w*|(?:neues|aktualisiertes|angepasstes)\s+angebot"
+    r"|\bpassen\s+sie\s+(?:\w+\s+){0,3}angebot\w*\s+an\b|\bofferte\s+(?:\w+\s+){0,2}(?:aan\s*(?:te\s+)?passen|bijwerken)"
+    r"|nieuwe\s+offerte"
     r"|\b(?:mettre|mettez)\s+à\s+jour\s+(?:votre|l['’]|cette)\s*(?:offre|cotation|devis)|nouvelle\s+(?:offre|cotation)"
     r"|offre\s+(?:mise\s+à\s+jour|révisée)|\bactualiz\w+\s+(?:la|su)\s+(?:oferta|cotización)"
     r"|nueva\s+(?:oferta|cotización)|\baggiorna\w*\s+(?:l['’]|la\s+)?offerta|nuova\s+offerta",
@@ -44,8 +48,16 @@ TRACKING = re.compile(
     r"|où\s+(?:en\s+est|se\s+trouve)|suivi\s+de|dónde\s+está|estado\s+del\s+envío|dov['’]è|stato\s+della\s+spedizione)",
     re.IGNORECASE,
 )
+# Withdraws the booking or the order itself, not a side request ("cancel our pickup slot request" is no cancellation).
+CANCELS = re.compile(
+    r"\bcancel\w*\s+(?:\w+\s+){0,2}(?:booking|shipment|order|reservation|it|BK-\w+)\b|(?:don['’]t|do not)\s+book\b"
+    r"|\bwithdr[ae]w\w*\s+(?:\w+\s+){0,2}order|\b(?:storn\w*|annul\w*)\b|nicht\s+buchen|buchung\s+zurück\w*"
+    r"|\bcancelar\s+(?:\w+\s+){0,2}(?:reserva|envío|pedido)|\bcancellare\s+(?:\w+\s+){0,2}(?:prenotazione|spedizione)",
+    re.IGNORECASE,
+)
 HYPOTHETICAL = re.compile(r"\b(?:if|whether|falls|wenn|ob|si|se|would|würde)\b", re.IGNORECASE)
 PRICED_AGAIN = ("open", "quoted", "declined")  # after the acceptance a person rebooks
+BOOKED = ("accepted", "booked", "confirmed")
 
 
 @dataclass(frozen=True)
@@ -59,7 +71,7 @@ def phase(ctx: Context, quote: Quote | None) -> str:
     if quote is None or quote.sent_at is None:
         return "open"
     booking = bookings.for_session(ctx, quote.session_id)
-    if booking and booking.status in (BookingStatus.BOOKED, BookingStatus.CONFIRMED):
+    if booking and booking.status in (BookingStatus.BOOKED, BookingStatus.CONFIRMED, BookingStatus.CANCELLED):
         return booking.status.value
     return {QuoteStatus.ACCEPTED: "accepted", QuoteStatus.DECLINED: "declined"}.get(quote.status, "quoted")
 
@@ -90,7 +102,7 @@ def _cargo(text: str, document: bool = False) -> dict:
 def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: list[str] = ()) -> dict:
     """The request fields this text states differently from `rfq`: cargo (from the text, else from the first
     attached document that states it), lane, pickup postcode, and beside a word of change the preference or currency.
-    Our own chargeable or billed weight quoted back is no change; pieces alone change no price."""
+    Our own chargeable or billed weight quoted back is no change."""
     text = _stated(text)
     cargo = _cargo(text)
     for document in documents if not cargo else ():
@@ -98,9 +110,7 @@ def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: li
             break
     if cargo.get("weight_kg") in ours:
         cargo.pop("weight_kg")
-    found = {k: v for k, v in cargo.items() if k != "pieces" and v != getattr(rfq, k)}
-    if found and cargo.get("pieces"):
-        found["pieces"] = cargo["pieces"]
+    found = {k: v for k, v in cargo.items() if v != getattr(rfq, k)}
     lane = extract._lane(text) or ("", extract._destination_only(text) or "")
     for key, code in zip(("origin", "destination"), lane, strict=True):
         if code and code != getattr(rfq, key):
@@ -123,6 +133,27 @@ def _priced(rfq: Rfq, cargo: dict) -> bool:
     return stated == calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
 
 
+def action(read: Followup) -> str:
+    """What the session does with the mail (`booking.handle_reply`): requote, track, cancel, decline, book, rebook (an
+    acceptance again: only a replay of the first resumes its booking), nothing, or person."""
+    phase, intent = read.phase, read.intent
+    if intent == "change":
+        return "requote" if phase in PRICED_AGAIN else "person"
+    if intent == "tracking":
+        return "track"
+    if intent == "cancel":
+        return {"quoted": "decline", "declined": "nothing", "cancelled": "nothing"}.get(
+            phase, "cancel" if phase in BOOKED else "person"
+        )
+    if intent == "accept":
+        return {"quoted": "book", "declined": "book"}.get(phase, "rebook" if phase in BOOKED else "person")
+    if intent == "decline":
+        return {"quoted": "decline", "declined": "decline"}.get(phase, "person")
+    if intent == "thanks" and phase != "open":
+        return "nothing"
+    return "person"
+
+
 async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | None, said: str) -> Followup:
     """`said` is the reply's accept, decline or other (`booking.reply_intent`). A change wins over an acceptance
     ("book it, but it is 320 kg now" books nothing at the old weight). Emits `followup.read`."""
@@ -141,9 +172,11 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
     # "The updated offer works, please book" accepts: only a changed field outweighs an acceptance or a decline.
     if found or (UPDATE.search(own) and said == "other"):
         intent = "change"
+    elif CANCELS.search(own):  # "bitte stornieren, der Auftrag wurde zurückgezogen": "Auftrag" is no acceptance here
+        intent = "cancel"
     elif said in ("accept", "decline"):
         intent = said
-    elif TRACKING.search(own) and now in ("accepted", "booked", "confirmed"):
+    elif TRACKING.search(own) and now in BOOKED:
         intent = "tracking"
     elif "?" in own:
         intent = "question"
