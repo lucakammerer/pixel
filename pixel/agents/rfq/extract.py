@@ -1410,6 +1410,32 @@ async def dangerous_goods(
     return None
 
 
+QUOTED_SUBJECT = re.compile(r"[\"“„«]([^\"“”„«»\n]{6,160})[\"”“»]")
+EARLIER_FIELDS = ("weight_kg", "volume_cbm", "pieces", "door_pickup", "pickup_postcode", "pickup_zone", "origin")
+
+
+def _earlier_request(ctx: Context, mail: Message, read: Rfq) -> Rfq:
+    """'the same shipment as in my request "<subject>"': cargo and pickup come from that request of the same
+    sender (round 101), the new mail keeps its destination, date and wish. A door request's zone picks the airport."""
+    if not {"origin", "weight_kg", "volume_cbm"} & set(read.missing):
+        return read
+    for subject in QUOTED_SUBJECT.findall(_body(mail)):
+        row = ctx.db.execute(
+            "SELECT e.payload FROM messages m JOIN events e ON e.session_id = m.session_id AND e.kind = 'rfq.extracted'"
+            " WHERE m.direction = 'in' AND m.sender = ? AND m.subject = ? AND m.session_id <> ? ORDER BY e.id DESC",
+            (mail.sender, subject.strip(), mail.session_id),
+        ).fetchone()
+        if not row:
+            continue
+        old = json.loads(row[0])
+        update = {f: old[f] for f in EARLIER_FIELDS if old.get(f) not in (None, "", "0")}
+        if update.get("door_pickup") and update.get("pickup_zone"):
+            update.pop("origin", None)
+        missing = [m for m in read.missing if m not in update and not (m == "origin" and "pickup_zone" in update)]
+        return Rfq.model_validate({**read.model_dump(mode="json"), **update, "missing": missing})
+    return read
+
+
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     rfq, _ = await read_request(ctx, message, deadline)
     return rfq
@@ -1591,6 +1617,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
             rfq = _from_model(result.data, message, deadline)
+            rfq = _earlier_request(ctx, mail, rfq)
             if cargo:
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
             rfq = apply_pickup(await ask(rfq))
