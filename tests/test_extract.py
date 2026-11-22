@@ -73,6 +73,23 @@ def test_delivery_legs_around_the_flight_do_not_turn_the_lane():
     assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
 
 
+@pytest.mark.parametrize(
+    "delivery",
+    [
+        "we'll deliver it to Town Airport (AAA) ourselves",  # round 174
+        "we deliver to Town airport (AAA) ourselves",  # round 168
+        "we will bring the cargo to New Town Airport (AAA) ourselves",
+        "we take it to AAA airport ourselves",
+        "we drop it off at Town Airport (AAA) by us",
+        "our driver will deliver them to Town Airport AAA on our own",
+    ],
+)  # fmt: skip
+def test_the_airport_the_customer_delivers_to_is_the_origin(delivery):
+    body = f"I'm arranging the flight to BBB for our buyer's import, and {delivery}. 11 pieces, 492 kg, 1.86 cbm."
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert rfq and (rfq.origin, rfq.destination) == ("AAA", "BBB")
+
+
 async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
     calls = []
 

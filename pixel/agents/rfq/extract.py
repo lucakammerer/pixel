@@ -37,9 +37,12 @@ DEST_LABEL = re.compile(
     rf"{AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
 )
 # The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
-# the door" the destination.
+# the door" the destination. Rounds 168 and 174 went to the model: "we deliver to Frankfurt airport (FRA) ourselves",
+# "we'll deliver it to Düsseldorf Airport (DUS) ourselves", a place name before the airport and the code in brackets.
 PRE_CARRIAGE = re.compile(
-    rf"(?i:\bdeliver\w*\s+(?:it\s+|them\s+|(?:the|this|these|our)\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
+    r"(?i:\b(?:deliver|bring|take|drop)\w*\s+(?:it\s+|them\s+|(?:the|this|these|our)\s+\w+\s+)?(?:off\s+)?(?:to|at))"
+    r"(?:\s+(?!(?i:the|our|your)\b)[A-Z][\w.'-]*){0,3}?(?:\s+(?i:airport|flughafen))?\s+\(?"
+    rf"{CODE}\)?(?=(?:\s+(?i:airport))?\s+(?i:ourselves|by us|on our own))"
 )
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
