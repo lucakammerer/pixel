@@ -809,5 +809,59 @@
     "sure": "text",
     "why": "An airline's offer in a bid thread should not trigger a customer quote.",
     "step": "party of import-implicit: airline"
+  },
+  "export-written-korean": {
+    "branch": "direction",
+    "expected": "quote",
+    "sure": "text",
+    "why": "The written lane leaves our export origin.",
+    "step": "opposite of import-written-korean",
+    "air": {
+      "origin": "FRA",
+      "destination": "PVG",
+      "weight_kg": "220",
+      "volume_cbm": "1.1"
+    }
+  },
+  "import-written-korean": {
+    "branch": "direction",
+    "expected": "decline",
+    "sure": "text",
+    "why": "The written lane goes into our export origin.",
+    "step": "korean version of import-implicit",
+    "air": {
+      "origin": "PVG",
+      "destination": "FRA",
+      "weight_kg": "220",
+      "volume_cbm": "1.1"
+    },
+    "known_gap": "scope (G4): reversing the written inbound lane turns an import into an export quote"
+  },
+  "export-written-turkish": {
+    "branch": "direction",
+    "expected": "quote",
+    "sure": "text",
+    "why": "The written lane leaves our export origin.",
+    "step": "opposite of import-written-turkish",
+    "air": {
+      "origin": "FRA",
+      "destination": "PVG",
+      "weight_kg": "220",
+      "volume_cbm": "1.1"
+    }
+  },
+  "import-written-turkish": {
+    "branch": "direction",
+    "expected": "decline",
+    "sure": "text",
+    "why": "The written lane goes into our export origin.",
+    "step": "turkish version of import-implicit",
+    "air": {
+      "origin": "PVG",
+      "destination": "FRA",
+      "weight_kg": "220",
+      "volume_cbm": "1.1"
+    },
+    "known_gap": "scope (G4): reversing the written inbound lane turns an import into an export quote"
   }
 }

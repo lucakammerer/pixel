@@ -407,12 +407,12 @@ still require inspection.
 | Does a fulfilled PDF request still pass when the reply also asks the customer to send the PDF? | 161 and 167 passed. The next filing request combined with an actual document requirement would test the distinction |
 | Was 156's `wrong_language` for the question or for the no-price reply? | the next foreign-language round that ends without a price |
 
-## Axis S: scope (22.11.2026, through round 192)
+## Axis S: scope (22.11.2026, through round 194)
 
 Does a mail get the kind of answer it should: a quote, or a plain answer without a price (or none for a mail that
 asks for nothing)? Round 177 priced a sea freight request as air (`out_of_scope_quoted`); rounds 96, 104 and 122 sent
 a request we could have priced the answer without a price (`declined_in_scope`). The scorer tests both directions,
-so half the cases are the in-scope side. 84 mails in `tests/fixtures/next-cases/scope/`; the expected answer of each,
+so half the cases are the in-scope side. 88 mails in `tests/fixtures/next-cases/scope/`; the expected answer of each,
 written by hand from the challenge text and the domain, with how sure it is (`live`: seen scored, `text`: follows
 from the challenge text, `guess`), and the step it was taken from (Luca's "look in every direction": language,
 script, channel, moment, unit, two at once) in `tests/fixtures/next-cases/scope.json`. No test reads either.
@@ -453,12 +453,14 @@ stored customer request offline beside the scorer's verdict. It counts an explic
 question went out first. A missing rate and a missing reply are separate outcomes. Model answers replay only if
 recorded for the same prompt, and the database holds attachment metadata without the files. Every scope pull request
 reports the count of previously accepted quotes that now get a scope decline or lose their reply.
-On the snapshot through round 192, main and the simulated merge of #513 both replayed 119 of 133 previously
-accepted quotes as quotes. The remaining 14 were unpriced in replay, with zero scope declines and zero missing
+Through round 194, main and the simulated merge of #513 both replayed 126 of 135 previously
+accepted quotes as quotes. The remaining 9 were unpriced in replay, with zero scope declines and zero missing
 replies. Round 159 was accepted as a scope decline live and still declines. Round 177, rejected for quoting sea
 freight, now declines. On the fixtures #513 declines both written imports, including the German request with
 imperial units, while the matched export still quotes. The attachment import declines when routed as an RFQ.
-The possible silence on that request belongs to G9.
+The possible silence on that request belongs to G9. The Korean and Turkish pairs use the lane grammar added by
+#489. Before #513 all four receive an export quote. With #513 the two imports receive a decline and the two
+exports still receive a quote.
 
 The class fix (next pull requests, read path, for the review thread): decide scope before the question (G1), then
 one scope reading: a rule that only notices a mode, service or non-request word in any language (subject, body and
@@ -551,8 +553,12 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 | `export-written-in-attachment` | direction | opposite of import-written-in-attachment | quote (text) | air: quote; blank: quote; routed other: none | split | scope (G9): the router can label the request other when the flight details are in an attachment |
 | `export-with-import-history` | direction | moment of import-implicit: older request quoted in a new RFQ | quote (text) | quote | right |  |
 | `import-lane-in-carrier-reply` | direction | party of import-implicit: airline | no_price (text) | none | right |  |
+| `export-written-korean` | direction | opposite of import-written-korean | quote (text) | quote | right |  |
+| `import-written-korean` | direction | korean version of import-implicit | decline (text) | quote | wrong | scope (G4): reversing the written inbound lane turns an import into an export quote |
+| `export-written-turkish` | direction | opposite of import-written-turkish | quote (text) | quote | right |  |
+| `import-written-turkish` | direction | turkish version of import-implicit | decline (text) | quote | wrong | scope (G4): reversing the written inbound lane turns an import into an export quote |
 
-84 cases: 30 right, 2 late, 16 split, 36 wrong.
+88 cases: 32 right, 2 late, 16 split, 38 wrong.
 
 
 ## Axis T: supply
