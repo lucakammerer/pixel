@@ -115,6 +115,8 @@ Rank = likelihood × how badly we fail today × how cheap the fix is (each 1 to 
 | C11 | `out-of-order-visibility` | 91012 visible before 91011, 91011's push lost | new | 91011 is never polled again | every Nth poll from a few ids back; `ingest` drops duplicates | `poller.run` | S | 1×3×2 |
 | C8 | `push-timestamp-format` | `X-Webhook-Timestamp` in ms or ISO | new | 401 / 500, the 1 s poll takes it: latency only | read like a stored time | `webhook.hook` | S | 2×1×3 |
 | C14 | `large-attachment` | 9.5 MB, 400-page scan as the only document | new | unmeasured; parse unbounded, no Rfq at takeover | bounded parse; what is read by then counts | `extract._attachments` | M | 1×3×1 |
+| C15 | `portal-all-down` | the lane list fails with the rates (live: rounds 46, 47), or a rate read drops its connection | live | **fixed**: before, neither asked the rate card; rounds 120 to 123 replayed on the live database priced the fastest airline from it either way | the airline priced from the card | `portal_rates.options`, `_read` | S | 2×3×3 |
+| C16 | `version-change-in-outage` | the dataset version changes while the rate API is down | esc. | the card prices the old version: 11.8 % off in the one rate it met (`tools.card_proof`, `new version`), a lost round | a factor for the new version without a portal read | `rate_card` | M | 1×3×1 |
 | — | pushes stop | the webhook subscription is dropped | new | covered: the poll is the safety net (`test_poller`) | — | — | — | — |
 | — | push twice / out of order | same push repeated or an older one after a newer | new | covered: stored once by id (`test_webhook`) | — | — | — | — |
 | — | poll 429 with a slower minimum | "one poll per 5 seconds" | live (22.11. 01:23) | covered: interval learned from the 429 | — | — | — | — |
@@ -126,7 +128,7 @@ Cost points in a gateway outage (R28): a failed call logs 0 USD, and an 18-minut
 points for any of its quotes. A full outage therefore costs the window's cost points whatever we do. In a partial
 one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window above zero.
 
-Open and unverified: C5, C6, C8, C11 and C14 have no fix. C6, C8 and C11 come from code reading, C14 is not
+Open and unverified: C5, C6, C8, C11, C14 and C16 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
 merged and the organisers turn that lever.
 ## Axis B: booking, tracking and the flow after the quote (22.11.2026, 02:00 to 03:30)
