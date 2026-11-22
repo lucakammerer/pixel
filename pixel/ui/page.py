@@ -101,6 +101,7 @@ border:1px solid var(--line);border-radius:8px;overflow:hidden}
 letter-spacing:-.015em;margin-top:2px}.stats .note{font-size:12px;color:var(--muted)}
 .split{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
 .split>aside{position:sticky;top:76px}
+.split>div>h2:first-child{margin-top:0;line-height:24px}.split:has(>div>h2:first-child)>aside{margin-top:36px}
 dl{display:grid;grid-template-columns:84px 1fr;gap:8px 12px;margin:0}dt{color:var(--muted)}dd{margin:0;min-width:0;
 overflow-wrap:anywhere}
 .side h3{font-size:12px;font-weight:500;color:var(--muted);margin:0 0 10px}
