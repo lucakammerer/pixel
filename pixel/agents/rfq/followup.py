@@ -24,8 +24,9 @@ from pixel.pricing.pickup import zone_of
 # Asks for a new price whatever changed, also a date or a detail our price does not depend on: the scorer then scores
 # our answer to this mail (round 86).
 UPDATE = re.compile(
-    r"\b(?:update|revise|adjust|redo|amend|correct|rectify)\w*\s+(?:\w+\s+){0,2}(?:offer|quote|quotation|price|rate)"
-    r"|\b(?:updated|revised|new|adjusted|amended)\s+(?:offer|quote|quotation|price)|\bre-?quote"
+    r"\b(?:update|revise|adjust|redo|amend)\w*\s+(?:\w+\s+){0,2}(?:offer|quote|quotation|price|rate)"
+    r"|\b(?:correct|rectify)\s+(?:the|your|this|our)\s+(?:\w+\s+)?(?:offer|quote|quotation|price|rate)\b"
+    r"|\b(?:updated|revised|new|adjusted|amended|corrected)\s+(?:offer|quote|quotation|price)|\bre-?quote"
     r"|\bangebot\w*\s+(?:\w+\s+){0,3}(?:aktualisier|anpass|überarbeit|korrigier|neu)\w*|(?:neues|aktualisiertes|angepasstes)\s+angebot"
     r"|\bpassen\s+sie\s+(?:\w+\s+){0,3}angebot\w*\s+an\b|\bofferte\s+(?:\w+\s+){0,2}(?:aan\s*(?:te\s+)?passen|bijwerken)"
     r"|nieuwe\s+offerte"
@@ -64,7 +65,9 @@ CANCELS = re.compile(
 )
 # A condition with a booking word in one sentence ("If the all-in stays below EUR 400, please book it"): never a
 # thank-you that needs nobody. Its cap, when it states one, is compared with our total by `selection.within_cap`.
-CONDITION = re.compile(r"\b(?:if|as long as|provided|unless|falls|wenn|sofern|solange|si|sous\s+réserve|se)\b", re.IGNORECASE)
+CONDITION = re.compile(
+    r"\b(?:if|as long as|provided|unless|falls|wenn|sofern|solange|si|sous\s+réserve|se)\b", re.IGNORECASE
+)
 BOOK_WORD = re.compile(
     r"\b(?:book\w*|proceed|go\s+ahead|buch\w*|beauftrag\w*|réserv\w*|reserv\w*|prenot\w*|confirm\w*\s+(?:the\s+)?order)\b",
     re.IGNORECASE,
@@ -80,6 +83,11 @@ CAP = re.compile(
 )
 SYMBOL = {"€": "EUR", "$": "USD"}
 HYPOTHETICAL = re.compile(r"\b(?:if|whether|falls|wenn|ob|si|se|would|würde)\b", re.IGNORECASE)
+QUOTE_CHECK = re.compile(
+    r"(?:^|(?<=[.!?])\s+|\n)\s*(?:is\s+(?:this|that)|please\s+confirm|(?:can|could|would)\s+you\s+(?:please\s+)?confirm)\b"
+    r"[^.!?\n]*\b(?:offer|quote|quotation|price|rate)\b",
+    re.IGNORECASE,
+)
 PRICED_AGAIN = ("open", "quoted", "declined")  # after the acceptance a person rebooks
 BOOKED = ("accepted", "booked", "confirmed")
 
@@ -108,9 +116,14 @@ def own_words(message: Message) -> str:
 
 
 def _stated(text: str) -> str:
-    """Without a hypothetical question ("What would 900 kg cost?"): that asks, it changes nothing."""
+    """Only stated cargo facts count. A hypothetical or a request to confirm the quote checks its basis."""
     sentences = re.split(r"(?<=[.!?])\s+|\n", text)
-    return "\n".join(s for s in sentences if not (s.rstrip().endswith("?") and HYPOTHETICAL.search(s)))
+    return "\n".join(
+        s
+        for s in sentences
+        if not (s.rstrip().endswith("?") and HYPOTHETICAL.search(s))
+        and not (QUOTE_CHECK.search(s) and not CHANGED.search(s))
+    )
 
 
 def _cargo(text: str, document: bool = False) -> dict:
@@ -243,7 +256,7 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         intent = said
     elif TRACKING.search(own) and now in BOOKED:
         intent = "tracking"
-    elif "?" in own:
+    elif "?" in own or QUOTE_CHECK.search(own):
         intent = "question"
     else:
         intent = "thanks"
