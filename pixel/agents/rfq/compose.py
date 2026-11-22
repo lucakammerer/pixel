@@ -795,7 +795,7 @@ def _day(d: date, t: dict) -> str:
 
 def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> str:
     """What the request asked beyond the price, answered by code: their own reference (also in the PDF), the
-    earliest arrival (ready date, a day for a pickup to reach the airport, the transit), the departure that goes with
+    earliest arrival (ready date plus the transit, `calc.arrival`), the departure that goes with
     it, one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
     try:
         t = TEXT[language_of(rfq)]

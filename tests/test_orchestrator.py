@@ -307,3 +307,27 @@ async def test_a_sea_freight_request_gets_no_price_and_its_answer_at_once(conn, 
     assert "quote.sent" not in kinds(ctx)
     assert ctx.mailbox.sent == [message.sender]
     assert not orchestrator.out_of_scope(ctx, ingest_rfq(ctx).id)
+
+
+@pytest.mark.parametrize(
+    ("text", "declined"),
+    [
+        ("Please quote port-to-port sea freight HAM to DXB, FCL 1 x 40ft.", True),
+        ("Bitte Seefracht HAM nach DXB, 1 x 40ft FCL.", True),
+        ("Cotation fret maritime LCL Le Havre - Dubai, 4 cbm.", True),
+        # an air request that names the other mode only to set it aside is quoted
+        ("Quote FRA to JFK 300 kg please, not by sea.", False),
+        ("We usually ship by sea, but this one is urgent: FRA to JFK, 300 kg, 1.2 cbm.", False),
+        ("Our sea freight is too slow for this order. Please quote FRA - JFK, 300 kg, 1.2 cbm.", False),
+        ("Bitte Angebot FRA nach JFK, 300 kg. Seefracht dauert uns zu lange.", False),
+        ("Merci de coter FRA - JFK, 300 kg, fret aérien, pas de LCL.", False),
+    ],
+)
+def test_only_a_request_for_another_mode_is_out_of_scope(conn, text, declined):
+    ctx = make_ctx(conn)
+    conn.execute(
+        "INSERT INTO messages (id, session_id, direction, sender, recipient, subject, body, sent_at, data)"
+        " VALUES (1, 1, 'in', 'c@x', 'us@x', 'Request', ?, '', '{}')",
+        (text,),
+    )
+    assert orchestrator.out_of_scope(ctx, 1) is declined

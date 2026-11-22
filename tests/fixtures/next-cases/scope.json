@@ -275,15 +275,13 @@
     "branch": "lookalike",
     "expected": "quote",
     "sure": "text",
-    "why": "an earlier sea shipment in passing, no air word",
-    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"shipped by sea\" in the past) and no air word stops it"
+    "why": "an earlier sea shipment in passing, no air word"
   },
   "seefracht-zu-langsam": {
     "branch": "lookalike",
     "expected": "quote",
     "sure": "text",
-    "why": "Seefracht rejected in German, no air word",
-    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"Seefracht dauert zu lange\") and no air word stops it"
+    "why": "Seefracht rejected in German, no air word"
   },
   "import-buyer-side": {
     "branch": "lookalike",
@@ -363,8 +361,7 @@
     "branch": "lookalike",
     "expected": "quote",
     "sure": "text",
-    "why": "'by sea' negated",
-    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"not by sea\") and no air word stops it"
+    "why": "'by sea' negated"
   },
   "export-to-importer": {
     "branch": "lookalike",
