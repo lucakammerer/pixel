@@ -90,3 +90,10 @@ async def test_a_hanging_gateway_never_holds_the_quote_and_still_alerts(conn, mo
     assert await asyncio.wait_for(novelty.check(ctx, rfq, text, subject), 1) == rfq
     await asyncio.gather(*ctx.tasks)
     assert posted[0]["mapped"] == {"error": "TimeoutError"} and novelty.mapped(ctx, 1) == {}
+
+
+def test_a_dangerous_goods_line_with_n_o_s_is_read_whole():
+    """Sessions 33097 and 38213: "n.o.s." split the packing list's DG line, and "(contains phosphoric acid)" cost a
+    model call and a note in the quote though the DG rule had read the line."""
+    line = "Dangerous goods: UN1760, Class 8, Corrosive liquid, n.o.s. (contains phosphoric acid)"
+    assert novelty.leftover(line) == []

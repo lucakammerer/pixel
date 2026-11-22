@@ -92,7 +92,8 @@ SCHEDULE_ALTERNATIVE = {
     "fr": "L’option disponible dépasse le délai que vous avez demandé.",
 }
 MONEY = re.compile(rf"[€$£]|\b(?:{'|'.join(extract.CURRENCIES)})\b")
-SENTENCE = re.compile(r"(?<=[.!?])\s+|\n")
+# No split after a dotted abbreviation: "Corrosive liquid, n.o.s. (contains phosphoric acid)" stays one sentence.
+SENTENCE = re.compile(r"(?<=[.!?])(?<!\.\w\.)\s+|\n")
 WORD = re.compile(r"[^\W\d_][\w'’-]+")
 
 
