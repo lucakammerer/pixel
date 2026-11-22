@@ -69,8 +69,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
 - `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names ("<airline> only",
-  "nur mit ...", and "no airline other than ...", "keine andere Airline als ...", which `excluded_airlines` no longer
-  reads as ruling that airline out).
+  "nur mit ...", "only accept / work with ...", "must fly with ...", "muss mit ... fliegen", "requires ...",
+  "<airline> is our only approved carrier", "<airline>, no other airline", and "no airline other than ...", "keine
+  andere Airline als ...", which `excluded_airlines` no longer reads as ruling that airline out). A negation before
+  it ("does not require ...") makes it no requirement.
   `pricing/selection.py` `select` prefers compliant prices and `pricing/bids.py` `request` limits airline enquiries to
   the requested carriers. If recovery reaches the deadline with only another airline's price, `novelty.py`
   `with_note` identifies that price as an alternative.

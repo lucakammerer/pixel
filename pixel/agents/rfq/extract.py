@@ -676,18 +676,25 @@ def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
     item = rf"{mention}(?:\s*\([a-z0-9]{{2}}\))?"
     listed = rf"{item}(?:{AIRLINE_CONNECTOR}{item})*"
     instruction = re.compile(
-        rf"\b{AIRLINE_ONLY}\s+(?:(?:quote|offer|use|fly)\s+)?"
+        rf"\b{AIRLINE_ONLY}\s+(?:(?:quote|offer|use|fly|accept|book|ship|work)\s+)?"
         rf"(?:(?:with|via|on|mit|von|über|avec|par|angebote von)\s+)?"
         rf"(?P<after>{listed})(?:\s+(?:fliegen|anbieten))?{AIRLINE_END}"
         rf"|(?P<before>{listed})\s+{AIRLINE_ONLY}\b{AIRLINE_END}"
         rf"|\b{AIRLINE_NO_OTHER}\s+(?P<other>{listed})"
+        # "must fly with X", "requires X", "X is our only approved carrier", "X, no other airline"
+        rf"|\b(?:must|has to|have to|needs? to|muss|müssen)\s+(?:be\s+)?(?:fl(?:y|own)|go|ship(?:ped)?|booked)\s+"
+        rf"(?:with|via|on|by|mit)\s+(?P<must>{listed}){AIRLINE_END}"
+        rf"|\b(?:muss|müssen)\s+(?:mit|über)\s+(?P<muss>{listed})\s+(?:fliegen|geflogen|gehen|versendet)\b"
+        rf"|\brequires?\s+(?P<requires>{listed})"
+        rf"|(?P<sole>{listed})\s+is\s+(?:our|the)\s+only\b"
+        rf"|(?P<other_after>{listed}),?\s+(?:and\s+)?no other (?:airlines?|carriers?)\b"
     )
     required = set()
     for sentence in AIRLINE_SENTENCES.split(text.casefold()):
         for match in instruction.finditer(sentence):
             if re.search(r"\b(?:not|nicht)\s+$", sentence[: match.start()]):
                 continue
-            group = match["before"] or match["after"] or match["other"]
+            group = next(g for g in match.groups() if g)
             required.update(aliases[name] for name in re.findall(mention, group))
     return tuple(sorted(required))
 
