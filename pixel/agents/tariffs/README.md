@@ -50,7 +50,8 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
   in UTF-16 its characters.
 - `attachment_images`: the attachments `_lines` cannot read as text (a photo, a scanned pdf) as JPEG pages, at
   most `SCAN_PAGES`, for the one model call a request (`extract.read_request`) or a bid (`bids.record`) the
-  rules cannot read costs anyway.
+  rules cannot read costs anyway; each page at most `PAGE_SIDE` pixels long at JPEG quality `PAGE_QUALITY`, none over
+  `PAGE_BYTES`. A request sends them only when its own words name no lane or no weight.
 - `check`: on every result: lane codes, currency, dates, minimum > 0 and not a transit in days (a whole number up to
   30 below two kg at the first rate), transit 1 to 30 days, first break at 0 kg,
   breaks ascending, rates positive and never rising with weight, surcharges below the first rate.

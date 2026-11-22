@@ -1482,3 +1482,35 @@ async def test_a_photographed_request_goes_to_the_model_as_its_page(conn, monkey
     rfq = await extract.extract(ctx, request, DEADLINE)
     assert [(p, len(i), i[0][:2]) for p, i in seen if p == "rfq.extract"] == [("rfq.extract", 1, b"\xff\xd8")]
     assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm) == ("AAA", "BBB", Decimal(480), Decimal("2.10"))
+
+
+async def test_a_cargo_photo_beside_a_written_request_never_rides_along(conn, monkeypatch):
+    """The mail names its lane and weight: a photo of the crates is not sent with the model's reading."""
+    import io
+
+    from PIL import Image
+
+    with io.BytesIO() as stream:
+        Image.new("RGB", (40, 20), "white").save(stream, format="PNG")
+        png = stream.getvalue()
+
+    class Files:
+        async def attachment(self, message_id, attachment_id):
+            return png
+
+    seen = []
+
+    async def model(ctx, *, purpose, images=(), **kw):
+        seen.append(images)
+        raise RuntimeError("no model")
+
+    monkeypatch.setattr(llm, "ask_json", model)
+    ctx = Context(settings(), conn, Files(), None, None, None)
+    photo = Attachment(id=1, filename="cargo.jpg", content_type="image/jpeg", size=10)
+    body = "Please quote FRA to JFK, 480 kg, crates of 120x80x100 cm and 100x60x80 cm, see the photo."  # model reads it
+    request = mail(body).model_copy(update={"attachments": (photo,)})
+    try:
+        await extract.extract(ctx, request, DEADLINE)
+    except RuntimeError:
+        pass
+    assert seen and all(images == () for images in seen)

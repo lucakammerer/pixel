@@ -1975,10 +1975,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         documented = frozenset(f for f, names in evidence.items() if names and "mail" not in names)
         rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline, documented)
     if rfq is None:
-        # A photographed or scanned request: its pages go with the one call, no code reads them as text.
+        # A photographed or scanned request: its pages go with the one call, no code reads them as text. Only when the
+        # mail's own words name no lane or no weight: a cargo photo beside a written request stays home.
         unread = {a.filename for a in mail.attachments} - {name for name, _ in files}
+        own = _text(mail)
+        written = (_lane(own) or _destination_only(own)) and _weight(own, _pieces(own))
         scans = ()
-        if unread and ctx is not None and ctx.mailbox is not None:
+        if unread and not written and ctx is not None and ctx.mailbox is not None:
             from pixel.agents.tariffs.agent import attachment_images
 
             scans = await attachment_images(ctx, mail)

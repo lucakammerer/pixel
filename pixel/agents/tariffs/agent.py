@@ -380,6 +380,8 @@ async def attachment_lines(ctx: Context, message: Message, attachment: Attachmen
 
 
 SCAN_PAGES = 3  # a photographed request or offer is a page or two; more would only cost tokens
+# A phone photo at full size makes the one fallback call slow or fail: pages go at most this long and this heavy.
+PAGE_SIDE, PAGE_QUALITY, PAGE_BYTES = 1600, 80, 1_500_000
 
 
 async def attachment_images(ctx: Context, message: Message) -> tuple[bytes, ...]:
@@ -393,12 +395,16 @@ async def attachment_images(ctx: Context, message: Message) -> tuple[bytes, ...]
         try:
             content = await ctx.mailbox.attachment(message.id, attachment.id)
             if suffix in IMAGES:
-                pages.append(await asyncio.to_thread(_jpeg, content))
-                continue
-            try:
-                _lines(attachment.filename, content)
-            except Unreadable:
-                pages += await asyncio.to_thread(_pdf_pages, content)
+                found = [content]
+            else:
+                try:
+                    _lines(attachment.filename, content)
+                    continue
+                except Unreadable:
+                    found = list(await asyncio.to_thread(_pdf_pages, content))
+            for page in found:
+                if len(jpeg := await asyncio.to_thread(_jpeg, page)) <= PAGE_BYTES:
+                    pages.append(jpeg)
         except Exception as e:  # noqa: BLE001  a broken file must not lose the mail
             events.emit(ctx, "error", "attachments", session_id=message.session_id, message_id=message.id,
                         payload={"where": "attachment_images", "file": attachment.filename, "error": type(e).__name__})  # fmt: skip
@@ -406,10 +412,13 @@ async def attachment_images(ctx: Context, message: Message) -> tuple[bytes, ...]
 
 
 def _jpeg(content: bytes) -> bytes:
+    """A page as a JPEG at most `PAGE_SIDE` pixels on its long side."""
     from PIL import Image
 
     with Image.open(io.BytesIO(content)) as image, io.BytesIO() as stream:
-        image.convert("RGB").save(stream, format="JPEG")
+        page = image.convert("RGB")
+        page.thumbnail((PAGE_SIDE, PAGE_SIDE))
+        page.save(stream, format="JPEG", quality=PAGE_QUALITY)
         return stream.getvalue()
 
 
