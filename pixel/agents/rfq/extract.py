@@ -1206,17 +1206,28 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
 
 # A departure airport the customer asks for: "please route via Munich (MUC), not Frankfurt; our letter of credit names
 # MUC as airport of departure". The code must be one we truck to, and one only once ruled-out codes are dropped.
-DEPARTURE_ASKED = re.compile(r"\b(?:route|routing|via|depart\w*|abflug\w*|über|en partance)\b", re.IGNORECASE)
+DEPARTURE_ASKED = re.compile(
+    r"\b(?:route|routing|via|depart\w*|abflug\w*|über|en partance|fly\s+out\s+of|ex)\b", re.IGNORECASE
+)
 NOT_CODE = re.compile(r"\b(?:not|nicht|instead of|statt|anstatt|rather than)\s+(?:\w+\s+)?\(?$", re.IGNORECASE)
+# A clause that refuses: "please do not route via FRA", "routing via FRA is not possible; use MUC", "avoid FRA".
+REFUSED = re.compile(
+    r"\b(?:not|cannot|can['’]t|no|avoid\w*|impossible|nicht|kein\w*|unmöglich|vermeiden)\b|n['’]t\b", re.IGNORECASE
+)
 
 
 def _asked_departure(ctx: Context, text: str) -> str | None:
     served = store.zone_airports(ctx)
-    codes = set()
-    for sentence in re.split(r"(?<=[.;!?])\s+|\n", text):
-        if DEPARTURE_ASKED.search(sentence):
-            codes |= {m.group(0) for m in CODE.finditer(sentence)
-                      if m.group(0) in served and not NOT_CODE.search(sentence[: m.start()])}  # fmt: skip
+    asked, refused = set(), set()
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+        if not DEPARTURE_ASKED.search(sentence):
+            continue
+        for clause in re.split(r"[;,]|\s(?:so|but|aber|sondern)\s", sentence):
+            for m in CODE.finditer(clause):
+                if m.group(0) in served:
+                    no = REFUSED.search(clause) or NOT_CODE.search(clause[: m.start()])
+                    (refused if no else asked).add(m.group(0))
+    codes = asked - refused
     return codes.pop() if len(codes) == 1 else None
 
 

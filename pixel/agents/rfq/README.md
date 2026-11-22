@@ -353,6 +353,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- A departure the customer refuses is never the one asked for: "please do not route via FRA", "avoid FRA",
+  "routing via FRA is not possible; please use MUC". `_asked_departure` reads each clause: one with a negation
+  refuses its codes, the asked airport is the one served code left; "fly out of MUC" and "ex MUC" ask too.
 - A pickup abroad ("collected from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria") has no zone, so no
   trucker and no zone airport. Asking for its postcode got the customer's address back and then a no-price reply.
   `extract.py` `_abroad_pickup` (a country abroad on a pickup line, or a postcode of other than five digits) asks

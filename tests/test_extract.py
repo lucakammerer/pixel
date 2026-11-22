@@ -1182,6 +1182,25 @@ async def test_a_departure_airport_the_customer_asks_for_wins_over_the_pickup_zo
 
 
 @pytest.mark.parametrize(
+    ("text", "asked"),
+    [
+        ("Please do not route via AAA.", None),  # used to ask for AAA, the airport refused
+        ("Please avoid routing via AAA.", None),
+        ("Routing via AAA is not possible for us; please use BBB.", "BBB"),
+        ("We cannot depart from AAA, so please use BBB.", "BBB"),
+        ("Please fly out of BBB.", "BBB"),
+        ("Departure from AAA is fine, but BBB would be better.", None),
+    ],
+)
+def test_an_airport_the_customer_refuses_is_never_the_asked_departure(conn, text, asked):
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(
+        ctx, [{"zone": "65", "area": "Town", "airport": "AAA"}, {"zone": "80", "area": "City", "airport": "BBB"}]
+    )
+    assert extract._asked_departure(ctx, text) == asked
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "We need to ship to Chicago (ORD) 900 kg, 3.5 cbm; please collect from our warehouse in 63450 Hanau.",
