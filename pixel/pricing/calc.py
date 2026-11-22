@@ -47,6 +47,14 @@ def transit_days(value: int, hours: bool) -> int:
     return (value + 23) // 24 if hours else value
 
 
+HOURS_PER = {"minutes": Decimal(1) / 60, "hours": Decimal(1), "days": Decimal(24)}
+
+
+def pickup_hours(value: Decimal, unit: str) -> int:
+    """A trucker's pickup time in whole hours, as the bid compares it: "2 days" is 48, "90 minutes" 2, half up."""
+    return int((value * HOURS_PER[unit]).to_integral_value(ROUND_HALF_UP))
+
+
 def rate_for(breaks: tuple[tuple[Decimal, Decimal], ...], kg: Decimal) -> Decimal:
     """The rate of the bracket `kg` falls in: the last break at or below it."""
     rate = breaks[0][1]

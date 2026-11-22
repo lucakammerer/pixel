@@ -5,7 +5,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 import httpx
 
@@ -95,6 +95,16 @@ PICKUP_HOURS = re.compile(
     r"\b(?:pick\s*up(?:\s+time)?|collect(?:ion)?|abholung)\s*:?\s*(?:within\s+|in\s+)?" + HOURS.pattern,
     re.IGNORECASE,
 )
+# A pickup time in days or minutes counts only on a line about the pickup: "valid for 2 days" alone is no lead time.
+PICKUP_LINE = re.compile(
+    r"\b(?:pick\s*-?\s*up|collect\w*|abhol\w*|lead\s+time|vorlaufzeit|driver|fahrer)\b", re.IGNORECASE
+)
+PICKUP_SPAN = re.compile(
+    r"(?<![\d:.,])(\d+(?:[.,]\d+)?)\s*(?P<unit>(?:(?:calendar|working|business|werk)\s*)?(?:days?|tage?n?)"
+    r"|minutes?|mins?\b|minuten)\b",
+    re.IGNORECASE,
+)
+WAITING = re.compile(r"\b(?:waiting|wartezeit|standzeit)\b", re.IGNORECASE)
 VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
 FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
@@ -202,11 +212,21 @@ def _own_text(body: str) -> str:
 
 
 def _pickup_hours(body: str) -> int | None:
+    """The pickup time in whole hours: stated in hours, or on a pickup line in days or minutes ("Lead time 2 days
+    from order to collection", "Abholung in 90 Minuten"); an offer's validity is never one."""
     text = _own_text(body)
-    match = PICKUP_HOURS.search(text) or HOURS.search(VALIDITY_HOURS.sub("", text))
-    if not match:
-        return None
-    return int(Decimal(match.group(1).replace(",", ".")).to_integral_value(ROUND_HALF_UP))  # a whole hour (contract)
+    if match := PICKUP_HOURS.search(text) or HOURS.search(VALIDITY_HOURS.sub("", text)):
+        return calc.pickup_hours(Decimal(match.group(1).replace(",", ".")), "hours")
+    for line in text.splitlines():
+        if (
+            PICKUP_LINE.search(line)
+            and not WAITING.search(line)
+            and (m := PICKUP_SPAN.search(line))
+            and not VALIDITY.search(line[: m.start()])
+        ):
+            unit = "minutes" if re.match(r"m", m["unit"], re.IGNORECASE) else "days"
+            return calc.pickup_hours(Decimal(m[1].replace(",", ".")), unit)
+    return None
 
 
 def _rate(text: str) -> Decimal:

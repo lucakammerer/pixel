@@ -662,3 +662,22 @@ async def test_an_answer_the_rules_price_costs_no_model_call(ctx, monkeypatch):
 def test_euro_pallets_are_no_price(body, total):
     option = bids.parse(mail("t@x", body), rfq(), needs_transit=False)
     assert option is not None and (option.total, option.currency) == (D(total), "EUR")
+
+
+@pytest.mark.parametrize(
+    "text, hours",
+    [
+        ("Pickup time: 2 days", 48),
+        ("Collection within 1 working day.", 24),
+        ("Lead time 2 days from order to collection", 48),
+        ("Our driver can be at the pickup address 3 Tage nach Auftrag.", 72),
+        ("Pickup time: 90 minutes", 2),
+        ("Abholung in 30 Minuten", 1),
+        ("Offer valid for 2 days. We can collect.", None),
+        ("Waiting time at the pickup address after the first 30 minutes, 45.00 EUR for each hour.", None),
+        ("Pickup time: 5 hours. Collection Monday to Friday, 5 days a week.", 5),
+    ],
+)
+def test_pickup_time_in_days_or_minutes_is_counted_in_hours(text, hours):
+    # A trucker without hours drops out of the balanced choice and moves the scorer's trucker (R15).
+    assert bids._pickup_hours(text) == hours

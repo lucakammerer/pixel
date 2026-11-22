@@ -42,7 +42,7 @@ Decimal only; a model never computes, compares or writes a price (P1).
 - Cheapest: lowest total in EUR; fastest: fewest transit days. Ties: cheaper, then faster, then carrier name.
 - Truckers are picked by `selection.balanced` (R15): each bid's price and speed are taken as
   multiples of the best price and the best speed among the bids (own / best), equal weights, lowest sum wins. Speed
-  is transit days for an airline and pickup hours for a trucker (a decimal such as "10.5 hours" rounded half up; a clock time such as "09:00 h" is no duration). A door-to-port quote adds the balanced trucker's
+  is transit days for an airline and pickup hours for a trucker (a decimal such as "10.5 hours" rounded half up; on a pickup line "2 days" is 48 and "90 minutes" 2, `calc.pickup_hours`; a clock time such as "09:00 h" is no duration). A door-to-port quote adds the balanced trucker's
   price, not the cheapest, whatever the customer asked for (`engine.combine`). Evidence: the table below;
   `tests/fixtures/pickup-bids.json` holds the trucker bids of those rounds and the bid the scorer's best price
   contained. Best / own summed, own / worst summed and min-max scaling each miss at least one. Airline bids are
