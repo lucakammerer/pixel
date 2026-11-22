@@ -26,6 +26,7 @@
     {"id": "thanks_before_quote", "sender": "customer", "phase": "open", "replies_to": "rfq",
      "body": "Thanks a lot, looking forward to your offer!\n\nKlaus",
      "expected": {"kind": "customer_reply", "intent": "thanks", "action": "person"}},
+    {"id": "round_197_packing_list_changes", "sender": "customer", "phase": "quoted", "replies_to": "quote", "body": "I am sorry for the change. The final packing list shows that the shipment details have changed to 1 piece, 904 kg gross weight, 3.20 cbm.\n\nEverything else remains unchanged. Could you please update your offer accordingly?", "expected": {"kind": "customer_reply", "intent": "change", "action": "requote", "changes": {"pieces": "1", "weight_kg": "904", "volume_cbm": "3.20"}}},
     {"id": "round_86_change_after_quote", "sender": "customer", "phase": "quoted", "replies_to": "quote",
      "body": "Hi there,\n\nHope your day’s going well! Sorry for the change—the final packing list came in, and the shipment details have changed to:\n\n5 pieces, 1317 kg gross weight, 8.18 cbm\n\nEverything else stays the same. Could you please update your offer?\n\nThanks for your help!\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
      "expected": {"kind": "customer_reply", "intent": "change", "action": "requote",
