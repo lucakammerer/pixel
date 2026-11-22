@@ -245,6 +245,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "fastest" (round 75's capture). `read_request` `ask` takes from the answer only the facts we asked for
   (`ANSWERED`) and those the request left at their default (`_stated`); origin and destination only when asked
   (`kept`), also in the rules' guess when the gateway fails. Benchmark section 15 answers every captured request.
+  When the rules cannot read the request even with the answer (round 104: "the same shipment as in my request ...
+  for ATL", now to BOM, two destinations), `_from_answer` reads the asked facts from the answer alone.
 - A request in French, Spanish or Italian counts "colis", "palettes", "bultos", "piezas" or "pezzi" as pieces and
   "tout compris en EUR" as the currency asked for (round 70's capture).
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
