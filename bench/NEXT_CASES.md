@@ -20,7 +20,7 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | # | Case | Sample phrasing | Today | Required | Fix belongs in | Size |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `preferred-airline-only` | "We have a framework contract with Vega Skyfreight, so please quote Vega Skyfreight only" | Cobalt 2346.00 | Vega 3221.50: the mirror of round 42 | `extract.py` next to the exclusion rule; an allow-filter in `selection.select`; bids only to that airline | S |
-| 2 | `dims-per-piece-mixed` (live bug, not a new kind) | "- 2 pallets, 120 x 80 x 60 cm, 210 kg each" | 390 kg, 1478.10 (23% low, `too_low`) | 600 kg, Vega 1920.00 | `extract.py` piece lines: "each" after the dimensions | S |
+| 2 | `dims-per-piece-mixed` (live bug, not a new kind) | "- 2 pallets, 120 x 80 x 60 cm, 210 kg each" | fixed: 600 kg (`extract._each`) | 600 kg, Vega 1920.00 | `extract.py` piece lines: "each" after the dimensions | S |
 | 3 | `latest-arrival-date` | "must arrive in Hong Kong no later than Monday 30 November" | Kestrel 1512.80, arrives 1 Dec | Helix 2132.80, the only one in time | arrival limit in `Rfq` (`contracts.py`, own commit); ready date + transit filter in `selection.select` | M |
 | 4 | `max-transit-days` | "Transit time must not exceed 3 days" | Elbflug 1430.90 (5 d) | Vega 1685.10 (3 d) | same as 3 | with 3 |
 | 5 | `ready-after-tariff-validity` | "ready on 4 December 2026" (sheets valid to 30.11.) | Elbflug 864.00 from the November sheet | no sheet that has expired by the ready date; portal, bid or a valid sheet | `pricing/store.py` `lookup` by ready date | S |
