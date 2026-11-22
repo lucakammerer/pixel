@@ -533,6 +533,15 @@ def _body(rfq: Rfq, pickup: bool) -> str:
     )
 
 
+def _desk_body(rfq: Rfq) -> str:
+    """The desk lists portal rates, it does not quote: asked in the words of its own answer ("portal rates for
+    FRA-JFK, 340.0 kg, 1.2 cbm"). Our airline wording got no desk answer in any 503 round (93 to 96)."""
+    return (
+        f"Hello,\n\nplease send the portal rates for {rfq.origin}-{rfq.destination}, {rfq.weight_kg} kg, "
+        f"{rfq.volume_cbm} cbm.\n\nThank you,\nPIXEL Air Freight"
+    )
+
+
 async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pickup: bool = False) -> list[int]:
     """One bid request per carrier (airline, trucker or the rate desk). Returns the sent mail ids; the poller
     maps the answers back to the session through them."""
@@ -543,7 +552,7 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
                 ctx,
                 to=email,
                 subject=_subject(rfq, pickup),
-                body=_body(rfq, pickup),
+                body=_desk_body(rfq) if email == RATEDESK else _body(rfq, pickup),
                 session_id=rfq.session_id,
                 purpose="bid_pickup" if pickup else "bid_request",  # the router places answers by the "bid" prefix
             )
