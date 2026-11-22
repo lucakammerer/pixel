@@ -237,7 +237,18 @@ NOT_AIR = re.compile(
     r"\b(?:sea|ocean|rail|road)[ -]?freight\b|\bseefracht\b|\b(?:FCL|LCL)\b|\b(?:by|via|per) (?:sea|ship|vessel|rail)\b",
     re.IGNORECASE,
 )
-AIR = re.compile(r"\bair|\bflight|\bluft|\bflug|\bAWB\b", re.IGNORECASE)
+AIR = re.compile(r"\bair|\bflight|\bluft|\bflug|\bAWB\b|\ba[ée]r(?:ien|ienne|ea|eo|o)\b|\bavion", re.IGNORECASE)
+# A sentence that names the other mode only to set it aside: "not by sea", "pas de LCL", "our sea freight is too slow",
+# "we usually ship by sea, but this one is urgent". The request is still for air.
+SET_ASIDE = re.compile(
+    r"\b(?:not|no|never|instead|usually|normally|but|too|nicht|kein\w*|statt\w*|normalerweise|aber|sondern"
+    r"|pas|sans|mais|plut[oô]t)\b|zu (?:lange|langsam)",
+    re.IGNORECASE,
+)
+
+
+def _asks_other_mode(text: str) -> bool:
+    return any(NOT_AIR.search(s) and not SET_ASIDE.search(s) for s in re.split(r"[.!?;\n]", text))
 
 
 def out_of_scope(ctx: Context, session_id: int) -> bool:
@@ -248,7 +259,7 @@ def out_of_scope(ctx: Context, session_id: int) -> bool:
 
     row = ctx.db.execute("SELECT subject, body FROM messages WHERE id = ?", (session_id,)).fetchone()
     text = f"{row['subject'] or ''}\n{row['body'] or ''}" if row else ""
-    if NOT_AIR.search(text) and not AIR.search(text):
+    if _asks_other_mode(text) and not AIR.search(text):
         return True
     rfq = session.rfq(ctx, session_id)
     if rfq is None or not rfq.origin:
