@@ -226,18 +226,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options
   and the finished text. BLOCK: lane, arithmetic of the parts, chargeable weight, pickup present exactly when asked
-  for (round 15), the lots added up again (round 9), a priced weight no plain reading of the mail's own mass
-  figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier shipment left out, per-piece figures times their
-  count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
-  (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
+  for (round 15), the lots added up again (round 9), dangerous goods marked by `extract` without the papers
+  (round 10), the total exactly once, template leftovers,
   a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67), an airline the customer ruled out
   while another is allowed (`_excluded`, round 42), insurance terms stated but no premium in the all-in (`_insured`,
   round 91), a mail not in the customer's script or clearly not in their language, read from their own words and not
   from `rfq.language` (`_language_sent`, rounds 70 and 72; on the draft only once it is no longer to be translated),
-  an offer PDF that is not whole or lacks the total (`_offer_pdf`, rounds 76 and 78), a volume no plain reading of
-  the mail's own figures gives while the volume decides the chargeable weight (`_volume_accounting`: cbm, m3, cubic
-  feet, litres, dimensions times the pieces on their line, sums; round 79's 95 cubic feet priced as 95 cbm; only a
-  WARN when the request has attachments, which may govern).
+  an offer PDF that is not whole or lacks the total (`_offer_pdf`, rounds 76 and 78).
   When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
   A share or rate may be written "%", "percent", "per cent", "pct", "Prozent" or per mille ("‰", "Promille").
   `compose.insured` confirms coverage in the mail alongside the single all-in amount.
@@ -245,7 +240,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.
   WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
-  implausible price per kg, the language, an expired rate. The check itself never changes a quote; every result
+  implausible price per kg, the language, an expired rate; a priced weight no plain reading of the mail's own mass
+  figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier
+  shipment left out, per-piece figures times their count; a listed shipment only by its sum), a volume no plain
+  reading of the mail's own figures gives while the volume decides the chargeable weight (`_volume_accounting`: cbm,
+  m3, cubic feet, litres, dimensions times the pieces on their line, sums; round 79's 95 cubic feet priced as 95
+  cbm), another amount with a currency in the mail outside the DG note. These three blocked right quotes more often
+  than wrong ones (rounds 57, 92, 127, 152, 153 against 113; `tools/check_precision.py`, `bench/REVIEWS.md`): the
+  right figure can be a document's or a later mail's, and every such amount is code's, since `compose.clean` lets no
+  digit into a model-written slot. The check itself never changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
 - `gaps.py`: known gaps, closed before the quote while they can change it (rounds 120 to 123: the rate API answered
@@ -266,16 +269,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   with an entry in `REPAIRS` it builds the quote again with one thing changed: the distrusted bid or the ruled-out
   airline left out (`option.vetoed`; `pricing/session.py` `options` no longer offers it, so the deadline fallback
   inherits it), the customer's language read again from their own words (a new `rfq.extracted`), the fixed phrases
-  instead of model-written slots, the dangerous-goods note put back after a translation, and a weight or volume the
-  mail does not explain read again (`_reading`): the lots' sum, the one reading code makes, or among several the
-  one `critic` picks (one gpt-4.1 call, `CRITIC_TOKENS` output tokens, a quote of at most twelve words: 80 cut a lot line off and the JSON with it, session 45928; at most `CRITIC_WAIT_S`, only on such a BLOCK; taken only
-  when the words it quotes stand in the request, give that reading alone and the reading is one of code's: an
-  `rfq.critic` event), then priced again by `agent._repriced` and recorded as with the second reader. Never when
+  instead of model-written slots, the dangerous-goods note put back after a translation, and lots added up wrong
+  priced again at their sum (`_reading`) by `agent._repriced` and recorded as with the second reader. Never when
   the figures may be a later mail's (`agent._later_figures`: an answer to our question, a customer's change, a
   requote): the check reads the first mail and would set the old figures back; it still checks and alerts. A
   reading the guard turns down leaves its prices out (`option.vetoed`, `rule: <rule>:rejected`). The new quote is kept only
   when its check blocks on fewer rules and on none the old one passed (`_better`); each attempt is a
-  `quote.repaired` event. No model call but `critic` (a language without our text uses the checked translation),
+  `quote.repaired` event. No model call (a language without our text uses the checked translation),
   at most `MAX_STEPS` repairs, none past `agent._repair_by` (15 s before the orchestrator takes over) or
   `FALLBACK_REPAIR_S` in the fallback; a repair that raises keeps the quote as it was. `PIXEL_REPAIR`: `on`,
   `detect` (the check on the sent text, no change) or `off`. A BLOCK without a repair (pickup missing, a reading with no

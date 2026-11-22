@@ -373,8 +373,8 @@ def weight_readings(text: str) -> set[Decimal]:
 
 
 def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
-    """The priced weight is one the mail's own figures explain, else BLOCK. A mail that writes no weight at all
-    only warns: the weight may come from an attachment the check cannot read."""
+    """The priced weight is one the mail's own figures explain, else WARN: the right weight can be a document's or a
+    later mail's, which the check does not read (rounds 57 and 152 blocked a right quote)."""
     text = own_words(request)
     weight = q.rfq.weight_kg
     figures = masses(text)
@@ -388,7 +388,7 @@ def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[
     shown = ", ".join(f"{w:g} kg" for w in sorted(ways)[:6]) if ways else "none"
     each = [f for f in figures if f.per_piece == 0]
     hint = "; a weight per piece without a piece count" if each else ""
-    return [Finding("weight_unexplained", BLOCK, f"priced on {weight} kg; the mail's figures give {shown}{hint}")]
+    return [Finding("weight_unexplained", WARN, f"priced on {weight} kg; the mail's figures give {shown}{hint}")]
 
 
 # --- volume accounting: the priced volume must be one the mail's own figures explain --------------------------------
@@ -463,7 +463,7 @@ def volume_readings(text: str, pieces: int | None = None) -> set[Decimal]:
 
 def _volume_accounting(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
     """The priced volume is one the mail's own figures explain when the volume decides the chargeable weight, else
-    BLOCK; a volume the mail does not write is the attachment's (WARN when there is one)."""
+    WARN (rounds 152 and 153 blocked a right quote); a volume the mail does not write is the attachment's."""
     r = q.rfq
     text = own_words(request)
     ways = volume_readings(text, r.pieces)
@@ -475,8 +475,7 @@ def _volume_accounting(q: Quote, request: str, options: list[RateOption], files:
     if not ways:  # nothing to hold the volume against: an attachment, the subject, a default
         return []
     shown = ", ".join(f"{w.quantize(Decimal('0.01'))} cbm" for w in sorted(ways)[:6])
-    level = WARN if files else BLOCK  # a packing list may govern: the evidence says so, the check cannot read it
-    return [Finding("volume_unexplained", level, f"priced on {r.volume_cbm} cbm; the mail's figures give {shown}")]
+    return [Finding("volume_unexplained", WARN, f"priced on {r.volume_cbm} cbm; the mail's figures give {shown}")]
 
 
 NEGATED = r"(?<!non-)(?<!non )(?<!no )(?<!not )(?<!kein )(?<!keine )(?<!nicht )"
@@ -563,7 +562,7 @@ def _text(q: Quote, request: str, options: list[RateOption], files: tuple[str, .
             others = []
     if others:
         found.append(
-            Finding("text_amounts", BLOCK, f"other amounts with a currency in the mail: {others}, the quote is {total}")
+            Finding("text_amounts", WARN, f"other amounts with a currency in the mail: {others}, the quote is {total}")
         )
     if not q.subject.strip():
         found.append(Finding("text_empty", BLOCK, "empty subject"))
