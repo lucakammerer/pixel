@@ -85,3 +85,23 @@ def test_standalone_confirmation_session(conn, subject, body, known):
     expected = booking.session_id if known else message.id
     assert poller.ingest(ctx, message).session_id == expected
     assert conn.execute("SELECT session_id FROM events WHERE kind = 'mail.in'").fetchone()[0] == expected
+
+
+async def test_a_mail_that_never_stores_is_skipped_after_a_few_polls(conn, monkeypatch):
+    config = dataclasses.replace(settings(), poll_seconds=0.001)
+    mailbox = FakeMailbox(["rfq-door-no-origin.json", "synthetic-tracking.json"])
+    poison = mailbox.mails[0].id
+    real_ingest = poller.ingest
+
+    def ingest(ctx, message):
+        if message.id == poison:
+            raise RuntimeError("disk says no")
+        return real_ingest(ctx, message)
+
+    monkeypatch.setattr(poller, "ingest", ingest)
+    seen = []
+    await run_briefly(Context(config, conn, mailbox, None, None, None), seen)
+    assert seen == [mailbox.mails[1].id]
+    assert mailbox.since.count(0) == poller.INGEST_TRIES
+    errors = [r[0] for r in conn.execute("SELECT payload FROM events WHERE kind = 'error'")]
+    assert any("skipped after" in e for e in errors)
