@@ -267,7 +267,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   inherits it), the customer's language read again from their own words (a new `rfq.extracted`), the fixed phrases
   instead of model-written slots, the dangerous-goods note put back after a translation, and a weight or volume the
   mail does not explain read again (`_reading`): the lots' sum, the one reading code makes, or among several the
-  one `critic` picks (one gpt-4.1 call, 80 output tokens, at most `CRITIC_WAIT_S`, only on such a BLOCK; taken only
+  one `critic` picks (one gpt-4.1 call, `CRITIC_TOKENS` output tokens, a quote of at most twelve words: 80 cut a lot line off and the JSON with it, session 45928; at most `CRITIC_WAIT_S`, only on such a BLOCK; taken only
   when the words it quotes stand in the request, give that reading alone and the reading is one of code's: an
   `rfq.critic` event), then priced again by `agent._repriced` and recorded as with the second reader. Never when
   the figures may be a later mail's (`agent._later_figures`: an answer to our question, a customer's change, a
