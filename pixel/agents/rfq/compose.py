@@ -11,6 +11,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from pixel import llm
+from pixel.agents.rfq import extract
 from pixel.agents.rfq.extract import own_words, words_of
 from pixel.contracts import Message, Preference, RateOption, Rfq
 from pixel.core import events, pdf
@@ -144,6 +145,10 @@ TEXT = {
         "departure": "That is with a departure from {origin} on {depart}.",
         "one_awb": "All lots travel together as one consignment under a single air waybill, as you asked.",
         "reference": "Your reference {ref} is on the offer.",
+        "not_included": "Not included in this price: {services}. I can quote {them} separately if you need {them}.",
+        "them": ("it", "them"),
+        "services": {"insurance": "cargo insurance", "customs": "export customs clearance",
+                     "screening": "security screening of the cargo"},
         "breakdown": "The breakdown: {parts}; all-in that is {per_kg} {currency} per kg chargeable weight.",
         "parts": ("air freight", "fuel surcharge", "security surcharge", "pickup"),
         "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
@@ -257,6 +262,10 @@ TEXT = {
         "departure": "Der Abflug ab {origin} wäre dann am {depart}.",
         "one_awb": "Alle Positionen reisen wie gewünscht zusammen als eine Sendung unter einem Luftfrachtbrief.",
         "reference": "Ihre Referenz {ref} steht auf dem Angebot.",
+        "not_included": "Nicht im Preis enthalten: {services}. Gern biete ich {them} Ihnen separat an.",
+        "them": ("sie", "sie"),
+        "services": {"insurance": "Transportversicherung", "customs": "Exportzollabfertigung",
+                     "screening": "Sicherheitskontrolle der Ware"},
         "breakdown": "Aufgeschlüsselt: {parts}; all-in sind das {per_kg} {currency} pro kg frachtpflichtiges Gewicht.",
         "parts": ("Luftfracht", "Treibstoffzuschlag", "Sicherheitszuschlag", "Abholung"),
         "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
@@ -367,6 +376,10 @@ TEXT = {
         "one_awb": "Comme demandé, tous les lots voyagent ensemble en une seule expédition, sous une seule lettre de "
         "transport aérien.",
         "reference": "Votre référence {ref} figure sur l'offre.",
+        "not_included": "Non inclus dans ce prix : {services}. Je peux vous {them} proposer séparément.",
+        "them": ("le", "les"),
+        "services": {"insurance": "l'assurance marchandises", "customs": "le dédouanement export",
+                     "screening": "le contrôle de sûreté de la marchandise"},
         "breakdown": "Le détail : {parts} ; tout compris, cela fait {per_kg} {currency} par kg de poids taxable.",
         "parts": ("fret aérien", "surcharge carburant", "surcharge sûreté", "enlèvement"),
         "cutoff": "L'heure limite exacte de dépôt à {origin} vient avec la réservation de la compagnie ; je vous la "
@@ -478,6 +491,22 @@ BREAKDOWN = re.compile(
     r"break(?:ing)?\s+(?:\w+\s+){0,3}down|breakdown|cost split|itemi[sz]e|aufschlüssel\w*|aufgeschlüsselt|aufstellung"
     r"|ventilation|détail(?:ler|lé)?\s+(?:le|du)\s+prix",
     re.IGNORECASE,
+)
+# Services a request asks for that no price of ours holds: said plainly, never left unanswered.
+SERVICES = {
+    "insurance": extract.INSURANCE,
+    "customs": re.compile(r"customs clearance|export customs|export declaration|\bEAD\b|\bATLAS\b|zollabfertigung"
+                          r"|ausfuhranmeldung|exportverzollung|d[ée]douanement", re.IGNORECASE),
+    "screening": re.compile(r"\bscreening|x-?ray|röntgen|sicherheitskontrolle|contrôle de sûreté", re.IGNORECASE),
+}  # fmt: skip
+# "please address the offer to my colleague Mr. Jens Hartmann", "richten Sie das Angebot an Herrn Jens Hartmann":
+# a colleague word or a title before the name, so "send the quote to Hamburg" names nobody.
+HONORIFIC = r"(?:Mr|Mrs|Ms|Herrn?|Frau|M|Mme)\.?\s+"
+ADDRESSEE = re.compile(
+    r"(?i:\b(?:address|send|direct)\w*\s+(?:the|your|this)\s+(?:offer|quote|quotation|reply)\s+to"
+    r"|\bAngebot\w*\s+(?:\w+\s+){0,2}an)\s+"
+    rf"(?:(?i:(?:my|our|meine[nr]?|unsere[nr]?)\s+(?:colleague|Kolleg(?:en|in))\s+)(?P<title>{HONORIFIC})?"
+    rf"|(?P<titled>{HONORIFIC}))(?P<name>[A-ZÄÖÜ][\w'’-]+(?:\s+[A-ZÄÖÜ][\w'’-]+)?)"
 )
 CUTOFF = re.compile(r"drop-?off|cut-?off|latest (?:delivery|handover)|Anlieferschluss|Annahmeschluss", re.IGNORECASE)
 # Common words beyond extract's lists, so a short slot still shows its language; a slot must show ours.
@@ -708,6 +737,9 @@ def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> st
             if DEPARTURE.search(request):
                 depart = arrive - timedelta(days=option.transit_days)
                 said.append(t["departure"].format(origin=option.origin, depart=_day(depart, t)))
+        if left := [t["services"][name] for name, asked in SERVICES.items() if _unpriced(name, asked, request)]:
+            them = t["them"][len(left) > 1]
+            said.append(t["not_included"].format(services=", ".join(left), them=them))
         if BREAKDOWN.search(request) and (split := breakdown(option, t)):
             said.append(split)
         if ONE_AWB.search(request):
@@ -717,6 +749,14 @@ def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> st
         return " ".join(said)
     except Exception:  # noqa: BLE001  an extra answer must never cost the quote
         return ""
+
+
+def _unpriced(name: str, asked: re.Pattern, request: str) -> bool:
+    """Asked for and not in the price: insurance only when the request gives no terms to price it by and does not
+    decline it."""
+    if not asked.search(request):
+        return False
+    return name != "insurance" or not (extract.NO_INSURANCE.search(request) or extract.insurance(request))
 
 
 def breakdown(option: RateOption, t: dict) -> str:
@@ -765,10 +805,24 @@ def signed_name(request: str, signer: str = "", full: bool = False) -> str | Non
     return None
 
 
+def addressee(request: str) -> str | None:
+    """The colleague the customer asks us to address the offer to, in their own words: "Mr. Hartmann" when they
+    give a title, else the name as written."""
+    if not (found := ADDRESSEE.search(request)):
+        return None
+    title = (found["title"] or found["titled"] or "").rstrip(". ").replace("Herrn", "Herr")
+    if not title:
+        return found["name"]
+    return f"{title}{'.' if title in {'Mr', 'Mrs', 'Ms', 'M'} else ''} {found['name'].split()[-1]}"
+
+
 def greeting(lang: str, name: str | None, request: str) -> str:
     """The salutation in the customer's register, the same in the quote and in its booking mails: a formal mail
-    gets the whole signed name ("Dear Jonas Kessler,"), never a guessed Mr or Ms."""
+    gets the whole signed name ("Dear Jonas Kessler,"), never a guessed Mr or Ms; a colleague they name as the
+    offer's addressee instead of them."""
     t = TEXT[lang]
+    if to := addressee(request):
+        return t["hello_name"]["formal"].format(name=to)
     if not name:
         return t["hello"]
     tone = register(request)
