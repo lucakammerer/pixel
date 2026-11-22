@@ -128,8 +128,10 @@ HURRY = re.compile(
     re.IGNORECASE,
 )
 DOOR = re.compile(
-    r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
+    r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from"
+    r"|from our (?:[\w-]+\s+)?(?:site|warehouse|premises|plant|factory|shop|depot|facility|workshop|store)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
+    r"|\bcollect\w*\s+(?:them|it|the\s+(?:goods|cargo|shipment|freight|cartons|pallets|boxes|crates))\s+from\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.
     r"|(?:please|kindly|could you|can you|would you)\s+(?:also\s+)?"
@@ -144,6 +146,24 @@ OWN_DELIVERY = re.compile(
 )
 POSTCODE = re.compile(
     r"(?<![\d.,])(?<!No\. )(?<!Nr\. )(?<!#)(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE
+)
+# A phone or fax number: "+49 6181 12345", "Tel. 06181 12345", "06181/12345".
+PHONE = re.compile(
+    r"\+\d[\d \t/()-]{6,}\d|\b0\d{2,5}[ \t/-]+\d{3,}\b|\b(?:tel|phone|fon|fax|mobile?)\b\.?:?[ \t]*[\d \t/()-]+\d",
+    re.IGNORECASE,
+)
+# The address before the postcode on its line is not the pickup's.
+OTHER_ADDRESS = re.compile(
+    r"\b(?:invoice|invoicing|billing|bill\s+to|rechnung\w*|head\s+office|registered\s+office|firmensitz|sitz|"
+    r"consignee|empf(?:ä|ae)nger|deliver(?:y)?\s+(?:address|to)|ship\s+to|lieferadresse)\b",
+    re.IGNORECASE,
+)
+FOREIGN_PREFIX = re.compile(r"\b(?:I|F|E|A|CH|NL|B|L|PL|CZ|DK|S|FL|P|GR)-$")
+ABROAD = re.compile(
+    r"[^\n.;]{0,40}?\b(?:italy|italia|spain|espa(?:ñ|n)a|france|frankreich|austria|(?:ö|oe)sterreich|switzerland|"
+    r"schweiz|suisse|netherlands|niederlande|belgium|belgien|poland|polen|czechia|czech\s+republic|denmark|"
+    r"d(?:ä|ae)nemark|sweden|schweden|portugal|greece|turkey|t(?:ü|ue)rkei|usa|united\s+states|united\s+kingdom)\b",
+    re.IGNORECASE,
 )
 # "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
 DANGEROUS = re.compile(
@@ -470,11 +490,52 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     return (weight, volume, pieces) if len(lots) > 1 else None
 
 
+def _abroad(text: str, start: int, end: int) -> bool:
+    """A postcode abroad: "I-20121 Milano" or "20121 Milano, Italy". The pickup zones are German (R16), and
+    20121 read as zone 20 sent a Milan pickup to Hamburg's truckers."""
+    return bool(FOREIGN_PREFIX.search(text[max(0, start - 4) : start]) or ABROAD.match(text[end:]))
+
+
+def pickup_postcodes(text: str) -> tuple[dict[str, bool], bool]:
+    """The five-digit figures that can be the pickup's postcode, each with whether its line speaks of the pickup, and
+    whether one of the mail's postcodes lies abroad. A phone or fax number ("Tel. 06181 12345") and an address
+    labelled as another one (invoice, head office, consignee) are no pickup postcode."""
+    phones = [m.span() for m in PHONE.finditer(text)]
+    codes: dict[str, bool] = {}
+    abroad = False
+    for m in POSTCODE.finditer(text):
+        start, end = m.span(1)
+        line_start = text.rfind("\n", 0, start) + 1
+        line_end = text.find("\n", end)
+        line = text[line_start : line_end if line_end >= 0 else len(text)]
+        if any(a <= start and end <= b for a, b in phones) or OTHER_ADDRESS.search(text[line_start:start]):
+            continue
+        if _abroad(text, start, end):
+            abroad = True
+            continue
+        codes[m[1]] = codes.get(m[1], False) or bool(DOOR.search(line))
+    return codes, abroad
+
+
+def not_a_pickup_postcode(text: str, code: str) -> bool:
+    """The text names this figure only as a phone number, another address or a postcode abroad."""
+    return code in POSTCODE.findall(text) and code not in pickup_postcodes(text)[0]
+
+
+def _abroad_pickup(text: str) -> bool:
+    """The pickup lies abroad: a postcode the mail places abroad, or a country abroad on a pickup line ("collected
+    from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria"). It has no zone, so no postcode is asked for."""
+    return pickup_postcodes(text)[1] or any(ABROAD.search(line) for line in text.splitlines() if DOOR.search(line))
+
+
 def _pickup(text: str) -> tuple[bool, str | None]:
     if not DOOR.search(text) or OWN_DELIVERY.search(text):
         return False, None
-    codes = set(POSTCODE.findall(text))
-    return True, codes.pop() if len(codes) == 1 else None
+    codes, _ = pickup_postcodes(text)
+    if len(codes) == 1:
+        return True, next(iter(codes))
+    named = [code for code, on_pickup_line in codes.items() if on_pickup_line]
+    return True, named[0] if len(named) == 1 else None
 
 
 def _currency(text: str) -> str | None:
@@ -817,7 +878,7 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
         language=_language(text),
         received_at=deadline.received_at,
         deadline_at=deadline.expires_at,
-        missing=("pickup_postcode",) if door and not postcode else (),
+        missing=("pickup_postcode",) if door and not postcode and not _abroad_pickup(text) else (),
     )
 
 
@@ -901,9 +962,11 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     if not weight:
         missing.append("weight_kg")
     door = bool(data.get("door_pickup"))
-    postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
-    postcode = postcode if len(postcode) == 5 else None
-    if door and not postcode:
+    given = re.sub(r"\D", "", data.get("pickup_postcode") or "")
+    postcode = given if len(given) == 5 and not not_a_pickup_postcode(text, given) else None
+    # A pickup abroad has no zone to ask a postcode for: no question, the airport-to-airport price (next case 22).
+    # A zone is a German postcode's first two digits, so a postcode of another length ("5020 Salzburg") is abroad.
+    if door and not postcode and not (_abroad_pickup(text) or (given and len(given) != 5)):
         missing.append("pickup_postcode")
     currency = (data.get("currency") or "").strip().upper() or None
     return Rfq(
@@ -943,6 +1006,27 @@ def _known_sites(ctx: Context, rfq: Rfq) -> list[str]:
         (rfq.customer, rfq.session_id),
     ).fetchall()
     return list(dict.fromkeys(r["postcode"] for r in rows))
+
+
+def _from_answer(read: Rfq, said: str, facts: list[str]) -> Rfq | None:
+    """The asked facts as the rules read them in the answer alone, when they cannot read the request with it. Round
+    104: "the same shipment as in my request ... for ATL", now to BOM; the model read only BOM, and the answer
+    ("pickup from our site in postcode 40043 ... 585 kg and a total volume of 5.01 m³") was dropped: no quote."""
+    update: dict[str, object] = {}
+    door, postcode = _pickup(said)
+    if {"origin", "pickup"} & set(facts) and door and postcode:
+        update |= {"door_pickup": True, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode)}
+    elif "origin" in facts and (lane := _lane(said)) and lane[1] == read.destination:
+        update["origin"] = lane[0]
+    lots = _lots(said)
+    pieces = lots[2] if lots else _pieces(said)
+    if "weight" in facts and (weight := lots[0] if lots else _weight(said, pieces)):
+        update |= {"weight_kg": weight} | ({"pieces": pieces} if pieces else {})
+    if "volume" in facts and (volume := lots[1] if lots else _volume(said, pieces)):
+        update["volume_cbm"] = volume
+    if not update:
+        return None
+    return read.model_copy(update=update | {"missing": tuple(m for m in read.missing if m not in update)})
 
 
 def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
@@ -1002,7 +1086,12 @@ def _stated(value: object) -> bool:
 
 def _unknown(rfq: Rfq) -> list[str]:
     """The facts a price still needs that the request did not give."""
-    facts = ["pickup"] if rfq.door_pickup and not rfq.pickup_zone else ["origin"] if not rfq.origin else []
+    # A pickup with no zone and no postcode missing lies abroad: the model names its airport (`_departures_abroad`).
+    placeless = rfq.door_pickup and not rfq.pickup_zone
+    if placeless:
+        facts = ["pickup"] if "pickup_postcode" in rfq.missing else []
+    else:
+        facts = [] if rfq.origin else ["origin"]
     # Without a volume the chargeable weight is the gross weight, too low for bulky goods.
     missing = ["destination"] * (not rfq.destination) + ["weight"] * (rfq.weight_kg <= 0)
     return facts + missing + ["volume"] * (rfq.volume_cbm <= 0)
@@ -1061,6 +1150,15 @@ def _asked_departure(ctx: Context, text: str) -> str | None:
             codes |= {m.group(0) for m in CODE.finditer(sentence)
                       if m.group(0) in served and not NOT_CODE.search(sentence[: m.start()])}  # fmt: skip
     return codes.pop() if len(codes) == 1 else None
+
+
+def _departures_abroad(ctx: Context | None, text: str) -> str:
+    """A pickup abroad has no zone and so no airport (next case 22, Salzburg): the model names the one of ours
+    nearest by road, in the extraction call it makes anyway. Nothing for any other request."""
+    if not (ctx and _abroad_pickup(text)) or not (airports := store.zone_airports(ctx)):
+        return ""
+    return ("\n\n(Note for origin: when the goods are collected abroad and the mail names no departure airport, "
+            f"give the one of these nearest to the pickup address by road: {', '.join(sorted(airports))}.)")
 
 
 def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
@@ -1410,6 +1508,32 @@ async def dangerous_goods(
     return None
 
 
+QUOTED_SUBJECT = re.compile(r"[\"“„«]([^\"“”„«»\n]{6,160})[\"”“»]")
+EARLIER_FIELDS = ("weight_kg", "volume_cbm", "pieces", "door_pickup", "pickup_postcode", "pickup_zone", "origin")
+
+
+def _earlier_request(ctx: Context, mail: Message, read: Rfq) -> Rfq:
+    """'the same shipment as in my request "<subject>"': cargo and pickup come from that request of the same
+    sender (round 101), the new mail keeps its destination, date and wish. A door request's zone picks the airport."""
+    if not {"origin", "weight_kg", "volume_cbm"} & set(read.missing):
+        return read
+    for subject in QUOTED_SUBJECT.findall(_body(mail)):
+        row = ctx.db.execute(
+            "SELECT e.payload FROM messages m JOIN events e ON e.session_id = m.session_id AND e.kind = 'rfq.extracted'"
+            " WHERE m.direction = 'in' AND m.sender = ? AND m.subject = ? AND m.session_id <> ? ORDER BY e.id DESC",
+            (mail.sender, subject.strip(), mail.session_id),
+        ).fetchone()
+        if not row:
+            continue
+        old = json.loads(row[0])
+        update = {f: old[f] for f in EARLIER_FIELDS if old.get(f) not in (None, "", "0")}
+        if update.get("door_pickup") and update.get("pickup_zone"):
+            update.pop("origin", None)
+        missing = [m for m in read.missing if m not in update and not (m == "origin" and "pickup_zone" in update)]
+        return Rfq.model_validate({**read.model_dump(mode="json"), **update, "missing": missing})
+    return read
+
+
 async def extract(ctx: Context, message: Message, deadline: Deadline) -> Rfq:
     rfq, _ = await read_request(ctx, message, deadline)
     return rfq
@@ -1539,6 +1663,11 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             if field not in asked and (field in ("origin", "destination") or _stated(value)):
                 kept[field] = value
         again = rules()
+        if again is None and not files:
+            # Session 30544: the request also named an older lane ("as in my request ... to ATL"), so request and
+            # answer together have two destinations; the answer read alone has one, and the request's facts are kept.
+            alone = by_rules(mail.model_copy(update={"body": own_words(said)}), deadline)
+            again = alone.model_copy(update=kept) if alone else None
         if (
             again is None
             and read.door_pickup
@@ -1549,6 +1678,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             code = codes.pop()
             again = read.model_copy(update={"pickup_postcode": code, "pickup_zone": zone_of(code),
                                             "missing": tuple(m for m in read.missing if m != "pickup_postcode")})  # fmt: skip
+        if again is None:
+            again = _from_answer(read, own_words(said), facts)
         return apply_pickup(again or read, guess=False)
 
     rfq, prose = rules(), None
@@ -1562,7 +1693,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 ctx,
                 purpose="rfq.extract",
                 system=SYSTEM,
-                user=text,
+                user=text + _departures_abroad(ctx, text),
                 schema=SCHEMA,
                 session_id=message.session_id,
                 max_output_tokens=500,
@@ -1591,6 +1722,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
             rfq = _from_model(result.data, message, deadline)
+            rfq = _earlier_request(ctx, mail, rfq)
             if cargo:
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
             rfq = apply_pickup(await ask(rfq))

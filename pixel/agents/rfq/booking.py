@@ -15,7 +15,7 @@ from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus,
 from pixel.core import db, events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
-from pixel.pricing import calc, portal_rates, selection, session
+from pixel.pricing import availability, calc, portal_rates, selection, session
 
 NO_PRICE_ACK = re.compile(
     r"(?:understood[,.]?\s+)?(?:thanks|thank you)(?: for (?:letting me know|the update))?[.!]?",
@@ -112,9 +112,7 @@ async def handle_reply(ctx: Context, message: Message) -> None:
 
         await tracking.handle(ctx, message)
         return
-    if act == "nothing" or (
-        read.intent == "thanks" and read.phase == "open" and _acknowledges_no_price(ctx, message)
-    ):
+    if act == "nothing" or (read.intent == "thanks" and read.phase == "open" and _acknowledges_no_price(ctx, message)):
         return
     if act == "cancel":
         await cancel(ctx, sent, message)
@@ -165,10 +163,13 @@ def _acknowledges_no_price(ctx: Context, message: Message) -> bool:
     own = followup.own_words(message)
     if not NO_PRICE_ACK.fullmatch(extract._unsigned(own).strip() or own):
         return False
-    return ctx.db.execute(
-        "SELECT 1 FROM messages WHERE id=? AND session_id=? AND direction='out' AND purpose='no_price'",
-        (message.in_reply_to, message.session_id),
-    ).fetchone() is not None
+    return (
+        ctx.db.execute(
+            "SELECT 1 FROM messages WHERE id=? AND session_id=? AND direction='out' AND purpose='no_price'",
+            (message.in_reply_to, message.session_id),
+        ).fetchone()
+        is not None
+    )
 
 
 async def _request(ctx: Context, session_id: int, quote: Quote | None) -> Rfq | None:
@@ -215,6 +216,8 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
             payload={"shipment": shipment.id, "rate_id": booking.rate_id, "carrier": booking.carrier},
         )  # fmt: skip
 
+    if booking.carrier.casefold() in availability.suspended_carriers(ctx, quote.rfq):
+        return _failed(ctx, booking, "carrier suspended new bookings on this lane")
     if booking.via == "email" or not booking.rate_id:
         return await _book_by_mail(ctx, quote, booking, "booking by email")
     try:
@@ -265,32 +268,61 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
 
 async def cancel(ctx: Context, quote: Quote, message: Message) -> None:
     """The customer withdrew after the booking (round 88: "please cancel booking BK-…"): the portal cancels it, the
-    CRM marks booking and shipment cancelled, the customer hears so once. Never a second quote."""
+    CRM marks booking and shipment cancelled, the customer hears so once. Never a second quote. A booking the portal
+    cannot cancel (one booked by mail without an airline reference yet, or the portal refusing or down) is withdrawn
+    by mail with the airline it was booked with; only without an address does a person take it."""
     booking = bookings.for_session(ctx, quote.session_id)
-    if booking is None or not booking.booking_reference:
+    if booking is None:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
-            payload={"note": "Customer cancels a booking without an airline reference", "intent": "decline"},
+            payload={"note": "Customer cancels a booking we do not hold", "intent": "decline"},
         )  # fmt: skip
         return
     if booking.status != BookingStatus.CANCELLED:
-        try:
-            if not ctx.settings.dry_run:
+        why = None
+        if not booking.booking_reference:
+            why = "no airline reference yet"
+        elif not ctx.settings.dry_run:
+            try:
                 await ctx.portal.cancel(booking.booking_reference)
-        except (ApiError, httpx.HTTPError) as e:
+            except (ApiError, httpx.HTTPError) as e:
+                why = f"portal refused: {e!r}"
+        if why and not await _cancel_by_mail(ctx, quote, booking, why):
             events.emit(
                 ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
-                payload={"note": "Customer cancels; the portal refused", "error": repr(e)},
+                payload={"note": "Customer cancels; neither the portal nor a mail to the airline could", "why": why},
             )  # fmt: skip
             return
         booking = booking.model_copy(update={"status": BookingStatus.CANCELLED})
         _save(ctx, booking, "cancelled")
         events.emit(
             ctx, "booking.cancelled", "crm", session_id=quote.session_id, message_id=message.id,
-            payload={"booking_reference": booking.booking_reference, "shipment": booking.team_reference},
+            payload={"booking_reference": booking.booking_reference, "shipment": booking.team_reference,
+                     "via": "email" if why else "portal", **({"why": why} if why else {})},
         )  # fmt: skip
     await _tell_customer(ctx, quote, message.id, "cancelled", airline=booking.carrier,
-                         reference=booking.team_reference, airline_reference=booking.booking_reference)  # fmt: skip
+                         reference=booking.team_reference, airline_reference=booking.booking_reference or booking.team_reference)  # fmt: skip
+
+
+async def _cancel_by_mail(ctx: Context, quote: Quote, booking: Booking, why: str) -> bool:
+    address = _airline_address(ctx, booking.carrier, "")
+    if address is None:
+        return False
+    reference = f" (your reference {booking.booking_reference})" if booking.booking_reference else ""
+    body = "\n".join([
+        "Hello,", "",
+        f"please cancel our booking {booking.team_reference}{reference}: {_lane(quote)}, {quote.rfq.weight_kg} kg.",
+        "Our customer has withdrawn the order.", "", "Please confirm the cancellation.", "", "Thank you,",
+        "PIXEL Air Freight",
+    ])  # fmt: skip
+    try:
+        await outbox.send(
+            ctx, to=address, subject=f"Cancellation {booking.team_reference}: {_lane(quote)}", body=body,
+            session_id=quote.session_id, purpose="booking",
+        )  # fmt: skip
+    except outbox.NotSent:
+        return False
+    return True
 
 
 async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to: int | None) -> None:
@@ -299,19 +331,31 @@ async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to:
                          reference=booking.team_reference, airline_reference=booking.booking_reference or "-")  # fmt: skip
 
 
+async def _confirmation_text(ctx: Context, message: Message) -> str:
+    attached = await extract._attachments(ctx, message) if message.attachments else []
+    own = extract.HISTORY.split(message.body, maxsplit=1)[0]
+    return "\n".join([own, *(line for _, lines in attached for line in lines)])
+
+
 async def confirmed_references(ctx: Context, message: Message) -> tuple[str | None, str | None]:
     """The airline's booking reference and ours, from the subject, the body or an attached confirmation."""
-    attached = await extract._attachments(ctx, message) if message.attachments else []
-    text = "\n".join([message.body, *(line for _, lines in attached for line in lines)])
-    match = CONFIRMED.search(message.subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
+    return _references(message.subject, await _confirmation_text(ctx, message))
+
+
+def _references(subject: str, text: str) -> tuple[str | None, str | None]:
+    match = CONFIRMED.search(subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
     # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
     ours = OURS.search(text)
     return (match.group(1).strip(".,:;") if match else None), (ours.group(1) if ours else None)
 
 
 async def handle_confirmation(ctx: Context, message: Message) -> None:
-    """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told."""
-    reference, ours = await confirmed_references(ctx, message)
+    """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told. An
+    answer that refuses ("could not be confirmed", in the mail or its attachment) fails the booking for a person."""
+    from pixel.agents.router.agent import REFUSED, booking_pending  # router imports crm, which this module imports too
+
+    text = await _confirmation_text(ctx, message)
+    reference, ours = _references(message.subject, text)
     booking = (
         (reference and bookings.by_reference(ctx, reference))
         or (ours and bookings.by_team_reference(ctx, ours))
@@ -324,6 +368,25 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
         )  # fmt: skip
         return
     if booking.status == BookingStatus.CANCELLED:  # the airline's late confirmation of a booking the customer withdrew
+        return
+    if booking.status != BookingStatus.CONFIRMED and REFUSED.search(text):
+        _failed(ctx, booking, "the airline refused the booking")
+        events.emit(
+            ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
+            payload={"note": "The airline refused our booking: book another option", "shipment": booking.team_reference},
+        )  # fmt: skip
+        return
+    if booking_pending(f"{message.subject}\n{text}"):
+        if (
+            booking.status == BookingStatus.REQUESTED
+            and not booking.booking_reference
+            and reference
+            and re.fullmatch(r"BK-[A-Z0-9]{4,}", reference, re.IGNORECASE)
+        ):
+            bookings.save(ctx, booking.model_copy(update={"booking_reference": reference}))
+        events.emit(ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
+                    payload={"note": "Airline response does not confirm the whole booking",
+                             "shipment": booking.team_reference, "booking_reference": reference})  # fmt: skip
         return
     if booking.status != BookingStatus.CONFIRMED:
         booking = booking.model_copy(

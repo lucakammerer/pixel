@@ -353,6 +353,231 @@
     "note": "FRA-SGN 900 kg: Orion 2380.00 (kit). Truckers 24 h / 72 h / 48 h; balanced (price/best + hours/best): Taunusfracht 182.62/95.40 + 24/24 = 2.914, Westfalenroute 3.468, Domblick 4.000"
    },
    "today": "Fixed by accuracy/pickup-time-units. Before: no pickup hours read, so fewer than two timed bids and the cheapest trucker (Domblick 95.40): 2475.40, 3.4% low."
+  },
+  {
+   "fixture": "next-cases/pickup-postcode-beside-phone-number.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Domblick Kurierdienst",
+    "total": "2548.40",
+    "currency": "EUR",
+    "note": "zone 63 -> FRA; Orion 2380.00 (kit); balanced: Domblick 168.40/121.90 + 8/8 = 2.381 against Westfalenroute 1 + 26/8 = 4.25"
+   },
+   "today": "Fixed by generalization/pickup-postcode-not-phone. Before: the phone and fax numbers in the signature were three more postcodes and \"collect them from our print shop\" no door pickup, so the rules gave up; offline unanswered, live one model call."
+  },
+  {
+   "fixture": "next-cases/pickup-postcode-abroad-matches-a-zone.json",
+   "expected": {
+    "body_states": "no Hamburg pickup; an airport serving Milan or the airport-to-airport price with the pickup plainly excluded (assumption: the scorer rule for a pickup abroad is unknown, as next case 22)"
+   },
+   "today": "Before generalization/pickup-postcode-not-phone: 20121 read as zone 20, HAM-SGN Yellowtail 2480.00 and Hamburg truckers asked. Now the postcode is rejected as abroad and no postcode question is sent; offline unanswered, live the model reads the origin.",
+   "known_gap": "Which airport and pickup the scorer prices for a pickup abroad is unknown; same fix as pickup-outside-zones (`pricing/pickup.py` zone fallback). Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/pickup-zone-not-listed.json",
+   "expected": {
+    "body_states": "a German postcode whose zone (90) is not in pickup_zones.csv: nearest zone airport by bid, or airport-to-airport with the pickup excluded (assumption). Live in round 20 (Nuremberg, flown from FRA): too_high"
+   },
+   "today": "Rules give up (no zone airport for origin); offline unanswered, live the model guesses an origin and no trucker serves zone 90.",
+   "known_gap": "No zone, no trucker: needs a zone fallback that the scorer accepts; evidence only from round 20. Owner: Accuracy (`pricing/pickup.py`)."
+  },
+  {
+   "fixture": "next-cases/pickup-two-sites.json",
+   "expected": {
+    "body_states": "both pickups priced (two trucker asks, one per postcode) on one FRA-SGN quote of 900 kg; assumption, never scored"
+   },
+   "today": "Rules give up (two weights, two postcodes); offline unanswered, live the model takes one postcode.",
+   "known_gap": "One pickup per Rfq; several pickups need a list of pickup legs in `Rfq` and `pricing/pickup.py`. Owner: Accuracy, contracts on main. Size L."
+  },
+  {
+   "fixture": "next-cases/trucker-price-in-usd-without-rate.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Bodenseefracht",
+    "total": "2520.12",
+    "currency": "EUR",
+    "note": "assumes the dataset rate 1 USD = 0.92 EUR as a priced source states it: Bodenseefracht 152.30 USD = 140.12 EUR, 6 h; balanced 1 + 1 = 2 against Taunusfracht 182.62/140.12 + 20/6 = 4.64; Orion 2380.00 (kit)"
+   },
+   "today": "Before accuracy/trucker-currency-fx: a USD price with no rate in the answer was no price (the model needs one too), so only Taunusfracht counted: 2562.62, 1.7% high. Now the rate comes from the newest priced source in USD (`bids.known_fx`). Offline the start kit has no USD source, so the replay still shows 2562.62.",
+   "known_gap": "Priced only once some source of the night stated a rate for that currency (portal, desk or a carrier); a currency no source ever priced (CHF, PLN) stays unpriced. Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/trucker-all-silent.json",
+   "expected": {
+    "body_states": "the scorer prices the zone 60 trucker it balances in (R13, R16): Orion 2380.00 plus a pickup no answer told us; an airport-to-airport quote is too low by the whole pickup"
+   },
+   "today": "No trucker answers: Orion 2380.00 airport-to-airport with the pickup plainly excluded, sent at the hard deadline (315 s).",
+   "known_gap": "No pickup source besides the truckers. A learned zone price (a trucker's base charge plus rate per kg from its earlier offers, as the table and letter layouts state them) needs proof from the host database that one trucker prices one zone linearly in the weight. Owner: Accuracy (`pricing/pickup.py`, arithmetic in `calc.py`)."
+  },
+  {
+   "fixture": "next-cases/trucker-answers-late.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Bodenseefracht",
+    "total": "2520.12",
+    "currency": "EUR",
+    "note": "balanced: Bodenseefracht 1 + 1 = 2, Taunusfracht 182.62/140.12 + 20/6 = 4.64; Bodenseefracht answers 160 s after the request"
+   },
+   "today": "Quote at 100 s with Taunusfracht only: 2562.62, 1.7% high; Bodenseefracht's answer at 160 s is too late.",
+   "known_gap": "`bids.collect` waits for truckers until max(target, ask + 45 s). Waiting to 115 s keeps full time points (R29) but would not catch 160 s; how late truckers answer live (`bid.received` minus `bid.requested` with pickup) decides. Owner: Speed."
+  },
+  {
+   "fixture": "next-cases/trucker-standard-and-express.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Taunusfracht",
+    "total": "2590.00",
+    "currency": "EUR",
+    "note": "assumption: each offer of a trucker is a bid of its own. Taunusfracht express 210.00/4 h: 1.5 + 1 = 2.5; Bodenseefracht 175.00/12 h: 1.25 + 3 = 4.25; Taunusfracht standard 140.00/30 h: 1 + 7.5 = 8.5"
+   },
+   "today": "Rules refuse two prices; offline the model fails and Bodenseefracht alone gives 2555.00; live the model reads one of the two offers.",
+   "known_gap": "`bids.parse` reads one price per answer; two offers need one pickup option per line. Owner: Accuracy. Size S-M."
+  },
+  {
+   "fixture": "next-cases/trucker-base-plus-per-kg.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Taunusfracht",
+    "total": "2562.00",
+    "currency": "EUR",
+    "note": "Taunusfracht 65.00 + 0.13 x 900 kg = 182.00, 10 h: 1 + 1 = 2; Bodenseefracht 210.00/12 h: 1.154 + 1.2 = 2.354"
+   },
+   "today": "Rules refuse a base charge plus a rate per kg; offline the model fails and Bodenseefracht gives 2590.00; live the model copies both charges and code adds them up (one gateway call).",
+   "known_gap": "By rules: a base charge plus a rate per kg on one line is the sum (`calc.bid_total`); saves the call. Owner: Accuracy. Size S."
+  },
+  {
+   "fixture": "next-cases/trucker-asks-for-details.json",
+   "expected": {
+    "body_states": "Bodenseefracht 210.00 is the only price: 2590.00; the scorer may also hold Taunusfracht's price, which only an answer to its question would give"
+   },
+   "today": "Taunusfracht's question costs a model call and gives no price; quote 2590.00 with Bodenseefracht.",
+   "known_gap": "Answering a trucker's question (pallets, tail lift) from the request is not built; never seen live. Owner: Accuracy (`pricing/bids.py`)."
+  },
+  {
+   "fixture": "next-cases/trucker-condition-minimum-weight.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Bodenseefracht",
+    "total": "2520.12",
+    "currency": "EUR"
+   },
+   "today": "Pass: the condition is read as a side note, the stated total stands, balanced takes Bodenseefracht."
   }
- ]
+ ],
+  "axis_b_note": "Axis B (bench/NEXT_CASES.md): flows after the quote, run by the harness named per row, never by tools.kpi. today_before is what main did before #323, #328, #332, #336 and #339.",
+  "axis_b": [
+    {
+      "case": "B1",
+      "name": "expired-rate-during-rate-outage",
+      "harness": "tests/test_booking.py::test_expired_rate_without_a_fresh_one_books_by_mail_with_the_airline",
+      "expected": "booking by mail to the airline of the carrier list, booking requested, no exception",
+      "today_before": "crashed, booking requested for good"
+    },
+    {
+      "case": "B2",
+      "name": "cancel-after-booking-raised",
+      "harness": "tests/test_booking.py::test_a_cancellation_after_the_booking_cancels_at_the_portal_and_tells_the_customer",
+      "expected": "portal cancel, booking and shipment cancelled, customer told",
+      "today_before": "ValueError: unknown event kind booking.cancelled"
+    },
+    {
+      "case": "B3",
+      "name": "rate-id-unknown-or-taken",
+      "harness": "tests/test_booking.py::test_unknown_or_taken_rate_books_a_fresh_one",
+      "expected": "fresh rate booked",
+      "today_before": "booking.failed"
+    },
+    {
+      "case": "B4",
+      "name": "confirmation-only-attached",
+      "harness": "thread-followups.json#airline_confirmation_attachment_only",
+      "expected": "booking_confirmation",
+      "today_before": "tariff"
+    },
+    {
+      "case": "B5",
+      "name": "conditional-acceptance",
+      "harness": "thread-followups.json#conditional_accept_under_cap; tests/test_booking.py::test_a_conditional_acceptance_books_only_when_our_total_meets_its_cap",
+      "expected": "book when the quoted total meets the cap, else human.note",
+      "today_before": "dropped as thanks; German cap split at the thousands dot and booked"
+    },
+    {
+      "case": "B6",
+      "name": "confirmation-unlisted-address",
+      "harness": "thread-followups.json#confirmation_from_unknown_address_new_thread",
+      "expected": "booking_confirmation",
+      "today_before": "customer_rfq"
+    },
+    {
+      "case": "B7",
+      "name": "airline-refuses-booking",
+      "harness": "thread-followups.json#airline_refuses_booking_by_mail; tests/test_router.py::test_an_airline_refusing_our_booking_by_mail_confirms_nothing",
+      "expected": "booking failed for a person, then the next option booked",
+      "today_before": "carrier_bid, booking requested",
+      "known_gap": "Owner: Shared (booking.py). The refusal fails the booking for a person; booking the next option by itself is open"
+    },
+    {
+      "case": "B8",
+      "name": "cancel-portal-down-or-mail-booking",
+      "harness": "tests/test_booking.py::test_a_cancellation_the_portal_refuses_is_sent_to_the_airline",
+      "expected": "cancellation mail to the airline, booking cancelled, customer told",
+      "today_before": "human.note, customer not told"
+    },
+    {
+      "case": "B9",
+      "name": "booking-failed-customer-silent",
+      "harness": "tests/test_booking.py::test_another_portal_error_fails",
+      "expected": "the customer hears within the round",
+      "today_before": "booking.failed only",
+      "known_gap": "Owner: Shared (booking.py _failed). No notice to the customer after a failed booking"
+    },
+    {
+      "case": "B10",
+      "name": "booking-503-no-hint-portal-airline",
+      "harness": "tests/test_booking.py::test_expired_rate_without_a_fresh_one_or_an_address_fails_and_never_raises",
+      "expected": "the rate desk asked for the airline's address, booking by mail",
+      "today_before": "booking.failed",
+      "known_gap": "Owner: Shared (booking.py _airline_address). No address source beyond the 503 message and the carrier list"
+    },
+    {
+      "case": "B11",
+      "name": "fresh-rate-dearer-than-quote",
+      "harness": null,
+      "expected": "a decided policy",
+      "today_before": "booked at the fresh price silently",
+      "known_gap": "Owner: team decision. Never reproduced in a fixture"
+    },
+    {
+      "case": "B12",
+      "name": "change-after-booking",
+      "harness": "thread-followups.json#booked/en/kg_cbm",
+      "expected": "cancel, rebook, quote in reply if the scorer scores it",
+      "today_before": "person",
+      "known_gap": "Owner: Shared (followup.action). Scorer rule unknown"
+    },
+    {
+      "case": "B13",
+      "name": "confirmation-unknown-reference",
+      "harness": "thread-followups.json#confirmation_from_unknown_address_unknown_reference",
+      "expected": "booking_confirmation (unmatched, an error, no quote)",
+      "today_before": "customer_rfq",
+      "known_gap": "Owner: Speed (router.rules)"
+    },
+    {
+      "case": "B14",
+      "name": "confirmation-before-201",
+      "harness": null,
+      "expected": "the booking stays confirmed",
+      "today_before": "unverified",
+      "known_gap": "Owner: Shared (booking.book). Not reproduced"
+    },
+    {
+      "case": "B15",
+      "name": "new-request-in-booked-thread",
+      "harness": "thread-followups.json#new_request_in_booked_thread",
+      "expected": "unknown (R4)",
+      "today_before": "person",
+      "known_gap": "Owner: team decision. Never seen live"
+    }
+  ]
 }

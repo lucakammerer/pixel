@@ -18,6 +18,7 @@ from pixel.api.portal import (
     RatesUnavailable,
 )
 from pixel.contracts import Attachment, BookingStatus, QuoteStatus
+from pixel.core import poller
 from pixel.crm import bookings, quotes, shipments
 
 pytest_plugins = ["test_crm"]  # the `pipe` fixture
@@ -96,6 +97,26 @@ async def test_no_rate_id_books_by_mail_with_the_carrier_list(pipe):
     pipe.ctx.portal = Portal()
     b = await booking.book(pipe.ctx, "Q-1")
     assert b.via == "email" and pipe.sent[0]["to"] == "kestrel@air.example" and pipe.ctx.portal.calls == []
+
+
+@pytest.mark.parametrize("status", ["Status: QU. Space pending.", "Confirmed for 3 of 5 pcs. Balance pending."])
+async def test_pending_airline_reply_keeps_reference_until_standalone_confirmation(pipe, accepted, status):
+    pipe.ctx.portal = Portal(BookingUnavailable("Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    reference = "BK-AB12CD34"
+    reply = mail(31, 1, sender="bookings@kestrel.example", subject="Booking confirmation",
+                 body=f"Booking reference: {reference}\nYour reference: {b.team_reference}\n{status}")  # fmt: skip
+    await booking.handle_confirmation(pipe.ctx, reply)
+    pending = bookings.for_session(pipe.ctx, 1)
+    assert (pending.status, pending.booking_reference) == (BookingStatus.REQUESTED, reference)
+    assert kinds(pipe.ctx)[-1] == "human.note" and len(pipe.sent) == 1
+
+    confirmed = mail(32, 32, sender=reply.sender, subject=f"Booking {reference} confirmed",
+                     body="Confirmed for 5 of 5 pieces.")  # fmt: skip
+    assert poller.session_of(pipe.ctx, confirmed) == 1
+    await booking.handle_confirmation(pipe.ctx, confirmed)
+    assert bookings.for_session(pipe.ctx, 1).status == BookingStatus.CONFIRMED
+    assert len(pipe.sent) == 2
 
 
 @pytest.mark.parametrize("status", [404, 409])
@@ -582,3 +603,87 @@ async def test_a_conditional_acceptance_books_only_when_our_total_meets_its_cap(
     assert bool(pipe.ctx.portal.calls) is books
     if not books:
         assert kinds(pipe.ctx)[-1] == "human.note" and pipe.sent == []
+
+
+class Attached:
+    def __init__(self, text):
+        self.text = text
+
+    async def attachment(self, message_id, attachment_id):
+        return self.text.encode()
+
+
+@pytest.mark.parametrize(
+    ("attached", "status", "told"),
+    [("Booking reference: BK-43VLF40X\nStatus: booked", BookingStatus.CONFIRMED, 1),
+     ("Booking request PX: could not be confirmed, no space this week.", BookingStatus.FAILED, 0)],
+)  # fmt: skip
+async def test_the_airlines_answer_only_in_an_attachment_confirms_or_fails(pipe, accepted, attached, status, told):
+    pipe.ctx.portal = Portal(BookingUnavailable("Booking is down. Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    pipe.sent.clear()
+    pipe.ctx.mailbox = Attached(attached.replace("PX", b.team_reference))
+    reply = mail(31, 1, sender="bookings@kestrel.example", subject=f"Re: Booking request {b.team_reference}",
+                 body="Hello,\n\nplease find our answer attached.\n\nKind regards")  # fmt: skip
+    reply = reply.model_copy(update={"attachments": (Attachment(id=1, filename="answer.txt",
+                                                                content_type="text/plain", size=60),)})  # fmt: skip
+    await booking.handle_confirmation(pipe.ctx, reply)
+    assert bookings.get(pipe.ctx, b.id).status == status and len(pipe.sent) == told
+
+
+class Cancels(Portal):
+    def __init__(self, *script, cancel_error=None):
+        super().__init__(*script)
+        self.cancel_error, self.cancelled = cancel_error, []
+
+    async def cancel(self, booking_reference):
+        self.cancelled.append(booking_reference)
+        if self.cancel_error:
+            raise self.cancel_error
+
+
+CANCEL = "Please cancel the booking, the order was withdrawn."
+
+
+async def test_a_cancellation_after_the_booking_cancels_at_the_portal_and_tells_the_customer(pipe, accepted):
+    pipe.ctx.portal = Cancels(None)
+    await booking.handle_reply(pipe.ctx, accepted)
+    pipe.sent.clear()
+    await booking.handle_reply(pipe.ctx, mail(40, 1, subject="Re: Booked", body=CANCEL, in_reply_to=501))
+    b = bookings.for_session(pipe.ctx, 1)
+    assert pipe.ctx.portal.cancelled == ["BK-AB12CD34"] and b.status == BookingStatus.CANCELLED
+    assert shipments.get(pipe.ctx, b.team_reference).status == "cancelled"
+    assert [s["to"] for s in pipe.sent] == ["buyer@acme.example"]
+
+
+@pytest.mark.parametrize("portal_error", [ApiError(503, "down"), ApiError(404, "unknown"), httpx.ConnectError("x")])
+async def test_a_cancellation_the_portal_refuses_is_sent_to_the_airline(pipe, accepted, portal_error):
+    pipe.ctx.db.execute("INSERT INTO carriers VALUES ('Kestrel Airways', 'airline', 'kestrel@air.example', 'JFK')")
+    pipe.ctx.portal = Cancels(None, cancel_error=portal_error)
+    await booking.handle_reply(pipe.ctx, accepted)
+    pipe.sent.clear()
+    await booking.handle_reply(pipe.ctx, mail(40, 1, subject="Re: Booked", body=CANCEL, in_reply_to=501))
+    b = bookings.for_session(pipe.ctx, 1)
+    assert b.status == BookingStatus.CANCELLED  # used to stay booked with a note, the customer never heard
+    airline, customer = pipe.sent
+    assert airline["to"] == "kestrel@air.example" and b.team_reference in airline["body"]
+    assert customer["to"] == "buyer@acme.example"
+
+
+async def test_a_cancellation_of_a_booking_by_mail_without_an_airline_reference_goes_to_the_airline(pipe, accepted):
+    pipe.ctx.portal = Cancels(BookingUnavailable("Booking is down. Book by email with bookings@kestrel.example."))
+    pipe.ctx.db.execute("INSERT INTO carriers VALUES ('Kestrel Airways', 'airline', 'bookings@kestrel.example', 'JFK')")
+    await booking.handle_reply(pipe.ctx, accepted)
+    pipe.sent.clear()
+    await booking.handle_reply(pipe.ctx, mail(40, 1, subject="Re: Your quote", body=CANCEL, in_reply_to=501))
+    assert pipe.ctx.portal.cancelled == []
+    assert [s["to"] for s in pipe.sent] == ["bookings@kestrel.example", "buyer@acme.example"]
+
+
+async def test_a_cancellation_with_no_way_to_the_airline_goes_to_a_person(pipe, accepted):
+    pipe.ctx.portal = Cancels(None, cancel_error=ApiError(503, "down"))
+    await booking.handle_reply(pipe.ctx, accepted)
+    pipe.sent.clear()
+    await booking.handle_reply(pipe.ctx, mail(40, 1, subject="Re: Booked", body=CANCEL, in_reply_to=501))
+    assert bookings.for_session(pipe.ctx, 1).status == BookingStatus.BOOKED and pipe.sent == []
+    assert kinds(pipe.ctx)[-1] == "human.note"

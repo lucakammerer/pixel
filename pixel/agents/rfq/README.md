@@ -84,7 +84,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
   by the name they signed with (the model's slot, else `signed_name` by rule). The offer follows the greeting
-  directly, as in the six rounds that earned Humanity points. It states the goods in
+  directly. It states the selected option without describing how the carriers were compared, and names the goods in
   the customer's words when the mail names them (`goods_of`, "For your machine parts, …"), total and currency,
   carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
   our desk's clock ("until 17:22 today") with the booking line, for a sheet price its last valid day
@@ -113,6 +113,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
   Older `quote.prose` events can contain opening and closing text. The quote renderer only uses the name.
+- `booking.py` `handle_confirmation` leaves a waitlisted or partially confirmed booking in its existing state
+  and records the airline reference, when available, so a later standalone confirmation can match.
+  `book` checks for an active lane suspension before placing a new booking.
 - `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
@@ -142,6 +145,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   reads the cap, `selection.within_cap` compares it with our total ("below" strict, "up to" not, another currency
   never), and `handle_reply` books only when it is met; otherwise, or when the condition is not a price, a person.
   It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
+- `cancel` (the customer withdraws after the booking, round 88) cancels at the portal by the airline's reference.
+  A booking by mail without that reference yet, or a portal that refuses or is down, is withdrawn by mail with the
+  airline (`_cancel_by_mail`, the carrier list's address); the customer is told either way. Only without an address
+  does a person take it, and the booking stays as it was.
 - `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
   the selected billed weight, and so is a rate id the bookings API does not know (404, a desk or browser-page id)
   or one taken (409). A 503, an option without a rate id, or an expired rate while the rate API is down or capped
@@ -241,6 +248,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "fastest" (round 75's capture). `read_request` `ask` takes from the answer only the facts we asked for
   (`ANSWERED`) and those the request left at their default (`_stated`); origin and destination only when asked
   (`kept`), also in the rules' guess when the gateway fails. Benchmark section 15 answers every captured request.
+  When the rules cannot read the request even with the answer (round 104: "the same shipment as in my request ...
+  for ATL", now to BOM, two destinations), `_from_answer` reads the asked facts from the answer alone.
 - A request in French, Spanish or Italian counts "colis", "palettes", "bultos", "piezas" or "pezzi" as pieces and
   "tout compris en EUR" as the currency asked for (round 70's capture).
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline
@@ -271,6 +280,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- A pickup abroad ("collected from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria") has no zone, so no
+  trucker and no zone airport. Asking for its postcode got the customer's address back and then a no-price reply.
+  `extract.py` `_abroad_pickup` (a country abroad on a pickup line, or a postcode of other than five digits) asks
+  nothing; the extraction call, made anyway, gets our zone airports and names the nearest by road
+  (`_departures_abroad`), and the quote is airport-to-airport with "Pickup is excluded".
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
   excludes attachments that name a different origin or destination airport (another shipment, #164). For weight
   and volume, an explicit email correction takes precedence, and "use the weight in this email" keeps the mail's.

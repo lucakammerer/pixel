@@ -19,6 +19,7 @@ flowchart TD
     O --> RFQ[RFQ agent<br/>extract: rules, else one model call]
     RFQ --> ENG[pricing engine<br/>local sheets first, portal and mail bids]
     T --> ST[(tariff store<br/>version + validity)]
+    T -->|dated lane availability| ENG
     ST --> ENG
     PORTAL[rate portal] --> ENG
     BID --> ENG

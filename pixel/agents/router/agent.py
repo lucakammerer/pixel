@@ -4,6 +4,8 @@ from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.contracts import MailKind, Message
 from pixel.core.context import Context
 from pixel.core.events import emit
+from pixel.crm import bookings
+from pixel.pricing import availability
 
 TARIFF_FILES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "jpeg", "docx")
 TARIFF_NAME = re.compile(r"tariff|tarif|rate|preis|price")
@@ -14,6 +16,16 @@ REFUSED = re.compile(
     r"|\bno (?:space|capacity)\b|\b(?:declined|rejected|cancell?ed)\b",
     re.IGNORECASE,
 )
+PENDING_BOOKING = re.compile(
+    r"\b(?:wait[- ]?list(?:ed)?|space\s+(?:is\s+)?pending|pending\s+(?:space|confirmation)|"
+    r"status\s*:\s*(?:pending|on request|QU)|(?:booking|space)\s+(?:is\s+)?on request|"
+    r"subject to (?:space|confirmation)|partially confirmed)\b",
+    re.IGNORECASE,
+)
+CONFIRMED_PIECES = re.compile(
+    r"\bconfirmed\s+(?:for\s+)?(?:only\s+)?(\d{1,6})\s+(?:of|out of)\s+(\d{1,6})\s+(?:pieces?|pcs)\b", re.IGNORECASE
+)
+CONFIRMED_SUBJECT = re.compile(r"\bbooking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
 TEAM_REFERENCE = re.compile(r"\bPX-[0-9A-F]{6}\b")  # crm/shipments.py, sent with every booking
 WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³|lbs?|pounds?|t|tons?|tonnes?|tonnen)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
@@ -24,6 +36,10 @@ SYSTEM = (
     "something), customer_reply (answers a quote: accepts, declines, asks about it), tracking_question (asks where "
     "a shipment is), other."
 )
+
+
+def booking_pending(text: str) -> bool:
+    return bool(PENDING_BOOKING.search(text)) or any(int(n) < int(total) for n, total in CONFIRMED_PIECES.findall(text))
 
 
 def _carrier_kind(ctx: Context, address: str) -> str | None:
@@ -49,6 +65,19 @@ def _customer_of(ctx: Context, session_id: int) -> str | None:
     return row["customer"] if row else None
 
 
+def _lookalike(ctx: Context, sender: str, before: int) -> bool:
+    """Round 105: "our mailbox is down, send the price to this address" from nordlicht.audio@ beside the customer
+    nordlicht-audio@. An address that differs from a known customer's only by its dots, dashes or underscores is not
+    that customer: it gets no mail from us, neither a question nor a price."""
+    def plain(address: str) -> str:
+        local, _, domain = address.lower().partition("@")
+        return re.sub(r"[.\-_+]", "", local) + "@" + domain
+
+    known = ctx.db.execute("SELECT DISTINCT sender FROM messages WHERE kind = ? AND sender <> ? AND id < ?",
+                           (MailKind.CUSTOMER_RFQ.value, sender, before)).fetchall()  # fmt: skip
+    return any(plain(row[0]) == plain(sender) for row in known)
+
+
 def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
     """The kind and the rule that decided, or (None, why) when the rules cannot place the mail."""
     sender = message.sender
@@ -58,29 +87,47 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
         return MailKind.TRACKING_QUESTION, "sender:tracking"
     if sender == RATEDESK:
         return MailKind.RATEDESK_REPLY, "sender:ratedesk"
+    if not in_thread and _lookalike(ctx, sender, message.id):
+        return MailKind.OTHER, "sender:lookalike"
     if in_thread and customer and sender == customer:
         # The answer to our question for a missing fact is read by the request's own handler, which waits for it.
         if _answers(ctx, message)[:1] == ["question"]:
             return MailKind.OTHER, "thread:question"
         return MailKind.CUSTOMER_REPLY, "thread:customer"
     # A customer may write "booking" and "confirmed" too; a confirmation comes from an airline or names our reference.
-    confirms = _carrier_kind(ctx, sender) or TEAM_REFERENCE.search(message.body)
+    # An airline's operations desk may confirm from an address the carrier list does not hold: a booking reference
+    # we hold in the subject is enough ("Booking BK-… confirmed"), else a new thread with a lane reads as a request.
+    held = CONFIRMED_SUBJECT.search(message.subject)
+    confirms = (
+        _carrier_kind(ctx, sender)
+        or TEAM_REFERENCE.search(message.body)
+        or (held and bookings.by_reference(ctx, held.group(1).strip(".,:;")))
+    )
     if sender != customer and BOOKING_CONFIRMED.search(message.subject) and confirms:
         return MailKind.BOOKING_CONFIRMATION, "subject:booking_confirmed"
     purposes = _answers(ctx, message)
     if any(p.startswith("bid") for p in purposes):
         return MailKind.CARRIER_BID, "thread:bid_request"
     # Round 27: the airline's answer to our booking by mail ("Booking reference: BK-…, Status: booked") read as a bid.
+    # Its confirmation may stand only in an attachment (read as a tariff before). A refusal, in the mail or the
+    # attachment, goes the same way: `booking.handle_confirmation` then fails the booking for a person instead of
+    # leaving it requested.
     if (
         purposes[:1] == ["booking"]
         and sender != customer
-        and BOOKED.search(message.body)
-        and not REFUSED.search(message.body)
+        and (
+            BOOKED.search(message.body)
+            or message.attachments
+            or REFUSED.search(message.body)
+            or booking_pending(f"{message.subject}\n{message.body}")
+        )
     ):
         return MailKind.BOOKING_CONFIRMATION, "thread:booking_request"
     carrier = _carrier_kind(ctx, sender)
     files = [a.filename.lower() for a in message.attachments if a.filename.rsplit(".", 1)[-1].lower() in TARIFF_FILES]
     text = f"{message.subject}\n{message.body}"
+    if carrier == "airline" and availability.notice(text):
+        return MailKind.TARIFF, "carrier:availability_notice"
     asks = bool(WEIGHT.search(text) or LANE.search(text))
     # A customer attaches files too (a packing list): a file makes a tariff only from a carrier, or when a mail
     # that asks for nothing brings a file named like one.

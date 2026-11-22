@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -11,6 +12,7 @@ from pixel.core.events import emit
 
 router = APIRouter()
 MAX_AGE_S = 300
+PUSH_SLACK = timedelta(seconds=60)  # a push leaves the moment the mail is stored; its retries follow within seconds
 
 
 @router.post("/hook", status_code=204)
@@ -33,4 +35,5 @@ async def hook(request: Request) -> None:
     except (KeyError, TypeError, ValueError) as e:
         emit(ctx, "error", "webhook", payload={"where": "push", "error": repr(e)})
         return
-    poller.accept(ctx, message, lambda m: orchestrator.dispatch(ctx, m))
+    pushed_at = datetime.fromtimestamp(float(timestamp), UTC)
+    poller.accept(ctx, message, lambda m: orchestrator.dispatch(ctx, m), pushed_at - PUSH_SLACK)
