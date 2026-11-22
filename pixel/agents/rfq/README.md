@@ -94,7 +94,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   transit; in the city the customer wrote behind the airport's code, `city_of`), the departure that goes with it
   when they ask for the earliest departure, the pickup date said outright when they ask for the earliest pickup
   (`PICKUP_ASK`), one air
-  waybill for all lots, and that the drop-off cut-off follows with the airline's booking. Any doubt gives "".
+  waybill for all lots, that the drop-off cut-off follows with the airline's booking, and the all-in in its parts
+  with the rate per kg chargeable weight when they ask for a breakdown (`breakdown`, only when the parts add up to the
+  total, `calc.per_kg`). Any doubt gives "". A signed "Dr. Eva Huber" is greeted as Eva (`TITLE`), never as the
+  role line under her name.
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model reads the customer's signed first name
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.

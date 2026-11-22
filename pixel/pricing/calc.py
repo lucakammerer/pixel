@@ -97,6 +97,11 @@ def air_price(option: RateOption) -> Decimal:
     return option.total - option.pickup
 
 
+def per_kg(option: RateOption) -> Decimal:
+    """The all-in rate per kg of chargeable weight."""
+    return money(option.total / option.chargeable_kg)
+
+
 def with_pickup(option: RateOption, pickup: Decimal, trucker: str) -> RateOption:
     """`pickup` is in EUR (trucker prices); it is converted into the option's currency when that is not EUR."""
     pickup_in_currency = pickup if option.currency == "EUR" else money(pickup / option.fx_eur)
