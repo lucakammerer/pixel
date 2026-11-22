@@ -51,6 +51,29 @@ PRE_CARRIAGE = re.compile(
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
 )
+# Korean and Turkish name the airport first and the direction after it (rounds 131 to 171, read by the model before):
+# "DFW (Dallas, US)까지", "KUL행", "SGN (Ho Chi Minh City, VN) varışlı", "ATL’ye"; "도착 공항은 SCL" before it.
+PLACE = r"(?:\s*\([^()\n]{0,40}\))?"
+DEST_PARTICLE = re.compile(
+    rf"{CODE}{PLACE}\s*(?:까지(?!는)|행|(?i:var[ıi]şl[ıi]|var[ıi]ş)\b|[’'](?:y?[ae]|[dt][ae]ki)\b)"
+    rf"|도착\s*(?:공항|지)?\s*[은는:]?\s*{CODE}|(?i:var[ıi]ş\s+havaliman[ıi]\w*)\s*:?\s*{CODE}"
+)
+ORIGIN_PARTICLE = re.compile(
+    rf"{CODE}{PLACE}\s*(?:에서\s*출발|발\b|[’'][dt][ae]n\b)|출발\s*(?:공항|지)\s*[은는:]?\s*{CODE}"
+)
+# The customer's own delivery to the departure airport: "Cologne 공항(CGN)까지는 저희가 직접 반입", "Stuttgart Havalimanı’na
+# (STR) biz teslim edeceğiz".
+OWN_AIRPORT = re.compile(
+    rf"(?:공항|(?i:havaliman[ıi]\S*))\s*\(?\s*{CODE}\s*\)?"
+    rf"(?=[^.。!?\n]{{0,30}}?(?:(?:직접|저희가)\s*(?:직접\s*)?(?:반입|운반|배송)|(?i:biz\s+teslim|kendimiz)))"
+)
+
+
+def _codes(pattern: re.Pattern, text: str) -> set[str]:
+    """The airport codes a pattern with one code group per alternative names."""
+    return {c for m in pattern.finditer(text) if (c := next((g for g in m.groups() if g), None)) and _airport(c)}
+
+
 # The truck to the departure airport: "arrange the truck from our site to BBB airport. The goods go to Singapore" named
 # no destination code, and BBB was quoted as one. A code the trucking clause names as an airport, before any flight word.
 TRUCK_LEG = re.compile(
@@ -84,8 +107,9 @@ FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t(?![A-Za-z])|cu\.?\s*ft(?![A-Za-z])|ft3(?![A
 FT3 = Decimal("0.028316846592")
 # "3360 litres" is 3.36 cbm; a bare "l" is left alone: "5 l canisters" names the goods, not the shipment.
 LITRE = r"\s*(?i:lit(?:er|re)s?\b|ltrs?\b)"
+METRES3 = r"(?:m3|m³)(?![A-Za-z0-9_])"
 VOLUME = (
-    re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
+    re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)(?![a-z])|{METRES3})"),  # "1.44 m3입니다"
     re.compile(
         rf"(?i:\b(?:cbm|volume|volumen){TOTAL_WORD}(?:\s*\((?:cbm|m3|m³)\))?)[^\S\n]*:?[^\S\n]*{NUM}"
         rf"(?![\d.,']|{FEET3}|{LITRE})"
@@ -125,6 +149,22 @@ EACH_WEIGHT = re.compile(
     re.IGNORECASE,
 )
 EACH_VOLUME = re.compile(rf"{PER_PIECE}\s*{NUM}\s*(?:cbm|m3|m³)|{NUM}\s*(?:cbm|m3|m³)\s+{PER_PIECE}", re.IGNORECASE)
+# These markers also describe an individual item or pallet inside a mixed shipment. A separate shipment total
+# can settle the same measurement; a total volume does not settle a per-piece weight.
+LOCAL_EACH = (
+    r"(?:각(?:[ \t]*(?:팔레트|상자|박스|카톤|개))?|(?:개|박스|상자|팔레트|카톤|드럼)당"
+    r"|\b(?:her[ \t]+bir(?:i|[ \t]+(?:parça|adet|palet|koli))?|(?:parça|adet|palet|koli)[ \t]+başına|adet[ \t]+başı)\b)"
+)
+LOCAL_TOTAL = r"(?:총(?:합)?|\b(?:brüt[ \t]+)?toplam\b|\b(?:gross[ \t]+)?total\b)"
+LOCAL_WEIGHT_LABEL = r"(?:총?[ \t]*(?:중량|무게)|(?:brüt[ \t]+)?ağırlığı?|(?:gross[ \t]+)?weight)"
+LOCAL_VOLUME_LABEL = r"(?:부피|hacmi?|volume)"
+MASS_UNIT = r"(?:kgs?|kilos?|kilograms?|lbs?|pounds?|tonnes?|tons?|t)(?![A-Za-z0-9_])"
+CUBIC_UNIT = rf"(?:cbm(?![A-Za-z0-9_])|{METRES3}|{FEET3}|{LITRE})"
+LOCAL_EACH_WEIGHT, LOCAL_TOTAL_WEIGHT, LOCAL_EACH_VOLUME, LOCAL_TOTAL_VOLUME = (
+    re.compile(rf"{scope}[ \t]*(?:{label})?[ \t]*(?:[은는:=][ \t]*)?{NUM}[ \t]*{unit}", re.IGNORECASE)
+    for label, unit in ((LOCAL_WEIGHT_LABEL, MASS_UNIT), (LOCAL_VOLUME_LABEL, CUBIC_UNIT))
+    for scope in (LOCAL_EACH, LOCAL_TOTAL)
+)
 LOT_WEIGHT = re.compile(
     rf"{MODE}{NUM}\s*(?P<unit>kgs?|kilos?|kilograms?|lbs?|pounds?|tonnes?|tons?|tonnen|t(?![-\w]))\b(?:\s*(?P<kind>gross|brutto|net|netto|g\.\s?w\.?|n\.\s?w\.?))?{AFTER}",
     re.IGNORECASE,
@@ -136,7 +176,8 @@ LOT_VOLUME = re.compile(
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
-    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse|volumes|caixas|stuks|dozen)\b",
+    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse|volumes|caixas|stuks|dozen)\b"
+    r"|(\d+)[^\S\n]*(?:개(?!월)|parça|parca)",  # Korean "4개", Turkish "7 parça", "2 parçadan"
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
@@ -180,6 +221,7 @@ DOOR = re.compile(
     r"|from our (?:[\w-]+\s+)?(?:site|warehouse|premises|plant|factory|shop|depot|facility|workshop|store)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
     r"|\b(?:recogida|recoger|ritiro|ritirare|ophalen|ophaling|recolha|recolher|coleta|enlèvement|ramassage)\b"
+    r"|픽업|집하|\b(?:teslim[ \t]+al[ıi]nmaya|al[ıi]ma)[ \t]+haz[ıi]r(?:d[ıi]r)?\b(?![ \t]+(?:de[ğg]il|olmad|olmay))"
     r"|\bcollect\w*\s+(?:them|it|the\s+(?:goods|cargo|shipment|freight|cartons|pallets|boxes|crates))\s+from\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.
@@ -193,6 +235,9 @@ OWN_DELIVERY = re.compile(
     r"|\bkeine\s+abholung\s+(?:nötig|notwendig|erforderlich)\b",
     re.IGNORECASE,
 )
+PICKUP_CLAUSE = re.compile(r"[.;!?。\n]")
+KOREAN_PICKUP_OTHER = re.compile(r"(?:수하인|수취인|받는\s*사람|\bconsignee\b)[^,]*$", re.IGNORECASE)
+KOREAN_PICKUP_NEGATED = re.compile(r"^[은는이가을를 \t]*(?:필요(?:가)?[ \t]*없|불필요)")
 POSTCODE = re.compile(
     r"(?<![\d.,])(?<!No\. )(?<!Nr\. )(?<!#)(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE
 )
@@ -229,7 +274,7 @@ DANGEROUS = re.compile(
 )
 DG_DOCUMENTS = "dangerous_goods_documents"
 CURRENCY_ASK = re.compile(r"(?i:\b(?:in|en|currency:?|währung:?|devise:?|moneda:?))\s+([A-Z]{3})\b")
-LONE_CODE = re.compile(r"(?<![\d.,])(?<![\d.,] )\b([A-Z]{3})\b(?! ?\d)")
+LONE_CODE = re.compile(r"(?<![\d.,])(?<![\d.,] )\b([A-Z]{3})(?![A-Za-z\d])(?! ?\d)")  # also "EUR로"
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
@@ -405,9 +450,10 @@ def _lane(text: str) -> tuple[str, str] | None:
         return pairs.pop()
     if pairs:
         return None
-    before, after = set(PRE_CARRIAGE.findall(text)), set(ON_CARRIAGE.findall(text))
-    origins = {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - after | before
-    destinations = {c for c in DEST_LABEL.findall(text) if _airport(c)} - before | after
+    before = set(PRE_CARRIAGE.findall(text)) | _codes(OWN_AIRPORT, text)
+    after = set(ON_CARRIAGE.findall(text))
+    origins = ({c for c in ORIGIN_LABEL.findall(text) if _airport(c)} | _codes(ORIGIN_PARTICLE, text)) - after | before
+    destinations = ({c for c in DEST_LABEL.findall(text) if _airport(c)} | _codes(DEST_PARTICLE, text)) - before | after
     if len(origins) == 1 and len(destinations) == 1 and origins != destinations:
         return origins.pop(), destinations.pop()
     return None
@@ -461,6 +507,8 @@ def _destination_only(text: str, truck_leg: bool = True) -> str | None:
     "our truck goes to departure airport FRA" the origin. `truck_leg`: the airport a truck goes to is none; a later
     mail of a quoted lane leaves that to its origin instead ("deliver to JFK airport instead of ORD" is a change)."""
     to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
+    to |= dict.fromkeys(_codes(DEST_PARTICLE, text) - to.keys(), 0)
+    origin |= dict.fromkeys((_codes(ORIGIN_PARTICLE, text) | _codes(OWN_AIRPORT, text)) - origin.keys(), 0)
     trucked = set(TRUCK_LEG.findall(text)) if truck_leg else set()
     to = {code: reach for code, reach in to.items() if code not in trucked}
     found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
@@ -475,12 +523,23 @@ def _unique(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Dec
 
 
 def _pieces(text: str) -> int | None:
-    found = {int(m) for m in PIECES.findall(text)}
+    found = {int(a or b) for a, b in PIECES.findall(text)}
     return found.pop() if len(found) == 1 else None
+
+
+def _total_figures(text: str, each: re.Pattern, total: re.Pattern) -> str | None:
+    """Use the shipment total when a localized item-level figure appears beside it."""
+    remaining, count = each.subn("", text)
+    if not count:
+        return text
+    return remaining if total.search(remaining) else None
 
 
 def _weight(text: str, pieces: int | None) -> Decimal | None:
     """The one gross weight; a weight per piece ("4 cartons, each 48 kg") times the pieces, or None without them."""
+    text = _total_figures(text, LOCAL_EACH_WEIGHT, LOCAL_TOTAL_WEIGHT)
+    if text is None:
+        return None
     weight = _unique(WEIGHT, text, thousands=True)
     if weight is None and not any(p.search(text) for p in WEIGHT):  # in pounds or tonnes only: code converts
         pounds, tonnes = _unique(POUNDS, text, thousands=True), _unique(TONNES, text, thousands=False)
@@ -492,6 +551,9 @@ def _weight(text: str, pieces: int | None) -> Decimal | None:
 
 
 def _volume(text: str, pieces: int | None) -> Decimal | None:
+    text = _total_figures(text, LOCAL_EACH_VOLUME, LOCAL_TOTAL_VOLUME)
+    if text is None:
+        return None
     stated = _unique(VOLUME, text, thousands=False)
     if stated is not None and EACH_VOLUME.search(text):
         return stated * pieces if pieces else None
@@ -525,6 +587,8 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     """Gross weight, volume and pieces of a request that lists its shipment lot by lot ("Lot 2: 4 cartons, each
     48 kg gross, each 110 x 110 x 52 cm"). A figure is per piece with "each", else for the whole lot ("9 pieces,
     345 kg gross" was 345 kg to the scorer); code adds them up. None unless there are several lots, each certain."""
+    if LOCAL_EACH_WEIGHT.search(text) or LOCAL_EACH_VOLUME.search(text):
+        return None
     lots = LOT.findall(text)
     if len(lots) != len(re.findall(LOT_LINE, text)):  # a lot we cannot read would be left out of the sum
         return None
@@ -565,6 +629,16 @@ def _abroad(text: str, start: int, end: int) -> bool:
     return bool(FOREIGN_PREFIX.search(text[max(0, start - 4) : start]) or ABROAD.match(text[end:]))
 
 
+def _has_pickup(text: str) -> bool:
+    for match in DOOR.finditer(text):
+        if match[0] in ("픽업", "집하"):
+            before = PICKUP_CLAUSE.split(text[: match.start()])[-1]
+            if KOREAN_PICKUP_OTHER.search(before) or KOREAN_PICKUP_NEGATED.match(text[match.end() :]):
+                continue
+        return True
+    return False
+
+
 def pickup_postcodes(text: str) -> tuple[dict[str, bool], bool]:
     """The five-digit figures that can be the pickup's postcode, each with whether its line speaks of the pickup, and
     whether one of the mail's postcodes lies abroad. A phone or fax number ("Tel. 06181 12345") and an address
@@ -583,7 +657,7 @@ def pickup_postcodes(text: str) -> tuple[dict[str, bool], bool]:
         if _abroad(text, start, end):
             abroad = True
             continue
-        codes[m[1]] = codes.get(m[1], False) or bool(DOOR.search(line))
+        codes[m[1]] = codes.get(m[1], False) or _has_pickup(line)
     return codes, abroad
 
 
@@ -595,11 +669,11 @@ def not_a_pickup_postcode(text: str, code: str) -> bool:
 def _abroad_pickup(text: str) -> bool:
     """The pickup lies abroad: a postcode the mail places abroad, or a country abroad on a pickup line ("collected
     from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria"). It has no zone, so no postcode is asked for."""
-    return pickup_postcodes(text)[1] or any(ABROAD.search(line) for line in text.splitlines() if DOOR.search(line))
+    return pickup_postcodes(text)[1] or any(ABROAD.search(line) for line in text.splitlines() if _has_pickup(line))
 
 
 def _pickup(text: str) -> tuple[bool, str | None]:
-    if not DOOR.search(text) or OWN_DELIVERY.search(text):
+    if not _has_pickup(text) or OWN_DELIVERY.search(text):
         return False, None
     codes, _ = pickup_postcodes(text)
     if len(codes) == 1:
@@ -1108,7 +1182,11 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
     several = cargo is None and (lane is None or weight is None) and bool(lane or door or len(origins) == 1)
     if several:  # rounds 89 to 151: one line per shipment, each read by `shipments`; the first is the request
         lane, weight = lane or (origins.pop() if len(origins) == 1 else "", ""), weight or Decimal(0)
-    elif not guess and volume is None and (DIMS.search(figures) or any(p.search(figures) for p in VOLUME)):
+    elif (
+        not guess
+        and volume is None
+        and (LOCAL_EACH_VOLUME.search(figures) or DIMS.search(figures) or any(p.search(figures) for p in VOLUME))
+    ):
         return None  # a volume is given but not certain: under-reading it under-prices the chargeable weight
     if lane is None or weight is None:
         return None
@@ -1370,7 +1448,7 @@ def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
         named = {a for a in areas if re.search(rf"\b{re.escape(a)}\b", _plain(part))}
         return {areas[a] for a in named if not any(a != b and a in b for b in named)}  # "Munich" in "Munich South"
 
-    zones = towns("\n".join(line for line in text.splitlines() if DOOR.search(line) or PLACE_WORDS.search(line)))
+    zones = towns("\n".join(line for line in text.splitlines() if _has_pickup(line) or PLACE_WORDS.search(line)))
     postcode, sites = None, _known_sites(ctx, rfq)
     if len(zones) != 1 and sites and guess:
         postcode = sites[0]
@@ -1662,10 +1740,12 @@ def _document_facts(text: str) -> dict | None:
     piece is ambiguous and left out."""
     columns, rows, around = _table(text) or ([], [], text)
     pieces = {int(v) for v in PIECES_LABEL.findall(around)}
+    weight = _total_figures(NET_LINE.sub("", around), LOCAL_EACH_WEIGHT, LOCAL_TOTAL_WEIGHT)
+    volume = _total_figures(around, LOCAL_EACH_VOLUME, LOCAL_TOTAL_VOLUME)
     stated = {
         "pieces": pieces.pop() if len(pieces) == 1 else None,
-        "weight_kg": None if EACH_WEIGHT.search(around) else _unique(WEIGHT, NET_LINE.sub("", around), thousands=True),
-        "volume_cbm": None if EACH_VOLUME.search(around) else _unique(VOLUME, around, thousands=False),
+        "weight_kg": _unique(WEIGHT, weight, thousands=True) if weight and not EACH_WEIGHT.search(around) else None,
+        "volume_cbm": _unique(VOLUME, volume, thousands=False) if volume and not EACH_VOLUME.search(around) else None,
     }
     measured = _table_totals(columns, rows)
     facts = {}
@@ -2019,7 +2099,9 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         if not files:
             return by_rules(mail, deadline, guess=True) if guess else by_rules(mail, deadline)
         # Prefer the customer's routing and instructions; consult the documents if those are missing.
-        has_unread_volume = "volume_cbm" not in cargo and (DIMS.search(text) or any(p.search(text) for p in VOLUME))
+        has_unread_volume = "volume_cbm" not in cargo and (
+            LOCAL_EACH_VOLUME.search(text) or DIMS.search(text) or any(p.search(text) for p in VOLUME)
+        )
         if has_unread_volume and not guess:
             return None
         return by_rules(mail, deadline, guess, cargo=cargo) or by_rules(message, deadline, guess, cargo=cargo)
