@@ -16,7 +16,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   between options in `pixel/pricing/selection.py`: Decimal, tested. A model never computes, compares or writes a
   price.
 - **Rules first, model as fallback.** A model only reads what code cannot: an unusual request, an odd carrier
-  answer, an unknown tariff layout. One small gateway call per quote by default (R28: an 18-minute window
+  answer, an unknown tariff layout. One small gateway call per quote by default, and one that reads the finished reply beside the request (R28: an 18-minute window
   without any gateway spend earns no cost points, 0.10 USD per accepted quote earns none either).
 - **All model calls go through `pixel/llm.py`,** which calls the 5U gateway and logs tokens and cost. No other
   module imports an LLM client or `pixel/api/gateway.py`.
@@ -42,7 +42,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   after it was stored, alerted once with the step it hangs in)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`, `check.py` and `repair.py`: the check before sending and the repair of what
-  it blocks; `gaps.py`: what the session knows it has not read, closed before the quote), `tracking`, `tariffs`
+  it blocks; `gaps.py`: what the session knows it has not read, closed before the quote; `unmet.py`: the last reader of
+  request and reply before the first quote leaves), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`, `rate_card.py` (every portal rate read, scaled to the current version, priced during a 503),
   `bids.py`, `pickup.py`, `engine.py`
 - `pixel/crm/`: quotes, bookings, shipments, customers, carriers; `pixel/ui/`: start page at `/` (`home.py`, with
@@ -53,7 +54,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
-  `kpi_pr.sh`, `board_me.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `benchmark_generalization.py`, `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `benchmark_generalization.py`, `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -103,6 +104,7 @@ tools/kpi_pr.sh <pull request>                  # the same online on the live ho
 uv run python -m tools.board_me                 # our results from /v1/board/me into bench/RUNS.md
 uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
+uv run python -m tools.bench_unmet              # the last reader's prompt on the lost first rounds (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
@@ -198,7 +200,7 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
 - Booking with a `rate_id` older than 15 minutes: 410. Fetch a fresh rate and book that.
 - Calling the model "just to be sure" in a loop or per carrier answer: the spend of an 18-minute window is
   divided by its *accepted* quotes only, and every USD costs 400 points.
-- Spending at the gateway outside the live service while rounds are scored (`tools.bench_models`,
+- Spending at the gateway outside the live service while rounds are scored (`tools.bench_models`, `tools.bench_unmet`,
   `tools.kpi --online`, `tools.replay --online`, `tools/kpi_pr.sh`, any process that holds our key): the scorer
   counts it in the window it happens in. On 21.11. spend the live service never logged took 8 and 12 cost points
   from single windows, more than a day of quotes.

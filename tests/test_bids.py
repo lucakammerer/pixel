@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from pixel import llm
-from pixel.agents.rfq import agent, extract
+from pixel.agents.rfq import agent, extract, unmet
 from pixel.agents.router import agent as router
 from pixel.agents.tariffs import agent as tariffs
 from pixel.agents.tariffs.agent import _spoken
@@ -245,12 +245,13 @@ async def test_quote_from_a_sheet_with_one_gateway_call_and_the_fallback_without
     quote = await agent.handle(ctx, request, deadline(30))
     assert (datetime.now(UTC) - started).total_seconds() < 10
     assert (quote.total, quote.currency, quote.option.source, quote.llm_calls) == (D("260.00"), "EUR", Source.SHEET, 1)
-    assert "260.00 EUR" in quote.body and calls == ["quote.prose"]  # no attachment: no gpt-4.1 second reader
+    # no attachment: no gpt-4.1 second reader; the last reader of request and reply (`unmet.py`) on the finished text
+    assert "260.00 EUR" in quote.body and calls == ["quote.prose", "quote.unmet"]
 
     assert quotes.for_session(ctx, 1) == quote
 
     backup = await agent.fallback(ctx, 1)
-    assert (backup.total, backup.fallback, len(calls)) == (D("260.00"), True, 1)
+    assert (backup.total, backup.fallback, len(calls)) == (D("260.00"), True, 2)
 
 
 def captured(name: str) -> Message:
@@ -439,14 +440,14 @@ async def test_model_read_request_drafts_its_prose_in_the_same_call(ctx, monkeyp
     request = mail("c@x", "Some spare parts from our usual airport to the other one, a hundred kilos, 0.3 cbm.\n\nTom")
 
     quote = await agent.handle(ctx, request, deadline(30))
-    assert calls == ["rfq.extract"] and quote.llm_calls == 1
+    assert calls == ["rfq.extract", "quote.unmet"] and quote.llm_calls == 1
     # the extraction's opening names no phrase of the mail it answers (`hook`), so the quote opens with the price
     assert quote.body.startswith("Hello Tom,\n\n") and intro not in quote.body
     assert "2 minutes" not in quote.body
     assert "260.00 EUR" in quote.body
 
     backup = await agent.fallback(ctx, 1)
-    assert backup.body.startswith("Hello Tom,") and len(calls) == 1
+    assert backup.body.startswith("Hello Tom,") and len(calls) == 2
 
 
 async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
@@ -465,6 +466,7 @@ async def test_a_hanging_prose_call_never_holds_the_quote(ctx, monkeypatch):
 
     monkeypatch.setattr(agent, "PROSE_WAIT_S", 0.3)
     monkeypatch.setattr(extract, "CHECK_WAIT_S", 0.3)
+    monkeypatch.setattr(unmet, "WAIT_S", 0.3)
     monkeypatch.setattr(llm, "ask_json", hangs)
     monkeypatch.setattr(outbox, "send_quote", send_quote)
     monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")

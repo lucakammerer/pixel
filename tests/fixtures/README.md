@@ -90,6 +90,13 @@ under review. The captured mails and their descriptions are in `mails/README.md`
 - `scored-airline-bids.json`: a scored round with two priced airline bids, a sheet price and the scorer's verdict:
   among airlines the customer's wish decides, not the 50/50 rule of R15.
 
+- `unmet-asks.json`: for the last reader (`pixel/agents/rfq/unmet.py`), stored rounds with the request as the
+  session held it, the reply we sent, the files it carried and the asks a right reader lists (`expected`: class
+  and the customer's sentence): the first round of each new requirement we lost (rounds 10, 15, 42, 70, 76, 89,
+  91, 113; round 89's reply is our question, no quote left), and accepted rounds of the same kinds (73, 80, 109,
+  127), where nothing is unmet. `tools/bench_unmet.py` scores the prompt on them through the gateway;
+  `tests/test_unmet.py` only checks that each expected answer is one the reader can return.
+
 A row or variant may carry `known_gap`: the reference answer is right and the code is not yet. The note names what
 the code does, why it matters for the price, and ends with `Owner: <role>.`. The benchmark reports it as a gap
 instead of failing, so a fixture can land before its fix, and says when the case reads right: then delete the

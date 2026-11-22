@@ -14,7 +14,7 @@ R1, R4, R9–R17, R22–R24, R26–R29, R31.
 
 In: the RFQ `Message` and its `Deadline`; later the customer's reply and the airline's confirmation. Out: a `Quote`
 (sent through `core/outbox.py` `send_quote`), a `Booking` and a `Shipment`. Emits `rfq.extracted`,
-`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`, `rfq.novelty`.
+`quote.drafted`, `quote.sent`, `customer.accepted`, `customer.declined`, `booking.*`, `rfq.novelty`, `quote.unmet`.
 
 ## Implementation
 
@@ -298,6 +298,27 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   a failed call goes to `PIXEL_ALERT_URL` at once (`novel_requirement`, with the sentences), not after the verdict.
   `handle` waits for it at most until `target_at`; `_quote` reads the last `rfq.novelty`, so the fallback and a
   requote follow it too, without waiting.
+- `unmet.py` (R33): the last reader before the first quote of a session leaves. `novelty.py` reads the sentences
+  no rule consumes and `check.py` knows the kinds we already lost; the lost first rounds also sat in sentences a
+  rule did consume (round 15's pickup "from our warehouse", rounds 89 and 113's two shipments) or in none (round
+  70's language). So `settle`, called by `agent.py` `handle` between `_settled` and `outbox.send_quote`, sends
+  the request as the session holds it (the mail's own words and what its documents gave, at most `MAX_CHARS`) and
+  the exact subject and body about to leave, with the name of the offer PDF they carry, to `PIXEL_MODEL_CHECK`
+  once (`quote.unmet`, at most `WAIT_S` = 8 s, 300 output tokens). `read` returns every ask the reply does not
+  meet with the customer's own sentence, a class and, for `wording`, the sentence to add; an ask whose sentence
+  does not stand in the request is dropped. `wording` (something to state, confirm, name, address or format):
+  `_mended` puts the sentence before the paragraph above the signature when it holds no figure that request and
+  reply do not hold (`_addable`), and keeps the new text only when `check.run` on it blocks on no rule the old
+  text passed (the total once and no other amount, the language, the PDF); else the original leaves. `price`,
+  `selection`, `scope` (`HELD`) are never guessed: the quote waits until `target_at` (`_hold`; a takeover or a
+  quote sent by a person ends it) and then leaves as it is. Every ask left open goes to `PIXEL_ALERT_URL` at once
+  (`unmet_ask`: the classes and whether the quote is held, never text) and shows in `feedback.attention`. One
+  call per session (`_asked`), never in the fallback or a requote; a failed, late or malformed answer is an
+  `error` event and the quote leaves as it was. It runs on every request: about 0.002 USD, 0.8 of the 40 cost
+  points of a quote (about 800 tokens in, estimated from the prompt's length; `tools.bench_unmet` prints the
+  measured figure), and about 2 s of the 85 s a quote has left to full time points. `PIXEL_UNMET`: `on`, `log`
+  (read and record, no change, hold or alert; the default until `tools.bench_unmet` has scored the prompt on the
+  lost first rounds and accepted rounds of the same kinds in `tests/fixtures/unmet-asks.json`) or `off`.
 
 ## Pitfalls
 

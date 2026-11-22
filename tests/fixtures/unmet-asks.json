@@ -1,0 +1,197 @@
+{
+ "cases": [
+  {
+   "name": "round-10-dangerous-goods-only-in-the-attachment",
+   "session": 2264,
+   "round": 10,
+   "scored": "dg_docs_missing",
+   "request": "Air freight quote to GRU\n\nHi there,\n\nHope your week’s going well. Could you send me an all-in price in EUR for the cheapest air freight option to GRU (Sao Paulo, BR)? Please include pickup from our site in 61391 (Bad Homburg), Germany, and arrange the truck to the departure airport.\n\nThe shipment will be ready for pickup on 2026-11-25. It’s 3 pieces of industrial adhesives, with a gross weight of 715 kg and a total volume of 2.65 cbm. The goods are general cargo, non-dangerous, and I’ve attached our packing specification.\n\nThanks for taking a look!\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg\n\nPacking Specification\nNo. 53839\n\nDate:  2026-11-25\nShipper:  Weidner Spielwaren GmbH, Nuremberg, Germany\nConsignee:  Sao Paulo Imports Ltd., Sao Paulo, BR\nDestination airport:  GRU\nGoods description:  industrial adhesives\n\nHeight (cm)  Gross weight (kg)  Width (cm)  Length (cm)  Pieces\n147  715  100  60  3\n\nTotal pieces:  3\nTotal gross weight (kg):  715\nTotal volume (cbm):  2.65\nDangerous goods:  UN1133, Class 3, Adhesives",
+   "sent_as": "quote",
+   "subject": "Quote FRA → GRU, 715 kg",
+   "reply": "Hello,\n\nfor your shipment FRA → GRU (715 kg chargeable weight) we can offer:\n\n2685.35 EUR all-in with Juniper Cargo Lines, transit 5 days.\n\nThe price includes pickup at your door by Bodenseefracht, air freight, fuel and security surcharges.\nThis offer is valid until 21.11.2026 16:14 UTC.\n\nJust reply to this mail and we will book it for you.\n\nBest regards\nPIXEL Air Freight",
+   "files": [],
+   "expected": [
+    {
+     "class": "wording",
+     "sentence": "Dangerous goods:  UN1133, Class 3, Adhesives"
+    }
+   ]
+  },
+  {
+   "name": "round-15-pickup-without-a-place",
+   "session": 3634,
+   "round": 15,
+   "scored": "too_low",
+   "request": "\n\nHello,\n\nCould you please quote your cheapest air freight option to SGN (Ho Chi Minh City, VN)? The goods will be ready for pickup from our warehouse on 2026-11-30. Please arrange the truck from our warehouse to the departure airport and include this in your all-in price in EUR.\n\nThe shipment consists of 11 pieces of precision instruments, with a gross weight of 572 kg and a total volume of 2.29 cbm.\n\nThank you in advance.\n\nBest greetings from Regensburg\nTobias Auer\nVersand / Shipping\nAuer Maschinenbau GmbH\n",
+   "sent_as": "quote",
+   "subject": "RE: FW: AMSTERDAM SCHIPHOL - HKG / 128 PCS 165 KGS",
+   "reply": "Dear Tobias,\n\nThanks for the enquiry.\n\nFrom MUC to SGN I can offer you 1058.20 EUR all-in with Polaris Air Logistics; transit is 4 days. The price includes the air freight and the fuel and security surcharges. I can hold the rate until 17:41 today.\n\nWith the cargo ready on Monday 30 November, the earliest arrival at SGN would be Friday 4 December.\n\nLet me know if you would like to go ahead and I'll book it straight away.\n\nKind regards,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [],
+   "expected": [
+    {
+     "class": "price",
+     "sentence": "Please arrange the truck from our warehouse to the departure airport and include this in your all-in price in EUR."
+    }
+   ]
+  },
+  {
+   "name": "round-42-airline-ruled-out",
+   "session": 10827,
+   "round": 42,
+   "scored": "excluded_airline",
+   "request": "Air freight quote request to ULN\n\nDear Sir or Madam,\n\nCould you please quote your cheapest air freight option to ULN (Ulaanbaatar, MN), including truck collection from our site in 65797 (Wiesbaden), Germany, and transport to the departure airport? The shipment will be ready for pickup on 2026-11-27.\n\nThe shipment consists of 8 pieces of spare parts for packaging machines, with a gross weight of 911 kg and a total volume of 3.27 cbm.\n\nPlease provide an all-in price in EUR.\n\nPlease do not offer Zephyr Steppe Cargo (ZS) for this shipment or for any of our future inquiries.\n\nBest regards\nPetra Meyer\nHead of Shipping\nMeyer Industrietechnik GmbH, Kassel",
+   "sent_as": "quote",
+   "subject": "Re: Air freight quote request to ULN",
+   "reply": "Hello Petra!\n\nI checked the airlines from FRA to ULN, and Zephyr Steppe Cargo is the cheapest: 3028.54 EUR all-in, 5 days in transit. That covers pickup at your site by Kranich Kurier, air freight, fuel and security surcharges. Easy!\n\nWith pickup on Friday 27 November, the earliest arrival in Ulaanbaatar would be Thursday 3 December.\n\nJust hit reply and I'll get it booked for you! 🙂\n\nBest wishes,\nLena\nAir Export, PIXEL Air Freight\n\nP.S. If the ready date moves, just let me know and I'll check the flights again.",
+   "files": [],
+   "expected": [
+    {
+     "class": "selection",
+     "sentence": "Please do not offer Zephyr Steppe Cargo (ZS) for this shipment or for any of our future inquiries."
+    }
+   ]
+  },
+  {
+   "name": "round-70-request-in-french",
+   "session": 19538,
+   "round": 70,
+   "scored": "wrong_language",
+   "request": "Devis fret aérien DUS–SYD – option la plus rapide\n\nBonjour,\n\nJ’espère que tout va bien de votre côté. J’ai un envoi de pièces détachées pour machines d’emballage à faire partir vers Sydney, AU (SYD). La marchandise sera prête le 2026-11-26 et nous la déposerons nous-mêmes à l’aéroport de Duesseldorf (DUS).\n\nIl s’agit de 9 colis, pour un poids brut total de 279 kg et un volume de 2.47 cbm.\n\nNous souhaitons l’option la plus rapide. Pouvez-vous me communiquer votre tarif tout compris en EUR, ainsi que le premier départ possible et le délai de transit ?\n\nMerci d’avance et bonne journée !\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "sent_as": "quote",
+   "subject": "Re: Devis fret aérien DUS–SYD – option la plus rapide",
+   "reply": "Hi Klaus,\n\nWe can fly your shipment from DUS to SYD with Cobalt Skylift for 1472.59 EUR all-in, with 4 days in transit. That covers air freight, fuel and security surcharges. Because of the volume, the freight is calculated on 412.49 kg chargeable weight.\n\nLet me know if you would like to go ahead and I'll book it straight away.\n\nCheers,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [],
+   "expected": [
+    {
+     "class": "wording"
+    }
+   ]
+  },
+  {
+   "name": "round-76-offer-as-pdf",
+   "session": 21457,
+   "round": 76,
+   "scored": "no_pdf_offer",
+   "request": "Air freight quote to DFW – fastest option\n\nHello,\n\nCould you please quote the fastest air freight option to DFW (Dallas, US)? The shipment will be ready for pickup on 2026-11-28 at our site in postcode 53345 (Bonn), Germany. Please arrange the truck from our site to the departure airport and include it in your all-in price in EUR.\n\nThe shipment consists of 5 pieces of automotive sensors, with a gross weight of 65 kg and a total volume of 0.37 cbm. Please let me know the earliest possible arrival at DFW.\n\nPlease attach your offer as a PDF to your reply, as our purchasing department needs it for filing.\n\nThank you.\n\nViele Gruesse / Many greetings\nDeniz Yilmaz\nRheintal Elektronik GmbH",
+   "sent_as": "quote",
+   "subject": "Re: Air freight quote to DFW – fastest option",
+   "reply": "Hello Deniz,\n\nI'll make sure to get it there as quickly as possible. For your automotive sensors, the quickest option from CGN to DFW is Lumen Air Cargo: 1 day in transit, 408.55 EUR all-in. That covers pickup at your site by Sternmeile Logistik, air freight, fuel and security surcharges.\n\nWith pickup on Saturday 28 November, the earliest arrival in Dallas would be Monday 30 November.\n\nI can hold the rate until 23:51 today. Let me know if you would like to go ahead and I'll book it straight away.\n\nViele Grüße,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [],
+   "expected": [
+    {
+     "class": "wording",
+     "sentence": "Please attach your offer as a PDF to your reply, as our purchasing department needs it for filing."
+    }
+   ]
+  },
+  {
+   "name": "round-91-insurance-in-the-all-in",
+   "session": 26573,
+   "round": 91,
+   "scored": "too_low",
+   "request": "Fastest air freight option: DUS to MEX\n\nHi,\n\nCould you quote the fastest air freight option from DUS to MEX (Mexico City, MX) and confirm the transit time? Please include the all-in price in EUR.\n\nWe’ll deliver to DUS ourselves. The shipment is ready on 2026-11-29: 1 piece of printed marketing material, 176 kg gross, 1.26 cbm.\n\nPlease include cargo insurance in the all-in price, on the terms of our frame agreement: goods value 22000 EUR, insured at 110 % of that value, premium rate 0.40 %.\n\nSara\nLindqvist Medtech",
+   "sent_as": "quote",
+   "subject": "Re: Fastest air freight option: DUS to MEX",
+   "reply": "Hi Sara,\n\nI've compared the airlines for your printed marketing material from DUS to MEX, and Xenon Cargo Airlines is the quickest: 2 days in transit, 927.95 EUR all-in. The price includes the air freight and the fuel and security surcharges. Because of the volume, the freight is calculated on 210.42 kg chargeable weight.\n\nWith the cargo ready on Sunday 29 November, the earliest arrival in Mexico City would be Tuesday 1 December.\n\nThe rate is good until 01:22 today. Let me know if you would like to go ahead and I'll book it straight away.\n\nBest wishes,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [
+    "offer-Q-8854597C.pdf"
+   ],
+   "expected": [
+    {
+     "class": "price",
+     "sentence": "Please include cargo insurance in the all-in price, on the terms of our frame agreement: goods value 22000 EUR, insured at 110 % of that value, premium rate 0.40 %."
+    }
+   ]
+  },
+  {
+   "name": "round-89-two-shipments-none-quoted",
+   "session": 25795,
+   "round": 89,
+   "scored": "no answer",
+   "request": "Air freight quote request: GRU and TLV\n\nHi there,\n\nHope your week’s going well! Could you quote the fastest air freight option for each of these two shipments? Both will be ready for pickup on 2026-11-23 at our site in Wiesbaden, Germany (postcode 65996). Please arrange the truck from our site to the airport as part of the quote.\n\n1. GRU (Sao Paulo, BR) — automotive sensors, 4 pieces, gross weight 1281 kg, volume 3.76 cbm.\n2. TLV (Tel Aviv, IL) — machine parts, 1 piece, gross weight 1812 kg, volume 5.75 cbm.\n\nCould you send both quotes in the same reply, with a separate all-in price in EUR for each shipment rather than a combined total?\n\nThanks for your help!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "sent_as": "question",
+   "subject": "Re: Air freight quote request: GRU and TLV",
+   "reply": "Hello,\n\nthank you for your request. Could you tell us the destination airport? As soon as we have it, you will receive our all-in offer.\n\nBest regards\nLena Berger",
+   "files": [],
+   "expected": [
+    {
+     "class": "scope",
+     "sentence": "Could you quote the fastest air freight option for each of these two shipments?"
+    }
+   ]
+  },
+  {
+   "name": "round-113-two-shipments-one-quoted",
+   "session": 33301,
+   "round": 113,
+   "scored": "one_of_two",
+   "request": "Air freight quote request for RUH and DXB\n\nDear Sir or Madam,\n\nCould you please quote the fastest air freight option for each of the two shipments below? Both will be ready for pickup on 2026-11-24 at our site in Munich, Germany (postcode 80602). Please arrange the truck from our site to the departure airport and include this in each quote.\n\n1. Shipment to RUH (Riyadh, SA): electronic control units, 3 pieces, gross weight 749 kg, volume 4.80 cbm.\n2. Shipment to DXB (Dubai, AE): automotive sensors, 11 pieces, gross weight 1239 kg, volume 5.27 cbm.\n\nPlease send both quotes in the same reply, with a separate all-in price in EUR for each shipment rather than a combined price.\n\nThank you for your assistance.\n\nKind regards\nAnna Sonnberg\nHead of Purchasing and Logistics\nSonnberg Kaffeeroesterei GmbH",
+   "sent_as": "quote",
+   "subject": "Re: Air freight quote request for RUH and DXB",
+   "reply": "Dear Anna Sonnberg,\n\nWe can fly your shipment from MUC to RUH with Juniper Cargo Lines for 2239.31 EUR all-in, with 1 day in transit. That covers pickup at your site by Bodenseefracht, air freight, fuel and security surcharges. Because of the volume, the freight is calculated on 801.6 kg chargeable weight.\n\nWith pickup on Tuesday 24 November, the earliest arrival in Riyadh would be Thursday 26 November.\n\nThe rate is good until 03:36 today. Let me know if you would like to go ahead and I'll book it straight away.\n\nKind regards,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [
+    "offer-Q-E2F4278C.pdf"
+   ],
+   "expected": [
+    {
+     "class": "scope",
+     "sentence": "Could you please quote the fastest air freight option for each of the two shipments below?"
+    }
+   ]
+  },
+  {
+   "name": "round-73-french-answered-in-french",
+   "session": 20451,
+   "round": 73,
+   "scored": "accepted",
+   "request": "Demande de cotation aérienne – LOS\n\nBonjour,\n\nPouvez-vous me chiffrer l’option la moins chère en fret aérien vers LOS (Lagos, NG), tout compris en EUR ?\n\nIl s’agit de 12 colis de matériel de sport, pour un poids brut de 1497 kg et un volume de 13.89 cbm. La marchandise sera prête à l’enlèvement le 2026-11-23 sur notre site à 60911 (Frankfurt am Main), en Allemagne. Merci d’organiser le transport par camion jusqu’à l’aéroport.\n\nMira Petersen\nNordlicht Audio",
+   "sent_as": "quote",
+   "subject": "Re: Demande de cotation aérienne – LOS",
+   "reply": "Bonjour Mira,\n\nMon meilleur prix de FRA à LOS est de 6270.02 EUR tout compris avec Lumen Air Cargo, avec un transit de 5 jours. Ce prix comprend l'enlèvement chez vous par Taunusfracht, le fret aérien et les surcharges carburant et sûreté. La marchandise étant volumineuse pour son poids, la compagnie la taxe sur 2319,63 kg de poids volumétrique.\n\nAvec un enlèvement le lundi 23 novembre, l'arrivée la plus tôt à Lagos serait le dimanche 29 novembre.\n\nJe peux maintenir ce tarif jusqu'à 23:33 aujourd'hui. Il vous suffit de répondre à ce mail pour confirmer, et je m'occupe de la réservation.\n\nBien cordialement,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [],
+   "expected": []
+  },
+  {
+   "name": "round-80-pdf-attached",
+   "session": 22578,
+   "round": 80,
+   "scored": "accepted",
+   "request": "Air freight quote to DEL\n\nHi,\n\nCould you quote your cheapest air freight option to DEL (Delhi, IN), all-in in EUR, including trucking from our site at 36563 (Fulda), Germany, to the airport?\n\nThe electronic control units will be ready for pickup on 2026-11-28: 5 pieces, 356 kg gross, 1.58 cbm.\n\nPlease attach the offer as a PDF to your reply so our purchasing department can file it.\n\nSara\nLindqvist Medtech",
+   "sent_as": "quote",
+   "subject": "Re: Air freight quote to DEL",
+   "reply": "Hi Sara,\n\nFor your electronic control units, the best price from FRA to DEL is with Meridian Freightways: 1005.64 EUR all-in, 4 days in transit. That covers pickup at your site by Bodenseefracht, air freight, fuel and security surcharges.\n\nWith pickup on Saturday 28 November, the earliest arrival in Delhi would be Thursday 3 December.\n\nI can hold the rate until 00:15 today. Let me know if you would like to go ahead and I'll book it straight away.\n\nBest wishes,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [
+    "offer-Q-C119C2C4.pdf"
+   ],
+   "expected": []
+  },
+  {
+   "name": "round-109-insurance-included",
+   "session": 32127,
+   "round": 109,
+   "scored": "accepted",
+   "request": "Air freight quote: MUC to YYZ\n\nHi there,\n\nHope your week’s going well! I’m arranging the flight from Germany for our buyer’s import into Toronto, Canada. Could you send me an all-in price in EUR for the cheapest air freight option from MUC to YYZ?\n\nThe import shipment consists of 5 pieces of automotive sensors, with a gross weight of 3258.44 lb and a total volume of 306.18 cubic feet. The goods will be ready on 2026-11-25, and we’ll deliver them to MUC ourselves, so there’s no need to arrange pickup.\n\nThanks for having a look!\n\nPlease include cargo insurance in the all-in price, on the terms of our frame agreement: goods value 90000 EUR, insured at 110 % of that value, premium rate 0.45 %.\n\nCheers,\nKlaus Weidner\nWeidner Spielwaren GmbH, Nuremberg",
+   "sent_as": "quote",
+   "subject": "Re: Air freight quote: MUC to YYZ",
+   "reply": "Hi Klaus,\n\nFor your automotive sensors, the best price from MUC to YYZ is with Lumen Air Cargo: 3401.50 EUR all-in, 3 days in transit. The price includes the air freight and the fuel and security surcharges. It also includes cargo insurance on your terms.\n\nWith the cargo ready on Wednesday 25 November, the earliest arrival at YYZ would be Saturday 28 November.\n\nThe rate is good until 03:11 today. If that works for you, just reply and I'll book it right away.\n\nCheers,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [
+    "offer-Q-0789A62B.pdf"
+   ],
+   "expected": []
+  },
+  {
+   "name": "round-127-two-shipments-both-quoted",
+   "session": 37896,
+   "round": 127,
+   "scored": "accepted",
+   "request": "Air freight quotes from MUC to SGN and ICN\n\nHi there,\n\nHope your week’s going well! Could you check the fastest air freight option for each of the two shipments below? Both will be ready on 2026-11-26, and we’ll deliver them to Munich airport (MUC) ourselves.\n\n1. To SGN (Ho Chi Minh City, VN): automotive sensors, 6 pieces, gross weight 1592 kg, volume 6.77 cbm.\n2. To ICN (Seoul, KR): printed marketing material, 7 pieces, gross weight 813 kg, volume 6.04 cbm.\n\nCould you send both quotes in the same reply, with a separate all-in price in EUR for each shipment rather than a combined total?\n\nThanks for checking!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+   "sent_as": "quote",
+   "subject": "Re: Air freight quotes from MUC to SGN and ICN",
+   "reply": "Hi Petra,\n\nWe can fly your shipment from MUC to SGN with Nova Atlas Cargo for 5810.80 EUR all-in, with 3 days in transit. The price includes the air freight and the fuel and security surcharges.\n\nFor the shipment to ICN (813 kg) I would go with Ibisair Cargo: 3439.60 EUR all-in, with 2 days in transit. All shipments together: 9250.40 EUR all-in.\n\nWith the cargo ready on Thursday 26 November, the earliest arrival in Ho Chi Minh City would be Sunday 29 November.\n\nThe rate is good until 05:01 today. If that works for you, just reply and I'll book it right away.\n\nHave a lovely day too!\n\nBest wishes,\nLena Berger\nAir Export, PIXEL Air Freight",
+   "files": [
+    "offer-Q-2E9A1DE7.pdf"
+   ],
+   "expected": []
+  }
+ ]
+}
