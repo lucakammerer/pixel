@@ -49,6 +49,9 @@ def requoted(pipe, monkeypatch):
         ),
         ("Perdón, el peso correcto es 900 kg y 5 cbm.", {"weight_kg": "900", "volume_cbm": "5"}),
         ("Please change the destination to BKK instead of JFK.", {"destination": "BKK"}),
+        ("Please quote transport to BKK airport instead of JFK.", {"destination": "BKK"}),  # no truck leg after a quote
+        ("Could you deliver to BKK airport instead of New York?", {"destination": "BKK"}),
+        ("Actually please deliver them to BKK airport.", {"destination": "BKK"}),
         (
             "Please collect from our warehouse in 80331 Munich instead.",
             {"door_pickup": "True", "pickup_postcode": "80331", "pickup_zone": "80"},
@@ -61,11 +64,16 @@ def requoted(pipe, monkeypatch):
         ("Thanks again!\n\nKlaus Weidner\nHauptstr. 1, 90402 Nürnberg", {}),
         ("Thanks for confirming the booking from FRA to JFK.", {}),
         ("Please book the fastest option.", {}),
-        ("Wir liefern die Ware selbst zum Flughafen FRA.", {}),  # the truck to the departure airport, never the destination
+        (
+            "Wir liefern die Ware selbst zum Flughafen FRA.",
+            {},
+        ),  # the truck to the departure airport, never the destination
         ("Wir fahren die Kisten morgen zum Flughafen FRA.", {}),
         ("Für den Flug liefern wir die Ware selbst zum Flughafen FRA.", {}),  # the air word anywhere before
         ("Wir bringen die Luftfracht selbst zum Flughafen FRA.", {}),
         ("Die Luftfrachtsendung liefern wir selbst zum Flughafen FRA.", {}),
+        ("We deliver ourselves to FRA airport.", {}),
+        ("Our forwarder will truck it to the airport FRA, destination stays JFK.", {}),
     ],
 )
 def test_changes_are_the_fields_a_mail_states_differently(text, want):

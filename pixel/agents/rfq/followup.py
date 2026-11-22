@@ -130,7 +130,7 @@ def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: li
     if cargo.get("weight_kg") in ours:
         cargo.pop("weight_kg")
     found = {k: v for k, v in cargo.items() if v != getattr(rfq, k)}
-    lane = extract._lane(text) or ("", extract._destination_only(text) or "")
+    lane = extract._lane(text) or ("", extract._destination_only(text, truck_leg=False) or "")
     for key, code in zip(("origin", "destination"), lane, strict=True):
         # a destination where the cargo departs is the truck's airport ("Wir bringen die Luftfracht zum Flughafen MUC")
         if code and code != getattr(rfq, key) and not (key == "destination" and code == (lane[0] or rfq.origin)):

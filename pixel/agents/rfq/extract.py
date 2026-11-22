@@ -449,12 +449,13 @@ def shipments(rfq: Rfq, text: str) -> list[Rfq]:
     return found
 
 
-def _destination_only(text: str) -> str | None:
+def _destination_only(text: str, truck_leg: bool = True) -> str | None:
     """The one destination of a mail that names no origin airport (door-to-port). A code both labels reach belongs to
     the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
-    "our truck goes to departure airport FRA" the origin."""
+    "our truck goes to departure airport FRA" the origin. `truck_leg`: the airport a truck goes to is none; a later
+    mail of a quoted lane leaves that to its origin instead ("deliver to JFK airport instead of ORD" is a change)."""
     to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
-    trucked = set(TRUCK_LEG.findall(text))
+    trucked = set(TRUCK_LEG.findall(text)) if truck_leg else set()
     to = {code: reach for code, reach in to.items() if code not in trucked}
     found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
     if set(origin) - found:
