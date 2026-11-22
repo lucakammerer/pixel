@@ -221,9 +221,9 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         if pending_desk is not None:
             if pending_desk not in mailed:
                 mailed.append(pending_desk)
-            offers = await bids.collect(ctx, rfq.session_id, deadline, mailed, pending_desk=pending_desk)
+            offers = await bids.collect(ctx, rfq.session_id, deadline, mailed, pending_desk=pending_desk, rfq=rfq)
         elif mailed:
-            offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
+            offers = await bids.collect(ctx, rfq.session_id, deadline, mailed, rfq=rfq)
         # The bids are in: one last rate read before the quote, inside the desk wait.
         probes_task.cancel()
         by = min(deadline.received_at + timedelta(seconds=bids.DESK_CUTOFF_S), deadline.hard_at)
