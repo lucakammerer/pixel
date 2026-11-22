@@ -28,7 +28,14 @@ AIRPORT_WORD = r"(?:\s+(?:airport|flughafen))?"
 ORIGIN_LABEL = re.compile(
     rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
 )
-DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
+# "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
+DEST_LABEL = re.compile(
+    rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)à(?!\w)"
+    # Spanish, Italian, Portuguese "a GRU", only right before a code that ends the clause: never the English article
+    rf"|(?<!\w)a(?=\s+(?-i:[A-Z]{{3}})\s*(?:[.,;:!?(\n]|$))"
+    rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
+    rf"{AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
+)
 # The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
 # the door" the destination.
 PRE_CARRIAGE = re.compile(
@@ -111,7 +118,7 @@ LOT_VOLUME = re.compile(
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
-    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse)\b",
+    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse|volumes|caixas|stuks|dozen)\b",
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
@@ -122,9 +129,14 @@ NOT_URGENT = re.compile(
     r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide)\b", re.IGNORECASE)
+FASTEST = re.compile(
+    r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide|m(?:á|a|ai)s\s+r[aá]pid[ao]|più\s+(?:veloce|rapid[ao])|snelste)\b",
+    re.IGNORECASE,
+)
 CHEAPEST = re.compile(
-    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix)\b", re.IGNORECASE
+    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix"
+    r"|m(?:á|a|ai)s\s+(?:econ[oó]mic[ao]|barat[ao])|più\s+economic[ao]|goedkoopste)\b",
+    re.IGNORECASE,
 )
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
@@ -147,6 +159,7 @@ DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from"
     r"|from our (?:[\w-]+\s+)?(?:site|warehouse|premises|plant|factory|shop|depot|facility|workshop|store)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
+    r"|\b(?:recogida|recoger|ritiro|ritirare|ophalen|ophaling|recolha|recolher|coleta|enlèvement|ramassage)\b"
     r"|\bcollect\w*\s+(?:them|it|the\s+(?:goods|cargo|shipment|freight|cartons|pallets|boxes|crates))\s+from\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.

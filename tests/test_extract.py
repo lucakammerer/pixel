@@ -1350,3 +1350,8 @@ def test_a_unit_followed_by_a_korean_particle_is_read():
     text = "화물은 가구 샘플 12개이며, 총중량은 2028.26 lb입니다, 부피는 113.01 cubic feet입니다."
     assert round(extract._volume(text, 12), 2) == Decimal("3.20")
     assert round(extract._weight(text, 12)) == 920
+
+
+def test_the_english_article_a_names_no_destination():
+    text = "Please send a quote: pickup at our plant in 80331 Munich, a FRA departure is fine, destination ORD, 400 kg."
+    assert extract._destination_only(text) == "ORD"
