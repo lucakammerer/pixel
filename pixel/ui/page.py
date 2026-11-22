@@ -16,16 +16,20 @@ CSS = """
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Jost,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 -webkit-font-smoothing:antialiased}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.top{height:60px;display:flex;align-items:center;gap:28px;padding:0 12px 0 24px;background:#fff;
-border:1px solid var(--line);border-radius:999px;position:sticky;top:14px;z-index:10;max-width:1240px;margin:14px auto 0}
-.brand{display:flex;align-items:center}
-.brand img{display:block;border-radius:3px}
-.top nav{display:flex;gap:6px}
-.top nav a{display:flex;align-items:center;height:38px;padding:0 16px;border-radius:999px;color:var(--ink);
+.top{height:60px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:28px;
+padding:0 12px 0 24px;background:#fff;border:1px solid var(--line);border-radius:999px;position:sticky;top:14px;
+z-index:10;max-width:1240px;margin:14px auto 0}
+/* the wordmark from the pitch: an orange square and PIXEL in Satoshi Black */
+.brand{display:flex;align-items:center;gap:10px;justify-self:start;color:var(--ink);font:900 20px/1 Satoshi,Jost,system-ui,
+sans-serif;letter-spacing:-.01em;user-select:none}
+.brand:hover{text-decoration:none}
+.brand i{width:12px;height:12px;background:#DE5531;display:block;flex:none}
+.top nav{display:grid;grid-template-columns:repeat(3,148px);gap:6px}
+.top nav a{display:flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border-radius:999px;color:var(--ink);
 font-size:13px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;transition:background .2s,color .2s}
 .top nav a:hover{background:var(--hover);text-decoration:none}
 .top nav a.on{background:var(--tint);color:var(--accent)}
-.live{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
+.live{justify-self:end;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
 .live i{width:7px;height:7px;border-radius:50%;background:var(--line-2);position:relative}
 .live.on i{background:var(--ok)}.live.on i::after{content:"";position:absolute;inset:0;border-radius:50%;
 background:var(--ok);animation:pulse 2s ease-out infinite}
@@ -140,10 +144,10 @@ font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
 .co .nm{color:var(--ink);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .co .ml{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:900px){.split{grid-template-columns:minmax(0,1fr)}.split>aside{position:static}.search{width:100%;margin:0}
-.top{gap:18px;padding:0 16px}main{padding:20px 16px 60px}.hide-sm{display:none}
+.top{gap:18px;padding:0 16px}.top nav{grid-template-columns:repeat(3,auto)}main{padding:20px 16px 60px}.hide-sm{display:none}
 .ev{grid-template-columns:56px minmax(0,1fr)}.ev .kind{display:none}}
 @media (max-width:420px){.top{height:auto;min-height:56px;flex-wrap:wrap;gap:0 10px;padding:0 10px}
-.top .brand,.top .live{min-height:38px}.top nav{order:1;width:100%;gap:10px}
+.top{display:flex}.top .brand,.top .live{min-height:38px}.top .live{margin-left:auto}.top nav{order:1;width:100%;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
 .top nav a{min-height:34px}.split .ev,.split dd{overflow-wrap:anywhere}}
 """
 
@@ -185,8 +189,9 @@ def layout(title: str, body: str, *, nav: str = "", script: str = "") -> str:
         f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · PIXEL</title>'
         f'<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
         f'<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet">'
+        f'<link href="https://api.fontshare.com/v2/css?f[]=satoshi@900&display=swap" rel="stylesheet">'
         f'<style>{CSS}</style></head><body><header class=top><a class=brand href="/">'
-        f'<img src="/assets/pixel-logo.png" alt="PIXEL" width="104" height="20"></a><nav>{links}</nav>'
+        f"<i aria-hidden=true></i>PIXEL</a><nav>{links}</nav>"
         f"<span class=live id=live><i></i><span>Connecting</span></span></header>"
         f"<main>{body}</main><script>{LIVE_JS}{script}</script></body></html>"
     )
