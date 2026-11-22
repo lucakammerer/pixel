@@ -253,6 +253,54 @@ def number(text: str, thousands: bool = True) -> Decimal | None:
     return value if value.is_finite() else None
 
 
+INSURANCE = re.compile(r"(?i)insur|versicher")
+NO_INSURANCE = re.compile(
+    r"(?i)\bno\s+(?:cargo\s+)?insurance|insurance\s+(?:is\s+)?not\s+(?:needed|required|wanted)|own\s+(?:insurance\s+)?policy"
+    r"|keine\s+(?:transport)?versicherung|ohne\s+(?:transport)?versicherung"
+)
+PERCENT = re.compile(rf"{NUM}\s*(%|‰|(?i:per\s*mille|promille|prozent|percent))")
+MONEY = re.compile(rf"(?i:(EUR|USD|GBP|CHF|€|\$)\s*{NUM}(k\b)?|{NUM}(k\b)?\s*(EUR|USD|GBP|CHF|€|\$))")
+MINIMUM = re.compile(r"(?i)(?:minimum|mindest|min\.)\D{0,25}$")
+UPLIFT = re.compile(r"(?i)(?:plus|\+|zuzüglich|zzgl\.?)\s*$")
+
+
+def insurance(text: str) -> tuple[Decimal, str, Decimal, Decimal, Decimal] | None:
+    """The cargo insurance the request prices itself: (goods value, its currency, insured share in %, premium rate
+    in %, minimum premium). None when it asks for none, declines it or leaves the rate or the value out."""
+    if not INSURANCE.search(text) or NO_INSURANCE.search(text):
+        return None
+    share, rate = Decimal(100), None
+    for m in PERCENT.finditer(text):
+        value = number(m.group(1))
+        if value is None:
+            continue
+        if m.group(2) not in ("%",) and not m.group(2).lower().startswith(("prozent", "percent")):
+            value /= 10
+        before = text[max(0, m.start() - 40) : m.start()]
+        if UPLIFT.search(before):
+            share = 100 + value
+        elif value >= 100:
+            share = value
+        elif value < 5 and rate is None:
+            rate = value
+    values, minimum = [], Decimal(0)
+    for m in MONEY.finditer(text):
+        amount = number(m.group(2) or m.group(4))
+        if amount is None:
+            continue
+        if m.group(3) or m.group(5):
+            amount *= 1000
+        currency = {"€": "EUR", "$": "USD"}.get(c := (m.group(1) or m.group(6)).upper(), c)
+        if MINIMUM.search(text[max(0, m.start() - 40) : m.start()]):
+            minimum = amount
+        else:
+            values.append((amount, currency))
+    if rate is None or not values:
+        return None
+    value, currency = max(values)
+    return value, currency, share, rate, minimum
+
+
 def _airport(code: str) -> str | None:
     return None if code in NOT_AIRPORTS else code
 

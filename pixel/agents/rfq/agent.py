@@ -46,14 +46,16 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
     option = selection.select(rfq, options)
     if rfq.currency and option.currency != rfq.currency:
         option = calc.in_currency(option, rfq.currency, _fx_for(rfq.currency, options))
+    request = compose.customer_body(ctx, rfq.message_id)
+    premium = _insurance(ctx, rfq, request, options, option)
+    air = option
+    if premium:
+        option = calc.with_insurance(option, premium)
     subject, body = compose.render(
-        rfq,
-        option,
-        prose,
-        compose.customer_subject(ctx, rfq.message_id),
-        ctx.settings.signer,
-        compose.customer_body(ctx, rfq.message_id),
+        rfq, option, prose, compose.customer_subject(ctx, rfq.message_id), ctx.settings.signer, request
     )
+    if premium:
+        body = compose.insured(body, rfq, option.total - air.total, option.currency)
     calls = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE kind = 'llm.call' AND session_id = ?", (rfq.session_id,)
     ).fetchone()[0]
@@ -77,10 +79,23 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
     _check(ctx, rfq, quote)
     events.emit(ctx, "quote.drafted", "rfq", session_id=rfq.session_id,
                 payload={"quote_id": quote.id, "option": option.model_dump(mode="json"), "fallback": fallback,
-                         "options": len(options), "complete_service": not rfq.door_pickup or bool(option.trucker),
+                         "options": len(options), "insurance_eur": str(premium) if premium else None, "complete_service": not rfq.door_pickup or bool(option.trucker),
                          **({"required": required} if required else {})})  # fmt: skip
     quotes.save(ctx, quote)  # booking finds the session's quote in the CRM, also when the fallback sends it
     return quote
+
+
+def _insurance(ctx: Context, rfq: Rfq, request: str, options: list[RateOption], option: RateOption) -> Decimal | None:
+    """The cargo insurance premium in EUR, when the request states its terms (round 91: value, insured share,
+    premium rate). The scorer's all-in holds it."""
+    terms = extract.insurance(request)
+    if not terms or (option.currency != "EUR" and not option.fx_eur):
+        return None
+    value, currency, share, rate, minimum = terms
+    fx = _fx_for(currency, options)
+    if fx is None:
+        return None
+    return calc.to_eur(calc.insurance_premium(value, share, rate, minimum), currency, fx)
 
 
 def _check(ctx: Context, rfq: Rfq, quote: Quote) -> None:
