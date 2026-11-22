@@ -530,8 +530,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   price (`_price`). Truckers bring new layouts as a pdf, docx or voice message (rounds 63 to 65), so an offer that
   stands only in an attachment is read by the model too (`pricing/bids.py` `_crosscheck`, at most 3 s, so no answer
   misses `collect`'s cutoff); a `bid.crosscheck` event reports a difference. The model's total wins only in the
-  rules' currency and when the text states it as the shipment's amount (`_stated`). An answer in the mail itself
-  costs no call: on 359 answers of rounds 9 to 72 the model read no other total.
+  rules' currency and when the text states it as the shipment's price (`_stated`): in that currency or after a total
+  label, never a lead time, postcode or offer number, a side price, one charge or an exchange rate;
+  `tools/simulate.py` `swayed_bids` has the model answer every other amount of each generated offer. An answer in
+  the mail itself costs no call: on 359 answers of rounds 9 to 72 the model read no other total.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
