@@ -179,7 +179,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `booking.py` `handle_confirmation` leaves a waitlisted or partially confirmed booking in its existing state
   and records the airline reference, when available, so a later standalone confirmation can match.
   `book` checks for an active lane suspension before placing a new booking.
-- `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
+- `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline (`ACCEPT`, `DECLINE`: English, German, French, Spanish, Italian, Dutch, Portuguese; a yes in
+  those languages counts only unnegated (`NEGATED_BEFORE` "no la aceptamos", `NEGATED_CLAUSE` "niet"), outside a condition
+  (`CONDITION` si, se, caso, indien, Dutch als) and not put off (`HOLD` todavía, ancora, ainda, nog niet)).
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
 - Every customer mail later in the thread goes through `followup.py` `read`, by rules and without a model call: the
