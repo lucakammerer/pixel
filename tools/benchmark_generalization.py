@@ -41,7 +41,7 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    customer's mail the intent, the changed fields and what the session does.
 16. Rate desk answer in an attachment: the captured answer as its own lines or a table (`ratedesk-layouts.json`), in
    pdf, xlsx, docx, txt and csv, behind a mail that only points to the file: the same airlines, rates, rate ids
-   and validity.
+   and validity. `ratedesk-probes.json` checks a changed unit or currency header and isolation between rows.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -440,6 +440,7 @@ class DeskRead:
     fmt: str
     outcome: str  # "right", "none" (no rate read: the desk never goes to the model) or "wrong"
     detail: str = ""
+    known_gap: str | None = None
 
 
 def desk_files() -> list[tuple[str, str, str, bytes]]:
@@ -479,6 +480,32 @@ def audit_desk_attachments() -> list[DeskRead]:
         got = [(o.carrier_code, str(o.total), o.currency, o.transit_days, o.rate_id, o.valid_until) for o in found]
         outcome = "right" if got == want else "none" if not got else "wrong"
         results.append(DeskRead(layout, fmt, outcome, "" if outcome == "right" else str(got)))
+    return results
+
+
+def audit_desk_probes() -> list[DeskRead]:
+    fixture = json.loads((FIXTURES / "ratedesk-probes.json").read_text())
+    request = fixture["request"]
+    rfq = Rfq(session_id=1, message_id=1, customer="bench", origin=request["origin"], destination=request["destination"],
+              weight_kg=D(request["weight_kg"]), volume_cbm=D(request["volume_cbm"]),
+              received_at=NOW, deadline_at=NOW)  # fmt: skip
+    results = []
+    for case in fixture["cases"]:
+        for fmt in case["formats"]:
+            if fmt == "body":
+                lines = ["  ".join(row) for row in case["lines"]]
+            else:
+                content = simulate.WRITERS[fmt](case["lines"])
+                lines = _readable(f"portal-rates.{fmt}", content) or []
+            message = _message("Portal rates", "\n".join(lines))
+            try:
+                got = [[o.carrier_code, str(o.total), o.currency, str(o.total_eur), o.transit_days, o.rate_id,
+                        o.valid_until.isoformat() if o.valid_until else None] for o in bids.parse_desk(message, rfq)]  # fmt: skip
+            except ValueError as exc:
+                detail = f"ValueError: {exc}"
+            else:
+                detail = "" if got == case["expected"] else f"got {got}, expected {case['expected']}"
+            results.append(DeskRead(case["id"], fmt, "wrong" if detail else "right", detail, case.get("known_gap")))
     return results
 
 
@@ -1273,6 +1300,8 @@ def open_gaps() -> dict[str, list[str]]:
         (r.fixture, r.known_gap) for r in audit_live() + audit_live_mutations() if r.right is False and r.known_gap
     ]
     found += [(b.case_id, b.known_gap) for b in audit_bids() if not b.ok and b.known_gap]
+    found += [(f"desk {r.layout} ({r.fmt})", r.known_gap) for r in audit_desk_probes()
+              if r.outcome == "wrong" and r.known_gap]  # fmt: skip
     seen_gaps = set()
     for r in document_conflicts.audit():
         key = f"{r.case.change}:{r.case.layout}"
@@ -1505,11 +1534,17 @@ def main() -> int:
     desk = audit_desk_attachments()
     # The desk's own layout must read in every format; a table may go unread, never into other rates.
     desk_wrong = [d for d in desk if d.outcome == "wrong" or (d.layout == "its own lines" and d.outcome != "right")]
+    desk_probes = audit_desk_probes()
+    desk_wrong.extend(d for d in desk_probes if (d.outcome == "wrong") != bool(d.known_gap))
+    desk += desk_probes
     print(f"\n[16] Rate desk answer in an attachment: {sum(d.outcome == 'right' for d in desk)}/{len(desk)} read, "
           f"{sum(d.outcome == 'none' for d in desk)} without a rate")  # fmt: skip
     for d in desk:
-        print(f"    {'ok' if d.outcome == 'right' else 'FAIL' if d in desk_wrong else 'none':<4} {d.layout}, {d.fmt}"
-              + (f"  ({d.detail})" if d.detail else ""))  # fmt: skip
+        status = "FAIL" if d in desk_wrong else "GAP" if d.known_gap else "ok" if d.outcome == "right" else "none"
+        detail = d.detail or ("now right, remove the known gap" if d.known_gap else "")
+        print(f"    {status:<4} {d.layout}, {d.fmt}" + (f"  ({detail})" if detail else ""))
+        if d.known_gap and d.outcome == "wrong":
+            print(f"         {d.known_gap}")
 
     followups = audit_followups()
     followups_wrong = [f for f in followups if f.outcome == "wrong" and not f.known_gap]

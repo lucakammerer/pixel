@@ -558,6 +558,18 @@ round-67 hourly-charge misread remains covered by `tests/fixtures/bid-plausibili
 | T11. One-hour bid, different weight, or one reply to two enquiries | Keep the stated expiry and weight tied to each enquiry. A fixed total for a different weight cannot price this request. | The air and truck samples lose validity. The rules build a bid option with the RFQ's weight. Multi-enquiry correlation remains untested. | Wrong for expiry; unknown for different weight or two enquiries. Owner: supply. |
 | T12. Airline changes name/address, an unknown airline or trucker replies, or a zone changes airport | Resolve the replying party to the actual enquiry and apply each effective carrier or zone change once | Current store keys carriers by name and zones by zone. Audit of rename, unknown sender and zone replacement is pending. | Unknown until carrier/zone updates are replayed. Owner: supply. |
 
+### Rate desk row metadata
+
+The 22 captured control layouts still read correctly. The probes add five correct cases and ten owned gaps
+across body, DOCX and XLSX. Their expected expiry, currency, EUR value and transit are given per row in
+`tests/fixtures/ratedesk-probes.json`. This audit has no direct effect on accepted quote rate.
+
+| Variant | Expected | Observed offline | Status |
+| --- | --- | --- | --- |
+| T3b. Transit unit in heading or cell | 36 hours yields two transit days. A days header keeps each stated day. | The hours header gives 36 days. Hours written in a cell leave the row unpriced. A labelled hours line and a days header are read correctly. | Wrong for hours in tables, `bids._desk_rows`. Owner: supply. |
+| T3c. Invalid expiry on one row | Reject that row and keep the other airline's valid option | The whole answer raises a date error before the other option is read. | Wrong, `bids.parse_desk`. Owner: supply. |
+| T3d. USD header and a shared conversion rate | 330.00 USD at 0.80 gives 264.00 EUR | The rate above the table is lost from the priced rows. | Wrong, `bids.parse_desk`. Owner: supply. |
+
 ### Tariff lifecycle variants
 
 The offline sequences in `tests/fixtures/tariffs/lifecycle/` go through the router, tariff handler, store and
