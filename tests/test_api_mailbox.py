@@ -103,3 +103,23 @@ async def test_a_mail_without_an_id_is_skipped_and_listed(config):
     assert [m.id for m in messages] == [10, 12]
     assert next_since_id == 12
     assert mailbox.skipped == [{"id": None, "error": "TypeError"}]
+
+
+@pytest.mark.parametrize("status", [429, 503])
+@respx.mock
+async def test_an_attachment_refused_for_a_moment_is_fetched_again(config, monkeypatch, status):
+    monkeypatch.setattr("pixel.api.mailbox.ATTACHMENT_WAIT_S", 0.0)
+    route = respx.get("https://api.test/v1/mailbox/messages/7/attachments/1").mock(
+        side_effect=[httpx.Response(status, headers={"Retry-After": "0"}), httpx.Response(200, content=b"%PDF")]
+    )
+    assert await Mailbox(make_client(config)).attachment(7, 1) == b"%PDF"
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_an_attachment_that_stays_refused_raises_after_a_few_tries(config, monkeypatch):
+    monkeypatch.setattr("pixel.api.mailbox.ATTACHMENT_WAIT_S", 0.0)
+    route = respx.get("https://api.test/v1/mailbox/messages/7/attachments/1").mock(return_value=httpx.Response(429))
+    with pytest.raises(ApiError):
+        await Mailbox(make_client(config)).attachment(7, 1)
+    assert route.call_count == 3

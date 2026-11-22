@@ -1,5 +1,6 @@
 """GET/POST /v1/mailbox/messages and the push subscription. Maps the API's mail shape to `contracts.Message`."""
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -10,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from pixel.api.client import request
+from pixel.api.client import ApiError, request
 from pixel.contracts import Attachment, Message
 
 # Fixed addresses named in the API docs, not in a dataset.
@@ -20,6 +21,10 @@ TRACKING = "tracking@hackloop.mail"
 ATTACHMENT_TYPES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "docx")  # R6
 MAX_ATTACHMENTS = 5
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+# A request that stands only in its attachment (rounds 65 to 68) is read without it when the download fails, so a
+# 429 or 503 on it is waited out a few times, each wait at most ATTACHMENT_WAIT_S.
+ATTACHMENT_TRIES = 3
+ATTACHMENT_WAIT_S = 3.0
 
 
 EPOCH_MS = 10**11  # an epoch above this is in milliseconds: in seconds it lies past the year 5000
@@ -181,8 +186,15 @@ class Mailbox:
         return to_message(response.json(), "in")
 
     async def attachment(self, message_id: int, attachment_id: int) -> bytes:
-        response = await request(self.client, "GET", f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}")
-        return response.content
+        path = f"/v1/mailbox/messages/{message_id}/attachments/{attachment_id}"
+        for attempt in range(1, ATTACHMENT_TRIES + 1):
+            try:
+                return (await request(self.client, "GET", path)).content
+            except ApiError as e:
+                if e.status not in (429, 503) or attempt == ATTACHMENT_TRIES:
+                    raise
+                await asyncio.sleep(min(e.retry_after or 1.0, ATTACHMENT_WAIT_S))
+        raise AssertionError("unreachable")
 
     async def subscribe(self, url: str, secret: str) -> None:
         """Every new mail is pushed to `url`, signed with `secret`. A second call replaces both."""
