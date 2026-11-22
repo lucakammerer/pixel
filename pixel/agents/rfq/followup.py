@@ -215,7 +215,9 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         intent = "change"
     elif CANCELS.search(own):  # "bitte stornieren, der Auftrag wurde zurückgezogen": "Auftrag" is no acceptance here
         intent = "cancel"
-    elif (booked_if := conditional(own))[0]:  # before the acceptance: "falls … unter 3.200 € bleibt, bitte buchen"
+    # A cap outweighs an acceptance ("falls … unter 3.200 € bleibt, bitte buchen" reads as one after the split at
+    # "3."); a condition without a cap never does ("Bitte buchen Sie. Wenn die Buchung bestätigt ist, …" books).
+    elif (booked_if := conditional(own))[0] and (booked_if[1] is not None or said not in ("accept", "decline")):
         intent, cap = "conditional", booked_if[1]
     elif said in ("accept", "decline"):
         intent = said

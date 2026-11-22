@@ -687,3 +687,29 @@ async def test_a_cancellation_with_no_way_to_the_airline_goes_to_a_person(pipe, 
     await booking.handle_reply(pipe.ctx, mail(40, 1, subject="Re: Booked", body=CANCEL, in_reply_to=501))
     assert bookings.for_session(pipe.ctx, 1).status == BookingStatus.BOOKED and pipe.sent == []
     assert kinds(pipe.ctx)[-1] == "human.note"
+
+
+async def test_an_airline_answer_with_an_attachment_that_confirms_nothing_confirms_nothing(pipe, accepted):
+    # Since #332 every answer with an attachment in our booking thread reaches handle_confirmation.
+    pipe.ctx.portal = Portal(BookingUnavailable("Booking is down. Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    pipe.sent.clear()
+    pipe.ctx.mailbox = Attached("Dangerous goods declaration form\nShipper:\nUN number:")
+    reply = mail(31, 1, sender="bookings@kestrel.example", subject=f"Re: Booking request {b.team_reference}",
+                 body="Hello, we received your request, please fill in the attached form.")  # fmt: skip
+    reply = reply.model_copy(update={"attachments": (Attachment(id=1, filename="form.txt",
+                                                                content_type="text/plain", size=9),)})  # fmt: skip
+    await booking.handle_confirmation(pipe.ctx, reply)
+    assert bookings.get(pipe.ctx, b.id).status == BookingStatus.REQUESTED and pipe.sent == []
+    assert kinds(pipe.ctx)[-1] == "human.note"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Bitte buchen Sie die Sendung. Wenn die Buchung bestätigt ist, schicken Sie uns die Referenz.",
+     "Please go ahead. If possible, book the earliest flight."],
+)  # fmt: skip
+async def test_an_acceptance_beside_a_condition_without_a_cap_still_books(pipe, accepted, text):
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, mail(20, 1, subject="Re: Your quote", body=text, in_reply_to=501))
+    assert pipe.ctx.portal.calls, kinds(pipe.ctx)

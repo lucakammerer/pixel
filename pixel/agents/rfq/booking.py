@@ -352,7 +352,8 @@ def _references(subject: str, text: str) -> tuple[str | None, str | None]:
 async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told. An
     answer that refuses ("could not be confirmed", in the mail or its attachment) fails the booking for a person."""
-    from pixel.agents.router.agent import REFUSED, booking_pending  # router imports crm, which this module imports too
+    # router imports crm, which this module imports too
+    from pixel.agents.router.agent import BOOKED, REFUSED, booking_pending
 
     text = await _confirmation_text(ctx, message)
     reference, ours = _references(message.subject, text)
@@ -387,6 +388,14 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
         events.emit(ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
                     payload={"note": "Airline response does not confirm the whole booking",
                              "shipment": booking.team_reference, "booking_reference": reference})  # fmt: skip
+        return
+    # Only what says so confirms: an answer in our booking thread with a form, terms or "request received" attached
+    # reaches this handler too and confirms nothing.
+    if not (CONFIRMED.search(message.subject) or BOOKED.search(text) or AIRLINE_REFERENCE.search(text)):
+        events.emit(
+            ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
+            payload={"note": "The airline answered our booking without confirming it", "shipment": booking.team_reference},
+        )  # fmt: skip
         return
     if booking.status != BookingStatus.CONFIRMED:
         booking = booking.model_copy(
