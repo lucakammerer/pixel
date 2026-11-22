@@ -23,7 +23,7 @@ CONSUMED = (
     extract.PAIR, extract.PAIR_NAMED, extract.ORIGIN_LABEL, extract.DEST_LABEL, *extract.WEIGHT, *extract.VOLUME,
     *extract.POUNDS, *extract.TONNES, extract.DIMS, extract.PIECES, extract.FASTEST, extract.CHEAPEST,
     extract.HURRY, extract.NOT_URGENT, extract.DOOR, extract.OWN_DELIVERY, extract.POSTCODE, extract.DANGEROUS,
-    extract.CURRENCY_ASK, extract.SIGN_OFF, compose.READY, extract.READY_ON, extract.ARRIVE_BY, extract.MAX_TRANSIT,
+    extract.CURRENCY_ASK, extract.SIGN_OFF, compose.READY, extract.READY_ON, extract.ARRIVE_BY, extract.ARRIVE_BY_LAST, extract.MAX_TRANSIT,
     compose.PICKUP_ASK, compose.DEPARTURE, compose.ONE_AWB,
     compose.CUTOFF, compose.BREAKDOWN, compose.ADDRESSEE, *compose.SERVICES.values(), extract.ASKED_LANGUAGE,
     compose.GOODS, compose.FRAME, compose.WELL, compose.FROM_TOWN, pdf.REFERENCE,

@@ -85,6 +85,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `target_at`, so a later price that meets it is unlikely.
   `pricing/engine.py` `sheet_options` prices only sheet versions valid on the ready date.
   `pricing/session.py` `for_request` applies the same rule to stored sheet prices.
+- German may put the arrival verb last: "die Sendung muss spätestens am 1.12. am Zielflughafen eintreffen" (round 118
+  stated it only so in the body); `ARRIVE_BY_LAST` reads "muss ... spätestens <date>" only with "eintreffen",
+  "ankommen" or "am Zielflughafen" after the date, so "muss spätestens am 25.11. abgeholt werden" (a pickup deadline)
+  sets no limit, and "Ihr Angebot muss spätestens ..." stays a reply deadline.
 - `pricing/engine.py` `expired_sheet_options`: when the cargo is ready after its sheets run out and nothing else has a
   price (no portal rate, no bid, no sheet valid on the ready day), `engine.options` and `agent.py` `fallback` quote
   today's sheet rather than no answer (R1). It is logged only then, so it never counts its airline as priced before

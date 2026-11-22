@@ -826,6 +826,14 @@ ARRIVE_BY = re.compile(
     rf"|arriv(?:ée|er)\b{ARRIVAL_SPAN}au plus tard(?: le)?\b)" + STATED_DATE,
     re.IGNORECASE,
 )
+# German puts the verb last: "die Sendung muss spätestens am 2026-12-01 am Zielflughafen eintreffen" (round 118). Only
+# with an arrival after the date: "muss spätestens am 25.11. abgeholt werden" is a pickup deadline.
+ARRIVE_BY_LAST = re.compile(
+    r"\b(?:muss|müssen|soll|sollen|sollte)[ \t]+(?:[\w-]+[ \t]+){0,2}?spätestens(?:[ \t]+am|[ \t]+bis(?:[ \t]+zum)?)?"
+    + STATED_DATE
+    + r"(?=[^.!?;\n]{0,60}?\b(?:eintreffen|eintrifft|ankommen|ankommt|angekommen\w*|am ziel(?:flughafen|ort)\b))",
+    re.IGNORECASE,
+)
 # The last words before "arrival": "please confirm the arrival date by", "last time the arrival was by"; a request
 # verb further back ("please quote 300 kg that must arrive by") leaves the deadline standing.
 ARRIVAL_CONTEXT = re.compile(
@@ -872,7 +880,8 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
 
     def arrive_by() -> date | None:
         """A latest arrival is a coming date the customer sets for this shipment, never an earlier one."""
-        for match in ARRIVE_BY.finditer(text):
+        matches = sorted([*ARRIVE_BY.finditer(text), *ARRIVE_BY_LAST.finditer(text)], key=lambda m: m.start())
+        for match in matches:
             clause = re.split(r"[.!?;,:\n]", text[: match.start()])[-1]
             if not ARRIVAL_CONTEXT.search(clause) and (value := _stated_date(match["value"], on)) and value >= on:
                 return value
