@@ -43,9 +43,13 @@ def test_schedule_filters_air_transit_and_delivery_date_with_pickup():
     pickup = opt("Pickup", "400", 3).model_copy(update={"trucker": "Truck"})
     express = opt("Express", "600", 2)
     assert compliant_options(request, [slow, pickup, express]) == [pickup, express]
-    tightened = request.model_copy(update={"arrive_by": date(2026, 12, 4)})
+    tightened = request.model_copy(update={"arrive_by": date(2026, 12, 3)})
     assert compliant_options(tightened, [slow, pickup, express]) == [express]
     assert select(tightened, [slow, pickup, express]) == express
+    # Round 179: ready 27.11., at ORD by 29.11.; the pickup adds no day, the 2-day airline with a trucker meets it.
+    door = request.model_copy(update={"ready_on": date(2026, 11, 27), "arrive_by": date(2026, 11, 29)})
+    two_days = opt("Aurelia", "929.53", 2).model_copy(update={"trucker": "Truck"})
+    assert select(door, [opt("Meridian", "1265.67", 1).model_copy(update={"trucker": "Truck"}), two_days]) == two_days
 
 
 def test_ties_are_decided_by_speed_then_name():
