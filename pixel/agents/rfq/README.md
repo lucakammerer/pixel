@@ -198,17 +198,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   intent (`change`, `cancel`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states
   differently (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup
   postcode; beside a word of change the preference or currency; never the figure a correction replaces (`REPLACED`:
-  "1,952 kg, not 753 kg", "statt", "au lieu de"), figures in a question about the basis of the quote
-  (`QUOTE_CHECK`), a hypothetical question, our own chargeable or
-  billed weight quoted back, or a signature's postcode). A `followup.read` event records each. `followup.action` is
+  "1,952 kg, not 753 kg", "statt", "au lieu de"), a hypothetical question, our own chargeable or billed weight
+  quoted back, or a signature's postcode). A `followup.read` event records each. `followup.action` is
   the one table of what the session does, `booking.py` `handle_reply` does it: a change, or a plain ask for an updated
   offer without an acceptance, in phase `open`, `quoted` or `declined` is priced again on the session's newest reading
   (`session.rfq`) with the changes applied; a change wins over an acceptance ("book it, but it is 320 kg now"),
   cargo restated at the chargeable weight we priced is none (`followup.py` `_priced`); a cancellation (`CANCELS`, en/de/fr/es/it; it wins over "Auftrag") after the acceptance cancels the booking
   (`cancel`), before it declines the quote; a change after the acceptance goes to a person with what changed; a
   tracking question after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
-  The correction verb in `UPDATE` takes the quote as its object ("correct the offer"); a request to verify a
-  quoted rate goes to a person, and "correctly received" is an acknowledgment.
+  The correction verb in `UPDATE` takes the quote as its object ("correct the offer"). A quote check with
+  the existing weight or pieces goes to a person (`QUOTE_CHECK`). A check with a changed figure is priced again
+  before acceptance. "Correctly received" is an acknowledgment.
   `booking.py` `_acknowledges_no_price` also closes out a plain acknowledgment sent directly in reply to our
   no-price message without alerting an operator.
   `tools/followup_matrix.py` runs every sender, phase and intent (`tests/fixtures/thread-followups.json`) and

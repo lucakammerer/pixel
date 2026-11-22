@@ -116,14 +116,9 @@ def own_words(message: Message) -> str:
 
 
 def _stated(text: str) -> str:
-    """Only stated cargo facts count. A hypothetical or a request to confirm the quote checks its basis."""
+    """Without a hypothetical question ("What would 900 kg cost?"): that asks, it changes nothing."""
     sentences = re.split(r"(?<=[.!?])\s+|\n", text)
-    return "\n".join(
-        s
-        for s in sentences
-        if not (s.rstrip().endswith("?") and HYPOTHETICAL.search(s))
-        and not (QUOTE_CHECK.search(s) and not CHANGED.search(s))
-    )
+    return "\n".join(s for s in sentences if not (s.rstrip().endswith("?") and HYPOTHETICAL.search(s)))
 
 
 def _cargo(text: str, document: bool = False) -> dict:
