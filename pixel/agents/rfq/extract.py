@@ -733,6 +733,9 @@ def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
 
 
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
+# Outlook's header without an address counts only with its dated "Sent:" next to "From:", or a rule over "Subject:"
+# or "Sent:": a request laid out as "From: FRA / To: ORD" or "Von: FRA / Datum: ab 25.11." stays the customer's.
+SENT = r"(?:sent|gesendet)[ \t]*:[^\n]*(?:\b(?:19|20)\d\d\b|\b\d{1,2}:\d\d)"
 HISTORY = re.compile(
     r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht"
     r"|mensaje original|mensaje reenviado|message d'origine|message transféré|messaggio originale"
@@ -741,7 +744,10 @@ HISTORY = re.compile(
     r"|(?:from|von|de|da|van|od|från|от|kimden|发件人|寄件者|差出人|보낸 사람)\s*[:：].*@"
     r"|on .{0,80} wrote:\s*$|am .{0,80} schrieb"
     r"|.{0,120}\b(?:escribió|a écrit|ha scritto|escreveu|schreef|skrev|napisał\w*|написал\w*|yazdı)\s*:\s*$"
-    r"|.{0,120}(?:写道|寫道)[:：]\s*$|>)",
+    r"|.{0,120}(?:写道|寫道)[:：]\s*$|>"
+    rf"|(?:from|von)[ \t]*:[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*{SENT}"
+    rf"|{SENT}[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*(?:from|von)[ \t]*:"
+    rf"|[-_]{{3,}}[ \t]*\n[ \t]*(?:subject|betreff)[ \t]*:|[-_]{{3,}}[ \t]*\n[ \t]*{SENT})",
     re.IGNORECASE | re.MULTILINE,
 )
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
@@ -1165,8 +1171,10 @@ def _departures_abroad(ctx: Context | None, text: str) -> str:
     nearest by road, in the extraction call it makes anyway. Nothing for any other request."""
     if not (ctx and _abroad_pickup(text)) or not (airports := store.zone_airports(ctx)):
         return ""
-    return ("\n\n(Note for origin: when the goods are collected abroad and the mail names no departure airport, "
-            f"give the one of these nearest to the pickup address by road: {', '.join(sorted(airports))}.)")
+    return (
+        "\n\n(Note for origin: when the goods are collected abroad and the mail names no departure airport, "
+        f"give the one of these nearest to the pickup address by road: {', '.join(sorted(airports))}.)"
+    )
 
 
 def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
