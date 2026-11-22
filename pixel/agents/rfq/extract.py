@@ -785,7 +785,7 @@ def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
 # Outlook's header without an address counts only by its dated "Sent:", next to "From:" or under a rule: a request
 # laid out as "From: FRA / To: ORD" or "Von: FRA / Datum: ab 25.11." stays the customer's.
-SENT = r"(?:sent|gesendet)[ \t]*:[^\n]*(?:\b(?:19|20)\d\d\b|\b\d{1,2}:\d\d)"
+SENT = r"\*?(?:sent|gesendet)\*?[ \t]*:\*?[^\n]*(?:\b(?:19|20)\d\d\b|\b\d{1,2}:\d\d)"
 HISTORY = re.compile(
     r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht"
     r"|mensaje original|mensaje reenviado|message d'origine|message transféré|messaggio originale"
@@ -794,18 +794,23 @@ HISTORY = re.compile(
     r"|(?:from|von|de|da|van|od|från|от|kimden|发件人|寄件者|差出人|보낸 사람)\s*[:：].*@"
     r"|on .{0,80} wrote:\s*$|am .{0,80} schrieb"
     r"|.{0,120}\b(?:escribió|a écrit|ha scritto|escreveu|schreef|skrev|napisał\w*|написал\w*|yazdı)\s*:\s*$"
-    r"|.{0,120}(?:写道|寫道)[:：]\s*$|>"
-    rf"|(?:from|von)[ \t]*:[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*{SENT}"
-    rf"|{SENT}[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*(?:from|von)[ \t]*:"
+    r"|.{0,120}(?:写道|寫道)[:：]\s*$|>|begin forwarded message:|anfang der weitergeleiteten nachricht:"
+    rf"|\*?(?:from|von)\*?[ \t]*:[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*{SENT}"
+    rf"|{SENT}[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*\*?(?:from|von)\*?[ \t]*:"
     rf"|[-_]{{3,}}[ \t]*\n[ \t]*{SENT})",
     re.IGNORECASE | re.MULTILINE,
+)
+# Lines quoted with ">" and the "On ... wrote:" above them, wherever they stand: a reply written below them too.
+QUOTED = re.compile(
+    r"^(?:[ \t]*(?:on .{0,80} wrote|am .{0,80} schrieb):?[ \t]*\n)?(?:[ \t]*>.*(?:\n|$))+", re.IGNORECASE | re.MULTILINE
 )
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
 
 
 def own_words(body: str) -> str:
-    """The mail without the older mails quoted below it: round 14 quoted an old request with its own lane, weight,
+    """The mail without the older mails quoted in it: round 14 quoted an old request with its own lane, weight,
     greeting and name under the new one. Pricing and the reply both read only this."""
+    body = unquoted if (unquoted := QUOTED.sub("", body)).strip() else body
     cut = HISTORY.search(body)
     return body[: cut.start()] if cut and body[: cut.start()].strip() else body
 
