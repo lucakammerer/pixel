@@ -3,201 +3,357 @@
     "branch": "mode",
     "expected": "no_price",
     "sure": "live",
-    "why": "round 177, the mail that started this axis"
+    "why": "round 177, the mail that started this axis",
+    "air": {
+      "origin": "HAM",
+      "destination": "DXB",
+      "weight_kg": "9617",
+      "volume_cbm": "43.5"
+    },
+    "known_gap": "scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading)"
   },
   "sea-lcl-german": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "text",
-    "why": "Seefracht said, no air word"
+    "why": "Seefracht said, no air word",
+    "air": {
+      "origin": "HAM",
+      "destination": "PVG",
+      "weight_kg": "1240",
+      "volume_cbm": "4.2"
+    },
+    "known_gap": "scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading)"
   },
   "sea-spanish": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "sea in Spanish: no rule reads it today"
+    "why": "sea in Spanish: no rule reads it today",
+    "air": {
+      "origin": "HAM",
+      "destination": "VLC",
+      "weight_kg": "8400",
+      "volume_cbm": "28"
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it"
   },
   "sea-french": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "sea in French"
+    "why": "sea in French",
+    "air": {
+      "origin": "HAM",
+      "destination": "YUL",
+      "weight_kg": "18500",
+      "volume_cbm": "60"
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it"
   },
   "sea-locodes-only": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "seaport LOCODEs and container type only, no mode word"
+    "why": "seaport LOCODEs and container type only, no mode word",
+    "air": {
+      "origin": "HAM",
+      "destination": "PVG",
+      "weight_kg": "24000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (LOCODEs, 20'GP, CY/CY)"
   },
   "sea-vessel-cutoff": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "ocean rates, vessel, container; 'ocean freight' not said literally"
+    "why": "ocean rates, vessel, container; 'ocean freight' not said literally",
+    "air": {
+      "origin": "HAM",
+      "destination": "GRU",
+      "weight_kg": "14200",
+      "volume_cbm": "65"
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it ('ocean rates', 'vessel')"
   },
   "rail-china": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "text",
-    "why": "rail freight said"
+    "why": "rail freight said",
+    "air": {
+      "origin": "DUS",
+      "destination": "CTU",
+      "weight_kg": "21000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out"
   },
   "rail-german": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "rail in German: Bahn, Schiene"
+    "why": "rail in German: Bahn, Schiene",
+    "air": {
+      "origin": "LEJ",
+      "destination": "XIY",
+      "weight_kg": "36000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (Bahn, Schiene)"
   },
   "road-ftl": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "text",
-    "why": "full truck load, no air word"
+    "why": "full truck load, no air word",
+    "air": {
+      "origin": "MUC",
+      "destination": "MXP",
+      "weight_kg": "22000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (FTL, truck load)"
   },
   "road-groupage-german": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "road in German: per LKW"
+    "why": "road in German: per LKW",
+    "air": {
+      "origin": "NUE",
+      "destination": "VIE",
+      "weight_kg": "640",
+      "volume_cbm": "2.4"
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (per LKW)"
   },
   "courier-parcel": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "courier parcel door to door; an integrator's product, not air freight. Unsure"
+    "why": "courier parcel door to door; an integrator's product, not air freight. Unsure",
+    "air": {
+      "origin": "FRA",
+      "destination": "JFK",
+      "weight_kg": "3",
+      "volume_cbm": "0.012"
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (courier parcel)"
   },
   "sea-air-dubai": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "a combined mode we cannot price; says 'air'. Unsure"
+    "why": "a combined mode we cannot price; says 'air'. Unsure",
+    "air": {
+      "origin": "HAM",
+      "destination": "NBO",
+      "weight_kg": "2100",
+      "volume_cbm": "9"
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (sea-air)"
   },
   "sea-from-airport-company": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
-    "why": "sea request; 'Airport' in the sender's company name"
+    "why": "sea request; 'Airport' in the sender's company name",
+    "air": {
+      "origin": "HAM",
+      "destination": "JFK",
+      "weight_kg": "11000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'Airport' in the company's name"
   },
   "sea-switch-from-air": {
     "branch": "mode",
     "expected": "no_price",
     "sure": "guess",
     "why": "sea asked, air named only as the past",
-    "known_gap": "scope: `NOT_AIR` is lifted by any air word, here the past (\"last month by air\")"
+    "known_gap": "scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'by air' said of last month"
   },
   "import-explicit": {
     "branch": "direction",
     "expected": "no_price",
     "sure": "live",
-    "why": "round 159, accepted as declined"
+    "why": "round 159, accepted as declined",
+    "air": {
+      "origin": "NRT",
+      "destination": "HAM",
+      "weight_kg": "380",
+      "volume_cbm": "1.6"
+    },
+    "known_gap": "scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading)"
   },
   "import-implicit": {
     "branch": "direction",
     "expected": "no_price",
     "sure": "text",
     "why": "an import by lane alone, no word import",
-    "known_gap": "scope: no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it"
+    "known_gap": "scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it"
   },
   "cross-trade": {
     "branch": "direction",
     "expected": "no_price",
     "sure": "text",
-    "why": "neither end is ours: cross-trade"
+    "why": "neither end is ours: cross-trade",
+    "known_gap": "scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at`"
   },
   "domestic": {
     "branch": "direction",
     "expected": "no_price",
     "sure": "guess",
-    "why": "domestic within Germany: not export. Unsure"
+    "why": "domestic within Germany: not export. Unsure",
+    "known_gap": "scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at`"
   },
   "customs-only": {
     "branch": "service",
     "expected": "no_price",
     "sure": "text",
     "why": "a fee for customs alone, the flight is someone else's",
-    "known_gap": "scope: no field for what is asked; a service without the flight is read as an air request"
+    "known_gap": "scope (G6): no reading of what is asked; a service without the flight becomes an air request"
   },
   "warehousing-only": {
     "branch": "service",
     "expected": "no_price",
     "sure": "text",
-    "why": "storage only"
+    "why": "storage only",
+    "air": {
+      "origin": "MUC",
+      "destination": null,
+      "weight_kg": "8000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G6): no reading of what is asked; a service without the flight becomes an air request"
   },
   "insurance-only": {
     "branch": "service",
     "expected": "no_price",
     "sure": "text",
     "why": "insurance only",
-    "known_gap": "scope: no field for what is asked; a service without the flight is read as an air request"
+    "known_gap": "scope (G6): no reading of what is asked; a service without the flight becomes an air request"
   },
   "truck-to-airport-only": {
     "branch": "service",
     "expected": "no_price",
     "sure": "guess",
-    "why": "pickup only, the flight is not ours. Unsure"
+    "why": "pickup only, the flight is not ours. Unsure",
+    "air": {
+      "origin": "STR",
+      "destination": "YYZ",
+      "weight_kg": "700",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G6): no reading of what is asked; a service without the flight becomes an air request"
   },
   "packing-only": {
     "branch": "service",
     "expected": "no_price",
     "sure": "guess",
-    "why": "packing only"
+    "why": "packing only",
+    "air": {
+      "origin": null,
+      "destination": null,
+      "weight_kg": "600",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G6): no reading of what is asked; a service without the flight becomes an air request"
   },
   "complaint-damage": {
     "branch": "none",
     "expected": "no_price",
     "sure": "text",
     "why": "a complaint with a lane and a weight",
-    "known_gap": "scope: router rule 7 (a weight or two codes in a new thread) makes a complaint a request"
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "invoice-query": {
     "branch": "none",
     "expected": "no_price",
     "sure": "text",
     "why": "an invoice question",
-    "known_gap": "scope: router rule 7 makes an invoice query a request"
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "supplier-advert": {
     "branch": "none",
     "expected": "no_price",
     "sure": "text",
-    "why": "an advert, not a request"
+    "why": "an advert, not a request",
+    "air": {
+      "origin": "HAM",
+      "destination": "MUC",
+      "weight_kg": "24000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "job-application": {
     "branch": "none",
     "expected": "no_price",
     "sure": "text",
-    "why": "a job application"
+    "why": "a job application",
+    "air": {
+      "origin": "FRA",
+      "destination": null,
+      "weight_kg": null,
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "newsletter": {
     "branch": "none",
     "expected": "no_price",
     "sure": "text",
     "why": "a newsletter with lanes and rates",
-    "known_gap": "scope: router rule 7 makes a newsletter a request"
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "out-of-office": {
     "branch": "none",
     "expected": "no_price",
     "sure": "text",
     "why": "an auto-reply whose subject holds a lane and weight",
-    "known_gap": "scope: router rule 7 makes an auto-reply a request"
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "misdirected": {
     "branch": "none",
     "expected": "no_price",
     "sure": "guess",
-    "why": "meant for someone else"
+    "why": "meant for someone else",
+    "air": {
+      "origin": null,
+      "destination": "MUC",
+      "weight_kg": "300",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "general-rate-card": {
     "branch": "none",
     "expected": "no_price",
     "sure": "guess",
-    "why": "a general price list, no shipment. Unsure: one question may be wanted"
+    "why": "a general price list, no shipment. Unsure: one question may be wanted",
+    "air": {
+      "origin": "FRA",
+      "destination": null,
+      "weight_kg": null,
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "bank-details-change": {
     "branch": "none",
     "expected": "no_price",
     "sure": "text",
-    "why": "nothing to price"
+    "why": "nothing to price",
+    "air": {
+      "origin": null,
+      "destination": null,
+      "weight_kg": null,
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price"
   },
   "air-or-sea-cheaper": {
     "branch": "partial",
@@ -215,7 +371,14 @@
     "branch": "partial",
     "expected": "quote",
     "sure": "guess",
-    "why": "quote the air part, say plainly sea is not ours"
+    "why": "quote the air part, say plainly sea is not ours",
+    "air": {
+      "origin": "FRA",
+      "destination": "ORD",
+      "weight_kg": "410",
+      "volume_cbm": "1.9"
+    },
+    "known_gap": "generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price)"
   },
   "air-plus-customs-storage": {
     "branch": "partial",
@@ -257,7 +420,14 @@
     "branch": "lookalike",
     "expected": "quote",
     "sure": "text",
-    "why": "two port cities that are also our airports, no mode named"
+    "why": "two port cities that are also our airports, no mode named",
+    "air": {
+      "origin": "HAM",
+      "destination": "HKG",
+      "weight_kg": "620",
+      "volume_cbm": "2.4"
+    },
+    "known_gap": "generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price)"
   },
   "fob-air": {
     "branch": "lookalike",
@@ -306,14 +476,14 @@
     "expected": "quote",
     "sure": "text",
     "why": "'road freight' names the goods' use, not the mode",
-    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"road freight\" naming the goods) and no air word stops it"
+    "known_gap": "scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('road freight' names the goods)"
   },
   "rail-in-goods": {
     "branch": "lookalike",
     "expected": "quote",
     "sure": "text",
     "why": "'rail freight' inside the goods' name",
-    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"rail freight\" inside the goods name) and no air word stops it"
+    "known_gap": "scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('rail freight' in the goods name)"
   },
   "reederei-sender": {
     "branch": "lookalike",
@@ -349,7 +519,14 @@
     "branch": "lookalike",
     "expected": "quote",
     "sure": "guess",
-    "why": "UN/LOCODEs of two airport cities, no mode named"
+    "why": "UN/LOCODEs of two airport cities, no mode named",
+    "air": {
+      "origin": "FRA",
+      "destination": "ORD",
+      "weight_kg": "410",
+      "volume_cbm": "1.9"
+    },
+    "known_gap": "generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price)"
   },
   "vessel-in-goods": {
     "branch": "lookalike",
@@ -386,19 +563,194 @@
     "expected": "quote",
     "sure": "text",
     "why": "'by ship' for how the goods came in",
-    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"by ship\" for the inbound leg) and no air word stops it"
+    "known_gap": "scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('by ship' for the inbound leg)"
   },
   "port-of-loading": {
     "branch": "lookalike",
     "expected": "quote",
     "sure": "text",
-    "why": "form words of sea trade for two airports"
+    "why": "form words of sea trade for two airports",
+    "air": {
+      "origin": "FRA",
+      "destination": "SGN",
+      "weight_kg": "500",
+      "volume_cbm": "2.0"
+    },
+    "known_gap": "generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price)"
   },
   "by-rail-inbound": {
     "branch": "lookalike",
     "expected": "quote",
     "sure": "text",
     "why": "'by rail' for the delivery to the airport",
-    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"by rail\" for the delivery to the airport) and no air word stops it"
+    "known_gap": "scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('by rail' to the airport)"
+  },
+  "sea-italian": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "sea in Italian",
+    "step": "language of sea-spanish",
+    "air": {
+      "origin": "HAM",
+      "destination": "GOA",
+      "weight_kg": "16000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it"
+  },
+  "sea-dutch": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "sea in Dutch",
+    "step": "language of sea-spanish",
+    "air": {
+      "origin": "HAM",
+      "destination": "JFK",
+      "weight_kg": "9500",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it"
+  },
+  "sea-chinese": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "sea in Chinese",
+    "step": "script of sea-spanish",
+    "air": {
+      "origin": "HAM",
+      "destination": "PVG",
+      "weight_kg": "18000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it"
+  },
+  "air-italian-not-by-sea": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "Italian air request, 'non via mare'",
+    "step": "language of not-by-sea",
+    "air": {
+      "origin": "FRA",
+      "destination": "ORD",
+      "weight_kg": "410",
+      "volume_cbm": "1.9"
+    }
+  },
+  "sea-in-attachment": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "the sea request only in the attached file",
+    "step": "channel of sea-fcl-locode",
+    "air": {
+      "origin": "HAM",
+      "destination": "DXB",
+      "weight_kg": "9617",
+      "volume_cbm": "43.5"
+    },
+    "known_gap": "scope (G8): the mode rule reads subject and body, not the attachment"
+  },
+  "air-in-attachment-sea-team": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "air request attached; the body names the sea team",
+    "step": "channel of sea-dept-signature",
+    "air": {
+      "origin": "HAM",
+      "destination": "HKG",
+      "weight_kg": "620",
+      "volume_cbm": "2.4"
+    },
+    "known_gap": "scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it (the request is in the attachment, the body names the sea team)"
+  },
+  "later-switch-to-sea": {
+    "branch": "moment",
+    "expected": "quote → no_price",
+    "sure": "guess",
+    "why": "after our air quote the customer asks for sea instead",
+    "step": "moment of sea-switch-from-air: after our quote",
+    "known_gap": "after the quote: a later mail's change of mode is read as a requote for air (one line to that goal)"
+  },
+  "later-air-after-sea": {
+    "branch": "moment",
+    "expected": "no_price → quote",
+    "sure": "guess",
+    "why": "after our no-price answer to sea the customer asks for air",
+    "step": "moment of instead-of-sea-air: after our decline",
+    "known_gap": "after the quote: the session stays out of scope by its first mail, a later ask for air is declined (one line to that goal)"
+  },
+  "teu-unit": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "the size in TEU, no mode word",
+    "step": "unit of sea-locodes-only",
+    "air": {
+      "origin": "HAM",
+      "destination": "PVG",
+      "weight_kg": "22000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (TEU)"
+  },
+  "pmc-unit": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "an air pallet (PMC) as the unit",
+    "step": "unit of container-loosely",
+    "air": {
+      "origin": "HAM",
+      "destination": "HKG",
+      "weight_kg": "620",
+      "volume_cbm": "2.4"
+    }
+  },
+  "sea-import": {
+    "branch": "direction",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "sea import into Hamburg",
+    "step": "two at once: import and sea",
+    "air": {
+      "origin": "PVG",
+      "destination": "HAM",
+      "weight_kg": "15000",
+      "volume_cbm": null
+    },
+    "known_gap": "scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it; the lane is an import but the model's reading asks first (G1)"
+  },
+  "all-lookalikes-at-once": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "every sea-looking word in one air request",
+    "step": "two at once: company, port words, FOB, container",
+    "air": {
+      "origin": "FRA",
+      "destination": "SGN",
+      "weight_kg": "500",
+      "volume_cbm": "2.0"
+    },
+    "known_gap": "generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price)"
+  },
+  "air-chinese": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "guess",
+    "why": "an air request in Chinese",
+    "step": "script of no-mode-german",
+    "air": {
+      "origin": "FRA",
+      "destination": "ORD",
+      "weight_kg": "410",
+      "volume_cbm": "1.9"
+    },
+    "known_gap": "generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price)"
   }
 }
