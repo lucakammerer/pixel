@@ -52,7 +52,7 @@ from pixel.agents.rfq import booking, extract
 from pixel.agents.tariffs import agent as tariffs
 from pixel.agents.tracking import agent as tracking
 from pixel.config import settings
-from pixel.contracts import Attachment, Message, Rfq
+from pixel.contracts import Attachment, LlmResult, Message, Rfq
 from pixel.core import db, events
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
@@ -769,6 +769,54 @@ async def read_bid(case: Case, ctx: Context, i: int) -> Outcome:
     got = found[0].model_dump()
     wrong = [f"{k}: {got[k]} != {v}" for k, v in case.want.items() if got[k] != v]
     return Outcome(case, "wrong" if wrong else "right", wrong)
+
+
+def swayed_bids(step: int = 13) -> list[str]:
+    """Rounds 82 and 130 lost to a model's figure the cross-check took. Every generated carrier answer with an
+    attachment, read again while the cross-check model (`bids._crosscheck`) answers each other amount of its text as
+    the total: a lead time, a postcode, an offer number, a side price, one charge. Returns each reading that quotes
+    another figure than the offer's; none is right."""
+
+    async def go() -> list[str]:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        db.init(conn)
+        ctx = Context(settings(), conn, None, None, None, None)
+        store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
+        ask_json, wrong, i = llm.ask_json, [], 0
+        try:
+            for case in (c for c in bid_cases(step=step) if c.files):
+                text = "\n".join([case.body, *(line for n, c in case.files for line in tariffs._lines(n, c))])
+                want = case.want["total"]
+                for other in sorted({bids._amount(m.group()) for m in re.finditer(bids.AMOUNT, text)} - {want})[:4]:
+                    i += 1
+                    rfq = Rfq(session_id=i, message_id=i, customer="buyer@example.com", received_at=RECEIVED,
+                              deadline_at=RECEIVED, **case.request)  # fmt: skip
+                    events.emit(ctx, "rfq.extracted", "rfq", session_id=i, payload=rfq.model_dump(mode="json"))
+                    files = [
+                        Attachment(id=j, filename=n, content_type="", size=len(c))
+                        for j, (n, c) in enumerate(case.files)
+                    ]
+                    message = Message(id=i, session_id=i, direction="in", sender=CARRIERS[case.axes["carrier"]][1],
+                                      to="us@example.com", subject=case.subject, body=case.body, sent_at=RECEIVED,
+                                      attachments=files)  # fmt: skip
+                    ctx.mailbox = Mailbox(case.files)
+                    said = {"offer": True, "total": str(other), "components": [], "currency": case.want["currency"],
+                            "transit_days": case.want.get("transit_days"), "eur_per_unit": None}  # fmt: skip
+
+                    async def model(ctx, said=said, **kw):
+                        return LlmResult(data=said, model="swayed", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+                    llm.ask_json = model
+                    await bids.record(ctx, message)
+                    found = session.options(ctx, i)
+                    if len(found) == 1 and found[0].total != want:
+                        wrong.append(f"{case.axes}: {found[0].total} for {want} ({other} said)")
+        finally:
+            llm.ask_json = ask_json
+        return wrong
+
+    return asyncio.run(go())
 
 
 async def run(cases: list[Case]) -> list[Outcome]:

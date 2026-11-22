@@ -221,3 +221,9 @@ def test_every_later_mail_in_a_session_is_read_and_acted_on_right():
     assert len(reads) > 150
     assert [(r.case_id, r.got) for r in reads if not r.ok and not r.known_gap] == []
     assert [r.case_id for r in reads if r.ok and r.known_gap] == []  # a closed gap leaves the fixture
+
+
+def test_a_cross_check_that_reads_another_amount_never_moves_a_bid():
+    """Rounds 82 and 130: the model's figure won over a right reading. A lead time, a postcode, an offer number, a side
+    price or one charge the model takes for the total is never quoted."""
+    assert simulate.swayed_bids(step=13) == []
