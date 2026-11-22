@@ -4,8 +4,9 @@ Round 86: the customer changed the cargo ten seconds after our quote and asked f
 our answer to that mail and saw none. A mail's place in the thread says little: what it says decides. `read` gives the
 phase the mail meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `cancelled`, `declined`), its
 intent
-(`change`, `cancel`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it changes, from its own
-words and else from an attached document; `action` is what the session does with it, `booking.handle_reply` does it.
+(`change`, `cancel`, `accept`, `decline`, `conditional`, `tracking`, `question`, `thanks`) and the request fields it changes, from its own
+words and else from an attached document; `action` is what the session does with it (`conditional`, "book it if it stays below EUR X", books only when
+`selection.within_cap` says our total meets the cap), `booking.handle_reply` does it.
 No model call."""
 
 import re
@@ -55,6 +56,22 @@ CANCELS = re.compile(
     r"|\bcancelar\s+(?:\w+\s+){0,2}(?:reserva|envío|pedido)|\bcancellare\s+(?:\w+\s+){0,2}(?:prenotazione|spedizione)",
     re.IGNORECASE,
 )
+# A condition with a booking word in one sentence ("If the all-in stays below EUR 400, please book it"): never a
+# thank-you that needs nobody. Its cap, when it states one, is compared with our total by `selection.within_cap`.
+CONDITION = re.compile(r"\b(?:if|as long as|provided|unless|falls|wenn|sofern|solange|si|sous\s+réserve|se)\b", re.IGNORECASE)
+BOOK_WORD = re.compile(
+    r"\b(?:book\w*|proceed|go\s+ahead|buch\w*|beauftrag\w*|réserv\w*|reserv\w*|prenot\w*|confirm\w*\s+(?:the\s+)?order)\b",
+    re.IGNORECASE,
+)
+CAP = re.compile(
+    r"\b(?:(below|under|less\s+than|lower\s+than|cheaper\s+than|unter(?:halb)?|weniger\s+als|günstiger\s+als"
+    r"|moins\s+de|en\s+dessous\s+de|inférieur\s+à|por\s+debajo\s+de|menos\s+de|sotto)"
+    r"|(up\s+to|at\s+most|max(?:imum)?\.?|not\s+(?:more|higher)\s+than|no\s+more\s+than|(?:does\s+not|doesn['’]t)\s+exceed"
+    r"|höchstens|maximal|bis\s+(?:zu\s+)?|nicht\s+mehr\s+als|au\s+maximum|pas\s+plus\s+de|jusqu['’]à))"
+    r"\s*(?:of\s+|von\s+|de\s+)?(?=[€$\d]|EUR|USD|GBP|CHF)",
+    re.IGNORECASE,
+)
+SYMBOL = {"€": "EUR", "$": "USD"}
 HYPOTHETICAL = re.compile(r"\b(?:if|whether|falls|wenn|ob|si|se|would|würde)\b", re.IGNORECASE)
 PRICED_AGAIN = ("open", "quoted", "declined")  # after the acceptance a person rebooks
 BOOKED = ("accepted", "booked", "confirmed")
@@ -65,6 +82,7 @@ class Followup:
     phase: str
     intent: str
     changes: dict = field(default_factory=dict)
+    cap: tuple[Decimal, str | None, bool] | None = None  # a conditional acceptance's (amount, currency, strict)
 
 
 def phase(ctx: Context, quote: Quote | None) -> str:
@@ -128,6 +146,26 @@ def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: li
     return found
 
 
+def conditional(text: str) -> tuple[bool, tuple[Decimal, str | None, bool] | None]:
+    """Whether a sentence books on a condition, and the price cap it names: (amount, currency or None, strict)."""
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+        if not (CONDITION.search(sentence) and BOOK_WORD.search(sentence)):
+            continue
+        for m in CAP.finditer(sentence):
+            money = extract.MONEY.match(sentence, m.end())
+            raw, unit = (money.group(2) or money.group(4), money.group(1) or money.group(6)) if money else (None, None)
+            if raw is None and (bare := re.match(extract.NUM, sentence[m.end() :])):
+                raw = bare.group(1)
+            amount = extract.number(raw) if raw else None
+            if money and (money.group(3) or money.group(5)) and amount is not None:
+                amount *= 1000
+            if amount:
+                currency = SYMBOL.get(unit, unit.upper() if unit else None)
+                return True, (amount, currency, m.group(1) is not None)
+        return True, None
+    return False, None
+
+
 def _priced(rfq: Rfq, cargo: dict) -> bool:
     stated = calc.chargeable_kg(cargo.get("weight_kg", rfq.weight_kg), cargo.get("volume_cbm", rfq.volume_cbm))
     return stated == calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
@@ -149,6 +187,8 @@ def action(read: Followup) -> str:
         return {"quoted": "book", "declined": "book"}.get(phase, "rebook" if phase in BOOKED else "person")
     if intent == "decline":
         return {"quoted": "decline", "declined": "decline"}.get(phase, "person")
+    if intent == "conditional":
+        return "book_if" if phase in ("quoted", "declined") else "person"
     if intent == "thanks" and phase != "open":
         return "nothing"
     return "person"
@@ -160,6 +200,7 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
     own = own_words(message)
     now = phase(ctx, quote)
     found: dict = {}
+    cap = None
     if rfq is not None:
         ours = {quote.option.chargeable_kg, quote.option.billed_kg} if quote else set()
         documents = []
@@ -174,6 +215,8 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         intent = "change"
     elif CANCELS.search(own):  # "bitte stornieren, der Auftrag wurde zurückgezogen": "Auftrag" is no acceptance here
         intent = "cancel"
+    elif (booked_if := conditional(own))[0]:  # before the acceptance: "falls … unter 3.200 € bleibt, bitte buchen"
+        intent, cap = "conditional", booked_if[1]
     elif said in ("accept", "decline"):
         intent = said
     elif TRACKING.search(own) and now in BOOKED:
@@ -183,5 +226,6 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
     else:
         intent = "thanks"
     events.emit(ctx, "followup.read", "rfq", session_id=message.session_id, message_id=message.id,
-                payload={"phase": now, "intent": intent, "changes": {k: str(v) for k, v in found.items()}})  # fmt: skip
-    return Followup(now, intent, found)
+                payload={"phase": now, "intent": intent, "changes": {k: str(v) for k, v in found.items()},
+                         **({"cap": [str(cap[0]), cap[1], cap[2]]} if cap else {})})  # fmt: skip
+    return Followup(now, intent, found, cap)

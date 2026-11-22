@@ -560,3 +560,25 @@ async def test_changed_cargo_after_the_quote_is_requoted_in_reply_to_the_change(
     assert (seen["rfq"].weight_kg, seen["rfq"].volume_cbm, seen["rfq"].pieces) == (Decimal(1317), Decimal("8.18"), 5)
     assert [s["purpose"] for s in pipe.sent] == ["quote"] and pipe.quoted == [(24612, Decimal("4100.00"))]
     assert "human.note" not in kinds(pipe.ctx)
+
+
+@pytest.mark.parametrize(
+    ("text", "books"),
+    [
+        ("If the all-in stays below EUR 400, please book it.", True),  # 370.74 < 400
+        ("Falls der Preis unter 3.200 € bleibt, bitte direkt buchen.", True),
+        ("Book it if it's up to 370.74 EUR.", True),  # "up to" includes the cap
+        ("If the all-in stays below EUR 370.74, please book it.", False),  # "below" does not
+        ("If the all-in is below EUR 300, please book it.", False),
+        ("Falls der Preis unter 300 € bleibt, bitte direkt buchen.", False),  # used to book: "3." split the sentence
+        ("If it stays below USD 400, please book it.", False),  # another currency: a person converts
+        ("If you can guarantee departure on Monday, please book.", False),
+    ],
+)
+async def test_a_conditional_acceptance_books_only_when_our_total_meets_its_cap(pipe, accepted, text, books):
+    # It used to be read as a thank-you after the quote and dropped without a note.
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, mail(20, 1, subject="Re: Your quote", body=text, in_reply_to=501))
+    assert bool(pipe.ctx.portal.calls) is books
+    if not books:
+        assert kinds(pipe.ctx)[-1] == "human.note" and pipe.sent == []
