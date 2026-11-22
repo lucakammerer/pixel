@@ -639,9 +639,11 @@ cannot establish the deadline from the snapshot.
 
 For 58 of the 64 dated pickup offers, the air option also has a deadline from the source mail or the stored
 option. The pickup deadline is earlier in 55 of the 58. A combined quote's latest verified buying time is
-the earlier of its two deadlines. Final selection at or after that time, the combined validity shown in the
-quote, and reuse after booking remain open. Owner: supply. This audit establishes parser coverage and a
-gap in combined validity. It establishes no historical expired send in the matched cases.
+the earlier of its two deadlines. Of 44 dated pickups with a linked booking record, one had already
+expired when that record was created. In round 55 the pickup deadline was 20:43 UTC and the booking record
+was created at 21:09 UTC. That record does not establish whether the trucker still honored the price.
+Final selection at or after expiry, the combined validity shown in the quote, and first use at booking
+remain open. Owner: supply for price validity, after the quote for the booking flow.
 
 ### Bid validity variants
 
