@@ -31,6 +31,9 @@ ORIGIN_LABEL = re.compile(
 # "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
 DEST_LABEL = re.compile(
     rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)à(?!\w)"
+    # "Luftfracht zum Flughafen SGN" (round 74): only right after the air word; "Für den Flug liefern wir die Ware
+    # selbst zum Flughafen MUC" is the truck's.
+    rf"|\b(?:luftfracht\w*|flug|fliegen|geflogen)\s+zu[mr](?=\s+flughafen\b)"
     # Spanish, Italian, Portuguese "a GRU", only right before a code that ends the clause: never the English article
     rf"|(?<!\w)a(?=\s+(?-i:[A-Z]{{3}})\s*(?:[.,;:!?(\n]|$))"
     rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
@@ -43,6 +46,17 @@ PRE_CARRIAGE = re.compile(
 )
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
+)
+# The truck to the departure airport: "arrange the truck from our site to BBB airport. The goods go to Singapore" named
+# no destination code, and BBB was quoted as one. A code the trucking clause names as an airport, before any flight word.
+TRUCK_LEG = re.compile(
+    r"(?i:\b(?:truck\w*|lorry|lkw|by\s+road|collect\w*|pick\w*[\s-]?up|deliver\w*|bring\w*|haul\w*|transport\w*"
+    r"|abhol\w*|anliefer\w*|zustell\w*))"
+    # "Luftfracht" may be the truck verb's object ("bringen Sie die Luftfracht zum Flughafen FRA"): no flight word
+    r"(?:(?!(?i:\b(?:air(?!port)\w*|fl[iy]\w*|ship\w*|freight|arriv\w*|ankunft|destination|ziel\w*)\b))"
+    r"[^.;!?\n]){0,60}?(?i:\b(?:to|zum|zur)\s+(?:the\s+)?)"
+    r"(?:(?i:airport|flughafen)\s+(?=[A-Z]{3}\b)|(?=[A-Z]{3}\s+(?i:airport|flughafen)\b))"  # never a bare "to JFK"
+    rf"{CODE}"
 )
 
 # "1 250 kg": a space (also a no-break one) between thousands, not after a date's or a range's digits.
@@ -435,11 +449,14 @@ def shipments(rfq: Rfq, text: str) -> list[Rfq]:
     return found
 
 
-def _destination_only(text: str) -> str | None:
+def _destination_only(text: str, truck_leg: bool = True) -> str | None:
     """The one destination of a mail that names no origin airport (door-to-port). A code both labels reach belongs to
     the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
-    "our truck goes to departure airport FRA" the origin."""
+    "our truck goes to departure airport FRA" the origin. `truck_leg`: the airport a truck goes to is none; a later
+    mail of a quoted lane leaves that to its origin instead ("deliver to JFK airport instead of ORD" is a change)."""
     to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
+    trucked = set(TRUCK_LEG.findall(text)) if truck_leg else set()
+    to = {code: reach for code, reach in to.items() if code not in trucked}
     found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
     if set(origin) - found:
         return None
@@ -2041,6 +2058,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     rfq, prose = _earlier(ctx, mail, deadline) or rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
+    if rfq is not None and rfq.destination == rfq.origin:  # the truck's airport read as the destination: the model reads
+        rfq = None
     if rfq is not None and files and ctx.settings.model_check:
         documented = frozenset(f for f, names in evidence.items() if names and "mail" not in names)
         rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline, documented)
@@ -2072,7 +2091,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = rules(guess=True)
-            if guessed is None or not (guessed := apply_pickup(guessed)).origin:
+            if guessed is None or not (guessed := apply_pickup(guessed)).origin or guessed.destination == guessed.origin:
                 raise
             events.emit(
                 ctx,
