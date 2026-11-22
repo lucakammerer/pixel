@@ -110,6 +110,7 @@ uv run python -m tools.bench_models             # candidate models on request ma
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
 uv run python -m tools.voice_agent              # create or update the ElevenLabs call agent (pixel/voice/)
+uv run python -m tools.voice_demo               # the Call panel on a demo request, http://localhost:8010/demo/new; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
 tools/deploy.sh --after-quote                   # by hand, only when the host's deploy job is paused: this checkout to the live host in the next safe window
 ssh luca-kammerer 'sudo -u pixel python3 /opt/pixel/app/tools/cd_status.py'   # the host's deploy job: live, main, last decision, paused

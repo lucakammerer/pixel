@@ -39,6 +39,9 @@ ELEVENLABS_API_KEY=sk_...   # permissions: ElevenAgents read + write
 Then `uv run python -m tools.voice_agent` once: it creates the agent and its two client tools and adds
 `ELEVENLABS_AGENT_ID` to `.env`. Run it again to push changes of `agent_config.py`. Restart the app.
 
+To try it: `uv run python -m tools.voice_demo` and open http://localhost:8010/demo/new, a fresh demo request with a
+late airline, a late trucker and an unanswered question (no mailbox, no gateway, nothing sent).
+
 The browser needs a microphone and loads the ElevenLabs client from esm.sh; on another device the page must be served
 over HTTPS.
 
