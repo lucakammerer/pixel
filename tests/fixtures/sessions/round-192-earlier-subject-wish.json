@@ -1,0 +1,40 @@
+[
+  {
+    "id": 57847,
+    "from": "hofmann-textilwerk@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote to DXB",
+    "body": "Hi there,\n\nHope your week’s going well! I need to send the same shipment again, this time to DXB instead of GRU.\n\nThe previous request was “Fastest air freight option: HAM to GRU”, sent on 2026-11-22 at 07:37 UTC, for GRU. The cargo and pickup details are unchanged, so you already have them from that request.\n\nIt’ll be ready for pickup on 2026-11-29. Could you send me an all-in price in EUR for the cheapest option to DXB?\n\nThanks!\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T10:21:50.546685+00:00",
+    "attachments": []
+  },
+  {
+    "id": 57897,
+    "from": "lumen-air-cargo@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Rate request HAM-DXB, 1353 kg",
+    "body": "Hello,\n\nthank you for your request. We do not serve this lane/zone: HAM-DXB.\nWe fly CGN-DFW, CGN-MIA, CGN-SGN, DUS-BOM, FRA-LOS, FRA-NRT, FRA-PEK, HAM-RUH, HAM-YYZ, MUC-BOG, MUC-DXB, MUC-YYZ, STR-PVG.\n\nBest regards\nLumen Air Cargo\nlumen-air-cargo@hackloop.mail",
+    "in_reply_to": 57853,
+    "references": [
+      57853
+    ],
+    "received_at": "2026-11-22T10:22:21.326004+00:00",
+    "attachments": []
+  },
+  {
+    "id": 57922,
+    "from": "hofmann-textilwerk@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Air freight quote to DXB",
+    "body": "Thank you for your offer, but that is not the option I asked for.\n\nThanks a lot and have a lovely day!\nPetra Hofmann\nExport Desk, Hofmann Textilwerk KG",
+    "in_reply_to": 57898,
+    "references": [
+      57847,
+      57898
+    ],
+    "received_at": "2026-11-22T10:22:28.470266+00:00",
+    "attachments": []
+  }
+]

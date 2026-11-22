@@ -1198,7 +1198,7 @@ def _earlier(ctx: Context, message: Message, deadline: Deadline) -> Rfq | None:
         stated |= {"door_pickup": True, "pickup_postcode": pickup[1], "pickup_zone": zone_of(pickup[1]), "origin": ""}
     return before.model_copy(update={k: v for k, v in stated.items() if v is not None} | {
         "session_id": message.session_id, "message_id": message.id, "customer": message.sender,
-        "destination": new.pop() if new else before.destination, "preference": _preference(text),
+        "destination": new.pop() if new else before.destination, "preference": _preference(said),
         "currency": _currency(text) or before.currency, "language": _language(text),
         "received_at": deadline.received_at, "deadline_at": deadline.expires_at, "excluded_carriers": (),
     })  # fmt: skip
