@@ -12,7 +12,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 3. Rewrites: which rows of `rfqs/rewrites.jsonl` the rules extract, whether they read every shipment field right,
    and which need the model.
 4. Partial cases: the rows of `rfqs/partial_cases.jsonl` that have an invariant to check.
-5. Changed layouts: every sheet in `tariffs/variants/` is parsed right or refused, never parsed into wrong values.
+5. Tariff layouts and updates: sheets in `tariffs/variants/` are parsed right or refused. The mail sequences
+   in `tariffs/lifecycle/` check the rate that stays usable after each update.
 6. Routing: the router's rules on `mails/routing_probes.jsonl`.
 7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`, and on every captured pickup offer
    (`pickup-offer-layouts.json`) with one change each (`PICKUP_CHANGES`): its total, currency and pickup hours.
@@ -55,10 +56,12 @@ import csv
 import io
 import json
 import re
+import sqlite3
 import sys
 import zipfile
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from contextlib import closing
+from dataclasses import dataclass, field, replace
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from email.message import EmailMessage
 from pathlib import Path
@@ -72,6 +75,7 @@ from pixel.agents.tracking import agent as tracking
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import (
+    Attachment,
     LaneTariff,
     LlmResult,
     MailKind,
@@ -83,12 +87,12 @@ from pixel.contracts import (
     Rfq,
     Source,
 )
-from pixel.core import db, poller
+from pixel.core import db, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
 from pixel.crm import quotes, shipments
-from pixel.pricing import bids, store
+from pixel.pricing import bids, engine, session, store
 from pixel.pricing.calc import chargeable_kg, price_tariff
 from pixel.pricing.pickup import zone_of
 from tools import document_conflicts, simulate
@@ -715,6 +719,71 @@ def _spot_price(tariff: LaneTariff, kg: str, fx_eur: D | None = None) -> tuple[D
     return option.total, option.billed_kg
 
 
+async def _tariff_mail(ctx: Context, folder: Path, mail: dict, index: int, received: datetime) -> None:
+    files = []
+    for filename in mail.get("files", []):
+        content = (folder / filename).read_bytes()
+        if fmt := mail.get("format"):
+            content = simulate.WRITERS[fmt]([[line] for line in content.decode().splitlines()])
+            filename = str(Path(filename).with_suffix(f".{fmt}"))
+        files.append((filename, content))
+    ctx.mailbox = simulate.Mailbox(files)
+    message = _message("Tariff update", mail.get("body", "Please see attached.")).model_copy(update={
+        "id": index + 1, "session_id": index + 1, "sender": "carrier@example.com",
+        "sent_at": received + timedelta(seconds=index),
+        "attachments": [Attachment(id=i, filename=n, content_type="", size=len(c)) for i, (n, c) in enumerate(files)],
+    })  # fmt: skip
+    kind, _ = router.rules(ctx, message)
+    if kind == MailKind.TARIFF:
+        await agent.handle(ctx, message)
+
+
+async def _tariff_lifecycles() -> list[Variant]:
+    folder = TARIFF_FIXTURES / "lifecycle"
+    fixture = json.loads((folder / "cases.json").read_text())
+    request = fixture["request"]
+    received = datetime.fromisoformat(request["received_at"])
+    results = []
+
+    async def no_model(*args, **kwargs):
+        raise AssertionError("a text tariff lifecycle case called the model")
+
+    for row in fixture["cases"]:
+        differences = []
+        with closing(sqlite3.connect(":memory:")) as conn, patch.object(llm, "ask_json", no_model):
+            conn.row_factory = sqlite3.Row
+            db.init(conn)
+            ctx = Context(replace(settings(), dry_run=True), conn, None, None, None, None)
+            store.save_carriers(ctx, [{"name": fixture["carrier"], "kind": "airline",
+                                       "email": "carrier@example.com", "serves": ""}])  # fmt: skip
+            for index, mail in enumerate(row["mails"], 1):
+                at = received + timedelta(seconds=index)
+                with patch.object(timing, "now", return_value=at):
+                    await _tariff_mail(ctx, folder, mail, index, received)
+                    differences.extend(_tariff_price_check(ctx, row, index, request, received))
+        safe = not differences
+        results.append(Variant(row["id"], row["id"], "parsed right" if safe else "parsed wrong",
+                               "; ".join(differences), safe, row.get("known_gap")))  # fmt: skip
+    return results
+
+
+def _tariff_price_check(ctx: Context, row: dict, index: int, request: dict, received: datetime) -> list[str]:
+    differences = []
+    for check in row["checks"]:
+        if check["after"] != index:
+            continue
+        lane = check.get("lane", request["lane"])
+        origin, destination = lane.split("-")
+        rfq = Rfq(session_id=1, message_id=1, customer="bench", origin=origin, destination=destination,
+                  weight_kg=D(check.get("weight_kg", request["weight_kg"])), received_at=received, deadline_at=received,
+                  ready_on=date.fromisoformat(check["ready"]) if "ready" in check else None)  # fmt: skip
+        read = session.for_request if check.get("stored") else engine.sheet_options
+        got = [[str(o.total), o.currency, str(o.total_eur)] for o in read(ctx, rfq)]
+        if got != check["want"]:
+            differences.append(f"{lane} after mail {index}: {got}, expected {check['want']}")
+    return differences
+
+
 def audit_variants() -> list[Variant]:
     """Synthetic sheets with one layout change each (`tariffs/variants/variants.jsonl`). A change may be parsed
     right or refused (then the model reads the sheet); a sheet parsed into wrong prices is never safe."""
@@ -771,7 +840,7 @@ def audit_variants() -> list[Variant]:
                 else:
                     outcome, detail = "parsed right", ""
         results.append(Variant(row["file"], row["change"], outcome, detail, outcome in row["safe_outcomes"], gap))
-    return results
+    return results + asyncio.run(_tariff_lifecycles())
 
 
 def _header_row(ws) -> int | None:
@@ -1288,7 +1357,9 @@ def main() -> int:
     right = sum(v.outcome == "parsed right" for v in variants)
     refused = sum(v.outcome == "refused" for v in variants)
     unsafe = [v for v in variants if not v.safe and not v.known_gap]
-    print(f"\n[5] Changed tariff layouts: {right} parsed right, {refused} refused (model reads), of {len(variants)}")
+    print(
+        f"\n[5] Tariff layouts and updates: {right} parsed right, {refused} refused (model reads), of {len(variants)}"
+    )
     for v in variants:
         status = "ok" if v.safe else ("GAP" if v.known_gap else "FAIL")
         print(f"    {status:<4} {v.outcome:<12} {v.change}" + (f"  ({v.detail})" if v.detail else ""))
