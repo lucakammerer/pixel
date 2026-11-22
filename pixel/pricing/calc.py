@@ -40,8 +40,9 @@ def ready_day(rfq: Rfq) -> date:
 
 
 def arrival(option: RateOption, ready: date) -> date:
-    """The ready date plus the transit, a day more when a trucker first takes the cargo to the airport."""
-    return ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
+    """The ready date plus the air transit; the pickup leg adds no day. Round 179 (ready 27.11., at ORD by 29.11.):
+    a day more for the trucker dropped the 2-day airline and the scorer rejected the 1-day one as too high."""
+    return ready + timedelta(days=option.transit_days)
 
 
 def transit_days(value: int, hours: bool) -> int:
