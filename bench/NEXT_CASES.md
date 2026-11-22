@@ -214,10 +214,10 @@ Measured right: two, three and four shipments, a door pickup for all, bullets, G
 another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.
 
-## Axis R: the scorer's checks (22.11.2026 10:40, live database to round 179)
+## Axis R: the scorer's checks (22.11.2026, live database to round 187)
 
-What the scorer reads from our first reply beyond the price, reconstructed from every `feedback` event (172 rounds,
-8 to 179) and the request and reply of each loss. Counts are rounds, not events.
+What the scorer reads from our first reply, reconstructed from the latest `feedback` per round (180 rounds,
+8 to 187: 130 accepted, 44 rejected and 6 with no answer) and the requests and replies behind the losses.
 
 ### The rubric, as far as the verdicts prove it
 
@@ -231,12 +231,13 @@ What the scorer reads from our first reply beyond the price, reconstructed from 
 | 6 | every shipment of the mail has its own price | `one_of_two` (2: 113, 150) | both: two numbered shipments, "a separate all-in price for each"; we priced the first | the number of totals |
 | 7 | an airline the customer ruled out is not offered | `excluded_airline` (1: 42) | — | the airline named in the reply |
 | 8 | dangerous goods the documents reveal are answered with the documents they need | `dg_docs_missing` (1: 10) | the mail said "non-dangerous", the packing list `PL_53839.xlsx` said otherwise | named documents (DGD, MSDS) |
-| 9 | the total within 5 % of the scorer's best, both ways (owned by the price goal since 09:10) | `too_low` (18), `too_high` (10) | accuracy falls on both sides: round 13 was 2.67 % below the best and earned 33 of 45 (about 4.5 points per %). With several shipments its `quoted` is the sum of all (62, 127, 151, 153, 158, all accepted): it reads more than one amount. Insurance terms stated in the request are in its all-in (91, `too_low`) | the all-in total, in EUR |
-| 11 | a wish the request states is acted on, not only repeated | `not_what_was_asked` (1: 186) | 186: a Turkish "en hızlı seçenek" (fastest); the rules read cheapest, the novelty call mapped the wish into `conditions`, and the reply quoted the cheapest with "Talebinizden not aldım: en hızlı seçenek" | the option and content against the wish |
+| 9 | the total stays within 5 % below the scorer's best (Price) | `too_low` (18) | round 13 was 2.67 % below the best and earned 33 of 45 (about 4.5 points per %). Insurance terms stated in the request count in the all-in (91) | the all-in total in EUR |
+| 10 | the total stays within 5 % above the scorer's best (Price) | `too_high` (10) | round 179 quoted a 1-day service when a cheaper 2-day service met the limit. For several shipments the scorer uses the sum (62, 127, 151, 153, 158, accepted) | the all-in total in EUR |
+| 11 | the option or reply fulfils the customer's stated wish | `not_what_was_asked` (1: 186) | 186 asked for "en hızlı seçenek" (fastest) and an estimated arrival. The reply offered the cheapest, repeated the wish in a note and omitted the arrival. The verdict does not identify which clauses it checked | the option or content against the wish |
 | — | the airline and the trucker are **not** compared | — | 172: our airline differed from the scorer's at the same total, 45 of 45; 13: another trucker, accepted | — |
 
-Order: 1, then 2 before 3 (round 156). Where 5 to 8 stand against 9 is unproven: every loss on 5 to 8 had a price we
-cannot place against the scorer's best (rejected rounds carry no `best`).
+Order: 1, then 2 before 3 (round 156). The order of 5 to 8 and 11 relative to the two price thresholds remains
+unproven. Those losses carry no `best`.
 
 ### The timeline and its pattern
 
@@ -255,13 +256,12 @@ The pattern: every new check is one more field of the generator's request (an at
 language, an attachment wish, a shipment count, a mode), introduced alone in one round, repeated for 1 to 4 rounds, and
 from then on **combined** with older ones: 156 is Korean + an "import" by the buyer + a forwarded old mail + PDF; 179 is
 pounds and cubic feet + an arrival deadline + the buyer's "import" + PDF. Price levers move the same way from endpoint
-to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123). A new
-check came every 0.6 to 6.5 hours; the last one is 2 hours old at this writing, so the next is due.
+to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123).
 
-### Wishes we recognised and only noted (audit of 22.11. 10:00, every `rfq.novelty` with `conditions` or `documents`)
+### Wishes we recognised and only noted (every `rfq.novelty` through round 187)
 
-13 live sessions, 112 to 186. Acted = the quote's option, price, attachment or a sentence answers it; noted = only
-"Noted from your request: …" repeats it.
+13 distinct sessions, 112 to 186, with a nonempty `mapped.conditions` or `mapped.documents`. Each row compares
+the first offer and stored attachment receipt with the request and verdict. A session can appear in several rows.
 
 | Kind of wish | Sessions (round) | Acted | Only noted | The scorer | Changes the right option or content |
 | --- | --- | --- | --- | --- | --- |
@@ -270,20 +270,20 @@ check came every 0.6 to 6.5 hours; the last one is 2 hours old at this writing, 
 | we deliver to the airport | 137 (de) | port-to-port | — | accepted | yes, acted |
 | among the dates that fit, the cheapest | 170 | cheapest within `arrive_by` | — | accepted | yes, acted |
 | dangerous goods in the attachment | 112, 128 | DGD and MSDS named | the note too | accepted | yes, acted |
-| PDF for filing | 161, 165, 167, 179 | every quote carries the PDF | 161 and 167 also say "Documents we will need: PDF, 견적서": the customer's own ask read as a document we want from them | accepted (179 lost on price) | content wrong, not scored so far |
+| PDF for filing | 161, 165, 167, 179 | receipt confirms the offer PDF in all four | 161 asks the customer for the quote and PDF. 167 asks for the PDF | 161, 165 and 167 accepted. 179 `too_high` | yes, the request for a document reverses who owes it |
 | one air waybill, lots not split | 167 (ko) | priced as one | the sentence noted; `compose.ONE_AWB` answers only English and German | accepted | content |
-| earliest flight and arrival asked | 186 (tr) | — | not even noted: no arrival sentence | (the round failed on the option) | content |
+| earliest flight and estimated arrival | 186 (tr) | transit duration given | neither question answered. The model output mapped the ready date and fastest wish | `not_what_was_asked`; the reason does not separate the two omissions from the option | yes, the arrival estimate |
 | pieces, EUR, all-in | 132, 171 | in the quote | noted | accepted | no |
 
 Ranked predictions of `not_what_was_asked` from the kinds only noted, each stepped in every direction:
 
 | # | Prediction | Directions tested (offline, `extract`, `compose` on this commit) | Today | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- | --- |
-| N1 | fastest asked in a language the rules read but have no word for | `extract._preference`: tr, ko, zh, ja, pl "fastest" read **cheapest**; es, it, nl, pt, fr, de read fastest. Another channel: the wish only in a later mail is the requote's (axis B). Two wishes that conflict ("fastest, price decides") read by `PRICE_FIRST` | wrong for tr, pl; ko, zh, ja right only when the model reads the mail | the case: novelty's wish into the selection; the class: `extract.FASTEST`, `CHEAPEST` words | Hot repair A (186), Cost (`extract.py`) |
-| N2 | the earliest arrival asked and not answered | `compose.ready_date`: en "ready on 2026-11-26" and fr read; de "am 2026-11-26 zur Abholung bereit", tr "2026-11-26 tarihinde hazır", ko "2026-11-26에 출고 가능" none, so no arrival sentence although `rfq.ready_on` holds the date (it is used only with a latest arrival). 96 and 122 asked for it in English (both lost before a quote) | wrong for de, tr, ko | `compose.answers`: the read ready date when the request gives one | Checklist |
-| N3 | the PDF ask read as a document we need | 161, 167: "Documents we will need: PDF, 견적서" | wrong content, accepted twice | `novelty.with_note`: the offer itself is no document to ask for | Checklist (review thread merges) |
-| N4 | a wish no option can meet | an arrival no airline makes: `selection` quotes the nearest with "unmet_schedule" named (R9); a required airline missing: named at the deadline (R9) | right (by reading `novelty.with_note`) | — | — |
-| N5 | one air waybill in a language without the sentence | 167 (ko): noted only | content | `compose.ONE_AWB` | Checklist, low |
+| N1 | fastest in a language the preference rules miss | #508 covers Turkish, Korean, Chinese and Japanese. Polish remains a prediction. "Fastest, price decides" exercises the explicit priority. A later change belongs to Axis B | round 186 wording fixed by Hot repair A. Other languages remain open | `extract._preference` | Cost |
+| N2 | earliest arrival omitted despite a known ready date | DE date before verb and short date, KO date before verb, EN month name all reach `extract.schedule` but miss `compose.ready_date`. TR needs the novelty date in round 186. The document can supply or override the mail date (see `test_an_attached_documents_schedule_is_read_and_stands_against_the_mails`). Reply-by alone supplies no readiness. A correction before the quote should use the corrected date | wrong where the composer misses an effective ready date. TR and KO can still lose the date in translation | `compose.answers` with the extracted date. A specific flight still needs schedule data | Checklist |
+| N3 | the offer PDF ask becomes a request for the customer to send a document | stubs `["PDF", "견적서"]`, `["shipper's declaration", "PDF"]`, and empty. The carrier's bid PDF supplies sourcing data. A customer's real DGD in PDF form still needs to be requested when required | wrong content, accepted twice. Empty stub produces no request | give the note the direction of each document request | Checklist |
+| N4 | a wish no option can meet | offline `agent._quote` with both a required airline and an impossible arrival gives both alternative notes when the RFQ carries the fields. The same inputs stubbed in novelty's `only_airlines` and `arrive_by` give neither note. A compatible airline and date correctly give neither note | model-only alternative disclosure open | check the selected option against the same requirements used for selection | Checklist (review thread merges) |
+| N5 | one air waybill or separate air waybills | the answer renderer confirms English "One AWB for all lots". Korean round 167 gets a note only and French "une seule LTA" gets no sentence. The opposite "two separate air waybills" triggers a one-AWB promise | wrong confirmation for the opposite case. Korean and French confirmation missing | `compose.ONE_AWB` | Checklist |
 
 ### The 20 most likely next checks
 
@@ -293,7 +293,7 @@ cousin of a live check; L = the dataset holds nothing the scorer could check it 
 | # | Check (predicted reason) | Likelihood | Why | Case | Today |
 | --- | --- | --- | --- | --- | --- |
 | P1 | the currency asked for (`wrong_currency`) | M | every request says "all-in price in EUR": one word of the template; but no live source ever priced in another currency (0 of 179 requests, 1223 carrier answers and every portal option), so the scorer would first need a rate it can hold us to | `currency-usd` | **wrong**: 803.40 EUR; blocked on data: `_fx_for` takes only this request's own rates, offline and live there is none |
-| P2 | cheapest and fastest both (`one_of_two`) | H | `one_of_two` counts totals; "both options" is its next turn | `cheapest-and-fastest-both` | **wrong**: fastest only |
+| P2 | cheapest and fastest both (`one_of_two`) | H | `one_of_two` counts totals; "both options" is its next turn | `cheapest-and-fastest-both` | right offline after #499 |
 | P3 | two lanes in one mail (`one_of_two`) | H | 113 and 150 had one origin; the next turn varies the lane | `two-lanes-one-mail` | model (rules give up offline) |
 | P4 | two pickup sites (`one_of_two`) | M | the same check on the pickup leg | `pickup-two-sites` | **wrong** offline: unanswered |
 | P5 | a split shipment on two dates (`one_of_two`) | M | the same check by date | `split-shipment` | **wrong**: first part only |
@@ -313,7 +313,7 @@ cousin of a live check; L = the dataset holds nothing the scorer could check it 
 | P19 | insurance, export customs, screening (`service_missing`) | M | the "include …" wishes the template already has for pickup | `insurance-requested`, `export-customs-included`, `unknown-consignor-screening` | right if the scorer accepts "not included" (unknown) |
 | P20 | temperature control, oversize, direct flights, non-stackable (`no_capable_carrier`) | L | `carrier-list.csv` holds no capability column; the scorer has nothing to compare against until a new version adds one | `temperature-controlled`, `oversize-freighter-only`, `direct-flight-only`, `non-stackable` | silent; becomes **wrong** the hour the data names it |
 
-### The table: every next case, 22.11. 12:45
+### The table: next cases on main, 22.11.2026
 
 `uv run python -m tools.checklist` replays every case of `next-cases.json` as `tools.kpi` does (start kit, no model)
 and holds the first reply that prices or declines against the checks its `expected` names: a price at all (3), the
@@ -324,8 +324,8 @@ case without a known gap. `-v` prints each reply; `body_states` was judged by ha
 | Case | Check | Today | Verdict | Gap owner |
 | --- | --- | --- | --- | --- |
 | `currency-usd` | P1 currency | 803.40 EUR | wrong, blocked on data | Checklist: watch for the first non-EUR source |
-| `cheapest-and-fastest-both` | P2 two options | Helix 2132.80 only | wrong; #499 open (#479 closed by review: "two pallets" and "each shipment" fired it) | Checklist (review thread merges) |
-| `combo-de-two-options-pdf` (new: German, two options, PDF) | P2, 2, 5 | Helix 2132.80 only, German, PDF without Kestrel's total | wrong; right with #499 (both totals in mail and PDF) | Checklist |
+| `cheapest-and-fastest-both` | P2 two options | Helix 2132.80 and Kestrel 1512.80 | right offline after #499 | — |
+| `combo-de-two-options-pdf` (German, two options, PDF) | P2, 2, 5 | both totals in the German reply and its PDF | right offline after #499 | — |
 | `combo-arrive-by-pdf-reference` (new: arrival, PDF, "our purchase order PO-2026-5512") | P9 reference | Helix 2132.80 right, PDF right, the reference not read | wrong; #481 open (also "Bestellung", "commande n°") | Checklist |
 | `cheapest-and-fastest-one-option` (new, the opposite of P2) | one amount | one amount | right | — |
 | `split-shipment` | P5 count | 1600.00, one amount | wrong | Cost (`extract.shipments`) |
@@ -337,7 +337,10 @@ case without a known gap. `-v` prints each reply; `body_states` was judged by ha
 | `quote-validity-requested`, `cost-breakdown-required`, `customer-reference-in-quote`, `quote-copy-to-colleague`, `reply-in-other-language`, `dg-lithium-in-body`, `not-dg-declared` | P9, P11 to P14 | stated as expected | right | — |
 | the other 21 cases | price and choice | as expected or within 5 % | right (price goal) | — |
 
-Wrong outside a known gap: 0.
+The offline checklist ran 45 cases. Four failed an asserted check (currency, split shipment, booking under cap,
+PO reference) and five require model reads, all with owners above. No asserted check failed outside the known
+gaps. A passing checklist result covers only the checked fields. The prose expectations and unpriced services
+still require inspection.
 
 ### Steps in every direction from the live checks
 
@@ -347,7 +350,7 @@ Wrong outside a known gap: 0.
 | 5 PDF | another language: Korean ask (156) | the PDF keeps only the figures in a script Helvetica cannot write (`pdf._lines`) | holds the total |
 | 5 PDF | two at once: PDF and several shipments | the PDF holds the mail's text, so every shipment's line and the sum | right (by reading `pdf._lines`) |
 | 5 PDF | another moment: asked in a later mail | the requote carries its own PDF (`outbox.send_quote`) | right (by reading) |
-| 6 count | another axis: two options instead of two shipments | `cheapest-and-fastest-both` | #499 open |
+| 6 count | another axis: two options instead of two shipments | `cheapest-and-fastest-both` | right offline after #499 |
 | 6 count | opposite: "Two pallets. Cheapest and fastest please.", "the fastest pickup for each shipment", "Both shipments: the cheapest and the fastest routing", a bare "cheapest and fastest options" | `tests/test_compose.py` on #499 | one total |
 | P6 arrival | what the reply states: "the earliest arrival would be …" | `compose` takes `calc.arrival`, ready + transit since #472 (round 179) | the same date the scorer counts |
 | P9 reference | another wording, two at once: "our purchase order PO-…" with an arrival limit and a PDF | `combo-arrive-by-pdf-reference` | wrong, #481 |
@@ -372,6 +375,8 @@ Wrong outside a known gap: 0.
 | Do checks 5 to 8 run before the price, i.e. would a right price with no PDF still be `no_pdf_offer`? | already in the database if a `no_pdf_offer` round had a price we can place: 76 to 79 against the board's `best` of other teams (not exposed) |
 | Is "not included" an accepted answer to insurance, customs or screening wishes? | the first round with such a wish |
 | Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round; with several shipments it read the sum, so it reads more than one amount |
+| Does check 11 require an arrival estimate when the option follows the wish? | the next scored request asking for a date where the reply already quotes the right option |
+| Does a fulfilled PDF request still pass when the reply also asks the customer to send the PDF? | 161 and 167 passed. The next filing request combined with an actual document requirement would test the distinction |
 | Was 156's `wrong_language` for the question or for the no-price reply? | the next foreign-language round that ends without a price |
 
 ## Axis S: scope (22.11.2026, cycle 2)
