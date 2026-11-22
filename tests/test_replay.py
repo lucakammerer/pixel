@@ -1,6 +1,14 @@
 import sqlite3
 
+import httpx
+import pytest
+
+from pixel import llm
+from pixel.api.client import ApiError
+from pixel.api.gateway import Gateway
+from pixel.config import settings
 from pixel.core import db
+from pixel.core.context import Context
 from tools import replay
 
 
@@ -28,3 +36,22 @@ def test_a_replay_on_a_copy_keeps_reference_data_and_forgets_the_replayed_sessio
     assert [r[0] for r in copy.execute("SELECT session_id FROM events")] == [5] and last == 2
     live = sqlite3.connect(source)
     assert live.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 3
+
+
+async def test_a_replay_answers_the_model_with_its_recorded_reading_and_a_changed_prompt_misses(conn):
+    class Live:
+        async def chat(self, payload):
+            return {"choices": [{"message": {"content": '{"origin": "AAA"}'}}], "usage": {"completion_tokens": 9}}
+
+    ctx = Context(settings=settings(), db=conn, mailbox=None, portal=None, gateway=Live(), board=None)
+    ask = {"purpose": "rfq.extract", "system": "read the mail", "schema": {}, "session_id": 7}
+    await llm.ask_json(ctx, user="FRA to ORD, 100 kg", **ask)
+
+    client = httpx.AsyncClient(base_url="http://x", transport=httpx.MockTransport(
+        replay._recorded({"answers": replay.answers(conn, 7)})))  # fmt: skip
+    ctx.gateway = Gateway(client)
+    again = await llm.ask_json(ctx, user="FRA to ORD, 100 kg", **ask)
+    assert again.data == {"origin": "AAA"} and again.cost_usd == 0
+    with pytest.raises(ApiError):  # a changed prompt meets the offline gateway
+        await llm.ask_json(ctx, user="FRA to ORD, 200 kg", **ask)
+    await client.aclose()
