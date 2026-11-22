@@ -109,9 +109,13 @@ def insurance_premium(value: Decimal, share_pct: Decimal, rate_pct: Decimal, min
 
 def with_insurance(option: RateOption, premium_eur: Decimal) -> RateOption:
     """The option's all-in with the insurance premium (in EUR) added once, in the option's currency."""
-    premium = premium_eur if option.currency == "EUR" else money(premium_eur / option.fx_eur)
+    premium = insurance_in_currency(option, premium_eur)
     total = money(option.total + premium)
     return option.model_copy(update={"total": total, "total_eur": to_eur(total, option.currency, option.fx_eur)})
+
+
+def insurance_in_currency(option: RateOption, premium_eur: Decimal) -> Decimal:
+    return premium_eur if option.currency == "EUR" or not premium_eur else money(premium_eur / option.fx_eur)
 
 
 def to_eur(amount: Decimal, currency: str, fx_eur: Decimal | None) -> Decimal:

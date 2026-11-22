@@ -32,6 +32,8 @@ Decimal only; a model never computes, compares or writes a price (P1).
   option's currency with its exchange rate when that is not EUR. Truckers price by zone and quote only with a
   five-digit postcode: a pickup known by its town alone is asked with the zone's first one (`bids._postcode`; two
   postcodes of one zone got the same price and pickup time).
+- **Cargo insurance** (`calc.with_insurance`): the premium on the customer's stated terms is added to the all-in
+  total in the quote's currency. The quote checker includes the premium in its arithmetic and comparison price.
 - **EUR** (`calc.to_eur`): amount × the rate's own exchange rate (EUR per unit), rounded to cents.
 
 ## Choosing (`selection.select`)
