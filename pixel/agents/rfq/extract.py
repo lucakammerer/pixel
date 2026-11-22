@@ -51,10 +51,11 @@ WEIGHT = (
         rf"(?![\d.,']|{OTHER_UNIT}\b)"
     ),
 )
-POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
+# A unit may end without a space before a Korean or Japanese particle ("lb입니다", session 39219): no \b there.
+POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)(?![A-Za-z])"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 # Round 79: "a total volume of 95.00 cubic feet" (2.69 cbm) was read by the model as 95 cbm.
-FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t\b|cu\.?\s*ft\b|ft3\b|ft³)"
+FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t(?![A-Za-z])|cu\.?\s*ft(?![A-Za-z])|ft3(?![A-Za-z\d])|ft³)"
 FT3 = Decimal("0.028316846592")
 # "3360 litres" is 3.36 cbm; a bare "l" is left alone: "5 l canisters" names the goods, not the shipment.
 LITRE = r"\s*(?i:lit(?:er|re)s?\b|ltrs?\b)"

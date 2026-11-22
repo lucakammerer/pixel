@@ -1292,3 +1292,10 @@ def test_a_past_shipment_beside_the_request_is_not_its_cargo():
         DEADLINE,
     )
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(990), Decimal("5.75"), 4)
+
+
+def test_a_unit_followed_by_a_korean_particle_is_read():
+    """Session 39219: "부피는 113.01 cubic feet입니다" ended the unit without a space; the volume was asked for twice."""
+    text = "화물은 가구 샘플 12개이며, 총중량은 2028.26 lb입니다, 부피는 113.01 cubic feet입니다."
+    assert round(extract._volume(text, 12), 2) == Decimal("3.20")
+    assert round(extract._weight(text, 12)) == 920
