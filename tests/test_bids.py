@@ -146,6 +146,10 @@ async def test_explicit_lane_suspension_applies_only_from_effective_date_until_r
         ("We offer 845,00 € all in, 2 Tage Laufzeit.\n\n> Please quote 100 kg, EUR 5 per kg", "845.00", "EUR", 2),
         ("EUR 900,00 all-in. Transitzeit: 3 Tage. Laufzeit des Angebots: 14 Tage.", "900.00", "EUR", 3),
         ("EUR 900.00 all-in, 2 days. Transit via DXB, 1 day stopover.", "900.00", "EUR", 2),
+        ("We can offer 950.00 EUR per AWB all-in, transit 3 days.", "950.00", "EUR", 3),  # per AWB: the flat total
+        ("We can offer 950 EUR per AWB all-in, transit 3 days.", "950.00", "EUR", 3),
+        ("Total 1,250.00 EUR/AWB, transit 3 days.", "1250.00", "EUR", 3),
+        ("Rate 2.10 EUR/KGS all-in, transit 3 days.", "210.00", "EUR", 3),  # per KGS: a rate per kg
         ("Freight EUR 500.00\nFuel EUR 80.00\n3 days", "580.00", "EUR", 3),  # charge lines without a total add up
     ],
 )
