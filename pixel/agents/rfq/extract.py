@@ -1843,6 +1843,15 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
             rfq = apply_pickup(await ask(rfq))
             prose = {"first_name": result.data.get("first_name")}
+    subject = "" if REPLY_SUBJECT.match(mail.subject) else mail.subject
+    on = rfq.received_at.date()
+    stated = schedule(f"{_body(mail)}\n{subject}", on)
+    # An attached document's date stands against the mail's, as its cargo does: the scorer prices the document (rounds
+    # 33 to 35, 130).
+    documented = schedule("\n".join(c for n, c in sources if n != "mail"), on) if files else (None, None, None)
+    ready_on, arrive_by, max_transit_days = (d if d is not None else m for m, d in zip(stated, documented, strict=True))
+    rfq = rfq.model_copy(update={"ready_on": ready_on, "arrive_by": arrive_by,
+                                 "max_transit_days": max_transit_days})  # fmt: skip
     if files:
         attached = "\n".join(content for _, content in documents)
         rfq = rfq.model_copy(update={"language": _language(_text(mail), rfq.language, attached)})
@@ -1851,14 +1860,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 evidence[key] = named
         excluded = [name for name, content in documents if (name, content) not in sources]
         proof = {"document_weight_kg": document_weight} if document_weight == rfq.weight_kg else {}
+        dates = dict(zip(("ready_on", "arrive_by", "max_transit_days"), documented, strict=True))
+        if said := {k: str(v) for k, v in dates.items() if v is not None}:
+            proof["document_schedule"] = said
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload={"sources": evidence, "attachment_route_conflicts": excluded, **proof})  # fmt: skip
     request_text = _text(mail)
     rfq = _carrier_requirements(ctx, rfq, request_text)
-    subject = "" if REPLY_SUBJECT.match(mail.subject) else mail.subject
-    ready_on, arrive_by, max_transit_days = schedule(f"{_body(mail)}\n{subject}", rfq.received_at.date())
-    rfq = rfq.model_copy(update={"ready_on": ready_on, "arrive_by": arrive_by,
-                                 "max_transit_days": max_transit_days})  # fmt: skip
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})
