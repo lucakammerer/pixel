@@ -23,6 +23,7 @@ KINDS = (
     "quote.checked",  # agents/rfq/check.py: what the check found on the draft, and (`stage: sent`) on the text that leaves
     "quote.repaired",  # agents/rfq/repair.py: one repair of a BLOCK finding, kept or not
     "option.vetoed",  # agents/rfq/repair.py: an option a repair left out; pricing/session.py no longer offers it
+    "quote.gaps",  # agents/rfq/gaps.py: what the session knew it had not read, what was closed, what stayed open
     "rfq.critic",  # agents/rfq/repair.py `critic`: the model's pick among code's readings, and whether it was grounded
     "rfq.second_read",  # agents/rfq/agent.py `_second_read`: the prose call's figures against the rules' reading
     "quote.followup_wait",  # agents/rfq/agent.py `_followup_wait`: a newer customer mail still unread before the quote

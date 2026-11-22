@@ -228,6 +228,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   implausible price per kg, the language, an expired rate. The check itself never changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
+- `gaps.py`: known gaps, closed before the quote while they can change it (rounds 120 to 123: the rate API answered
+  503, the sheet airline was quoted and the scorer's best was a portal rate we never read; nothing in that quote was
+  wrong, so no check could block it). `find` reads the session's log: an airline of the lane whose portal read failed
+  and that no source priced since (`source_down`; "not on the portal" is no gap; an airline the customer ruled out
+  cannot change the quote), an airline, the desk or a trucker asked by mail that has not answered (`answer_pending`:
+  can change the quote when fewer than `THIN` airlines or truckers are priced), sentences whose novelty mapping failed
+  (`unread_sentences`), a fact the request left open (`fact_missing`, only reported). `agent._close_gaps` calls
+  `close` after the bids and before the second reader, only when there is a price at all (else the fallback waits):
+  a failed portal read is read again up to `REREADS` times `REREAD_GAP_S` apart, a pending answer that can change the
+  quote is waited for, the novelty mapping is tried once more; then the request is priced again from every option
+  the session holds. Without a failed source it stops at `by_for` (110 s, inside the full time points of R29); with
+  one, at `agent._repair_by` (15 s before the orchestrator takes over): an outage round is one few teams win.
+  `quote.gaps` names what was found, closed and left open. `PIXEL_GAPS`: `on`, `log` (record only) or `off`.
 - `repair.py`: verify, repair, check again, inside the round. `agent._settled` drafts, translates and hands the
   quote to `settle`, which runs the check on the text that leaves (`quote.checked`, `stage: "sent"`). For a BLOCK
   with an entry in `REPAIRS` it builds the quote again with one thing changed: the distrusted bid or the ruled-out
@@ -279,6 +292,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "rates from", "ab", "minimum charge", "our previous offer was", "optional insurance", "... extra". `bids._price`
   takes "we can offer" or "our offer is" as the label and skips such a price (`SIDE_BEFORE`, `SIDE_AFTER`);
   `tools/simulate.py` writes every bid layout beside each of them.
+- An answer can list only its charges, without a total ("Air freight 1,234.56 EUR", "Fuel surcharge ..."; "Base
+  charge", "Weight charge"). `bids._price` adds them up in code (`CHARGE_LINE`, `calc.bid_total`) when every price of the
+  answer is such a line, in one currency, each kind once beside a freight, base or weight charge; a label with
+  more than its own words ("Option A air freight", "Freight to ORD", "via DXB", "Last time:") or a pickup line is
+  never added (`CHARGE_KINDS`); a rate per hour or pallet beside them is no charge.
   "The fuel (security, waiting) rate is" never labels the offer's price (`PRICE_IS`), and an amount at a line's end
   joins the next line's currency only when that line holds the currency alone (`UNWRAP`).
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
@@ -319,6 +337,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "bultos", "colli", "volumes", "stuks"; "más/mais rápida", "più veloce", "snelste" fastest and "más económica",
   "più economica", "goedkoopste", "mais barata" cheapest. Read by rules without the wish words, a fastest request
   would have been quoted cheapest. Portuguese is still answered in English (`_language`).
+- A request can point to the customer's earlier one: "the same shipment as in my earlier request, "Air freight
+  quote request: STR to MEL" ... the new destination is LAX" (round 103, accepted on the earlier cargo; round 104,
+  "the same shipment as in my request", lost when the model read no weight). `_earlier` takes the earlier request of
+  that subject (else the latest) as it was read, with what this mail states anew: another destination, a weight,
+  volume or piece count, a moved pickup (its zone's airport), the wish, the currency. It runs before the rules, which
+  would read the old lane from the quoted subject. A code the mail names anew is the destination only right after a
+  destination label (`NEW_DESTINATION`); "ship it from FRA", "origin is now FRA", "via FRA", two new airports or an
+  unknown subject go to the rules and the model, whose reading `_earlier_request` still fills from a request of the
+  quoted subject.
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.

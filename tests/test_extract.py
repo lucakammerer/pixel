@@ -460,8 +460,11 @@ def test_a_negated_superlative_or_a_quick_reply_is_no_wish_for_speed(text):
 @pytest.mark.parametrize(
     "body, kg",
     [
-        ("AAA to BBB: 1 pallet, gross weight: 480 lbs, 120x80x100 cm.", 480 * extract.LB),  # not 480 kg
-        ("AAA to BBB, 3 pallets each 400 lbs, 120x80x110 cm", 1200 * extract.LB),
+        (
+            "AAA to BBB: 1 pallet, gross weight: 480 lbs, 120x80x100 cm.",
+            Decimal("217.72"),
+        ),  # not 480 kg; two decimals as the scorer
+        ("AAA to BBB, 3 pallets each 400 lbs, 120x80x110 cm", 3 * Decimal("181.44")),
         ("AAA-BBB 1.2t 6cbm asap", Decimal(1200)),
         ("AAA-BBB, 2,5 Tonnen, 10 cbm", Decimal(2500)),
         ("AAA-BBB 1000 kg (2205 lbs), 3 cbm", Decimal(1000)),
@@ -672,7 +675,7 @@ def test_a_document_whose_total_and_table_disagree_settles_nothing(document):
 @pytest.mark.parametrize(
     "body, model_kg, model_cbm, pieces, expected",
     [
-        ("Hi, 1 pallet 480 lbs, 120x80x100 cm, AAA area to BBB.", "217.7", "0.96", 1, (480 * extract.LB, "0.96")),
+        ("Hi, 1 pallet 480 lbs, 120x80x100 cm, AAA area to BBB.", "217.7", "0.96", 1, (Decimal("217.72"), "0.96")),
         ("Two cartons of 60 x 40 x 50 cm, 95 kg together, to BBB.", "95", "0.25", 2, ("95", "0.240")),
     ],
 )
@@ -1355,3 +1358,77 @@ def test_a_unit_followed_by_a_korean_particle_is_read():
 def test_the_english_article_a_names_no_destination():
     text = "Please send a quote: pickup at our plant in 80331 Munich, a FRA departure is fine, destination ORD, 400 kg."
     assert extract._destination_only(text) == "ORD"
+
+
+@pytest.mark.parametrize(
+    ("pointer", "changed", "origin"),
+    [
+        ("the same shipment as in my earlier request", "The cargo is unchanged.", "STR"),
+        ("the same shipment as in my request", "The cargo is unchanged.", "STR"),
+        ("the same shipment as in my request", "The pickup is now from our site in 80331 Munich.", "BBB"),
+        ("the same shipment again. My earlier request was", "The cargo is unchanged.", "STR"),  # round 114
+    ],
+)
+async def test_the_same_shipment_as_an_earlier_request_is_read_from_it(conn, monkeypatch, pointer, changed, origin):
+    """Rounds 103 and 104 pointed to the customer's earlier request by its subject and named only a new destination;
+    the scorer priced the earlier cargo (103 accepted, 104 lost when the model read no weight). The quoted subject's
+    lane is the earlier one, not this request's."""
+
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "80", "area": "City", "airport": "BBB"}])
+    earlier = extract.by_rules(mail("Please quote STR to MEL, 6 pieces, 1841 kg gross, 4.63 cbm, cheapest."), DEADLINE)
+    conn.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (1, 'buyer@example.com', 'quoted', ?)",
+                 (RECEIVED.isoformat(),))  # fmt: skip
+    conn.execute(
+        "INSERT INTO messages (id, session_id, direction, sender, recipient, subject, body, sent_at, data)"
+        " VALUES (1, 1, 'in', 'buyer@example.com', 'us@pixel', 'Air freight quote request: STR to MEL', '', ?, '{}')",
+        (RECEIVED.isoformat(),),
+    )
+    conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES (?, 1, 'rfq.extracted', 'rfq', ?)",
+                 (RECEIVED.isoformat(), earlier.model_dump_json()))  # fmt: skip
+    request = mail(
+        f'Please quote {pointer}, "Air freight quote request: STR to MEL". {changed} The new destination is LAX. '
+        "Please send the cheapest all-in price in EUR."
+    ).model_copy(update={"id": 2, "session_id": 2})
+    rfq = await extract.extract(ctx, request, DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (
+        origin, "LAX", Decimal(1841), Decimal("4.63"), 6
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "The cargo is unchanged, but please ship it from FRA instead of STR.",
+        "The cargo is unchanged. Origin is now FRA.",
+        "Same cargo, but it should now go via FRA.",
+    ],
+)
+async def test_a_new_origin_of_the_same_shipment_never_becomes_its_destination(conn, monkeypatch, changed):
+    async def boom(ctx, **kw):
+        raise AssertionError("model")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "80", "area": "City", "airport": "BBB"}])
+    earlier = extract.by_rules(mail("Please quote STR to MEL, 6 pieces, 1841 kg gross, 4.63 cbm, cheapest."), DEADLINE)
+    conn.execute("INSERT INTO sessions (id, customer, state, received_at) VALUES (1, 'buyer@example.com', 'quoted', ?)",
+                 (RECEIVED.isoformat(),))  # fmt: skip
+    conn.execute("INSERT INTO messages (id, session_id, direction, sender, recipient, subject, body, sent_at, data) VALUES"
+                 " (1, 1, 'in', 'buyer@example.com', 'us@pixel', 'Air freight quote request: STR to MEL', '', ?, '{}')",
+                 (RECEIVED.isoformat(),))  # fmt: skip
+    conn.execute("INSERT INTO events (ts, session_id, kind, actor, payload) VALUES (?, 1, 'rfq.extracted', 'rfq', ?)",
+                 (RECEIVED.isoformat(), earlier.model_dump_json()))  # fmt: skip
+    body = (f'Please quote the same shipment as in my earlier request, "Air freight quote request: STR to MEL". '
+            f"{changed} Please send the cheapest all-in price in EUR.")  # fmt: skip
+    request = mail(body).model_copy(update={"id": 2, "session_id": 2})
+    try:
+        rfq = await extract.extract(ctx, request, DEADLINE)
+    except AssertionError as e:  # the rules leave it to the model, as before
+        assert "model" in str(e)
+        return
+    assert rfq.destination != "FRA"
