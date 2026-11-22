@@ -95,9 +95,9 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                 pending answer while it can change the quote
                 selection.select → compose.render → translate          quote.drafted, quote.checked
                 repair.settle: check the sent text, mend a BLOCK      quote.repaired, option.vetoed
-                unmet.settle (off by default): one model call reads    quote.unmet
-                request and reply, never changes the text; an open ask
-                alerted, price, selection or scope held to the target
+                unmet.settle: one model call reads request and reply,   quote.unmet
+                never changes the text; a price, selection or scope ask
+                alerted and held to the target
                 → outbox.send_quote                                    quote.sent
   recovery      unanswered after 150 s or handler exits                quote.recovery
   fallback      watch stored options for a complete, compliant price              quote.waiting

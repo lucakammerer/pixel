@@ -327,8 +327,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   it listed a `wording` ask on 18 and a held class on 1 (round 127). Reading and holding end by `repair_by`, before the
   orchestrator takes the request over. One call per session (`_asked`), never in the fallback or a requote;
   `settle` never raises: a failed, late or malformed answer is an `error` event and the quote leaves. A call
-  costs 0.002 to 0.0025 USD, about 1 of the 40 cost points of a quote, and about 2 s. `PIXEL_UNMET`: `off` (the
-  default, no call), `log` (read and record, no hold or alert) or `on`; `tools.bench_unmet` scores the prompt on
+  costs 0.0019 USD, about 0.75 of the 40 cost points of a quote, and about 2 s; with the gateway hanging the quote
+  leaves `WAIT_S` later. A held quote is no `stuck` request (`core/watchdog.py` `_held`). `PIXEL_UNMET`: `on` (the
+  default), `log` (read and record, no hold or alert) or `off` (no call); `tools.bench_unmet` scores the prompt on
   `tests/fixtures/unmet-asks.json`.
 
 ## Pitfalls

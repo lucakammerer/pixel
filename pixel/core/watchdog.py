@@ -43,6 +43,17 @@ def step(ctx: Context, session_id: int, kind: str | None) -> str:
     return "pricing" if "option.found" not in seen else "compose"
 
 
+def _held(ctx: Context, session_id: int, now: datetime) -> bool:
+    """The last reader holds this quote for a person and alerted that itself (`unmet.settle`); it leaves at the
+    target without anyone."""
+    row = ctx.db.execute(
+        "SELECT json_extract(payload, '$.hold_until') FROM events WHERE session_id = ? AND kind = 'quote.unmet'"
+        " ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    return bool(row and row[0]) and datetime.fromisoformat(row[0]) > now
+
+
 async def once(ctx: Context) -> int:
     """Alerts every request open longer than STUCK_AFTER that was not alerted yet. Returns how many."""
     now = timing.now()
@@ -56,7 +67,7 @@ async def once(ctx: Context) -> int:
     issues = []
     for row in rows:
         session_id = row["session_id"]
-        if outbox.quoted(ctx, session_id):
+        if outbox.quoted(ctx, session_id) or _held(ctx, session_id, now):
             continue
         age = round((now - datetime.fromisoformat(row["sent_at"])).total_seconds())
         hangs = step(ctx, session_id, row["kind"])

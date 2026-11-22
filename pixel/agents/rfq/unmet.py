@@ -4,7 +4,7 @@ request beside the exact text about to be sent and lists every ask the reply doe
 own sentence and a class. It never changes the reply's text. In `on` an ask of class `price`, `selection` or
 `scope` goes to `PIXEL_ALERT_URL` at once and holds this one quote until `target_at` for a person in the session UI,
 then it leaves as it is. A `wording` ask is only recorded: the reader lists one on most quotes the scorer accepts.
-`PIXEL_UNMET`: `off` (the default: no call), `log` (read and record only) or `on`."""
+`PIXEL_UNMET`: `on` (the default), `log` (read and record only) or `off` (no call)."""
 
 import asyncio
 from datetime import datetime

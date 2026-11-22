@@ -30,3 +30,14 @@ async def test_a_request_open_past_45_seconds_is_alerted_once_with_its_step(conn
     at = RECEIVED + timedelta(seconds=150)
     assert await watchdog.once(ctx) == 0 and len(posted) == 1
     assert conn.execute("SELECT COUNT(*) FROM events WHERE kind = 'quote.stuck'").fetchone()[0] == 1
+
+
+async def test_a_quote_the_last_reader_holds_is_not_stuck_until_its_hold_ends(conn, monkeypatch):
+    ctx = make_ctx(conn)
+    poller.store(ctx, mail("Please quote AAA-BBB, 100 kg.").model_copy(update={"kind": MailKind.CUSTOMER_RFQ}))
+    until = RECEIVED + timedelta(seconds=100)
+    events.emit(ctx, "quote.unmet", "rfq", session_id=7, payload={"hold_until": until.isoformat()})
+    monkeypatch.setattr(timing, "now", lambda: RECEIVED + timedelta(seconds=60))
+    assert await watchdog.once(ctx) == 0  # `unmet.settle` alerted it itself; it leaves at the target
+    monkeypatch.setattr(timing, "now", lambda: until + timedelta(seconds=10))
+    assert await watchdog.once(ctx) == 1
