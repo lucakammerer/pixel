@@ -1,12 +1,12 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal as D
 from pathlib import Path
 
 from pixel.agents.rfq import check
 from pixel.contracts import Preference, Quote, RateOption, Rfq, Source
 from pixel.pricing import calc, engine
-from pixel.pricing.selection import DEFAULT_RULE, RULES, balanced, implausible, select
+from pixel.pricing.selection import DEFAULT_RULE, RULES, balanced, compliant_options, implausible, select
 
 NOW = datetime(2026, 11, 21, 16, tzinfo=UTC)
 
@@ -29,6 +29,19 @@ def test_cheapest_and_fastest():
     options = [opt("A", "500", 5), opt("B", "400", 6), opt("C", "700", 2)]
     assert select(rfq(Preference.CHEAPEST), options).carrier == "B"
     assert select(rfq(Preference.FASTEST), options).carrier == "C"
+
+
+def test_schedule_filters_air_transit_and_delivery_date_with_pickup():
+    request = rfq(Preference.CHEAPEST).model_copy(update={
+        "ready_on": date(2026, 12, 1), "arrive_by": date(2026, 12, 5), "max_transit_days": 3,
+    })
+    slow = opt("Slow", "300", 4)
+    pickup = opt("Pickup", "400", 3).model_copy(update={"trucker": "Truck"})
+    express = opt("Express", "600", 2)
+    assert compliant_options(request, [slow, pickup, express]) == [pickup, express]
+    tightened = request.model_copy(update={"arrive_by": date(2026, 12, 4)})
+    assert compliant_options(tightened, [slow, pickup, express]) == [express]
+    assert select(tightened, [slow, pickup, express]) == express
 
 
 def test_ties_are_decided_by_speed_then_name():

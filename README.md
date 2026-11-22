@@ -64,7 +64,8 @@ During a portal outage, a request with a sheet price can wait until 115 seconds 
 desk reply. If the desk stays silent, PIXEL quotes the best price it has.
 
 If the normal handler ends without a quote, or the request is still unanswered 2 minutes 30 seconds after receipt,
-the orchestrator takes over. It checks stored prices and runs a short second sourcing pass if needed. A door-to-port
+the orchestrator takes over. It checks stored prices and runs a short second sourcing pass if needed. PIXEL can wait
+for a price that meets an explicit airline, arrival or transit requirement. It labels any alternative at the deadline. A door-to-port
 quote includes a trucker price. If only air freight is priced, PIXEL keeps the request open for late
 pickup bids. At the hard deadline it can send the airport-to-airport price with pickup explicitly excluded. If no freight rate
 is available, it replies that it could not obtain one in time. If the

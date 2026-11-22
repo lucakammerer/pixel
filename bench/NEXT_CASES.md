@@ -21,8 +21,8 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `preferred-airline-only` | "We have a framework contract with Vega Skyfreight, so please quote Vega Skyfreight only" | **pass**: Vega 3221.50 | Vega 3221.50 | `extract.required_airlines`, `selection.select`, `bids.request` | — |
 | 2 | `dims-per-piece-mixed` (live bug, not a new kind) | "- 2 pallets, 120 x 80 x 60 cm, 210 kg each" | **pass**: 600 kg, Vega 1920.00 | 600 kg, Vega 1920.00 | — | — |
-| 3 | `latest-arrival-date` | "must arrive in Hong Kong no later than Monday 30 November" | Kestrel 1512.80, arrives 1 Dec | Helix 2132.80, the only one in time | arrival limit in `Rfq` (`contracts.py`, own commit); ready date + transit filter in `selection.select` | M |
-| 4 | `max-transit-days` | "Transit time must not exceed 3 days" | Elbflug 1430.90 (5 d) | Vega 1685.10 (3 d) | same as 3 | with 3 |
+| 3 | `latest-arrival-date` | "must arrive in Hong Kong no later than Monday 30 November" | **pass**: Helix 2132.80 | Helix 2132.80 | `extract.schedule`, `selection.meets_schedule` | — |
+| 4 | `max-transit-days` | "Transit time must not exceed 3 days" | **pass**: Vega 1685.10 (3 d) | Vega 1685.10 (3 d) | `extract.schedule`, `selection.meets_schedule` | — |
 | 5 | `ready-after-tariff-validity` | "ready on 4 December 2026" (sheets valid to 30.11.) | Elbflug 864.00 from the November sheet | no sheet that has expired by the ready date; portal, bid or a valid sheet | `pricing/store.py` `lookup` by ready date | S |
 | 6 | `customer-reference-in-quote` | "Please quote our purchase order reference PO-2026-4471 in your offer" | done | the reference in the quote and PDF | `compose.answers`, `pdf.reference` | S |
 | 7 | `reply-in-other-language` | English mail: "Please reply in German, our shipping office does not read English" | English | German (R37's cousin) | `extract.py` language: an explicit ask wins | S |

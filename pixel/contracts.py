@@ -98,6 +98,9 @@ class Rfq(Model):
     missing: tuple[str, ...] = ()
     excluded_carriers: tuple[str, ...] = ()  # airline names or codes the customer ruled out
     required_carriers: tuple[str, ...] = ()  # the only airlines the customer allows
+    ready_on: date | None = None
+    arrive_by: date | None = None
+    max_transit_days: int | None = None
 
 
 class LaneTariff(Model):

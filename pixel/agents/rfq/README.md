@@ -66,6 +66,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `pricing/selection.py` `select` prefers compliant prices and `pricing/bids.py` `request` limits airline enquiries to
   the requested carriers. If recovery reaches the deadline with only another airline's price, `novelty.py`
   `with_note` identifies that price as an alternative.
+- `extract.py` `schedule` reads explicit ready and latest arrival dates and a maximum air transit in days.
+  `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses `pricing/calc.py`
+  `arrival` for the delivery date including pickup. The fallback waits for a compliant quote until the deadline
+  and `novelty.py` `with_note` identifies the available alternative if it misses the requested timing.
 - `compose.py` `render`: a reply (`Re:` the customer's subject) in English, German or French, written as a clerk writes to
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
