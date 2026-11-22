@@ -17,9 +17,10 @@ import re
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
 
-from pixel.agents.rfq import compose
+from pixel.agents.rfq import compose, extract
 from pixel.agents.rfq.extract import DG_DOCUMENTS, number, own_words, shipments
 from pixel.contracts import Preference, Quote, RateOption, Source
+from pixel.core import pdf
 from pixel.pricing.calc import CBM_KG, insurance_in_currency
 from pixel.pricing.selection import TRUST, allowed, implausible
 
@@ -61,7 +62,7 @@ def run(
         if rule in (_weight, _accounting) and document_weight == quote.rfq.weight_kg:
             continue
         try:
-            kwargs = {"insurance_eur": insurance_eur} if rule in (_arithmetic, _best_price) else {}
+            kwargs = {"insurance_eur": insurance_eur} if rule in (_arithmetic, _best_price, _insured) else {}
             findings.extend(rule(quote, request, list(options), attachments, **kwargs))
         except Exception as exc:  # noqa: BLE001  a broken rule must never cost the quote
             findings.append(Finding(rule.__name__.lstrip("_"), WARN, f"check failed: {type(exc).__name__}: {exc}"))
@@ -156,12 +157,18 @@ def _implausible(q: Quote, request: str, options: list[RateOption], files: tuple
     """The quote holds no bid `selection.implausible` distrusts (round 67: a trucker's waiting charge per hour
     quoted as the pickup, rejected as too low). `engine.combine` leaves such a bid out; this catches a path that
     did not."""
+    return [Finding("implausible_bid", BLOCK, f"{p.trucker or p.carrier} at {p.total_eur} EUR is below {TRUST} times "
+                                              "the cheapest other price of its kind")
+            for p in distrusted(q, options)][:1]  # fmt: skip
+
+
+def distrusted(q: Quote, options: list[RateOption]) -> list[RateOption]:
+    """The session's options the quote is built from (its airline, its trucker) that `selection.implausible`
+    distrusts: what `repair` leaves out."""
     o = q.option
     held = [p for p in options if (o.trucker and p.trucker == o.trucker)
             or (p.trucker is None and (p.source, p.carrier) == (o.source, o.carrier))]  # fmt: skip
-    return [Finding("implausible_bid", BLOCK, f"{p.trucker or p.carrier} at {p.total_eur} EUR is below {TRUST} times "
-                                              "the cheapest other price of its kind")
-            for p in held if implausible(p, allowed(q.rfq, options) or options)][:1]  # fmt: skip
+    return [p for p in held if implausible(p, allowed(q.rfq, options) or options)]
 
 
 def _per_kg(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
@@ -467,6 +474,64 @@ def _language(q: Quote, request: str, options: list[RateOption], files: tuple[st
     return []
 
 
+def _excluded(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """Round 42: an airline the customer ruled out is rejected as excluded_airline. `selection.select` quotes one
+    only when every airline is ruled out (R1); with an allowed airline among the options that is a BLOCK."""
+    r, o = q.rfq, q.option
+    if not r.excluded_carriers or allowed(r, [o]):
+        return []
+    others = [
+        a for a in allowed(r, options) if a.trucker is None and (a.origin, a.destination) == (r.origin, r.destination)
+    ]
+    level = BLOCK if others else WARN
+    return [Finding("excluded_carrier", level, f"{o.carrier} is ruled out by the customer"
+                                               + (f"; {others[0].carrier} is allowed" if others else "; no other airline"))]  # fmt: skip
+
+
+def _insured(
+    q: Quote, request: str, options: list[RateOption], files: tuple[str, ...], *, insurance_eur: Decimal
+) -> list[Finding]:
+    """Round 91: a request that states its insurance terms is scored with the premium in the all-in (too_low)."""
+    if insurance_eur > 0 or not extract.insurance(own_words(request)):
+        return []
+    return [Finding("insurance_missing", BLOCK, "the request states insurance terms, the all-in holds no premium")]
+
+
+def _language_sent(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """Rounds 70 and 72 (wrong_language): read the language of the customer's own words and of the finished mail,
+    after any translation, independently of `rfq.language`. A script the mail does not share (Chinese answered in
+    English) blocks; for Latin scripts only a clear lead of the request's common words over every other language."""
+    said = own_words(request)
+    if extract.ASKED_LANGUAGE.search(extract._unsigned(said)):
+        return []  # "please answer in English": the language they ask for, which `extract._language` reads
+    body = ours(q.body)
+    asked, wrote = extract._script(said), extract._script(body)
+    if asked and asked != wrote:
+        return [Finding("language_sent", BLOCK, f"the customer writes {asked}, the mail is not in that script")]
+    if asked or wrote:
+        return []
+    counts = extract.words_of(extract._unsigned(said))
+    lang = max(counts, key=counts.get)
+    second = max((n for other, n in counts.items() if other != lang), default=0)
+    if counts[lang] < 6 or counts[lang] < second * 3:
+        return []
+    ours_counts = compose._words_lang(body)
+    reads = max(ours_counts, key=ours_counts.get)
+    if reads != lang and ours_counts[reads] >= 8 and ours_counts[reads] > ours_counts.get(lang, 0) * 2:
+        return [Finding("language_sent", BLOCK, f"the customer writes {lang}, the mail reads {reads}")]
+    return []
+
+
+def _offer_pdf(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+    """Rounds 76 and 78 (no_pdf_offer): the PDF `outbox.send_quote` attaches must be whole and hold the total."""
+    data = pdf.offer(q)
+    if not data.startswith(b"%PDF") or not data.rstrip().endswith(b"%%EOF"):
+        return [Finding("offer_pdf", BLOCK, "the offer PDF is not a whole PDF file")]
+    if compose.money(q.total).encode() not in data:
+        return [Finding("offer_pdf", BLOCK, f"the offer PDF does not hold the total {compose.money(q.total)}")]
+    return []
+
+
 def _validity(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
     until = q.option.valid_until
     if until is not None and until <= q.created_at:
@@ -481,4 +546,4 @@ def _pct(value: Decimal, best: Decimal) -> str:
 
 
 RULES = (_required, _lane, _arithmetic, _chargeable, _pickup, _best_price, _implausible, _per_kg, _weight, _accounting,
-         _dangerous, _text, _language, _validity)  # fmt: skip
+         _dangerous, _text, _language, _validity, _excluded, _insured, _language_sent, _offer_pdf)  # fmt: skip

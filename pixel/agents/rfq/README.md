@@ -182,16 +182,32 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   figures gives (`_accounting`: kg, lb and t converted, net, limits, a truck's or pallet's capacity and an earlier shipment left out, per-piece figures times their
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
   (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
-  a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67).
+  a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67), an airline the customer ruled out
+  while another is allowed (`_excluded`, round 42), insurance terms stated but no premium in the all-in (`_insured`,
+  round 91), a mail not in the customer's script or clearly not in their language, read from their own words and not
+  from `rfq.language` (`_language_sent`, rounds 70 and 72; on the draft only once it is no longer to be translated),
+  an offer PDF that is not whole or lacks the total (`_offer_pdf`, rounds 76 and 78).
   When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
   `compose.insured` confirms coverage in the mail alongside the single all-in amount.
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.
   WARN: a total more than 5% from the cheapest the session had (round 16), DG words the RFQ did not mark, an
-  implausible price per kg, the language, an expired rate. The check never holds or changes a quote; every result
+  implausible price per kg, the language, an expired rate. The check itself never changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
+- `repair.py`: verify, repair, check again, inside the round. `agent._settled` drafts, translates and hands the
+  quote to `settle`, which runs the check on the text that leaves (`quote.checked`, `stage: "sent"`). For a BLOCK
+  with an entry in `REPAIRS` it builds the quote again with one thing changed: the distrusted bid or the ruled-out
+  airline left out (`option.vetoed`; `pricing/session.py` `options` no longer offers it, so the deadline fallback
+  inherits it), the customer's language read again from their own words (a new `rfq.extracted`), the fixed phrases
+  instead of model-written slots, the dangerous-goods note put back after a translation. The new quote is kept only
+  when its check blocks on fewer rules and on none the old one passed (`_better`); each attempt is a
+  `quote.repaired` event. No model call of its own (a language without our text uses the checked translation),
+  at most `MAX_STEPS` repairs, none past `agent._repair_by` (15 s before the orchestrator takes over) or
+  `FALLBACK_REPAIR_S` in the fallback; a repair that raises keeps the quote as it was. `PIXEL_REPAIR`: `on`,
+  `detect` (the check on the sent text, no change) or `off`. A BLOCK without a repair (pickup missing, a weight the
+  mail does not explain, insurance whose premium cannot be priced) still goes out as it is and alerts a person.
 - `novelty.py` (R33): a requirement no rule reads yet, caught in the round it first appears. `leftover` keeps the
   sentences of the mail and its documents that none of the extractors' patterns (`CONSUMED`), no airline ruled out by
   name and more than the frame of a request (`FRAME_WORDS`) account for; the subject, the signature and lines of names

@@ -41,7 +41,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   call to `PIXEL_ALERT_URL` when something needs repair); `watchdog.py` (a request still without our quote 90 s
   after it was stored, alerted once with the step it hangs in)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
-  `extract.py`, `compose.py`, `booking.py`), `tracking`, `tariffs`
+  `extract.py`, `compose.py`, `booking.py`, `check.py` and `repair.py`: the check before sending and the repair of what
+  it blocks), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`,
   `bids.py`, `pickup.py`, `engine.py`
 - `pixel/crm/`: quotes, bookings, shipments, customers, carriers; `pixel/ui/`: start page at `/` (`home.py`, with
