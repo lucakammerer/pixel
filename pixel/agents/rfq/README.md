@@ -96,6 +96,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   stated it only so in the body); `ARRIVE_BY_LAST` reads "muss ... spätestens <date>" only with "eintreffen",
   "ankommen" or "am Zielflughafen" after the date, so "muss spätestens am 25.11. abgeholt werden" (a pickup deadline)
   sets no limit, and "Ihr Angebot muss spätestens ..." stays a reply deadline.
+- Limits come in other words too: "must be delivered by", "have to be in Toronto no later than", "ETA no later than",
+  "required delivery date", "transit time: max 4 days", "no more than 4 days in transit", "can be collected from".
+  A ready date also as "cargo ready date:", "ready to go on", "available for collection as of", "pick-up possible
+  from", "earliest collection:", "Abholung frühestens am", "ist ab dem ... abholbereit", and with ordinals ("Nov 28th",
+  "the 28th of November"). It picks the sheet version as well as the arrival, so a missed one can price an old
+  tariff.
+  Only the goods, the shipment or "it" set an arrival limit ("will be delivered to FRA by" is our pickup side, "the
+  offer has to be in our system by" a reply deadline). `novelty.leftover` splits sentences at ";" and ", and" so a
+  read limit does not hide an unread requirement in the same sentence.
 - `pricing/engine.py` `expired_sheet_options`: when the cargo is ready after its sheets run out and nothing else has a
   price (no portal rate, no bid, no sheet valid on the ready day), `engine.options` and `agent.py` `fallback` quote
   today's sheet rather than no answer (R1). It is logged only then, so it never counts its airline as priced before
