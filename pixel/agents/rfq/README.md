@@ -210,6 +210,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   feet, litres, dimensions times the pieces on their line, sums; round 79's 95 cubic feet priced as 95 cbm; only a
   WARN when the request has attachments, which may govern).
   When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
+  A share or rate may be written "%", "percent", "per cent", "pct", "Prozent" or per mille ("‰", "Promille").
   `compose.insured` confirms coverage in the mail alongside the single all-in amount.
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's

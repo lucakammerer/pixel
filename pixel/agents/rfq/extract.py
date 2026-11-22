@@ -294,7 +294,7 @@ NO_INSURANCE = re.compile(
     r"(?i)\bno\s+(?:cargo\s+)?insurance|insurance\s+(?:is\s+)?not\s+(?:needed|required|wanted)|own\s+(?:insurance\s+)?policy"
     r"|keine\s+(?:transport)?versicherung|ohne\s+(?:transport)?versicherung"
 )
-PERCENT = re.compile(rf"{NUM}\s*(%|‰|(?i:per\s*mille|promille|prozent|percent))")
+PERCENT = re.compile(rf"{NUM}\s*(%|‰|(?i:per\s*mille|promille|prozent|per\s*cent|pct\b))")
 MONEY = re.compile(rf"(?i:(EUR|USD|GBP|CHF|€|\$)\s*{NUM}(k\b)?|{NUM}(k\b)?\s*(EUR|USD|GBP|CHF|€|\$))")
 MINIMUM = re.compile(r"(?i)(?:minimum|mindest|min\.)\D{0,25}$")
 UPLIFT = re.compile(r"(?i)(?:plus|\+|zuzüglich|zzgl\.?)\s*$")
@@ -310,7 +310,7 @@ def insurance(text: str) -> tuple[Decimal, str, Decimal, Decimal, Decimal] | Non
         value = number(m.group(1))
         if value is None:
             continue
-        if m.group(2) not in ("%",) and not m.group(2).lower().startswith(("prozent", "percent")):
+        if m.group(2) == "‰" or "mille" in m.group(2).lower():
             value /= 10
         before = text[max(0, m.start() - 40) : m.start()]
         if UPLIFT.search(before):
