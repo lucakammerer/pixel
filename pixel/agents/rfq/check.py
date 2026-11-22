@@ -546,6 +546,11 @@ def _text(q: Quote, request: str, options: list[RateOption], files: tuple[str, .
     if q.currency not in q.body:
         found.append(Finding("text_total", BLOCK, f"the currency {q.currency} is not in the mail"))
     others = [min(r) for r in amounts(body) if q.total not in r and r != {Decimal(0)}]
+    if others and len(parts := shipments(q.rfq, own_words(request))) > 1:
+        # Round 125: each further shipment's price, then their sum when every one has a price (`compose.shipments`).
+        prices, rest = others[: len(parts) - 1], others[len(parts) - 1 :]
+        if not rest or rest == [q.total + sum(prices)]:
+            others = []
     if others:
         found.append(
             Finding("text_amounts", BLOCK, f"other amounts with a currency in the mail: {others}, the quote is {total}")
