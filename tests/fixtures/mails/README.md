@@ -34,6 +34,9 @@ Captured carrier answers, each to a request in the wording of `pixel/pricing/bid
   portal's rate per airline on the lane with its rate id and validity, and the address of an airline that is not on
   the portal.
 
+`synthetic-novel-requirement.json` is `rfq-port-to-port.json` with two requirements no rule reads: only one airline,
+at JFK by a date, and the customs documents named (`tests/test_novelty.py`).
+
 Captured mails of a request, from the request to the confirmed booking:
 
 - `rfq-door-no-origin.json`: the first scored request. Door-to-port, fastest, a currency asked for; it names the

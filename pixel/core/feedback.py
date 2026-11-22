@@ -203,7 +203,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
     since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
     rows = conn.execute(
         "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
-        " ('quote.missed', 'quote.stuck', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'option.failed')"
+        " ('quote.missed', 'quote.stuck', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'option.failed',"
+        " 'rfq.novelty')"
         " ORDER BY id DESC",
         (since,)
     ).fetchall()  # fmt: skip
@@ -228,6 +229,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "quote_doubtful"
         elif row["kind"] == "option.failed" and p.get("error") == "implausible":
             issue = "bid_distrusted"
+        elif row["kind"] == "rfq.novelty" and any((p.get("mapped") or {}).values()):
+            issue = "novel_requirement"  # already posted by `novelty.check` the moment it was read
         if issue:
             issues.append({"issue": issue, "event": row["id"], "at": row["ts"][:19], "session": row["session_id"],
                            "detail": p})  # fmt: skip

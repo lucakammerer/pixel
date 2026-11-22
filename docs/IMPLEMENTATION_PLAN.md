@@ -84,6 +84,7 @@ poller        GET /v1/mailbox/messages?since_id=…  every second, the safety ne
 router        rules on sender, thread, attachments; model only if unsure   route
 orchestrator  customer_rfq → session row + a task with a deadline (target 100 s, hard 315 s, expiry 360 s)
   rfq agent     read customer mail and attachment facts                 rfq.extracted
+                novelty: sentences no rule read → one model call, alert  rfq.novelty
                 pricing.engine.options:
                   sheets   publish local prices                         option.found
                   portal   actual weight, then the next break           option.found

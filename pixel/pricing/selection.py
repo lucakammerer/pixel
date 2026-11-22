@@ -3,10 +3,12 @@
 Ties: cheaper (in EUR) first, then faster, then the carrier name, so the same options always give the same quote.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from datetime import date
 from decimal import Decimal
 
 from pixel.contracts import Preference, RateOption, Rfq, Source
+from pixel.pricing import calc
 
 HALF = Decimal("0.5")
 TRUST = Decimal("0.25")  # docs/calc.md, when a bid is not trusted
@@ -71,6 +73,23 @@ def allowed(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
     """The options whose airline the customer did not rule out, by name or code (round 42: excluded_airline)."""
     out = {c.casefold() for c in rfq.excluded_carriers}
     return [o for o in options if o.carrier.casefold() not in out and (o.carrier_code or "").casefold() not in out]
+
+
+def required(
+    options: list[RateOption], only: Iterable[str] = (), arrive_by: date | None = None, ready: date | None = None
+) -> list[RateOption]:
+    """The options that meet what the customer requires beyond the price (`agents/rfq/novelty.py`): only the
+    airlines they name, arriving by their date. When none does, all stay: an answer still beats none (R1)."""
+    names = {n.casefold() for n in only}
+
+    def named(o: RateOption) -> bool:
+        carrier = o.carrier.casefold()
+        return any(n in carrier or carrier in n or n == (o.carrier_code or "").casefold() for n in names)
+
+    kept = [o for o in options if not names or named(o)]
+    if arrive_by and ready:
+        kept = [o for o in kept if calc.arrival(o, ready) <= arrive_by]
+    return kept or options
 
 
 def select(rfq: Rfq, options: list[RateOption]) -> RateOption:
