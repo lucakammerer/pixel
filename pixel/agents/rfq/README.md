@@ -124,7 +124,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   older facts is held as `superseded`, also when the change came before our first quote. Round 86: the scorer scored
   our answer to the change mail, not the first quote.
 - `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
-  the selected billed weight. A 503 or an option without a rate id goes to the airline by mail. The carrier
+  the selected billed weight, and so is a rate id the bookings API does not know (404, a desk or browser-page id)
+  or one taken (409). A 503, an option without a rate id, or an expired rate while the rate API is down or capped
+  (no fresh rate: 503, 429) goes to the airline by mail; a rate message's desk address is never booked with. The carrier
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
