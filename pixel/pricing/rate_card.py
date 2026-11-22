@@ -10,7 +10,7 @@ its page and the desk were all silent."""
 import asyncio
 import json
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 import httpx
@@ -204,19 +204,21 @@ async def _read(ctx: Context, item: tuple[str, str, str, str, Decimal]) -> None:
 
 
 async def run(ctx: Context) -> None:
-    """Forever: in quiet time, the minute's rate reads but RESERVE (one a minute until a read names the limit)."""
-    recent: list[datetime] = []
+    """Forever: in quiet time, the minute's rate reads but RESERVE (one a minute until a read names the limit). The
+    portal counts reads per clock minute: counted over the last 60 seconds, ten fell into 05:21 and the eleventh got 429."""
+    minute, used = None, 0
     while True:
         await asyncio.sleep(PACE_S)
         now = timing.now()
-        recent = [t for t in recent if now - t < timedelta(seconds=60)]
+        if now.replace(second=0, microsecond=0) != minute:
+            minute, used = now.replace(second=0, microsecond=0), 0
         budget = max(1, ctx.portal.rate_limit - RESERVE) if ctx.portal.rate_limit else 1
-        if len(recent) >= budget or not _quiet(ctx):
+        if used >= budget or not _quiet(ctx):
             continue
         try:
             todo = await _todo(ctx)
             if todo:
-                recent.append(now)
+                used += 1
                 await _read(ctx, todo[0])
         except (NotOnPortal, RateLimited, ApiError, httpx.HTTPError, ValueError, KeyError) as exc:
             events.emit(ctx, "rate_card.paused", "pricing", payload={"error": type(exc).__name__})
