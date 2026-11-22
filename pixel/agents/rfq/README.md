@@ -281,9 +281,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
   to the model. Outlook's header without an address ends the customer's words too (`HISTORY`, `SENT`), but only by
   what a quoted header alone has: "From:"/"Von:" within a few lines of a "Sent:"/"Gesendet:" with a year or a time,
-  or a rule over "Subject:"/"Betreff:" or such a "Sent:". Without it our own quote below a thank-you ("we will book
-  it for you") read as an acceptance; any field after a rule, or "Datum:" after "Von:", would cut a request laid out
-  as "From: FRA / To: ORD" (#186).
+  or a rule over such a "Sent:". Without it our own quote below a thank-you ("we will book it for you") read as an
+  acceptance; any field after a rule, or "Datum:" after "Von:", would cut a request laid out as "From: FRA / To: ORD"
+  (#186).
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
