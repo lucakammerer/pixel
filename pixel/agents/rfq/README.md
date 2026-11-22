@@ -307,7 +307,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   before another unit (`_only_with`) is replaced by code's reading, so the cross-check never takes 95 cbm. The same
   holds for litres ("3360 litres" is 3.36 cbm, `LITRE`; a bare "l" is left alone, "5 l canisters" names goods).
   `tools/simulate.py` writes every mail in lb, pounds, kgs, kilos, kilograms, cubic feet, ft³, cu ft, litres and
-  dimensions in metres; with two lots these units still go to the model (`_lots` reads kg and cbm only).
+  dimensions in metres, in one lot and in two; `_lots` converts each lot's unit the same way (`_per_kg`,
+  `_per_cbm`), and "1.234 t" is 1234 kg there too.
 - The rules can read the wrong line of an answer with confidence (round 67: the waiting-time rate, 45.00 EUR, for a
   181.96 EUR offer, in a trucker's attached layout). The rules now refuse a fuel, security or waiting rate as the
   price (`_price`). Truckers bring new layouts as a pdf, docx or voice message (rounds 63 to 65), so an offer that

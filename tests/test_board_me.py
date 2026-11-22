@@ -4,8 +4,8 @@ from tools import board_me
 
 RUNS = """# Runs
 
-| Round | Sent | Answered | Seconds | Verdict | Reason | Teams | Factor | Accuracy | Cost | Time | Bonus | Total | Booked | Commit | Note |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Round | Sent | Answered | Seconds | Verdict | Reason | Accuracy | Cost | Time | Bonus | Total | Booked | Commit | Note |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## Changes we noticed
 """
@@ -70,20 +70,3 @@ async def test_live_round_number_and_elapsed_time_are_recorded(pipe, runs):
     assert await board_me.run(pipe.ctx, runs) == 1
     saved = board_me._stored(pipe.ctx)["7"]
     assert saved["seconds"] == 45.25 and saved["points"] == {"accuracy": 0} and saved["booked"] is None
-
-
-async def test_rare_rounds_are_counted_once(pipe, runs):
-    board = Board([row(1), row(2, "rejected"), row(3)])
-    rounds = [{"round_no": n, "status": "closed", "accepted": a, "factor": f} for n, a, f in ((1, 2, "3"), (2, 1, None), (3, 9, None))]  # fmt: skip
-
-    async def public():
-        return {"rules": {"few_winners": {"factors": ["5", "3", "2"]}}, "rounds": rounds}
-
-    board.public = public
-    pipe.ctx.board = board
-    await board_me.run(pipe.ctx, runs)
-    await board_me.run(pipe.ctx, runs)
-    text = runs.read_text()
-    assert text.count(f"{board_me.RARE} 1 / 2, 60 points.\n\n| Round") == 1
-    (line,) = [x for x in text.splitlines() if x.startswith("| 1 |")]
-    assert "| 2 | 3 |" in line
