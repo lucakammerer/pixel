@@ -11,20 +11,17 @@ The repairs are code and make no model call of their own: an option the check di
 is left out and the quote selected again (`option.vetoed`, which `pricing/session.py` honours, so the deadline
 fallback inherits it); a mail in the wrong language is rendered in the customer's (our own text, else the checked
 translation of `compose.translate`); a garbled total or leftover is rendered with the fixed phrases; a
-dangerous-goods note a translation dropped is put back. Each attempt is a `quote.repaired` event; the final check
+dangerous-goods note a translation dropped is put back; lots added up wrong are priced again at their sum. Each attempt is a `quote.repaired` event; the final check
 is a `quote.checked` event with `stage: "sent"`. `PIXEL_REPAIR`: `on` (default), `detect` (check the text that
 leaves, change nothing), `off`.
 """
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
-from decimal import Decimal
 
-from pixel import llm
 from pixel.agents.rfq import check, compose, dangerous, extract
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import events, feedback, timing
@@ -58,7 +55,6 @@ class Tools:
     build: Build
     by: datetime | None
     reprice: Reprice | None = None
-    rule: str = ""  # the BLOCK being repaired
 
 
 async def settle(
@@ -89,7 +85,7 @@ async def settle(
             break
         tried.add(rule)
         try:
-            candidate = await REPAIRS[rule](ctx, quote, draft, Tools(build, by, reprice, rule))
+            candidate = await REPAIRS[rule](ctx, quote, draft, Tools(build, by, reprice))
             if candidate is None:
                 continue
             new_quote, new_draft = candidate
@@ -236,101 +232,15 @@ async def _dg_note(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Re
     return quote.model_copy(update={"body": body}), draft
 
 
-CRITIC_WAIT_S = 6.0  # gpt-4.1 answers in about 1.5 s
-CRITIC_SYSTEM = (
-    "An air freight customer's request. Code read the shipment's total gross {field} in more than one way. Pick from "
-    "the list the one value that is the whole shipment's gross {field} as the customer states it, and copy the exact "
-    "words of the request it comes from. null when no value in the list is."
-)
-CRITIC_SCHEMA = {
-    "type": "object",
-    "properties": {"value": {"type": ["number", "null"]}, "quote": {"type": "string"}},
-    "required": ["value", "quote"],
-    "additionalProperties": False,
-}
-FIELDS = {"weight": "weight_kg", "weight_unexplained": "weight_kg", "volume_unexplained": "volume_cbm"}
-
-
-def _readings(field: str, text: str, pieces: int | None) -> set[Decimal]:
-    return check.weight_readings(text) if field == "weight_kg" else check.volume_readings(text, pieces)
-
-
-def _near(a: Decimal, b: Decimal) -> bool:
-    return abs(a - b) <= max(Decimal("0.01"), abs(b) * Decimal("0.005"))
-
-
-def _distinct(values: set[Decimal]) -> list[Decimal]:
-    out: list[Decimal] = []
-    for v in sorted(values):
-        if v > 0 and not any(_near(v, o) for o in out):
-            out.append(v)
-    return out
-
-
-def _flat(text: str) -> str:
-    return " ".join(text.split()).casefold()
-
-
-async def critic(
-    ctx: Context, rfq: Rfq, field: str, text: str, candidates: list[Decimal], by: datetime | None
-) -> Decimal | None:
-    """One small model call that picks among the readings code made, never a figure of its own. Its answer counts
-    only when the words it quotes stand in the request, those words alone give that reading, and the reading is one
-    of `candidates`: two independent readers agree. None on any doubt, failure or lack of time."""
-    wait = min(CRITIC_WAIT_S, _time_left(by))
-    if wait <= 1 or len(candidates) < 2:
-        return None
-    unit = "kg" if field == "weight_kg" else "cbm"
-    listed = ", ".join(f"{c.normalize():f} {unit}" for c in candidates)
-    try:
-        result = await asyncio.wait_for(
-            llm.ask_json(ctx, purpose="rfq.critic", system=CRITIC_SYSTEM.format(field=unit.replace("cbm", "volume")),
-                         user=f"{text[:2500]}\n\nReadings: {listed}", schema=CRITIC_SCHEMA,
-                         session_id=rfq.session_id, max_output_tokens=80, model=ctx.settings.model_check or None),
-            wait,
-        )  # fmt: skip
-        value, said = result.data.get("value"), str(result.data.get("quote") or "")
-        picked = Decimal(str(value)) if value is not None else None
-    except Exception as exc:  # noqa: BLE001  no answer: the quote stays as it was
-        events.emit(ctx, "error", "rfq", session_id=rfq.session_id,
-                    payload={"where": "repair:critic", "error": type(exc).__name__})  # fmt: skip
-        return None
-    grounded = (
-        picked is not None
-        and len(said.strip()) >= 3
-        and _flat(said) in _flat(text)
-        and any(_near(picked, c) for c in candidates)
-        and any(_near(picked, r) for r in _readings(field, said, rfq.pieces))
-    )
-    events.emit(ctx, "rfq.critic", "rfq", session_id=rfq.session_id,
-                payload={"field": field, "candidates": [str(c) for c in candidates], "value": str(picked),
-                         "quote": said[:200], "taken": grounded})  # fmt: skip
-    if not grounded:
-        return None
-    return next(c for c in candidates if _near(picked, c))
-
-
 async def _reading(ctx: Context, quote: Quote, draft: Draft, tools: Tools) -> Repaired:
-    """`weight`, `weight_unexplained`, `volume_unexplained`: the figure the customer's own words give, when code reads
-    exactly one (the lots added up, a single reading), else the one `critic` picks from code's readings; the request
-    is priced again at it (sheets and the portal; airline prices for the old chargeable weight are left out, the
-    pickup stays) and the quote built again. Nothing without a way to price again."""
-    if tools.reprice is None:
+    """`weight`: the lots of the customer's own words added up (round 9); the request is priced again at their sum
+    (sheets and the portal; airline prices for the old chargeable weight are left out, the pickup stays) and the
+    quote built again. Nothing without a way to price again."""
+    r = draft.rfq
+    lots = check.lot_weight(extract.own_words(request(ctx, r)[0]))
+    if tools.reprice is None or lots is None:
         return None
-    rule = tools.rule
-    field, r = FIELDS[rule], draft.rfq
-    text = extract.own_words(request(ctx, r)[0])
-    if rule == "weight" and (lots := check.lot_weight(text)) is not None:
-        value = lots
-    else:
-        candidates = _distinct(_readings(field, text, r.pieces))
-        if len(candidates) == 1:
-            value = candidates[0]
-        else:
-            value = await critic(ctx, r, field, text, candidates, tools.by)
-    if value is None or _near(value, getattr(r, field)):
-        return None
-    new_rfq = r.model_copy(update={field: value})
+    new_rfq = r.model_copy(update={"weight_kg": lots})
     options = await tools.reprice(new_rfq)
     if not options:
         return None
@@ -349,10 +259,7 @@ REPAIRS: dict[str, Callable[..., Awaitable[Repaired]]] = {
     "lane": _off_lane,
     "language_sent": _language,
     "text_total": _plain,
-    "text_amounts": _plain,
     "text_leftover": _plain,
     "dangerous_goods": _dg_note,
     "weight": _reading,
-    "weight_unexplained": _reading,
-    "volume_unexplained": _reading,
 }
