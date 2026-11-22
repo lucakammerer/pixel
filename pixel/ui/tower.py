@@ -87,7 +87,7 @@ function drawLand(){lctx.setTransform(DPR,0,0,DPR,0,0);lctx.clearRect(0,0,W,H);
   const s=sun(),sd=Math.sin(s.dec*rad),cd=Math.cos(s.dec*rad),r=Math.max(.9,S*.29);
   for(const [lat,lon] of DOTS){const [x,y]=proj(lat,lon);if(x<-4||x>W+4)continue;
     const cz=Math.sin(lat*rad)*sd+Math.cos(lat*rad)*cd*Math.cos((lon-s.lon)*rad),day=Math.min(1,Math.max(0,(cz+.08)/.22));
-    const heat=Math.max(0,1-Math.hypot(lat-50.5,(lon-9.5)*.65)/11),north=Math.min(1,Math.max(0,(80-lat)/18)),a=(.13+.21*day+.4*heat)*north*north;
+    const heat=Math.max(0,1-Math.hypot(lat-50.5,(lon-9.5)*.65)/11),north=Math.min(1,Math.max(0,(82-lat)/10)),a=(.13+.21*day+.4*heat)*north;
     lctx.fillStyle=`rgba(${Math.round(230+25*heat)},${Math.round(218-110*heat)},${Math.round(206-150*heat)},${a.toFixed(3)})`;
     lctx.beginPath();lctx.arc(x,y,r,0,7);lctx.fill();}}
 const flights=[],rings=[];let quoting=null,selected=null;
