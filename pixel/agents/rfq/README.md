@@ -93,7 +93,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   weight quoted back, or a signature's postcode). A `followup.read` event records each. `booking.py` `handle_reply`
   acts on it: a change, or a plain ask for an updated offer, in phase `open`, `quoted` or `declined` is priced again
   on the session's newest reading (`session.rfq`) with the changes applied; a change wins over an acceptance ("book
-  it, but it is 320 kg now"); a change after the acceptance goes to a person with what changed; a tracking question
+  it, but it is 320 kg now"), cargo restated at the chargeable weight we priced is none (`followup.py` `_priced`); a change after the acceptance goes to a person with what changed; a tracking question
   after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
 - `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
   from the best the session holds, R1), and sends a quote with its PDF in reply to the change mail

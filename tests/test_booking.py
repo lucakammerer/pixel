@@ -422,6 +422,14 @@ async def test_an_acceptance_written_below_the_quoted_mail_books(pipe):
     assert pipe.ctx.portal.calls, kinds(pipe.ctx)
 
 
+async def test_an_acceptance_that_restates_the_cargo_at_the_priced_weight_books(pipe):
+    body = "Go ahead and book it, gross weight 150 kg and 0.4 cbm as sent."
+    quotes.save(pipe.ctx, quote(1))
+    pipe.ctx.portal = Portal(None)
+    await booking.handle_reply(pipe.ctx, mail(23, 1, subject="Re: Your quote", body=body))
+    assert pipe.ctx.portal.calls and [s["purpose"] for s in pipe.sent] != ["quote"], kinds(pipe.ctx)
+
+
 async def test_a_decline_word_after_the_booking_keeps_the_quote_accepted(pipe, accepted):
     pipe.ctx.portal = Portal(None)
     await booking.handle_reply(pipe.ctx, accepted)
