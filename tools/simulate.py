@@ -818,7 +818,8 @@ def swayed_bids(step: int = 13) -> list[str]:
         db.init(conn)
         ctx = Context(settings(), conn, None, None, None, None)
         store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
-        ask_json, wrong, i = llm.ask_json, [], 0
+        ask_json, transcribe, wrong, i = llm.ask_json, tariffs._transcribe, [], 0
+        tariffs._transcribe = lambda content: content.decode().splitlines()  # `_spoken_file`: the transcript itself
         try:
             for case in (c for c in bid_cases(step=step) if c.files):
                 text = "\n".join([case.body, *(line for n, c in case.files for line in tariffs._lines(n, c))])
@@ -848,7 +849,7 @@ def swayed_bids(step: int = 13) -> list[str]:
                     if len(found) == 1 and found[0].total != want:
                         wrong.append(f"{case.axes}: {found[0].total} for {want} ({other} said)")
         finally:
-            llm.ask_json = ask_json
+            llm.ask_json, tariffs._transcribe = ask_json, transcribe
         return wrong
 
     return asyncio.run(go())
