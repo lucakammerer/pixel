@@ -17,7 +17,6 @@ from pixel.contracts import Event, MailKind, QuoteStatus, Rfq
 from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
-from pixel.pricing import engine
 from pixel.ui import names, operator
 from pixel.ui.page import (
     clock,
@@ -462,7 +461,7 @@ def _sourcing(ctx: Context, sid: int, rfq: Rfq | None, evs: list[Event], deadlin
             '<button class=btn name=action value=portal>Find sheet and portal rates</button>'
             '<button class=btn name=action value=bids>Request carrier bids</button>'
             + ('<button class=btn name=action value=desk>Ask the rate desk</button>'
-               if engine._ask_desk(ctx, rfq) else "")
+               if operator.desk_open(ctx, rfq) else "")
             + f'<button class="btn{" " if priced else " primary"}" name=action value=draft>'
               f'{"Rebuild" if priced else "Prepare"} quote draft</button></form>'
             '<p class=muted>Rate lookups leave the mailbox untouched. Bid requests email eligible airlines and '

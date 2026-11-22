@@ -93,9 +93,14 @@ def _record(ctx: Context, sid: int, rfq: Rfq | None, mail, deadline: Deadline, f
     return "Shipment details saved. Find sheet and portal rates next."
 
 
+def desk_open(ctx: Context, rfq: Rfq) -> bool:
+    """The rate desk may be asked: a rate read answered 503 and this lane has no enquiry yet."""
+    return engine._portal_down(ctx, rfq) and engine._desk_enquiry(ctx, rfq) is None
+
+
 async def _request_bids(ctx: Context, rfq: Rfq, *, desk: bool = False) -> str:
     if desk:
-        if not engine._ask_desk(ctx, rfq):
+        if not desk_open(ctx, rfq):
             raise ValueError("Ask the rate desk after the portal returns 503, once for this lane.")
         carriers, truckers = [("Rate desk", RATEDESK)], []
     else:
