@@ -94,11 +94,12 @@ async def test_carriers_can_still_price_an_unavailable_portal(ctx, monkeypatch, 
         await asyncio.Event().wait()
 
     async def send_requests(context, request, candidates):
-        assert len(candidates) == 2
+        # The desk joins the two airlines: a portal that cannot even list its lanes is an outage (rounds 120, 123).
+        assert [name for name, _ in candidates if name != "Rate desk"] == ["one", "two"]
         asked.set()
         return [11, 12]
 
-    async def collect(*args):
+    async def collect(*args, **kwargs):
         return [bids.parse(mail("air@x", "All-in EUR 500. Transit 3 days."), rfq())]
 
     monkeypatch.setattr(ctx.portal, "lanes", lanes)
