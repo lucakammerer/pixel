@@ -6,7 +6,7 @@ uv run python -m tools.checklist currency-usd -v     # one case, with the reply
 Each case is replayed as `tools.kpi` does it, on the start kit with no model. The first mail to the customer that
 holds a price or declines is the reply the scorer reads (a question is not scored: rounds 103, 131, 132). It is held
 against the case's `expected`: a price at all, the currency, one total per option, words it must or must not hold,
-the greeting, the language. `body_states` is prose and stays for a person (`-v` prints the reply). A case the
+the greeting, the language, and with `pdf` an attached PDF that holds every expected total (5). `body_states` is prose and stays for a person (`-v` prints the reply). A case the
 rules give up on offline is `model`: live the model reads it, offline nothing does.
 """
 
@@ -21,6 +21,18 @@ from tools import kpi, replay
 ROOT = Path(__file__).parent.parent
 CASES = ROOT / "tests" / "fixtures" / "next-cases.json"
 SCORED = ("quote", "fallback_quote", "no_price")
+PDFS: dict[str, bytes] = {}  # body -> the PDF sent with it
+
+
+class _Mailbox(replay.OfflineMailbox):
+    async def send(self, to, subject, body, in_reply_to=None, attachments=()):
+        for name, _, data in attachments:
+            if name.endswith(".pdf"):
+                PDFS[body] = data
+        return await super().send(to, subject, body, in_reply_to, attachments)
+
+
+replay.OfflineMailbox = _Mailbox
 
 
 def reply(evs: list) -> dict | None:
@@ -42,6 +54,16 @@ def judge(expected: dict, sent: dict | None) -> list[str]:
         failed.append(f"one_of_{len(options)}: {len(check.amounts(check.ours(body)))} amounts")
     failed += [f"missing '{w}'" for w in expected.get("body_contains", []) if w not in body]
     failed += [f"holds '{w}'" for w in expected.get("body_lacks", []) if w.lower() in body.lower()]
+    if (count := expected.get("amounts")) and len(check.amounts(check.ours(body))) != count:
+        failed.append(f"{len(check.amounts(check.ours(body)))} amounts, not {count}")
+    if expected.get("pdf"):
+        data = PDFS.get(body, b"")
+        totals = [o["total"] for o in expected.get("options", [])] + (
+            [expected["total"]] if "total" in expected else []
+        )
+        if not data.rstrip().endswith(b"%%EOF"):
+            failed.append("no_pdf_offer")
+        failed += [f"PDF lacks {t}" for t in totals if data and t.encode() not in data]
     if (greeting := expected.get("greeting")) and greeting not in body.split("\n", 1)[0]:
         failed.append(f"greeting is not {greeting}")
     if lang := expected.get("language"):

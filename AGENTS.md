@@ -19,7 +19,9 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   answer, an unknown tariff layout. One small gateway call per quote by default (R28: an 18-minute window
   without any gateway spend earns no cost points, 0.10 USD per accepted quote earns none either).
 - **All model calls go through `pixel/llm.py`,** which calls the 5U gateway and logs tokens and cost. No other
-  module imports an LLM client or `pixel/api/gateway.py`.
+  module imports an LLM client or `pixel/api/gateway.py`. The one exception is the ElevenLabs voice agent (`pixel/voice/`): its
+  model runs at ElevenLabs, only during a call a person starts, and never writes a price; it spends nothing at the
+  gateway.
 - **Everything is an event.** Every mail in and out, every decision and every model call is written with
   `core.events.emit`. The CRM and the UI read that log; nothing keeps state only in memory.
 - **Nothing from one dataset version is hardcoded.** No lane, rate, airline, address, limit or zone in code, prompts
@@ -51,10 +53,12 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   scorecard at `/crm/carriers`), performance (`dashboard.py`), company names from signatures (`names.py`), shared
   HTML and styles (`page.py`)
 - `pixel/llm.py`: the only gateway caller
+- `pixel/voice/`: voice calls from a request's page to a late carrier or a customer with a missing fact (ElevenLabs);
+  the answer enters the thread as a mail would (`calls.py` `answer`), `call.js` holds the call in the browser
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
-  `kpi_pr.sh`, `capture.py` (a stored session as a replay fixture with the state it met and a pytest), `outage_drill.py` (each external dependency failing on replayed rounds), `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `capture.py` (a stored session as a replay fixture with the state it met and a pytest), `outage_drill.py` (each external dependency failing on replayed rounds), `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `price_ledger.py` (every scored round's price against the scorer's best, then and with today's code), `memory_proof.py` (the pickup memory against every trucker answer), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -107,11 +111,15 @@ uv run python -m tools.board_me                 # our results from /v1/board/me 
 uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts
 uv run python -m tools.check_precision <database>   # per check rule: fired, the rounds accepted and not, by the scorer's reason
 uv run python -m tools.card_proof <database>    # the rate card against every portal rate in that database, offline
+uv run python -m tools.price_ledger <database>  # rounds lost on price or accuracy: quoted then, today's code now, offline
+uv run python -m tools.memory_proof <database>  # the pickup memory against every trucker answer in that database, offline
 uv run python -m tools.replay_gate <database>   # the last 20 accepted requests read and priced as quoted; exit 1 on a difference
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.bench_unmet              # the last reader's prompt on the lost first rounds (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
+uv run python -m tools.voice_agent              # create or update the ElevenLabs call agent (pixel/voice/)
+uv run python -m tools.voice_demo               # the Call panel on a demo request, http://localhost:8010/demo/new; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
 tools/deploy.sh --after-quote                   # by hand, only when the host's deploy job is paused: this checkout to the live host in the next safe window
 ssh luca-kammerer 'sudo -u pixel python3 /opt/pixel/app/tools/cd_status.py'   # the host's deploy job: live, main, last decision, paused
@@ -135,16 +143,18 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
    model). Green means: push and open the pull request. Then:
    - **It changes how a request is read, priced, selected or answered** (`pixel/pricing/`, `pixel/agents/rfq/`
      except `compose.py`, `pixel/agents/router/`, `pixel/core/`, `pixel/api/`, `pixel/contracts.py`): leave it open.
-     The review thread checks it against the current `main` with a repro and merges it, or fixes it on the branch
-     itself; it closes only what is superseded or has no evidence. Never merge these yourself. On 22.11. two such
+     One of the two review threads claims it, checks it against the current `main` with a repro and merges it, or
+     fixes it on the branch itself; it closes only what is superseded or has no evidence. The two merge one at a
+     time, under one merge lock, and gate again when `main` moved in the same package since their check. Never
+     merge these yourself. On 22.11. two such
      pull requests, each green alone, turned `main` red together (#304, #305), and a reply-by date read as a
      latest arrival priced 41 % too high (#306): no CI or deploy check catches that, only a repro does.
    - **Everything else** (`docs/`, `bench/`, `tests/`, fixtures, `pixel/ui/`, `compose.py` wording, `tools/`): merge it
      at once (`gh pr merge --merge`); the review follows after the merge.
    - **`URGENT`** means one thing: the cause can hit the next round too (a running series), and the pull request holds
-     the lost session as a replay test that failed before the fix. Then merge at once whatever it touches; the review
-     thread checks it within the round. Only one thread merges into the read and price path, the review thread:
-     `URGENT` does not lift that for a second thread at the same time.
+     the lost session as a replay test that failed before the fix. Then merge at once whatever it touches; a review
+     thread checks it within the round. Apart from that, only the two review threads merge into the read and price
+     path, one at a time: `URGENT` does not lift that for a second thread at the same time.
 2. **CI runs on `main`** (`.github/workflows/ci.yml`). Whoever merged watches that run and fixes forward or reverts
    within the same round if it fails.
 3. Update with `main` once, right before the local run. No second rebase unless GitHub reports a conflict.

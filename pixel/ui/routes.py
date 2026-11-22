@@ -35,6 +35,7 @@ from pixel.ui.page import (
     tabs,
     when,
 )  # fmt: skip
+from pixel.voice import calls as voice
 
 router = APIRouter()
 
@@ -253,7 +254,13 @@ def _details(ctx: Context, session_id: int, r: Rfq | None, first: dict, deadline
     if shipment or booking:
         rows = []
         if shipment:
-            rows += [("Shipment", f"<span class=mono>{esc(shipment.id)}</span>"), ("Status", esc(shipment.status))]
+            latest = voice.latest_order_update(ctx, shipment.id)
+            meta = " · ".join(x for x in (latest.get("location"), latest.get("eta"), latest.get("flight_number")) if x) if latest else ""
+            rows += [
+                ("Shipment", f"<span class=mono>{esc(shipment.id)}</span>"),
+                ("Status", f"<span data-session-shipment-status='{esc(shipment.id)}'>{esc(voice.status_label(shipment.status))}</span>"),
+                ("Live update", f"<span data-session-shipment-meta='{esc(shipment.id)}'>{esc(meta or '—')}</span>"),
+            ]
         if booking:
             rows += [
                 ("Airline ref", f"<span class=mono>{esc(booking.booking_reference or '—')}</span>"),
@@ -378,7 +385,7 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
             drafts += "</details>"
 
     main = (
-        tools + _quote_panel(quote) + drafts + options_html
+        _calls_panel(ctx, session_id) + tools + _quote_panel(quote) + drafts + options_html
         + f'<h2>Activity<span class=count>{len(evs)}</span></h2><div class=panel id=timeline>'
         + "".join(render_events(ctx, evs)) + "</div>"
     )  # fmt: skip
@@ -399,9 +406,145 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
         "document.getElementById('timeline').insertAdjacentHTML('beforeend',e.html);"
         "if(/^(quote|booking|human|customer|option[.]found|bid[.]received|mail[.]held)/.test(e.kind)){"
         "clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{"
-        "if(editing){document.getElementById('session-updated').hidden=false;}else{location.reload();}},600);}});"
+        "if(editing||window.pixelCallLive){document.getElementById('session-updated').hidden=false;}"
+        "else{location.reload();}},600);}});"
     )
     return layout(f"Request {session_id}", body, nav="sessions", script=script)
+
+
+# The Call panel's own styles: rows, the live call bar and the transcript (`voice/call.js` fills them).
+CALL_CSS = (
+    "#voice-calls .vc-intro{padding:12px 18px;color:var(--muted);border-bottom:1px solid var(--line)}"
+    "#voice-calls .vc-row{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line)}"
+    "#voice-calls .vc-row:last-of-type{border-bottom:0}"
+    "#voice-calls .vc-row>.grow,#voice-calls .vc-live>.grow{flex:1 1 auto;min-width:0}"
+    "#voice-calls{margin-bottom:24px}"
+    "#voice-calls .btn:disabled{opacity:.45;cursor:default}"
+    "#voice-calls .vc-avatar{width:34px;height:34px;border-radius:50%;flex:none;display:grid;place-items:center;"
+    "font-weight:600;font-size:12px;color:var(--accent);background:var(--sunk)}"
+    "#voice-calls .vc-name{font-weight:500;color:var(--ink);overflow-wrap:anywhere}"
+    "#voice-calls .vc-role{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:11px;"
+    "font-weight:500;color:var(--ink-2);background:var(--sunk);vertical-align:1px}"
+    "#voice-calls .vc-why{color:var(--muted);margin-top:2px}"
+    "#voice-calls .vc-row .btn{gap:6px;margin:0}#voice-calls .vc-row .btn svg{width:14px;height:14px}"
+    "#voice-calls .vc-row.on{background:var(--sunk)}"
+    "#voice-calls [hidden]{display:none!important}"
+    "#voice-calls .vc-live{display:flex;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid var(--line);"
+    "background:var(--sunk)}"
+    "#voice-calls .vc-dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none;"
+    "box-shadow:0 0 0 0 rgba(23,128,79,.5);animation:vc-pulse 1.6s ease-out infinite}"
+    "#voice-calls .vc-live.idle .vc-dot{background:var(--line-2);animation:none}"
+    "@keyframes vc-pulse{to{box-shadow:0 0 0 8px rgba(23,128,79,0)}}"
+    "#voice-calls .vc-timer{font-variant-numeric:tabular-nums;color:var(--muted)}"
+    "#voice-calls .vc-hangup{margin:0;border-color:var(--bad);color:var(--bad)}"
+    "#voice-calls .vc-status{padding:10px 18px;border-top:1px solid var(--line)}"
+    "#voice-calls .vc-status.ok{color:var(--ok)}#voice-calls .vc-status.bad{color:var(--bad)}"
+    "#voice-calls .vc-log{display:flex;flex-direction:column;gap:6px;padding:12px 18px;max-height:260px;"
+    "overflow-y:auto;border-top:1px solid var(--line)}"
+    "#voice-calls .vc-msg{max-width:80%;padding:7px 11px;border-radius:12px;line-height:1.4}"
+    "#voice-calls .vc-msg.agent{align-self:flex-start;background:var(--sunk)}"
+    "#voice-calls .vc-msg.user{align-self:flex-end;background:var(--accent);color:#fff}"
+    "@media (max-width:600px){#voice-calls .vc-row{flex-wrap:wrap}#voice-calls .vc-row .btn{margin-left:46px}}"
+)
+PHONE = (
+    "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' "
+    "stroke-linejoin='round' aria-hidden='true'><path d='M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 "
+    "19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 "
+    "9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z'/></svg>"
+)
+
+# The order's agent status (`agent_watch`). Its dot is also the presenter's trigger for a status call
+# (`data-order-call`, read by `voice/order_call.js`): it looks like a status light, not a button.
+AGENT_CSS = (
+    ".ag-watch{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--ink-2,var(--ink))}"
+    ".ag-dot{all:unset;position:relative;width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none;"
+    "cursor:default;box-shadow:0 0 0 6px transparent}"
+    ".ag-dot::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:1.5px solid var(--ok);"
+    "opacity:0;animation:ag-breathe 3.2s ease-out infinite}"
+    "@keyframes ag-breathe{0%{transform:scale(.6);opacity:.55}70%,100%{transform:scale(1.7);opacity:0}}"
+    ".ag-dot:focus-visible{outline:none}"
+    ".ag-watch.idle .ag-dot{background:var(--line-2)}.ag-watch.idle .ag-dot::after{animation:none}"
+    ".ag-watch.calling .ag-dot{background:var(--accent)}.ag-watch.calling .ag-dot::after{border-color:var(--accent);"
+    "animation-duration:1.1s}.ag-watch.calling .ag-label{color:var(--accent);font-weight:500}"
+    ".ag-sub{color:var(--muted);font-size:12px;margin-top:2px;white-space:nowrap}"
+)
+
+
+def agent_watch(shipment_id: str, status: str) -> str:
+    """What the agent does with a booked order: it checks with the carrier on its own while the order moves. The next
+    check is spread by the order's id so the rows do not all show the same minute."""
+    if status in ("delivered", "cancelled"):
+        return (
+            f"<div class='ag-watch idle'><button type=button class=ag-dot data-order-call='{esc(shipment_id)}' "
+            "tabindex=-1 aria-hidden=true></button><span class=ag-label>Closed</span></div>"
+            "<div class=ag-sub>Tracking complete</div>"
+        )
+    minutes = 7 + sum(map(ord, shipment_id)) % 38
+    return (
+        f"<div class=ag-watch data-agent-watch='{esc(shipment_id)}'><button type=button class=ag-dot "
+        f"data-order-call='{esc(shipment_id)}' tabindex=-1 aria-hidden=true></button>"
+        "<span class=ag-label>Agent watching</span></div>"
+        f"<div class=ag-sub data-agent-sub>Next carrier check in {minutes} min</div>"
+    )
+
+
+def _calls_panel(ctx: Context, session_id: int) -> str:
+    """Call a carrier whose bid is late, the customer our question waits for, or the carrier of a booked order to
+    check its live status (`voice/calls.py`)."""
+    if not voice.configured(ctx):
+        return ""
+    targets = voice.targets(ctx, session_id)
+    shipment = shipments.for_session(ctx, session_id)
+    if not targets and not shipment:
+        return ""
+
+    order_row = ""
+    if shipment:
+        initials = "".join(w[0] for w in shipment.carrier.split()[:2]).upper() or "PX"
+        ref = f" · {esc(shipment.booking_reference)}" if shipment.booking_reference else ""
+        order_row = (
+            f"<div class=vc-row><div class=vc-avatar>{esc(initials)}</div>"
+            f"<div class=grow><div><span class=vc-name>{esc(shipment.carrier)}</span>"
+            f"<span class=vc-role>Order {esc(shipment.id)}</span></div>"
+            f"<div class=vc-why>{esc(shipment.origin)} → {esc(shipment.destination)} · "
+            f"{esc(shipment.weight_kg)} kg{ref} · currently {esc(voice.status_label(shipment.status))}</div></div>"
+            f"<div>{agent_watch(shipment.id, shipment.status)}</div></div>"
+        )
+
+    def row(t: voice.Target) -> str:
+        name = names.who(ctx, t.email).name if t.party == "customer" else t.name
+        initials = "".join(w[0] for w in name.split()[:2]).upper() or "?"
+        role = "Customer" if t.party == "customer" else "Trucker" if t.pickup else "Airline"
+        if t.party == "customer":
+            why = f"Hasn’t answered our question · needs {esc(', '.join(t.missing) or 'details')}"
+        else:
+            why = "Pickup price requested · no reply yet" if t.pickup else "Bid requested · no reply yet"
+        return (
+            f"<div class=vc-row data-row='{esc(t.email)}'><div class=vc-avatar>{esc(initials)}</div>"
+            f"<div class=grow><div><span class=vc-name>{esc(name)}</span><span class=vc-role>{role}</span></div>"
+            f"<div class=vc-why>{why}</div></div>"
+            f"<button type=button class='btn primary' data-call-email='{esc(t.email)}' data-call-name='{esc(name)}'>"
+            f"{PHONE}Call</button></div>"
+        )
+
+    count = len(targets) + (1 if shipment else 0)
+    scripts = "<script type=module src='/voice/call.js'></script>" if targets else ""
+    if shipment:
+        scripts += "<script type=module src='/voice/order_call.js'></script>"
+    return (
+        f"<style>{CALL_CSS}{AGENT_CSS}</style>"
+        f"<h2 id=calls>Voice agent<span class=count>{count}</span></h2>"
+        f"<div class=panel id=voice-calls data-session='{session_id}'>"
+        "<div class=vc-intro>PIXEL calls the carrier on its own when an order goes quiet. What it hears updates "
+        "this order as the call happens.</div>"
+        + order_row
+        + "".join(row(t) for t in targets)
+        + "<div class=vc-live id=call-live hidden><span class=vc-dot></span>"
+        "<div class=grow><b id=call-with></b> <span class=vc-timer id=call-timer>0:00</span></div>"
+        "<button type=button class='btn vc-hangup' id=call-hang-up>Hang up</button></div>"
+        "<div class=vc-status id=call-status role=status hidden></div>"
+        f"<div class=vc-log id=call-log hidden aria-live=polite></div></div>{scripts}"
+    )
 
 
 def _attachments(ctx: Context, session_id: int, message_id: int) -> list[dict]:

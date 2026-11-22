@@ -19,7 +19,11 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   declined lane, says it is incomplete or is cut short, a decline for capacity, a decline without a list.
 - `ratedesk-layouts.json`: the rate desk's captured answer as tables (header names, column order, currency in the
   header or the cell, German), with each priced airline read by hand; benchmark section 16 writes its own lines and
-  each table into every attachment format behind a mail that only points to the file.
+  each table into every attachment format behind a mail that only points to the file. It compares currency and
+  expiry as well as total, transit and rate ID.
+- `rfqs/bid-validity.json`: carrier offers with expiry in the body or an attachment, measured from the simulator's
+  16:00 UTC receipt time, with expected timestamps written by hand. The departure date and quoted old offer are
+  controls. `tools.simulate` runs each through `bids.record` offline.
 - `rfqs/followup-answers.json`: answers to our one question, each naming another airport beside the request's;
   benchmark section 15 appends each to every captured request and requires the same fields. `known_gaps`:
   `"<answer>:<fixture>"` read wrong today, each ending `Owner: <role>.`
@@ -27,8 +31,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   incoming mails as the API returned them (`tools.replay` replays it); the second the rows it met on arrival
   (tariffs, carriers, zones, the rate card of its lane, our mails of the session, the customer's earlier requests,
   the truckers' answers of the last 24 hours) and the portal's rates and weight breaks as the API gave them, which the replay serves
-  again (a reading rounded since gets the rate times its weight). A model call fails offline and attachment bytes
-  are not stored. `round-166-accepted` is the session `tests/test_capture.py` replays end to end (portal rate, its next
+  again (a reading rounded since gets the rate times its weight), and under `answers` what the model returned live
+  by prompt hash (recorded since 22.11.): the same prompt gets that answer, free; any other model call fails
+  offline. Attachment bytes are not stored. `round-166-accepted` is the session `tests/test_capture.py` replays end to end (portal rate, its next
   weight break, trucker bids) and `tests/test_outage_drill.py` replays under every drill.
 - `replay-gate.json`: round 155's session as the live database held it (request mail, reading, every option found,
   the sent quote, pickup zone), which `tests/test_replay_gate.py` builds into a database for `tools/replay_gate.py`.

@@ -8,7 +8,8 @@ carriers', truckers' and rate desk's answers, later customer mails), in the list
 `<name>.state.json` holds the rows the session met on arrival: tariffs ingested by then, carriers, pickup zones, the
 rate card, our own mails of the session (an answer finds its session through the bid request it answers), the
 customer's earlier requests and the events read across sessions. `tools.replay tests/fixtures/sessions/<name>.json`
-replays both. Attachment bytes are not stored in the database: a file the session had is named as a to-do.
+replays both, and answers each model call the session made live with what the model returned then (`llm.call`
+`answer`, recorded since 22.11.). Attachment bytes are not stored in the database: a file the session had is named as a to-do.
 
 The printed test asserts what the scorer wanted where the database holds it (an accepted round: lane, airline,
 trucker, the best price within 5 %, language) and what its verdict implies where it does not (too high: below our
@@ -125,13 +126,20 @@ def state(conn: sqlite3.Connection, session_id: int) -> dict:
         "sessions": _rows(
             conn, "SELECT * FROM sessions WHERE id IN ({})".format(",".join("?" * len(earlier))), tuple(earlier)
         ),
-        # our mails of the session; without their text, the customer's earlier requests (`extract` finds one by its
-        # subject) and each sender's first request (a lookalike address is told from the original by it)
+        # our mails of the session but its question (asked once per request: the replay asks again, as live, and the
+        # answer joins by its references; round 131 guessed an old site instead); without their text, the customer's
+        # earlier requests (`extract` finds one by its subject) and each sender's first request (a lookalike address
+        # is told from the original by it)
         "messages": sorted(
             {
                 m["id"]: m
                 for m in [m | {"body": "", "data": "{}"} for m in firsts + _rows(conn, customers, tuple(earlier))]
-                + _rows(conn, "SELECT * FROM messages WHERE session_id = ? AND direction = 'out'", (session_id,))
+                + _rows(
+                    conn,
+                    "SELECT * FROM messages WHERE session_id = ? AND direction = 'out'"
+                    " AND COALESCE(purpose, '') <> 'question'",
+                    (session_id,),
+                )
             }.values(),
             key=lambda m: m["id"],
         ),
@@ -140,6 +148,7 @@ def state(conn: sqlite3.Connection, session_id: int) -> dict:
             key=lambda e: e["id"],
         ),
         "portal": portal(conn, session_id),
+        "answers": replay.answers(conn, session_id),  # the model's live readings, replayed for free
     }
 
 
@@ -295,10 +304,11 @@ def main() -> None:
         if not a.get("content_base64")
     ]
     models = {
-        json.loads(p)["purpose"]
-        for (p,) in conn.execute(
+        p["purpose"]
+        for (raw,) in conn.execute(
             "SELECT payload FROM events WHERE session_id = ? AND kind = 'llm.call'", (args.session,)
         )
+        if "answer" not in (p := json.loads(raw))
     }
     now = quoted(asyncio.run(replay.fixture(path)))
     print(f"# wrote {path.relative_to(ROOT)} and its .state.json")
@@ -306,8 +316,8 @@ def main() -> None:
     print(f"# replay: {now}")
     if then != now:
         print(
-            "# the replay does not reproduce the live quote; the test below checks today's code. Live model calls,"
-            f" which fail offline: {', '.join(sorted(models)) or 'none'}"
+            "# the replay does not reproduce the live quote; the test below checks today's code. Live model calls"
+            f" without a recorded answer, which fail offline: {', '.join(sorted(models)) or 'none'}"
         )
     print(test_source(name, args.session, scored, then, todos), end="")
 

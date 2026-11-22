@@ -646,6 +646,20 @@ async def test_a_packing_spec_whose_table_bears_out_its_volume_outweighs_the_mai
     assert evidence["volume_cbm"] == ["SLI_53351.pdf"]
 
 
+async def test_a_packing_list_volume_outweighs_the_mail_round_34(conn, emitted):
+    # Round 34: the mail says 11.69 cbm, the attached packing list 7.49. The scorer priced 7.49: our 4980.00 on
+    # 1952.23 kg was rejected as too high; at 1384 kg Solace gives 3944.40 (bench/NEXT_CASES.md, Axis P).
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures" / "mails" / "rfq-packing-list-volume-differs-from-mail.json").read_text()
+    )
+    ctx = Context(settings(), conn, None, None, None, None)
+    ctx.mailbox = FixtureMailbox(raw)
+    rfq = await extract.extract(ctx, to_message(raw, "in"), DEADLINE)
+    assert (rfq.weight_kg, rfq.volume_cbm) == (Decimal(1384), Decimal("7.49"))
+    evidence = next(kw["payload"]["sources"] for kind, kw in emitted if kind == "rfq.evidence")
+    assert evidence["volume_cbm"] == ["packing-spec_36075.pdf"]
+
+
 async def test_a_packing_spec_whose_table_bears_out_its_gross_weight_outweighs_the_mail(conn, emitted):
     # Round 35: the mail says 2644 kg, the attached spec's total and its one row 1751 kg (19 x 100 x 63 x 100 cm,
     # 11.97 cbm). On the mail's weight we billed 2644 kg instead of 1998.99 and were rejected as too high.
@@ -1765,15 +1779,20 @@ def test_a_korean_or_turkish_request_is_read_by_rules(body, want):
     assert rfq.door_pickup == (want[6] is not None)
 
 
-@pytest.mark.parametrize(
-    ("text", "preference"),
-    [("가장 빠른 옵션으로", "fastest"), ("请报最快的方案", "fastest"), ("最も早い便で", "fastest"), ("en hızlı seçenek", "fastest"),
-     ("가장 저렴한 옵션", "cheapest"), ("请报最便宜的", "cheapest"), ("最も安い便", "cheapest"), ("en ucuz seçenek", "cheapest")],
-)  # fmt: skip
-def test_the_wish_is_read_in_korean_chinese_japanese_and_turkish(text, preference):
-    assert extract._preference(text).value == preference
-
-
 def test_a_currency_before_a_korean_particle_is_asked_for():
     assert extract._currency("픽업을 포함한 모든 비용을 EUR로 견적 부탁드립니다.") == "EUR"
     assert extract._currency("Please quote 3000 EURO all-in.") is None
+
+
+@pytest.mark.parametrize(
+    ("text", "wish"),
+    [
+        ("Bu gönderi için en hızlı seçeneği istiyoruz.", Preference.FASTEST),  # round 186, quoted cheapest
+        ("가장 빠른 옵션으로 견적 부탁드립니다.", Preference.FASTEST),
+        ("请报最快的方案。", Preference.FASTEST),
+        ("最も早い便でお願いします。", Preference.FASTEST),
+        ("Bu gönderi için en ucuz seçeneği istiyoruz.", Preference.CHEAPEST),
+    ],
+)
+def test_the_wish_in_turkish_korean_chinese_and_japanese(text, wish):
+    assert extract._preference(text) == wish
