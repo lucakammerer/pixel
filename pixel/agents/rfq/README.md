@@ -428,7 +428,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `_town_zone` takes a town on the line that describes the pickup. Otherwise `_ask` sends one short question in the
   thread for exactly the facts `_unknown` lists (pickup place, origin, destination, weight, volume: without one
   the chargeable weight is the gross weight, too low for bulky goods), never a price, and the
-  request is read again with the answer (a town alone maps to its zone). No answer 60 s after the request: the
+  request is read again with the answer (a town alone maps to its zone). A person calling the customer about it
+  (`pixel/voice/`) holds the wait open until the call ends; the phoned answer is read like a mailed one. No answer 60 s after the request: the
   first-named earlier site, then a town anywhere in the mail. The history was right once (round 19) and wrong twice
   (rounds 18 and 20), so it is never used without asking. Whether the scorer counts the question as our first reply is not known yet.
 - Dimensions in inches ("5 skids 48x40x50 in") were read as centimetres: 0.1 cbm instead of 7.9. A unit of in, inch

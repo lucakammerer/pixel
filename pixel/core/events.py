@@ -44,6 +44,8 @@ KINDS = (
     "score.total",  # team total from /v1/board/me
     "feedback",  # what a request scored and which option the scorer's best price was (core/feedback.py)
     "human.note", "human.takeover", "human.release",
+    "call.ringing", "call.started", "call.connected", "call.turn", "call.answer", "call.ended", "call.transcript",
+    "shipment.updated",
     "error",
 )  # fmt: skip
 
@@ -52,8 +54,9 @@ _subscribers: set[tuple[int | None, asyncio.Queue[Event]]] = set()
 
 def scrub(ctx: Context, text: str) -> str:
     """Removes our key from any text that leaves the process or lands in the log."""
-    key = ctx.settings.api_key
-    return text.replace(key, "***") if key else text
+    for key in (ctx.settings.api_key, ctx.settings.elevenlabs_api_key):
+        text = text.replace(key, "***") if key else text
+    return text
 
 
 def emit(

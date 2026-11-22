@@ -13,6 +13,7 @@ from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import store
 from pixel.pricing.pickup import zone_of
+from pixel.voice import calls
 
 CURRENCIES = {"EUR", "USD", "GBP", "CHF", "CNY", "JPY", "HKD", "SGD", "AUD", "CAD", "INR", "AED"}
 NOT_AIRPORTS = CURRENCIES | {
@@ -1452,7 +1453,10 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
               " AND lower(sender) = ? ORDER BY id LIMIT 1")  # fmt: skip
     asked = (message.session_id, question.id, message.id, message.sender.lower())
     while not (row := ctx.db.execute(answer, asked).fetchone()):
-        if timing.now() >= deadline.received_at + timedelta(seconds=ASK_WAIT_S):
+        # A person calling the customer about it (`voice/calls.py`) holds the wait open until the call ends.
+        if timing.now() >= deadline.received_at + timedelta(seconds=ASK_WAIT_S) and not calls.holding(
+            ctx, message.session_id, "customer"
+        ):
             return None
         await asyncio.sleep(1)
     return row["body"]

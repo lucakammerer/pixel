@@ -20,6 +20,7 @@ from pixel.core.context import Context
 from pixel.core.events import emit
 from pixel.pricing import rate_card
 from pixel.ui import crm, dashboard, home, routes
+from pixel.voice import routes as voice
 
 
 def build_context(config: Settings | None = None) -> Context:
@@ -81,3 +82,4 @@ app.include_router(home.router)
 app.include_router(routes.router)
 app.include_router(dashboard.router)
 app.include_router(crm.router)
+app.include_router(voice.router)

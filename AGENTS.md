@@ -19,7 +19,9 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   answer, an unknown tariff layout. One small gateway call per quote by default (R28: an 18-minute window
   without any gateway spend earns no cost points, 0.10 USD per accepted quote earns none either).
 - **All model calls go through `pixel/llm.py`,** which calls the 5U gateway and logs tokens and cost. No other
-  module imports an LLM client or `pixel/api/gateway.py`.
+  module imports an LLM client or `pixel/api/gateway.py`. The one exception is the ElevenLabs voice agent (`pixel/voice/`): its
+  model runs at ElevenLabs, only during a call a person starts, and never writes a price; it spends nothing at the
+  gateway.
 - **Everything is an event.** Every mail in and out, every decision and every model call is written with
   `core.events.emit`. The CRM and the UI read that log; nothing keeps state only in memory.
 - **Nothing from one dataset version is hardcoded.** No lane, rate, airline, address, limit or zone in code, prompts
@@ -51,6 +53,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   scorecard at `/crm/carriers`), performance (`dashboard.py`), company names from signatures (`names.py`), shared
   HTML and styles (`page.py`)
 - `pixel/llm.py`: the only gateway caller
+- `pixel/voice/`: voice calls from a request's page to a late carrier or a customer with a missing fact (ElevenLabs);
+  the answer enters the thread as a mail would (`calls.py` `answer`), `call.js` holds the call in the browser
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
@@ -113,6 +117,8 @@ uv run python -m tools.bench_models             # candidate models on request ma
 uv run python -m tools.bench_unmet              # the last reader's prompt on the lost first rounds (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
+uv run python -m tools.voice_agent              # create or update the ElevenLabs call agent (pixel/voice/)
+uv run python -m tools.voice_demo               # the Call panel on a demo request, http://localhost:8010/demo/new; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
 tools/deploy.sh --after-quote                   # by hand, only when the host's deploy job is paused: this checkout to the live host in the next safe window
 ssh luca-kammerer 'sudo -u pixel python3 /opt/pixel/app/tools/cd_status.py'   # the host's deploy job: live, main, last decision, paused

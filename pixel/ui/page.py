@@ -297,15 +297,18 @@ LABELS = {
     "human.takeover": "Taken over", "human.release": "Back on autopilot", "error": "Error",
     "rfq.dangerous_goods": "Dangerous goods", "quote.prose": "Quote text written", "prose.raw": "Model text",
     "feedback": "Scorer feedback", "bid.skipped": "Bid skipped", "carrier.lanes": "Lanes learned",
+    "call.ringing": "Phone ringing", "call.started": "Voice call started", "call.connected": "Voice call connected",
+    "call.turn": "Call transcript", "call.answer": "Voice answer saved", "call.ended": "Voice call ended",
+    "call.transcript": "Call summary", "shipment.updated": "Order status updated",
 }  # fmt: skip
 
 
 def kind_class(kind: str) -> str:
     if kind.startswith("mail."):
         return "mail"
-    if kind.startswith(("quote.sent", "booking.booked", "booking.confirmed", "customer.accepted")):
+    if kind.startswith(("quote.sent", "booking.booked", "booking.confirmed", "customer.accepted", "shipment.updated", "call.answer")):
         return "ok"
-    if kind.startswith("human."):
+    if kind.startswith(("human.", "call.")):
         return "human"
     if kind in ("error", "quote.missed", "booking.failed", "option.failed", "tariff.failed", "quote.fallback"):
         return "bad"
@@ -343,6 +346,20 @@ def event_row(ev: Event, mail: dict[str, Any] | None = None, *, new: bool = Fals
             )
         elif ev.kind == "route" and "kind" in p:
             detail = f"<span class=muted>as</span> {esc(str(p['kind']).replace('_', ' '))}"
+        elif ev.kind == "shipment.updated":
+            bits = [
+                f"<span class=mono>{esc(p.get('shipment_id', ''))}</span>",
+                f"<b>{esc(p.get('status_label') or p.get('status', ''))}</b>",
+                *(esc(x) for x in (p.get("location"), p.get("eta"), p.get("flight_number")) if x),
+            ]
+            detail = " · ".join(bits)
+        elif ev.kind == "call.turn":
+            who = "Agent" if p.get("role") == "agent" else "Caller"
+            detail = f"<span class=muted>{who}:</span> {esc(p.get('message', ''))}"
+        elif ev.kind in ("call.ringing", "call.started"):
+            detail = f"{esc(p.get('name', ''))} <span class=muted>· {esc(p.get('shipment_id') or p.get('party', ''))}</span>"
+        elif ev.kind == "call.transcript":
+            detail = esc(p.get("summary") or f"{len(p.get('transcript') or [])} turns")
         else:
             detail = " · ".join(
                 f"<span class=muted>{esc(k).replace('_', ' ')}</span> {_plain(v)}" for k, v in p.items()

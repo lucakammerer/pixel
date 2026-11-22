@@ -24,7 +24,8 @@ from pixel.ui.page import (
     tabs,
     when,
 )
-from pixel.ui.routes import list_sessions, sessions_table
+from pixel.ui.routes import AGENT_CSS, agent_watch, list_sessions, sessions_table
+from pixel.voice import calls as voice
 
 router = APIRouter()
 
@@ -33,7 +34,9 @@ QUOTE_CSS = {QuoteStatus.SENT: "ok", QuoteStatus.ACCEPTED: "ok", QuoteStatus.DEC
 
 
 def ship_css(state: str) -> str:
-    return "bad" if "fail" in state else "warn" if state in ("booking", "requested") else "ok"
+    if any(w in state for w in ("fail", "delay", "exception")):
+        return "bad"
+    return "warn" if state in ("booking", "requested") else "ok"
 
 
 def _matches(q: str, *values) -> bool:
@@ -159,6 +162,7 @@ async def quote_list(request: Request, q: str = ""):
 
 def shipment_rows(ctx, items, q: str = "") -> list[str]:
     by_id = bookings.all_by_id(ctx)
+    can_call = voice.configured(ctx)
     rows = []
     for s in items:
         b = by_id.get(s.booking_id)
@@ -175,21 +179,27 @@ def shipment_rows(ctx, items, q: str = "") -> list[str]:
         ):
             continue
         href = f"/sessions/{s.session_id}"
+        latest = voice.latest_order_update(ctx, s.id)
+        meta = " · ".join(x for x in (latest.get("location"), latest.get("eta")) if x) if latest else ""
+        label = voice.status_label(s.status)
+        call_cell = f"<td>{agent_watch(s.id, s.status)}</td>" if can_call else "<td></td>"
         rows.append(
-            f'<tr data-href="{href}"><td><a class="id mono" href="{href}">{esc(s.id)}</a>'
+            f'<tr data-href="{href}" data-shipment-id="{esc(s.id)}"><td><a class="id mono" href="{href}">{esc(s.id)}</a>'
             f"<div class=line2>{when(s.updated_at)}</div></td><td>{customer_link(s.customer, names.who(ctx, s.customer))}</td>"
             f"<td>{lane(s.origin, s.destination)}<div class=line2>{esc(s.weight_kg)} kg</div></td>"
             f"<td>{esc(s.carrier)}<div class=line2>{f'via {esc(b.via)}' if b else ''}</div></td>"
             f"<td class=mono>{esc(s.booking_reference or '—')}</td>"
             f"<td class=n>{money(b.price, b.currency) if b and b.price is not None else '—'}</td>"
-            f"<td>{status(s.status, ship_css(s.status))}</td></tr>"
+            f"<td data-shipment-status>{status(label, ship_css(s.status))}"
+            + (f"<div class=line2>{esc(meta)}</div>" if meta else "")
+            + f"</td>{call_cell}</tr>"
         )
     return rows
 
 
 SHIP_HEAD = (
     "<th>Shipment</th><th>Customer</th><th>Lane</th><th>Carrier</th><th>Airline ref</th><th class=n>Price</th>"
-    "<th>Status</th>"
+    "<th>Status</th><th>Agent</th>"
 )
 
 
@@ -197,8 +207,13 @@ SHIP_HEAD = (
 async def shipment_list(request: Request, q: str = ""):
     ctx = request.app.state.ctx
     rows = shipment_rows(ctx, shipments.recent(ctx, 500), q)
-    content = _table(SHIP_HEAD, rows, 7, "No shipment yet." if not q else "No shipment matches.")
-    return layout("Shipments", _frame("shipments", q, content, _counts(ctx)), nav="crm", script=_live())
+    content = _table(SHIP_HEAD, rows, 8, "No shipment yet." if not q else "No shipment matches.")
+    extra = (
+        f"<style>{AGENT_CSS}</style><script type=module src='/voice/order_call.js'></script>"
+        if voice.configured(ctx)
+        else ""
+    )
+    return layout("Shipments", _frame("shipments", q, content, _counts(ctx)) + extra, nav="crm", script=_live())
 
 
 def _n(value: int, line2: str = "") -> str:
@@ -268,10 +283,11 @@ async def customer(request: Request, email: str):
         + f"<h2>Requests<span class=count>{len(requests)}</span></h2>"
         + f"<div class=panel>{sessions_table(requests, show_customer=False)}</div>"
         + f"<h2>Shipments<span class=count>{len(ships)}</span></h2>"
-        + f"<div class=panel>{_table(SHIP_HEAD, ships, 7, 'Nothing booked for this customer yet.')}</div>"
+        + f"<div class=panel>{_table(SHIP_HEAD, ships, 8, 'Nothing booked for this customer yet.')}</div>"
+        + ("<script type=module src='/voice/order_call.js'></script>" if voice.configured(ctx) else "")
     )
     return layout(who.name, body, nav="crm", script=_live())
 
 
 def _live() -> str:
-    return "live('/events',refresh());"
+    return "const r=refresh();live('/events',()=>{if(!window.pixelCallLive)r();});"
