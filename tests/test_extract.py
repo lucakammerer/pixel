@@ -426,6 +426,19 @@ async def test_the_pickup_lines_town_wins_over_the_signatures(conn, emitted):
 
 
 @pytest.mark.parametrize(
+    ("text", "currency"),
+    [
+        ("Tüm masraflar dahil EUR cinsinden fiyat verebilir misiniz?", "EUR"),  # round 126
+        ("Our budget is 3000 EUR.", None),
+        ("Goods value EUR 45,000 for insurance.", None),
+        ("Value 12.500,00 EUR, please quote in CHF.", "CHF"),
+    ],
+)
+def test_the_one_code_named_away_from_a_figure_is_the_currency(text, currency):
+    assert extract._currency(text) == currency
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "Please quote the cheapest option, it does not need to be the fastest.",

@@ -180,6 +180,7 @@ DANGEROUS = re.compile(
 )
 DG_DOCUMENTS = "dangerous_goods_documents"
 CURRENCY_ASK = re.compile(r"(?i:\b(?:in|en|currency:?|währung:?|devise:?|moneda:?))\s+([A-Z]{3})\b")
+LONE_CODE = re.compile(r"(?<![\d.,])(?<![\d.,] )\b([A-Z]{3})\b(?! ?\d)")
 GERMAN = {"und", "der", "die", "das", "bitte", "mit", "für", "von", "nach", "wir", "ich", "ein", "eine", "angebot",
           "grüße", "gewicht", "ist", "zu", "sie", "ihr", "unser", "sendung", "danke"}  # fmt: skip
 ENGLISH = {"the", "and", "please", "for", "with", "we", "to", "a", "quote", "regards", "weight", "is", "of", "our",
@@ -547,8 +548,11 @@ def _pickup(text: str) -> tuple[bool, str | None]:
 
 
 def _currency(text: str) -> str | None:
+    """The currency asked for: "in USD", "Currency: USD", or else the one code the mail names away from a figure
+    ("Price: USD", round 126's Turkish "EUR cinsinden"); "3000 EUR" is an amount, not a wish."""
     asked = {c for c in CURRENCY_ASK.findall(text) if c in CURRENCIES}
-    return asked.pop() if len(asked) == 1 else None
+    named = asked or {c for c in LONE_CODE.findall(text) if c in CURRENCIES}
+    return named.pop() if len(named) == 1 else None
 
 
 def words_of(text: str, extra: dict[str, set[str]] | None = None) -> dict[str, int]:
