@@ -180,6 +180,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   reads the cap, `selection.within_cap` compares it with our total ("below" strict, "up to" not, another currency
   never), and `handle_reply` books only when it is met; otherwise, or when the condition is not a price, a person.
   It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
+  The cap may also follow its amount ("400 EUR or less", "2000 euros tops") or be "match 400 EUR", "within a
+  budget of 300 EUR"; "max." does not end the sentence, and a date after the word is no cap.
 - `cancel` (the customer withdraws after the booking, round 88) cancels at the portal by the airline's reference.
   A booking by mail without that reference yet, or a portal that refuses or is down, is withdrawn by mail with the
   airline (`_cancel_by_mail`, the carrier list's address); the customer is told either way. Only without an address
