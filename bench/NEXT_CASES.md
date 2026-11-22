@@ -390,9 +390,9 @@ a wrong or split case without a known gap. Where the rules give up, the model re
 its plausible answers instead of asking it: `air`, the reading as an air request written by hand in the case (the
 nearest airports, as round 177's model did), and `blank`, a reading that names no airport; `routed other` where the
 router asks the model. A case is right only when every plausible answer leads to the right kind, `split` when it
-depends on the answer. "no_price late": no rule declined, a price was sought and none found before `hard_at` (live a
-portal rate could be quoted). "question": one question for a missing fact went out first; before a quote it is
-allowed, before the plain answer to what we do not do it is wrong.
+depends on the answer. `no_price late` means more than 60 seconds elapsed in the replay. The no-price reply may
+be the deadline fallback or a scope decline delayed by a question. A question for a missing fact is allowed
+before a quote. A request outside our scope should get the decline as its first reply.
 
 The causes, all owned by this thread unless the row says otherwise:
 
@@ -401,7 +401,7 @@ The causes, all owned by this thread unless the row says otherwise:
   "vessel", TEU, 20'GP, FTL, "per LKW", courier, sea-air) and the extraction schema has no field for it, so the
   model always fills in an air request.
 - **G3**: any air word lifts the mode rule, also "Airport" in a company name and "by air" said of last month.
-- **G4**: an import by lane alone is turned round by `served_airports` and quoted as the export the other way.
+- **G4**: an import by lane alone is turned round by `served_airports` and quoted as the export the other way. Fix in review (#513).
 - **G5**: a lane with neither end ours (cross-trade, domestic) is priced until `hard_at`.
 - **G6**: a service without the flight (customs, insurance, storage, crating, a truck to the airport only) becomes
   an air request.
@@ -412,10 +412,13 @@ The causes, all owned by this thread unless the row says otherwise:
   the goods' name, "our sea freight team"); an in-scope request is declined.
 
 Proof against the other direction: `uv run python -m tools.scope_proof <copy of the live database>` replays every
-live request offline through today's router, rules and scope decision beside the scorer's verdict and what we sent
-live. On main at round 183: 125 of 125 accepted quotes still served; declined are round 159 (the import, accepted as
-a decline), round 177 (sea, `out_of_scope_quoted`) and the impostor of session 30919 (no answer). Every scope pull
-request states this count.
+stored customer request offline beside the scorer's verdict. It counts an explicit scope decline even when a
+question went out first. A missing rate and a missing reply are separate outcomes. Model answers replay only if
+recorded for the same prompt, and the database holds attachment metadata without the files. Every scope pull request
+reports the count of previously accepted quotes that now get a scope decline or lose their reply.
+On the snapshot through round 187, main replayed 113 of 129 previously accepted quotes as quotes. The remaining
+16 were unpriced in replay, with zero scope declines and zero missing replies. Round 159 was accepted as a scope
+decline live and still declines. Round 177, rejected for quoting sea freight, now declines.
 
 The class fix (next pull requests, read path, for the review thread): decide scope before the question (G1), then
 one scope reading: a rule that only notices a mode, service or non-request word in any language (subject, body and
@@ -424,48 +427,48 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 
 | Case | Branch | Step from | Expected (how sure) | Today | Verdict | Known gap |
 | --- | --- | --- | --- | --- | --- | --- |
-| `sea-fcl-locode` | mode |  | no_price (live) | air: no_price; blank: question → no_price | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
-| `sea-lcl-german` | mode |  | no_price (text) | air: no_price; blank: question → no_price | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
-| `sea-spanish` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
-| `sea-french` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
-| `sea-locodes-only` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (LOCODEs, 20'GP, CY/CY) |
-| `sea-vessel-cutoff` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it ('ocean rates', 'vessel') |
-| `rail-china` | mode |  | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out |
-| `rail-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (Bahn, Schiene) |
-| `road-ftl` | mode |  | no_price (text) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (FTL, truck load) |
-| `road-groupage-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (per LKW) |
-| `courier-parcel` | mode |  | no_price (guess) | air: quote; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (courier parcel) |
-| `sea-air-dubai` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (sea-air) |
-| `sea-from-airport-company` | mode |  | no_price (guess) | air: question → quote; blank: question → no_price | wrong | scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'Airport' in the company's name |
+| `sea-fcl-locode` | mode |  | no_price (live) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `sea-lcl-german` | mode |  | no_price (text) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `sea-spanish` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-french` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-locodes-only` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (LOCODEs, 20'GP, CY/CY) |
+| `sea-vessel-cutoff` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it ('ocean rates', 'vessel') |
+| `rail-china` | mode |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out |
+| `rail-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (Bahn, Schiene) |
+| `road-ftl` | mode |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (FTL, truck load) |
+| `road-groupage-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (per LKW) |
+| `courier-parcel` | mode |  | no_price (guess) | air: quote; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (courier parcel) |
+| `sea-air-dubai` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (sea-air) |
+| `sea-from-airport-company` | mode |  | no_price (guess) | air: question → quote; blank: question → no_price late | wrong | scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'Airport' in the company's name |
 | `sea-switch-from-air` | mode |  | no_price (guess) | quote | wrong | scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'by air' said of last month |
-| `import-explicit` | direction |  | no_price (live) | air: no_price; blank: question → no_price | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `import-explicit` | direction |  | no_price (live) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
 | `import-implicit` | direction |  | no_price (text) | quote | wrong | scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it |
 | `cross-trade` | direction |  | no_price (text) | no_price late | late | scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at` |
 | `domestic` | direction |  | no_price (guess) | no_price late | late | scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at` |
 | `customs-only` | service |  | no_price (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
-| `warehousing-only` | service |  | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `warehousing-only` | service |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
 | `insurance-only` | service |  | no_price (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
-| `truck-to-airport-only` | service |  | no_price (guess) | air: question → quote; blank: question → no_price | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
-| `packing-only` | service |  | no_price (guess) | air: question → no_price; blank: question → no_price | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `truck-to-airport-only` | service |  | no_price (guess) | air: question → quote; blank: question → no_price late | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `packing-only` | service |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
 | `complaint-damage` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
 | `invoice-query` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
-| `supplier-advert` | none |  | no_price (text) | air: question → no_price late; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
-| `job-application` | none |  | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `supplier-advert` | none |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `job-application` | none |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
 | `newsletter` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
 | `out-of-office` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
-| `misdirected` | none |  | no_price (guess) | air: question → no_price; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
-| `general-rate-card` | none |  | no_price (guess) | air: question → no_price; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
-| `bank-details-change` | none |  | no_price (text) | air: question → no_price; blank: question → no_price; routed other: none | split | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `misdirected` | none |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `general-rate-card` | none |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `bank-details-change` | none |  | no_price (text) | air: question → no_price late; blank: question → no_price late; routed other: none | split | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
 | `air-or-sea-cheaper` | partial |  | quote (guess) | quote | right |  |
 | `instead-of-sea-air` | partial |  | quote (text) | quote | right |  |
-| `two-shipments-one-sea` | partial |  | quote (guess) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `two-shipments-one-sea` | partial |  | quote (guess) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 | `air-plus-customs-storage` | partial |  | quote (text) | quote | right |  |
 | `sea-or-air-german` | partial |  | quote (guess) | quote | right |  |
 | `company-seaside` | lookalike |  | quote (text) | quote | right |  |
 | `street-seehafen` | lookalike |  | quote (text) | quote | right |  |
 | `shipping-loosely` | lookalike |  | quote (text) | quote | right |  |
 | `container-loosely` | lookalike |  | quote (text) | quote | right |  |
-| `port-cities-no-codes` | lookalike |  | quote (text) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `port-cities-no-codes` | lookalike |  | quote (text) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 | `fob-air` | lookalike |  | quote (text) | quote | right |  |
 | `cif-air` | lookalike |  | quote (text) | quote | right |  |
 | `sea-mentioned-past` | lookalike |  | quote (text) | quote | right |  |
@@ -480,30 +483,31 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 | `courier-delivers-to-us` | lookalike |  | quote (text) | quote | right |  |
 | `express-loosely` | lookalike |  | quote (text) | quote | right |  |
 | `sea-dept-signature` | lookalike |  | quote (text) | quote | right |  |
-| `locode-airports` | lookalike |  | quote (guess) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `locode-airports` | lookalike |  | quote (guess) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 | `vessel-in-goods` | lookalike |  | quote (text) | quote | right |  |
 | `not-by-sea` | lookalike |  | quote (text) | quote | right |  |
 | `export-to-importer` | lookalike |  | quote (text) | quote | right |  |
 | `no-mode-german` | lookalike |  | quote (text) | quote | right |  |
 | `sea-forwarder-asks-air` | lookalike |  | quote (text) | quote | right |  |
 | `by-ship-inbound` | lookalike |  | quote (text) | no_price | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('by ship' for the inbound leg) |
-| `port-of-loading` | lookalike |  | quote (text) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `port-of-loading` | lookalike |  | quote (text) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 | `by-rail-inbound` | lookalike |  | quote (text) | no_price | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('by rail' to the airport) |
-| `sea-italian` | mode | language of sea-spanish | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
-| `sea-dutch` | mode | language of sea-spanish | no_price (guess) | air: question → quote; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
-| `sea-chinese` | mode | script of sea-spanish | no_price (guess) | air: question → no_price late; blank: question → no_price; routed other: none | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-italian` | mode | language of sea-spanish | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-dutch` | mode | language of sea-spanish | no_price (guess) | air: question → quote; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-chinese` | mode | script of sea-spanish | no_price (guess) | air: question → no_price late; blank: question → no_price late; routed other: none | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
 | `air-italian-not-by-sea` | lookalike | language of not-by-sea | quote (text) | quote | right |  |
-| `sea-in-attachment` | mode | channel of sea-fcl-locode | no_price (text) | air: quote; blank: question → no_price; routed other: none | split | scope (G8): the mode rule reads subject and body, not the attachment |
-| `air-in-attachment-sea-team` | lookalike | channel of sea-dept-signature | quote (text) | air: no_price; blank: question → no_price; routed other: none | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it (the request is in the attachment, the body names the sea team) |
+| `sea-in-attachment` | mode | channel of sea-fcl-locode | no_price (text) | air: quote; blank: question → no_price late; routed other: none | split | scope (G8): the mode rule reads subject and body, not the attachment |
+| `air-in-attachment-sea-team` | lookalike | channel of sea-dept-signature | quote (text) | air: no_price; blank: question → no_price late; routed other: none | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it (the request is in the attachment, the body names the sea team) |
 | `later-switch-to-sea` | moment | moment of sea-switch-from-air: after our quote | quote → no_price (guess) | quote → quote | wrong | after the quote: a later mail's change of mode is read as a requote for air (one line to that goal) |
-| `later-air-after-sea` | moment | moment of instead-of-sea-air: after our decline | no_price → quote (guess) | air: question → no_price; blank: question → no_price | wrong | after the quote: the session stays out of scope by its first mail, a later ask for air is declined (one line to that goal) |
-| `teu-unit` | mode | unit of sea-locodes-only | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (TEU) |
+| `later-air-after-sea` | moment | moment of instead-of-sea-air: after our decline | no_price → quote (guess) | air: question → no_price late; blank: question → no_price late | wrong | after the quote: the session stays out of scope by its first mail, a later ask for air is declined (one line to that goal) |
+| `teu-unit` | mode | unit of sea-locodes-only | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (TEU) |
 | `pmc-unit` | lookalike | unit of container-loosely | quote (text) | quote | right |  |
-| `sea-import` | direction | two at once: import and sea | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it; the lane is an import but the model's reading asks first (G1) |
-| `all-lookalikes-at-once` | lookalike | two at once: company, port words, FOB, container | quote (text) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
-| `air-chinese` | lookalike | script of no-mode-german | quote (guess) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `sea-import` | direction | two at once: import and sea | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it; the lane is an import but the model's reading asks first (G1) |
+| `all-lookalikes-at-once` | lookalike | two at once: company, port words, FOB, container | quote (text) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `air-chinese` | lookalike | script of no-mode-german | quote (guess) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 
 78 cases: 27 right, 2 late, 16 split, 33 wrong.
+
 
 ## Axis T: supply
 
