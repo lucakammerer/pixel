@@ -113,6 +113,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
   Older `quote.prose` events can contain opening and closing text. The quote renderer only uses the name.
+- `booking.py` `handle_confirmation` leaves a waitlisted or partially confirmed booking in its existing state
+  and records the airline reference, when available, so a later standalone confirmation can match.
+  `book` checks for an active lane suspension before placing a new booking.
 - `booking.py` `handle_reply` checks the customer's own words for an affirmative booking instruction or decline.
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
@@ -277,6 +280,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- A pickup abroad ("collected from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria") has no zone, so no
+  trucker and no zone airport. Asking for its postcode got the customer's address back and then a no-price reply.
+  `extract.py` `_abroad_pickup` (a country abroad on a pickup line, or a postcode of other than five digits) asks
+  nothing; the extraction call, made anyway, gets our zone airports and names the nearest by road
+  (`_departures_abroad`), and the quote is airport-to-airport with "Pickup is excluded".
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
   excludes attachments that name a different origin or destination airport (another shipment, #164). For weight
   and volume, an explicit email correction takes precedence, and "use the weight in this email" keeps the mail's.

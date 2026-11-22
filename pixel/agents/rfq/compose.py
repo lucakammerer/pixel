@@ -852,7 +852,9 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
     t = TEXT[lang]
     pick = random.Random(rfq.session_id).choice  # wording varies by session; one session always reads the same
     air_only = rfq.door_pickup and not option.trucker
-    needs_address = rfq.door_pickup and not rfq.pickup_postcode
+    # a pickup abroad (no zone, no postcode missing) gave its address: we have no trucker there, not no address
+    placed = bool(rfq.pickup_zone or "pickup_postcode" in rfq.missing)
+    needs_address = rfq.door_pickup and not rfq.pickup_postcode and placed
     preference = "fastest" if rfq.preference == Preference.FASTEST else "cheapest"
     goods = goods_of(request) if "core_goods" in t else None
     core = t["air_only"] if air_only else pick(t["core_goods" if goods else "core"][preference])
