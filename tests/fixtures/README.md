@@ -42,7 +42,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   offline. The question's archived receipt lets the replay ask again and link the reply to the question it just
   sent, or to the original request if it has enough facts. Attachment bytes are not stored. `round-166-accepted`
   is the session `tests/test_capture.py` replays end to end (portal rate, its next weight break, trucker bids) and
-  `tests/test_outage_drill.py` replays under every drill.
+  `tests/test_outage_drill.py` replays under every drill. `round-56-version-rollover` saves the arrival state,
+  the scorer's best and the first recorded rates of the new version in `.expected.json`. It exercises the
+  portal outage both before and after those reads are available to the rate card (C16).
 - `replay-gate.json`: round 155's session as the live database held it (request mail, reading, every option found,
   the sent quote, pickup zone), which `tests/test_replay_gate.py` builds into a database for `tools/replay_gate.py`.
 - `thread-followups.json`: round 86's session with every mail that can arrive later in it, by sender, phase and
