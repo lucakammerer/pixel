@@ -294,3 +294,14 @@ What follows:
   Open: all truckers silent (too low by the pickup, quoted at 315 s), a zone not listed (round 20), two pickup sites,
   two offers in one answer, a zone list that drops a zone. Next: from the host database, trucker answer delays and
   whether one trucker prices one zone linearly in the weight (that decides D5 and D6).
+- 22.11. 03:30, axis B cycle 1 (booking, tracking and the flow after the quote; offline, no live mail read). Tried
+  every one-factor change to the booking path (`bench/NEXT_CASES.md` axis B, B1 to B15) against scripted portals
+  and `tools.followup_matrix`. Wrong before: an acceptance after 15 minutes during the rate outage crashed in
+  `refresh` and left the booking requested for good (#323, also 404/409 refresh); round 88's cancellation raised on an
+  unknown event kind after the portal cancelled (#336, URGENT); "book it if below EUR X" was dropped as a thank-you
+  and the German cap booked whatever it said (#328); a confirmation only attached went to the tariff agent, one from
+  an unlisted address became a customer request, a refusal stayed a bid (#332); a cancellation the portal could not
+  take stayed with a person (#339). Matrix 169/182, the rest are the csv packing-table gaps and B13. Open: B7
+  rebooking the next option, B9 telling the customer about a failed booking, B10 an address for a portal airline,
+  B11 to B15 need a decision or a live sighting; B14 unverified. Next: the live board for any booking or tracking
+  reason code.
