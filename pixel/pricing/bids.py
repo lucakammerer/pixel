@@ -4,6 +4,7 @@ transcribes an answer the rules cannot read, and code does every sum."""
 import asyncio
 import json
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -313,13 +314,16 @@ def _option(rfq: Rfq, message: Message, total: Decimal, currency: str, fx: Decim
     )
 
 
-def parse(message: Message, rfq: Rfq, *, needs_transit: bool = True) -> RateOption | None:
-    """Price, currency and transit time from a carrier's answer, by rules. None when the rules cannot read it."""
+def parse(
+    message: Message, rfq: Rfq, *, needs_transit: bool = True, known_fx: Callable[[str], Decimal | None] | None = None
+) -> RateOption | None:
+    """Price, currency and transit time from a carrier's answer, by rules. None when the rules cannot read it. A price
+    in another currency takes the rate the answer states, else `known_fx`'s."""
     text = _own_text(message.body)
     if DECLINE.search(text) or not (price := _price(text, rfq)):
         return None
     total, currency = price
-    fx = None if currency == "EUR" else _fx(text, currency)
+    fx = None if currency == "EUR" else _fx(text, currency) or (known_fx and known_fx(currency))
     days = _days(text)
     if total <= 0 or (currency != "EUR" and (fx is None or fx <= 0)) or (needs_transit and days is None):
         return None
@@ -659,6 +663,19 @@ async def _with_attachments(ctx: Context, message: Message) -> tuple[str, list[s
     return "\n".join(parts), unread
 
 
+def known_fx(ctx: Context, currency: str) -> Decimal | None:
+    """EUR per unit of a currency as a priced source last stated it: the portal's or the rate desk's `fx_eur`, or a
+    carrier's stated rate. A trucker writes "198.40 USD" with no rate; without one the pickup was not priced and the
+    quote went out without it. Never a constant."""
+    row = ctx.db.execute(
+        "SELECT json_extract(payload,'$.option.fx_eur') FROM events WHERE kind='option.found'"
+        " AND json_extract(payload,'$.option.currency')=? AND json_extract(payload,'$.option.fx_eur') IS NOT NULL"
+        " ORDER BY id DESC LIMIT 1",
+        (currency,),
+    ).fetchone()
+    return Decimal(str(row[0])) if row and Decimal(str(row[0])) > 0 else None
+
+
 async def record(ctx: Context, message: Message) -> None:
     """Called by the orchestrator for every bid or desk answer: parse (model only if `parse` gives None),
     emit `bid.received` and `option.found`."""
@@ -681,7 +698,9 @@ async def record(ctx: Context, message: Message) -> None:
 
     def by_rules(message: Message) -> tuple[list[RateOption], RateOption | None]:
         listed = parse_desk(message, rfq) if kind == "ratedesk" else []
-        return listed, None if listed else parse(message, rfq, needs_transit=not pickup)
+        return listed, None if listed else parse(
+            message, rfq, needs_transit=not pickup, known_fx=lambda currency: known_fx(ctx, currency)
+        )
 
     # An attachment counts only when the mail alone holds no price: an airline's terms or a forwarded invoice beside
     # a priced mail must not hide that price.
