@@ -1,7 +1,8 @@
 """Axis P: every scored round, the scorer's best against our quote then and against today's code, offline.
 
 uv run python -m tools.price_ledger <database>                 # rounds lost on price, rounds that lost accuracy, and
-                                                               # every accepted round today's code quotes otherwise
+                                                               # every accepted round today's code quotes otherwise;
+                                                               # the last line counts every scored round
 uv run python -m tools.price_ledger <database> --rounds 91,130  # just these
 
 Per scored round (its last `score` verdict; `feedback` names the session and, for an accepted round, the best price
@@ -89,6 +90,8 @@ async def _reading(ctx: Context, session_id: int) -> Rfq | str:
     raw = json.loads(row["data"])["raw"]
     if raw.get("attachments"):
         return "its attachments are not stored"
+    if ctx.db.execute("SELECT 1 FROM messages WHERE session_id = ? AND purpose = 'question'", (session_id,)).fetchone():
+        return "we asked the customer: offline there is no answer"
     message = to_message(raw, "in")
     token = timing.clock.set(lambda: message.sent_at)
     try:
@@ -225,6 +228,8 @@ async def ledger(db: str, rounds: list[int] | None) -> None:
         print("| Round | Verdict | Wish | Quoted then | Scorer's best | Today | Today | What today's code changes |")
         print("| --- | --- | --- | --- | --- | --- | --- | --- |")
         all_rows = scored(ctx.db)
+        count = dict.fromkeys(("accepted, quoted as sent", "accepted, quoted otherwise",
+                               "accepted, today within 5 % of the best the points give", "no session or quote"), 0)  # fmt: skip
         for number in sorted(
             all_rows, reverse=True
         ):  # newest first: a reading left in the copy is never an earlier one's
@@ -232,14 +237,11 @@ async def ledger(db: str, rounds: list[int] | None) -> None:
             lost = row.get("reason") in ("too_low", "too_high") or (
                 row.get("verdict") == "accepted" and row.get("accuracy") is not None
                 and Decimal(str(row["accuracy"])) < Decimal("44.95"))  # fmt: skip
-            if (
-                (rounds and number not in rounds)
-                or not row.get("session")
-                or not (rounds or lost or row["verdict"] == "accepted")
-            ):
+            if (rounds and number not in rounds) or not (rounds or lost or row["verdict"] == "accepted"):
                 continue
-            drafted = _draft(ctx.db, row["session"])
+            drafted = _draft(ctx.db, row["session"]) if row.get("session") else None
             if drafted is None:
+                count["no session or quote"] += 1
                 continue
             then = drafted[0].option
             try:
@@ -251,6 +253,11 @@ async def ledger(db: str, rounds: list[int] | None) -> None:
                 then.carrier,
                 then.trucker,
             )
+            if row["verdict"] == "accepted":
+                if not lost:
+                    count["accepted, quoted as sent" if same else "accepted, quoted otherwise"] += 1
+                if pick is not None and window(row, then.total_eur, pick.total_eur).startswith("passes"):
+                    count["accepted, today within 5 % of the best the points give"] += 1
             if not (rounds or lost) and same:
                 continue
             best = (
@@ -269,6 +276,10 @@ async def ledger(db: str, rounds: list[int] | None) -> None:
                 verdict_today = "same" if same and lost else window(row, then.total_eur, pick.total_eur)
             print(f"| {number} | {verdict} | {drafted[0].rfq.preference.value} | {quoted} | {best} | {shown} |"
                   f" {verdict_today} | {'; '.join(notes)} |")  # fmt: skip
+        verdicts = [r.get("verdict") for r in all_rows.values()]
+        print(f"\n{len(all_rows)} scored rounds, {verdicts.count('accepted')} accepted;"
+              + "".join(f" {name}: {n};" for name, n in count.items())
+              + f" lost on price: {sum(r.get('reason') in ('too_low', 'too_high') for r in all_rows.values())}")  # fmt: skip
         await offline.aclose()
         ctx.db.close()
 

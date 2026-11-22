@@ -59,6 +59,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `api/portal.py` reads the same rate from the portal's browser page; `pricing/engine.py` starts carrier sourcing
   when the portal is slow or unavailable, asks the desk on the first outage answer, and `pricing/portal_rates.py`
   reads the airlines it could not price again at 15, 45, 75 and 105 seconds.
+- `pricing/bids.py` `_offer_expiry` retains a carrier bid's stated expiry in `option.found`. It reads the
+  carrier's own text, including a text attachment when the price is in that attachment. A relative expiry is
+  measured from receipt. A validity duration stays separate from pickup hours and air transit.
 
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
   weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly
@@ -75,6 +78,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   model's read, and with the gateway down no quote at all). `agent.py` `handle`
   quotes the first and prices the others beside it; `_with_shipments` adds each one's price and, when all have one,
   their sum in a paragraph of the same quote (R4). The quote's option, PDF details and booking stay the first's.
+- `agent.py` `_other_option`: "your cheapest and your fastest, each with its price" (`compose.both_options`: both
+  words joined by "and", and options asked for as such: "two options", "zwei Angebote", "both the cheapest and the
+  fastest", "each with its price", "jeweils mit", "chacune avec") quotes the wish read first and names the other
+  option after the offer with its own total (`compose.other_option`). "Two pallets", "for each shipment" and a bare
+  "the cheapest and fastest options" ask for one total. The quote's option, PDF details and booking stay the first's.
 - `extract.py` `excluded_airlines`, `_carrier_requirements`: an airline the customer rules out (a sentence with a negation that
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
@@ -99,7 +107,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   China" allowed, "arrival airport" a label), never a reply-by or a details-by date, never a past shipment
   (`ARRIVAL_CONTEXT`, the last words before "arrival") and never a date before the request; a date without a year is
   this year's unless that lies more than half a year back (`_stated_date`). A sentence the rule leaves, and one with a coming date it does not take,
-  is read by `novelty.py`, whose date counts only as written. `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
+  is read by `novelty.py`, whose date counts only as written. The same call reads the cheapest or fastest wish in
+  any language (`wish`); it selects only where `extract.stated_preference` read none, and a rule that read one wins
+  (`wish_conflict` on `rfq.novelty` when the two differ; round 186). `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
   `pricing/calc.py` `arrival` for the delivery date including pickup. When no price meets the timing, the quote goes
   out at once with the best one and `novelty.py` `with_note` names the alternative: bids were collected until
   `target_at`, so a later price that meets it is unlikely.
@@ -199,7 +209,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   no-price message without alerting an operator.
   `tools/followup_matrix.py` runs every sender, phase and intent (`tests/fixtures/thread-followups.json`) and
   the change mail in six languages, three unit systems and five attachment formats.
-- `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
+- `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (an airline's
+  rate for another chargeable weight is not one: under a rate API 429 the first request's reads land after the change
+  and the cheaper old-weight price was quoted, outage drill round 172) (with none,
   from the best the session holds, R1), and sends a quote with its PDF in reply to the change mail
   (`outbox.send_quote(reply_to=...)`, its own claim). While it prices, `outbox.quoted` is true and a quote of the
   older facts is held as `superseded`, also when the change came before our first quote. Round 86: the scorer scored
@@ -455,6 +467,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- Korean and Turkish name the airport first and its direction after it: "DFW (Dallas, US)까지", "MIA (Miami, US)행",
+  "SGN (Ho Chi Minh City, VN) varışlı", "ATL’ye", "AAA’dan" (`DEST_PARTICLE`, `ORIGIN_PARTICLE`), the customer's
+  own delivery "Cologne 공항(CGN)까지는 저희가 직접 반입", "Havalimanı’na (STR) biz teslim edeceğiz" (`OWN_AIRPORT`); the
+  pickup "픽업", "alıma hazır", "teslim alınmaya hazır" (`_has_pickup` checks the customer's leg and the words around
+  it; "픽업은 필요 없습니다" and the consignee's collection at arrival add no pickup), pieces "4개", "7 parça", and a
+  unit or currency glued to a particle ("1.44 cbm입니다", "1.44 m3입니다", "EUR로"). Rounds 126 to 171 were read by
+  the model alone; the rules now read these phrases. A local per-piece weight or volume ("개당 중량", "her biri") needs
+  an explicit shipment total for that field (`_total_figures`). Without it, the model reads the request, including
+  Korean lots ("로트 1: 카톤 4개, 총중량 each 162 kg", round 167).
 - The rules read no lane in a script they have no words for, so the model reads those requests alone (round 156,
   Korean: "MIA (Miami, US)행" came back as origin MIA with no destination; we asked and sent no quote). Before a
   destination is asked for, `extract.py` `_named_destination` takes the one airport only arrivals of ours use

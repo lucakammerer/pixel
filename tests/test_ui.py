@@ -270,3 +270,58 @@ async def test_dashboard_shows_our_rank_big_and_the_gap_to_the_teams_around_us(c
     page = client.get("/dashboard").text
     assert "<div class=rank>#6<small>of 7</small></div>" in page and "1851.98" in page
     assert "48.02</b> behind #5 Team 5" in page and "151.48</b> ahead of #7 Team 7" in page
+
+
+def test_timeline_folds_background_steps():
+    from pixel.contracts import Event
+    from pixel.ui.page import event_row, group_events, is_minor
+
+    kinds = ["mail.in", "route", "option.found", "option.found", "llm.call", "quote.sent", "route", "mail.out"]
+    evs = [Event(id=i, ts=T0, kind=k, actor="test", session_id=1) for i, k in enumerate(kinds, 1)]
+    html = group_events(evs, [event_row(e) for e in evs], [is_minor(e.kind) for e in evs])
+    assert html.count("<details class=evgroup>") == 1  # a lone background step stays a plain row
+    assert "4 automatic steps" in html and "option priced ×2, sorted, model call" in html
+    assert html.index("Mail received") < html.index("evgroup") < html.index("Quote sent")
+    assert all(f'id="ev{e.id}"' in html for e in evs)  # nothing is dropped, only folded
+    assert not is_minor("booking.confirmed") and not is_minor("human.takeover") and is_minor("quote.checked")
+    assert not is_minor("quote.checked", {"blocking": ["total"]}) and not is_minor("quote.unmet", {"alert": True})
+
+
+def test_mail_with_a_carrier_is_background():
+    from pixel.contracts import Event
+
+    mails = {
+        1: {"sender": "Ops@Globex.example", "recipient": "pixel@hackloop.mail"},
+        2: {"sender": "pixel@hackloop.mail", "recipient": "desk@airline.example"},
+        3: {"sender": "pixel@hackloop.mail", "recipient": "ops@globex.example"},
+    }
+
+    def ev(kind, message_id):
+        return Event(ts=T0, kind=kind, actor="test", session_id=1, message_id=message_id)
+
+    assert not routes.background(ev("mail.in", 1), mails)  # the customer who opened the thread
+    assert routes.background(ev("mail.out", 2), mails)  # a bid request to a carrier
+    assert not routes.background(ev("mail.out", 3), mails)  # the quote back to the customer
+    assert routes.background(ev("llm.call", None), mails) and not routes.background(ev("quote.sent", None), mails)
+
+
+def test_takeover_guide_points_at_the_next_step(client, pipe, monkeypatch):
+    monkeypatch.setattr(timing, "now", lambda: T0 + timedelta(seconds=75))
+    old = quote(2, customer="ops@globex.example", status=QuoteStatus.DRAFT)
+    pipe.ctx.db.execute("UPDATE sessions SET deadline_at=? WHERE id=2", (old.rfq.deadline_at.isoformat(),))
+    pipe.emit(pipe.ctx, "rfq.extracted", "rfq", session_id=2, message_id=2, payload=old.rfq.model_dump(mode="json"))
+    page = client.get("/sessions/2").text  # on autopilot: the same steps, no buttons but the takeover
+    assert "PIXEL is on it" in page and "action='/sessions/2/takeover' class=handover-actions" in page
+    assert "value=portal" not in page
+    client.post("/sessions/2/takeover")
+    page = client.get("/sessions/2").text
+    assert "<li class='step next'><span class=step-n aria-hidden=true>2</span>" in page  # no price yet
+    assert "value=portal" in page and "PIXEL is on it" not in page
+    offer = old.option.model_copy(update={"valid_until": old.rfq.deadline_at + timedelta(minutes=5)})
+    pipe.emit(pipe.ctx, "option.found", "pricing", session_id=2, payload={"option": offer.model_dump(mode="json")})
+    page = client.get("/sessions/2").text
+    assert "1 option priced" in page and '<button class="btn primary" name=action value=draft>' in page
+    client.post("/sessions/2/source", data={"action": "draft"})
+    page = client.get("/sessions/2").text
+    assert "Send quote · EUR 370.74" in page and "<span class=step-n aria-hidden=true>4</span>" in page
+    assert pipe.sent == []

@@ -5,6 +5,23 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #498 | lucakammerer | b572a81 | ok after a fix by C (taken over from A), merge held for the demo | "No need to correct the offer" sent a new quote (fixed: `NO_NEED`); B's rate-check rows requote at the new figure; 1 of 450 live replies reads differently, F7 (session 2149) |
+| #505 | lucakammerer | 31d0c80 | ok (C), merge held for the demo | a yes held on "siempre que", "purché", "mits"; [17] 187 → 219 right with no right case lost; 0 of 2241 live mails read differently |
+| #513 | lucakammerer | 709ade8 | ok (C, taken over from B), merge held for the demo | an import written by its lane alone stays as written and is declined; only one live lane was ever turned round, an import already kept on `main` |
+| #481 | lucakammerer | 563d5e1 | ok after a fix by C (taken over from B) | a weight after "Bestellung"/"commande" without a space or in kilos ("450kg", "300 kilos", "1200 x 800") became "Your reference"; 0 of 2144 live mails read differently |
+| #489 | lucakammerer | d05530e | ok after a note, docs conflict resolved | per-piece weights in Korean/Turkish read as totals by rules ("7 parça, her biri 195 kg" → 195 kg); now the model reads them without a total; the wish part went live alone as #508 (round 186) |
+| #496 | lucakammerer (supply) | e00a507 | ok | bid expiry read; nothing selects on it; validity no longer read as pickup hours |
+| #492 | lucakammerer | 5999341 | ok, follow-up of the close of #474 | no resend on a lost response or 500/502/504; English fallback only on a 4xx and never for the question before the quote |
+| #508 | lucakammerer | 1363a49 | ok after merge, URGENT | round 186: "en hızlı" left the preference at cheapest |
+| #480, #479, #474 | lucakammerer | 912daf3, d0da084, 41f555c | closed | a yes beside "couldn't do better" held instead of booked; "two pallets" asked for a second total; a stored mail sent twice |
+| #475, #463, #468 | lucakammerer | f8440a4, f49f54c, a3a288b | ok | gateway call unchanged; own-delivery origin; last reader off by default |
+| #490 | TripleCF | 614031b | ok after merge, merged by its author on the read path | quote path waits longer only while a person's call runs, bounded by `hard_at` |
+| #472 | lucakammerer | e23d718 | ok after merge, URGENT | a pickup adds no day to the arrival; last 50 accepted unchanged |
+| #512 | lucakammerer | fae5b97 | ok after merge, URGENT (B) | the model's cheapest/fastest wish decides only where no rule read one; live 3 rules readings without a wish, none sounds fastest; open: "a quick reply" could be read as fastest, the replay gate cannot see it |
+| #506 | lucakammerer | da30b5f | close (B) | the last reader on by default: never ran live (0 `quote.unmet` events), certain cost and hold, gain only with a person in the hold; first `log` for a measured live hour |
+| #503 | lucakammerer | 5c6c5ff | ok (B), gated with #499 | a requote keeps only rates for the changed chargeable weight; live every sheet, portal and bid option carries its reading's `chargeable_kg`, the filter drops no valid price |
+| #499 | lucakammerer | 78a11f4 | ok (B), gated with #503 | a second option only when asked for as such; 0 of 323 live requests fire it; the second total is a WARN `text_amounts`, never a block |
+| #494 | lucakammerer | 78b0364 | close (B), followed by #505 | Spanish, Italian, Dutch, Portuguese yes words booked 12 negated, conditional or put-off replies ("não aceitamos", "Wij accepteren … niet", "Si aceptamos …") |
 | #469 | lucakammerer | 2a9a2f6 | own, fix forward of #465 | an air request that sets sea aside ("not by sea", "our sea freight is too slow", "pas de LCL") was declined; 0 of 167 live requests declined by mode before and after |
 | #465 | lucakammerer | 9587f0c | ok after merge, URGENT, fixed forward (#469) | round 177's sea FCL request declined at once; no live request declined by mode; set-aside mentions declined air requests |
 | #461 | lucakammerer | 478d64b | ok | stuck alert at 45 s: about 7 more alerts in 18 h (28 of 158 answers after 45 s, 21 after 90 s) |

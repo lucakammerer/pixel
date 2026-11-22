@@ -12,7 +12,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
 3. Rewrites: which rows of `rfqs/rewrites.jsonl` the rules extract, whether they read every shipment field right,
    and which need the model.
 4. Partial cases: the rows of `rfqs/partial_cases.jsonl` that have an invariant to check.
-5. Changed layouts: every sheet in `tariffs/variants/` is parsed right or refused, never parsed into wrong values.
+5. Tariff layouts and updates: sheets in `tariffs/variants/` are parsed right or refused. The mail sequences
+   in `tariffs/lifecycle/` check the rate that stays usable after each update.
 6. Routing: the router's rules on `mails/routing_probes.jsonl`.
 7. Carrier bids: `pricing.bids.parse` on `mails/bid_probes.jsonl`, and on every captured pickup offer
    (`pickup-offer-layouts.json`) with one change each (`PICKUP_CHANGES`): its total, currency and pickup hours.
@@ -40,7 +41,7 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    customer's mail the intent, the changed fields and what the session does.
 16. Rate desk answer in an attachment: the captured answer as its own lines or a table (`ratedesk-layouts.json`), in
    pdf, xlsx, docx, txt and csv, behind a mail that only points to the file: the same airlines, rates, rate ids
-   and validity.
+   and validity. `ratedesk-probes.json` checks a changed unit or currency header and isolation between rows.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -55,10 +56,12 @@ import csv
 import io
 import json
 import re
+import sqlite3
 import sys
 import zipfile
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from contextlib import closing
+from dataclasses import dataclass, field, replace
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from email.message import EmailMessage
 from pathlib import Path
@@ -72,6 +75,7 @@ from pixel.agents.tracking import agent as tracking
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import (
+    Attachment,
     LaneTariff,
     LlmResult,
     MailKind,
@@ -83,12 +87,12 @@ from pixel.contracts import (
     Rfq,
     Source,
 )
-from pixel.core import db, poller
+from pixel.core import db, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
 from pixel.core.outbox import _store
 from pixel.crm import quotes, shipments
-from pixel.pricing import bids, store
+from pixel.pricing import bids, engine, session, store
 from pixel.pricing.calc import chargeable_kg, price_tariff
 from pixel.pricing.pickup import zone_of
 from tools import document_conflicts, simulate
@@ -436,6 +440,7 @@ class DeskRead:
     fmt: str
     outcome: str  # "right", "none" (no rate read: the desk never goes to the model) or "wrong"
     detail: str = ""
+    known_gap: str | None = None
 
 
 def desk_files() -> list[tuple[str, str, str, bytes]]:
@@ -475,6 +480,32 @@ def audit_desk_attachments() -> list[DeskRead]:
         got = [(o.carrier_code, str(o.total), o.currency, o.transit_days, o.rate_id, o.valid_until) for o in found]
         outcome = "right" if got == want else "none" if not got else "wrong"
         results.append(DeskRead(layout, fmt, outcome, "" if outcome == "right" else str(got)))
+    return results
+
+
+def audit_desk_probes() -> list[DeskRead]:
+    fixture = json.loads((FIXTURES / "ratedesk-probes.json").read_text())
+    request = fixture["request"]
+    rfq = Rfq(session_id=1, message_id=1, customer="bench", origin=request["origin"], destination=request["destination"],
+              weight_kg=D(request["weight_kg"]), volume_cbm=D(request["volume_cbm"]),
+              received_at=NOW, deadline_at=NOW)  # fmt: skip
+    results = []
+    for case in fixture["cases"]:
+        for fmt in case["formats"]:
+            if fmt == "body":
+                lines = ["  ".join(row) for row in case["lines"]]
+            else:
+                content = simulate.WRITERS[fmt](case["lines"])
+                lines = _readable(f"portal-rates.{fmt}", content) or []
+            message = _message("Portal rates", "\n".join(lines))
+            try:
+                got = [[o.carrier_code, str(o.total), o.currency, str(o.total_eur), o.transit_days, o.rate_id,
+                        o.valid_until.isoformat() if o.valid_until else None] for o in bids.parse_desk(message, rfq)]  # fmt: skip
+            except ValueError as exc:
+                detail = f"ValueError: {exc}"
+            else:
+                detail = "" if got == case["expected"] else f"got {got}, expected {case['expected']}"
+            results.append(DeskRead(case["id"], fmt, "wrong" if detail else "right", detail, case.get("known_gap")))
     return results
 
 
@@ -715,6 +746,71 @@ def _spot_price(tariff: LaneTariff, kg: str, fx_eur: D | None = None) -> tuple[D
     return option.total, option.billed_kg
 
 
+async def _tariff_mail(ctx: Context, folder: Path, mail: dict, index: int, received: datetime) -> None:
+    files = []
+    for filename in mail.get("files", []):
+        content = (folder / filename).read_bytes()
+        if fmt := mail.get("format"):
+            content = simulate.WRITERS[fmt]([[line] for line in content.decode().splitlines()])
+            filename = str(Path(filename).with_suffix(f".{fmt}"))
+        files.append((filename, content))
+    ctx.mailbox = simulate.Mailbox(files)
+    message = _message("Tariff update", mail.get("body", "Please see attached.")).model_copy(update={
+        "id": index + 1, "session_id": index + 1, "sender": "carrier@example.com",
+        "sent_at": received + timedelta(seconds=index),
+        "attachments": [Attachment(id=i, filename=n, content_type="", size=len(c)) for i, (n, c) in enumerate(files)],
+    })  # fmt: skip
+    kind, _ = router.rules(ctx, message)
+    if kind == MailKind.TARIFF:
+        await agent.handle(ctx, message)
+
+
+async def _tariff_lifecycles() -> list[Variant]:
+    folder = TARIFF_FIXTURES / "lifecycle"
+    fixture = json.loads((folder / "cases.json").read_text())
+    request = fixture["request"]
+    received = datetime.fromisoformat(request["received_at"])
+    results = []
+
+    async def no_model(*args, **kwargs):
+        raise AssertionError("a text tariff lifecycle case called the model")
+
+    for row in fixture["cases"]:
+        differences = []
+        with closing(sqlite3.connect(":memory:")) as conn, patch.object(llm, "ask_json", no_model):
+            conn.row_factory = sqlite3.Row
+            db.init(conn)
+            ctx = Context(replace(settings(), dry_run=True), conn, None, None, None, None)
+            store.save_carriers(ctx, [{"name": fixture["carrier"], "kind": "airline",
+                                       "email": "carrier@example.com", "serves": ""}])  # fmt: skip
+            for index, mail in enumerate(row["mails"], 1):
+                at = received + timedelta(seconds=index)
+                with patch.object(timing, "now", return_value=at):
+                    await _tariff_mail(ctx, folder, mail, index, received)
+                    differences.extend(_tariff_price_check(ctx, row, index, request, received))
+        safe = not differences
+        results.append(Variant(row["id"], row["id"], "parsed right" if safe else "parsed wrong",
+                               "; ".join(differences), safe, row.get("known_gap")))  # fmt: skip
+    return results
+
+
+def _tariff_price_check(ctx: Context, row: dict, index: int, request: dict, received: datetime) -> list[str]:
+    differences = []
+    for check in row["checks"]:
+        if check["after"] != index:
+            continue
+        lane = check.get("lane", request["lane"])
+        origin, destination = lane.split("-")
+        rfq = Rfq(session_id=1, message_id=1, customer="bench", origin=origin, destination=destination,
+                  weight_kg=D(check.get("weight_kg", request["weight_kg"])), received_at=received, deadline_at=received,
+                  ready_on=date.fromisoformat(check["ready"]) if "ready" in check else None)  # fmt: skip
+        read = session.for_request if check.get("stored") else engine.sheet_options
+        got = [[str(o.total), o.currency, str(o.total_eur)] for o in read(ctx, rfq)]
+        if got != check["want"]:
+            differences.append(f"{lane} after mail {index}: {got}, expected {check['want']}")
+    return differences
+
+
 def audit_variants() -> list[Variant]:
     """Synthetic sheets with one layout change each (`tariffs/variants/variants.jsonl`). A change may be parsed
     right or refused (then the model reads the sheet); a sheet parsed into wrong prices is never safe."""
@@ -771,7 +867,7 @@ def audit_variants() -> list[Variant]:
                 else:
                     outcome, detail = "parsed right", ""
         results.append(Variant(row["file"], row["change"], outcome, detail, outcome in row["safe_outcomes"], gap))
-    return results
+    return results + asyncio.run(_tariff_lifecycles())
 
 
 def _header_row(ws) -> int | None:
@@ -1204,6 +1300,8 @@ def open_gaps() -> dict[str, list[str]]:
         (r.fixture, r.known_gap) for r in audit_live() + audit_live_mutations() if r.right is False and r.known_gap
     ]
     found += [(b.case_id, b.known_gap) for b in audit_bids() if not b.ok and b.known_gap]
+    found += [(f"desk {r.layout} ({r.fmt})", r.known_gap) for r in audit_desk_probes()
+              if r.outcome == "wrong" and r.known_gap]  # fmt: skip
     seen_gaps = set()
     for r in document_conflicts.audit():
         key = f"{r.case.change}:{r.case.layout}"
@@ -1288,7 +1386,9 @@ def main() -> int:
     right = sum(v.outcome == "parsed right" for v in variants)
     refused = sum(v.outcome == "refused" for v in variants)
     unsafe = [v for v in variants if not v.safe and not v.known_gap]
-    print(f"\n[5] Changed tariff layouts: {right} parsed right, {refused} refused (model reads), of {len(variants)}")
+    print(
+        f"\n[5] Tariff layouts and updates: {right} parsed right, {refused} refused (model reads), of {len(variants)}"
+    )
     for v in variants:
         status = "ok" if v.safe else ("GAP" if v.known_gap else "FAIL")
         print(f"    {status:<4} {v.outcome:<12} {v.change}" + (f"  ({v.detail})" if v.detail else ""))
@@ -1434,11 +1534,17 @@ def main() -> int:
     desk = audit_desk_attachments()
     # The desk's own layout must read in every format; a table may go unread, never into other rates.
     desk_wrong = [d for d in desk if d.outcome == "wrong" or (d.layout == "its own lines" and d.outcome != "right")]
+    desk_probes = audit_desk_probes()
+    desk_wrong.extend(d for d in desk_probes if (d.outcome == "wrong") != bool(d.known_gap))
+    desk += desk_probes
     print(f"\n[16] Rate desk answer in an attachment: {sum(d.outcome == 'right' for d in desk)}/{len(desk)} read, "
           f"{sum(d.outcome == 'none' for d in desk)} without a rate")  # fmt: skip
     for d in desk:
-        print(f"    {'ok' if d.outcome == 'right' else 'FAIL' if d in desk_wrong else 'none':<4} {d.layout}, {d.fmt}"
-              + (f"  ({d.detail})" if d.detail else ""))  # fmt: skip
+        status = "FAIL" if d in desk_wrong else "GAP" if d.known_gap else "ok" if d.outcome == "right" else "none"
+        detail = d.detail or ("now right, remove the known gap" if d.known_gap else "")
+        print(f"    {status:<4} {d.layout}, {d.fmt}" + (f"  ({detail})" if detail else ""))
+        if d.known_gap and d.outcome == "wrong":
+            print(f"         {d.known_gap}")
 
     followups = audit_followups()
     followups_wrong = [f for f in followups if f.outcome == "wrong" and not f.known_gap]

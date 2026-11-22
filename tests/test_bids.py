@@ -91,7 +91,7 @@ def ctx(conn, monkeypatch):
              str(metrics.get("cost_usd", 0))),
         )  # fmt: skip
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         return mail("us@x", body, session_id).model_copy(update={"to": to})
 
     monkeypatch.setattr(events, "emit", emit)
@@ -204,7 +204,7 @@ async def test_a_pickup_known_by_its_town_alone_is_asked_with_a_postcode_of_its_
     # Round 15: every trucker answered "postcode - (zone 93)" with "To quote we need: the pickup postcode".
     asked = []
 
-    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose, english=None):
         asked.append(f"{subject}\n{body}")
         return mail("us@x", body, session_id)
 

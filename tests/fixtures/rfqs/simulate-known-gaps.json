@@ -2,9 +2,9 @@
   {
     "family": "bid",
     "axes": {
-      "expiry": ["absolute", "other-party", "attached", "hours", "minutes", "german-offset", "arabic-script", "combined"]
+      "expiry": ["inline-after-pickup", "inline-before-reference", "inline-definite-quote"]
     },
-    "note": "A carrier offer's stated validity is dropped when rules record the price, so its expiry cannot be checked. Owner: supply."
+    "note": "Round 196: pickup bids state an explicit UTC deadline inside a paragraph. The whole-line expiry reader leaves it unset. Owner: supply."
   },
   {
     "family": "bid",

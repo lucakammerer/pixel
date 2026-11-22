@@ -208,8 +208,7 @@
      }
     ]
    },
-   "today": "Fastest only (Helix 2132.80 EUR).",
-   "known_gap": "`selection.select` returns one option and `compose.render` writes one Owner: Accuracy."
+   "today": "Helix 2132.80 EUR (the fastest, the wish read first) and the other option in the same reply: Kestrel 1512.80 EUR, 4 days (`agent._other_option`)."
   },
   {
    "fixture": "next-cases/two-lanes-one-mail.json",
@@ -571,8 +570,7 @@
     "language": "de",
     "pdf": true
    },
-   "today": "Helix 2132.80 only, German, the PDF with it (before #479).",
-   "known_gap": "two options, as `cheapest-and-fastest-both`: #479 open. Owner: Checklist."
+   "today": "Helix 2132.80 and Kestrel 1512.80 in German, both in the PDF."
   },
   {
    "fixture": "next-cases/combo-arrive-by-pdf-reference.json",
@@ -585,8 +583,7 @@
     ],
     "pdf": true
    },
-   "today": "Helix 2132.80, PDF attached; the reference PO-2026-5512 is not read: `pdf.REFERENCE` needs a word before the code.",
-   "known_gap": "a PO code alone is no reference: #481 open. Owner: Checklist."
+   "today": "Helix 2132.80, the reference PO-2026-5512 in mail and PDF."
   },
   {
    "fixture": "next-cases/cheapest-and-fastest-one-option.json",

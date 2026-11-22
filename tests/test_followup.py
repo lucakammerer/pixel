@@ -9,7 +9,7 @@ from pixel.agents.rfq import agent, booking, followup
 from pixel.contracts import Booking, BookingStatus, QuoteStatus
 from pixel.core import db, events
 from pixel.crm import bookings, quotes, shipments
-from pixel.pricing import engine
+from pixel.pricing import calc, engine
 
 pytest_plugins = ["test_crm"]  # the `pipe` fixture
 
@@ -169,3 +169,25 @@ async def test_a_requote_holds_the_quote_of_the_older_facts_and_answers_with_a_p
     assert seen["quoted"] and pipe.quoted == [(20, first.option.total)] and sent is not None
     assert db.get(pipe.ctx.db, "requote:1") is None
     assert "followup.read" in events.KINDS
+
+
+async def test_a_rate_for_the_older_weight_that_lands_after_the_change_is_not_quoted_for_it(pipe, monkeypatch):
+    """Outage drill `portal_429`, round 172: the first request's rate reads waited out a 429 and the rate card priced
+    them after the change (857 to 1328 kg); the requote quoted the cheaper 857 kg price, too low."""
+    first = quote(1)
+    changed = first.rfq.model_copy(update={"weight_kg": Decimal(320)})
+    stale = first.option.model_copy(update={"total": Decimal("100.00"), "total_eur": Decimal("100.00")})
+    kg = calc.chargeable_kg(changed.weight_kg, changed.volume_cbm)
+    right = first.option.model_copy(update={"chargeable_kg": kg, "billed_kg": kg, "total": Decimal("400.00"),
+                                            "total_eur": Decimal("400.00")})  # fmt: skip
+    assert stale.chargeable_kg != kg
+
+    async def options(ctx, rfq, deadline):
+        for option in (stale, right):
+            pipe.emit(ctx, "option.found", "pricing", session_id=1, payload={"option": option.model_dump(mode="json")})
+        return []
+
+    monkeypatch.setattr(engine, "options", options)
+    monkeypatch.setattr(agent, "_check", lambda *a: None)
+    await agent.requote(pipe.ctx, mail(20, 1), changed)
+    assert pipe.quoted == [(20, Decimal("400.00"))]
