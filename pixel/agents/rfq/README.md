@@ -104,6 +104,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   with the rate per kg chargeable weight when they ask for a breakdown (`breakdown`, only when the parts add up to the
   total, `calc.per_kg`). Any doubt gives "". A signed "Dr. Eva Huber" is greeted as Eva (`TITLE`), never as the
   role line under her name.
+- `compose.py` `answers` says plainly what a request asks for that our price does not hold (`SERVICES`: cargo
+  insurance without terms to price it by, export customs clearance, security screening): "Not included in this
+  price: …". `novelty.CONSUMED` lists these rules, so their sentences cost no model call.
+- `compose.py` `greeting` greets the colleague a customer names as the offer's addressee ("please address the
+  offer to my colleague Mr. Jens Hartmann": "Dear Mr. Hartmann,", `addressee`), in the quote and the booking mails.
 - `compose.py` `prose` / `clean` / `adopt` (R31): the model reads the customer's signed first name
   on `PIXEL_MODEL_PROSE` when set. The extraction call supplies the same field when it reads the request.
   The checked name is stored as `quote.prose` and also used by the deadline fallback and booking mails.
@@ -140,7 +145,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   older facts is held as `superseded`, also when the change came before our first quote. Round 86: the scorer scored
   our answer to the change mail, not the first quote.
 - `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
-  the selected billed weight. A 503 or an option without a rate id goes to the airline by mail. The carrier
+  the selected billed weight, and so is a rate id the bookings API does not know (404, a desk or browser-page id)
+  or one taken (409). A 503, an option without a rate id, or an expired rate while the rate API is down or capped
+  (no fresh rate: 503, 429) goes to the airline by mail; a rate message's desk address is never booked with. The carrier
   receives the air purchase price. The customer's booking notice states the accepted quote total, including
   any priced pickup, and names the excluded pickup on an airport-only booking. Confirmation updates that shipment. Replay uses a local mailbox and blocks portal bookings.
   Booking and confirmation mails use the quote's greeting (`compose.greeting`), sign-off (`compose.sign_off`) and
@@ -319,7 +326,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport before its colon.
 - The model gave "de" for an English mail full of German place names: the mail's language is code's reading.
 - A request can come in French (round 70: « l'option la plus rapide », signed "Cheers") or Chinese (round 72,
-  signed "Thanks a lot and have a lovely day!"; the model said "en" too). `extract.py` `_language` takes the
+  signed "Thanks a lot and have a lovely day!"; the model said "en" too). A language the customer asks us to
+  answer in wins over all of it ("Please reply in German, our shipping office does not read English",
+  `ASKED_LANGUAGE`). Otherwise `extract.py` `_language` takes the
   script's language when most of the mail is not Latin (`_script`, `SCRIPTS`), else counts each language's common
   words (`LANGUAGES`; every language but English, German and French needs two of its words, `TWO_WORDS`: "per kg" or a
   "Saludos" sign-off alone made an English mail Italian or Spanish and its quote was translated); the model's ISO code counts only for a language those lists do not know, in a script that

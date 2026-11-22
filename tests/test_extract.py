@@ -1071,3 +1071,15 @@ async def test_the_cross_check_never_takes_a_net_figure_or_a_destination(conn, m
     monkeypatch.setattr(extract, "_ask", asked)
     rfq = await extract.extract(ctx, mail("Please quote AAA to BBB, 500 kg."), DEADLINE)
     assert (rfq.destination, rfq.weight_kg) == ("BBB", 500)
+
+
+@pytest.mark.parametrize(
+    "text, language",
+    [
+        ("HAM to TLV, 260 kg. Please reply in German, our shipping office does not read English.", "de"),
+        ("Bitte FRA nach JFK anbieten, 300 kg. Bitte antworten Sie auf Englisch.", "en"),
+        ("We need the cargo in Germany by Friday, please reply asap.", "en"),
+    ],
+)
+def test_a_language_asked_for_wins_over_the_mails_own(text, language):
+    assert extract._language(text) == language

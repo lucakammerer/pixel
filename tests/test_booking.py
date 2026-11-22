@@ -9,7 +9,14 @@ from test_crm import mail, quote
 
 from pixel.agents.rfq import booking
 from pixel.api.client import ApiError
-from pixel.api.portal import BookingUnavailable, PortalBooking, RateExpired
+from pixel.api.portal import (
+    BookingUnavailable,
+    NotOnPortal,
+    PortalBooking,
+    RateExpired,
+    RateLimited,
+    RatesUnavailable,
+)
 from pixel.contracts import Attachment, BookingStatus, QuoteStatus
 from pixel.crm import bookings, quotes, shipments
 
@@ -110,10 +117,50 @@ async def test_no_rate_id_books_by_mail_with_the_carrier_list(pipe):
 
 
 @pytest.mark.parametrize("status", [404, 409])
-async def test_unknown_or_taken_rate_fails(pipe, accepted, status):
-    pipe.ctx.portal = Portal(ApiError(status, "no"))
+async def test_unknown_or_taken_rate_books_a_fresh_one(pipe, accepted, status):
+    # A rate id from the desk or the browser page the bookings API does not know, or one taken: a fresh rate books.
+    pipe.ctx.portal = Portal(ApiError(status, "no"), None)
+    b = await booking.book(pipe.ctx, "Q-1")
+    assert pipe.ctx.portal.rates == 1 and b.status == BookingStatus.BOOKED and b.rate_id == "R-fresh000001"
+
+
+async def test_another_portal_error_fails(pipe, accepted):
+    pipe.ctx.portal = Portal(ApiError(422, "no"))
     b = await booking.book(pipe.ctx, "Q-1")
     assert b.status == BookingStatus.FAILED and kinds(pipe.ctx)[-1] == "booking.failed" and pipe.sent == []
+
+
+class RatesDown(Portal):
+    """The bookings API answers, the rate API does not: what an acceptance after 15 minutes meets in a rate outage."""
+
+    def __init__(self, *script, error):
+        super().__init__(*script)
+        self.error = error
+
+    async def rate(self, origin, destination, airline, weight_kg, volume_cbm):
+        self.rates += 1
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    "error",
+    [RatesUnavailable("Rates are unavailable. Ask ratedesk@hackloop.mail for the rate."), RateLimited(30),
+     NotOnPortal("Airline not on the portal"), ApiError(404, "no rate")],
+)  # fmt: skip
+async def test_expired_rate_without_a_fresh_one_books_by_mail_with_the_airline(pipe, accepted, error):
+    pipe.ctx.db.execute("INSERT INTO carriers VALUES ('Kestrel Airways', 'airline', 'kestrel@air.example', 'JFK')")
+    pipe.ctx.portal = RatesDown(RateExpired(), error=error)
+    await booking.handle_reply(pipe.ctx, accepted)  # used to raise and leave the booking requested for good
+    b = bookings.for_session(pipe.ctx, 1)
+    assert b.via == "email" and b.status == BookingStatus.REQUESTED
+    (sent,) = pipe.sent
+    assert sent["to"] == "kestrel@air.example" and b.team_reference in sent["body"]
+
+
+async def test_expired_rate_without_a_fresh_one_or_an_address_fails_and_never_raises(pipe, accepted):
+    pipe.ctx.portal = RatesDown(RateExpired(), error=RatesUnavailable("Ask ratedesk@hackloop.mail."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    assert b.status == BookingStatus.FAILED and pipe.sent == []  # never a booking mail to the rate desk
 
 
 async def test_confirmation_marks_confirmed_and_tells_once(pipe, accepted):

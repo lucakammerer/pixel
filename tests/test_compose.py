@@ -472,3 +472,19 @@ def test_a_breakdown_asked_for_lists_the_parts_and_the_rate_per_kg_but_not_the_t
     assert "air freight 1000.00 EUR, fuel surcharge 200.00 EUR, security surcharge 34.00 EUR" in body
     assert "1.03 EUR per kg" in body and body.count("1234.00") == 1
     assert body.startswith("Hello Eva,")
+
+
+def test_an_offer_addressed_to_a_colleague_greets_the_colleague():
+    request = "Please address the offer to my colleague Mr. Jens Hartmann.\n\nBest regards\nFrank Maier"
+    _, body = compose.render(rfq("en"), OPTION, request=request)
+    assert body.startswith("Dear Mr. Hartmann,")
+    _, body = compose.render(rfq("en"), OPTION, request="Please send the quote to Hamburg.\n\nBest regards\nFrank Maier")
+    assert body.startswith("Hello Frank,")
+
+
+def test_services_asked_for_and_not_priced_are_said_to_be_excluded():
+    request = "Goods worth EUR 180,000, please include cargo insurance and export customs clearance (EAD)."
+    _, body = compose.render(rfq("en"), OPTION, request=request)
+    assert "Not included in this price: cargo insurance, export customs clearance." in body
+    priced = "Please insure 110% of EUR 50,000 at 0.3%, minimum EUR 25."
+    assert "Not included" not in compose.render(rfq("en"), OPTION, request=priced)[1]
