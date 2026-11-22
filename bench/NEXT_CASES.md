@@ -497,9 +497,9 @@ it above quoted / 0.95, `too_high` below quoted / 1.05. "Past the bound" means t
 so it is within 5 % of the scorer's best for every best up to the range shown; it is not proof of the best itself.
 
 **Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted every `feedback`
-event, and the service writes one per poll until a round settles). **Today 17 of the 28 move past the verdict's
-bound with the source that was missing then, 1 moves short of it (67), 10 do not move or cannot be replayed
-offline.** Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
+event, and the service writes one per poll until a round settles). **Today 18 of the 28 move past the verdict's
+bound with the source or rule that was missing then, 1 moves short of it (67), 9 do not move or cannot be
+replayed offline.** Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
 scorer's best today.
 
 | Round | Verdict | Quoted then | Today | Today passes if best in | Cause class | Fixed by / owner |
@@ -522,7 +522,7 @@ scorer's best today.
 | 82 | too_high | 45056.60 Polaris at 95 cbm | 2051.20 Polaris at 2.69 cbm | 1953.52 to 2159.16 | reading: "95.00 cubic feet" as cbm | febf549 |
 | 118 | too_low | 4867.68 Nova Atlas 7 d + Kranich | 6634.32 Fjordline 4 d + Kranich | 6318.40 to 6983.49 | reading: ready date 26.11. not read, so the 7-day airline missed "arrive by 1.12." | ready date read today (the arrival rule of 179 does not change it: 26.11. + 7 > 1.12.) |
 | 67 | too_low | 3345.48 Riverbend + Rheinufer 45.00 | 3515.72 Riverbend + Schwabenbote | 3521.56 to 3700.76: short of the bound by 5.84 | priced differently: "45.00 EUR for each hour" read as the trucker's price | `selection.implausible`; open: why 3515.72, the balanced total, lies below the bound (generalize: the trucker's real 181.96 / 28 h would not change the pick) |
-| 179 | too_high | 1410.83 Meridian 1 d + Westfalenroute | same | — | option had, not selected: `calc.arrival` adds a day for the trucker; the scorer counts ready + transit | hot repair A (claim 53803) |
+| 179 | too_high | 1410.83 Meridian 1 d + Westfalenroute | 1074.69 Aurelia 2 d + Westfalenroute | 1023.51 to 1131.25 | option had, not selected: `calc.arrival` added a day for the trucker; the scorer counts ready + transit | hot repair A, on `main` (`calc.arrival`) |
 | 130 | too_high | 3753.00 Aurelia at 1510 kg + Grautal | same offline | — | reading: the packing list said 1144 kg, the cross-check kept the mail's 1510 | likely 2ef42c6 (05:05 UTC, an hour after the round: a document's figure is never replaced by the cross-check); unproven, attachment bytes not stored; generalize |
 | 33 | too_high | 1475.00 Borealis at 2.78 cbm | same offline | — | reading: document 1.92 cbm against the mail's 2.78 | #159; attachment not stored; generalize |
 | 34 | too_high | 4980.00 Solace at 11.69 cbm | same offline | — | reading: document 7.49 cbm against the mail's 11.69 | #159, round 34 is a fixture; generalize |
@@ -550,7 +550,7 @@ A contradiction is a lost round the rule alone explains and no other cause does.
 | Chargeable weight = max(gross, cbm x 167) | 47 | 0 | 14 lost rounds had volume weight above gross, each explained by another cause |
 | Billed at a higher break when cheaper (portal, next break) | 18 | 0 | 33, 34 and 18 lost for their reading, not the break |
 | The insurance premium on the customer's terms in the all-in | 3 (92, 109, 164) | 0 | 91 lost without it |
-| Arrival = ready day + transit, a day more with a trucker | 1 (170, no trucker) | 1 (179) | hot repair A changes it to ready + transit |
+| Arrival = ready day + transit, no day added for the trucker (hot repair A; before: a day more with a trucker) | 2 (170; 179 today) | 0 | before the repair 179 contradicted the extra day |
 | A converted unit rounded to 0.01 before pricing | 1 (136, by the points) | 0 | — |
 | An airline bid or the rate desk as the price | 4 (29, 45, 46, 47) | 0 | — |
 | Minimum on the freight, surcharges on billed weight, a quote in another currency | no scored round tests them | — | every sheet quoted above its minimum; no sheet quoted at a higher break with surcharges; every request asked EUR |
