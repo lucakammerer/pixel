@@ -1,12 +1,14 @@
 """All arithmetic. Decimal only, ROUND_HALF_UP to two places at the end, never in a model."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 from pixel.contracts import LaneTariff, RateOption, Rfq, Source
 
 CBM_KG = Decimal(167)
 CENT = Decimal("0.01")
+OFFICE = ZoneInfo("Europe/Berlin")  # a sheet's last day ends on our desk's clock
 
 # R13: a higher weight break is billed when that makes the all-in total cheaper, on sheets and on the portal.
 BILL_HIGHER_BREAK = True
@@ -85,6 +87,7 @@ def price_tariff(tariff: LaneTariff, rfq: Rfq, fx_eur: Decimal | None = None) ->
         fx_eur=None if tariff.currency == "EUR" else fx_eur,
         total_eur=to_eur(total, tariff.currency, fx_eur),
         transit_days=tariff.transit_days,
+        valid_until=datetime.combine(tariff.valid_to, time(23, 59), OFFICE),
         dataset_version=tariff.version,
     )
 

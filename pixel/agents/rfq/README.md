@@ -81,7 +81,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   directly, as in the six rounds that earned Humanity points. It states the goods in
   the customer's words when the mail names them (`goods_of`, "For your machine parts, …"), total and currency,
   carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
-  our desk's clock ("until 17:22 today") with the booking line; the signature with the signer's full name. No
+  our desk's clock ("until 17:22 today") with the booking line, for a sheet price its last valid day
+  (`calc.price_tariff`); the signature with the signer's full name. No
   filler line, smiley or P.S.: rounds 29 to 46 carried them to formal and casual mails alike and won no human
   award. `sign_off` answers the customer's own closing (`in_kind`): a wish for the day is returned, and the sign-off
   goes to the town they greet from, or reads "Cheers" or "Viele Grüße" when theirs does. Code formats every
