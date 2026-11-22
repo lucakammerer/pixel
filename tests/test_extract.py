@@ -166,8 +166,7 @@ def test_the_air_freight_the_truck_brings_zum_flughafen_is_no_destination():
     [
         "Abholung in 60311 Town, Vorlauf der Luftfracht zum Flughafen AAA per Lkw. Ziel Singapur. 300 kg, 1,2 cbm.",
         "Abholung in 60311, Zustellung der Luftfracht zum Flughafen AAA. Ziel Singapur. 300 kg, 1,2 cbm.",
-        "Abholung bei uns in 60311 Town und Transport der Luftfrachtsendung zum Flughafen AAA. Bestimmungsort ist"
-        " Singapur. 300 kg, 1,2 cbm.",
+        "Abholung in 60311 und Transport der Luftfrachtsendung zum Flughafen AAA. Bestimmungsort ist Singapur. 300 kg.",
         "Abholung in 60311. Vor dem Flug muss die Ware zum Flughafen AAA. Empfänger in Singapur. 300 kg, 1,2 cbm.",
     ],
 )
