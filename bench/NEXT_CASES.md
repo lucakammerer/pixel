@@ -811,23 +811,23 @@ not yet live: one trucker's answer unreadable (a scan, a failed transcription) w
 memory then prices only the others, as in 67. A fix (`pickup.estimates` for every trucker that answered without a
 price read) has one scored round behind it and waits behind the one-pull-request rule. Rounds 180 to 184 (cycle 2, fresh copy): all accepted, today's code quotes them as sent. Nothing in this axis is wrong today that has no owner.
 
-## Axis F: after the quote (22.11.2026, snapshot through round 194)
+## Axis F: after the quote (22.11.2026, snapshot through round 195)
 
-The snapshot ends at event 20083 (10:35:46 UTC). Inspect the recorded phase, sender, routing, decisions and
-linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 19995`
-for the ten added mails since the previous snapshot. The fixture run of the same tool checks today's rules and
+The snapshot ends at event 20129 (10:40:43 UTC). Inspect the recorded phase, sender, routing, decisions and
+linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 20083`
+for the three added mails since the previous snapshot. The fixture run of the same tool checks today's rules and
 selected tracking outcomes. `tests/test_booking.py` checks the booking actions with mocked services.
 
 ### What the scorer scores
 
-193 rounds were closed in this snapshot. Round 194 was provisionally accepted and booked.
+194 rounds were closed in this snapshot. Round 195 was provisionally accepted and the customer promised dangerous-goods documents.
 
 | Evidence on the closed rounds | Observed verdicts and points | Interpretation |
 | --- | --- | --- |
-| Customer reply recorded in the RFQ session: 189 rounds vs 4 without | 142 accepted, 45 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
-| Airline confirmation linked to the RFQ: 119 rounds vs 74 without | 116 accepted and 3 rejected vs 26 accepted, 42 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
-| Tracking answer linked to the shipment: 113 rounds vs 80 without | 113 accepted, 108 with +10, vs 29 accepted and none with +10 | Every +10 coincided with `booked: true`. Seven `booked: true` rounds scored zero. |
-| Booking field on the board | `booked: true` in 116, false in 6 and null in 71. All 121 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
+| Customer reply recorded in the RFQ session: 190 rounds vs 4 without | 143 accepted, 45 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
+| Airline confirmation linked to the RFQ: 120 rounds vs 74 without | 117 accepted and 3 rejected vs 26 accepted, 42 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
+| Tracking answer linked to the shipment: 114 rounds vs 80 without | 114 accepted, 109 with +10, vs 29 accepted and none with +10 | Every +10 coincided with `booked: true`. Seven `booked: true` rounds scored zero. |
+| Booking field on the board | `booked: true` in 117, false in 6 and null in 71. All 122 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
 | Price-match requests in rounds 108, 132, 144, 157, 166 and 175 | 144 and 166 show `booked: false` and adjustment +10. Both were booked before the unconditional yes. The four without a reply had neither outcome. | Hold the quote and wait for the yes. The next clean hold can isolate what earns the adjustment. |
 | Withdrawal after booking (round 88) | Adjustment −20 when the cancellation was missed | Fixed in #336. |
 | Change after the quote (rounds 86, 152) | 86 counted the update as unanswered. 152 scored the quote sent in reply to the change. | A changed request can have a new scored quote. |
@@ -845,19 +845,19 @@ can help isolate which missing fact mattered.
 
 ### The census
 
-1,856 incoming replies inside sessions, plus 17 standalone airline confirmations and 114 standalone tracking desk
+1,858 incoming replies inside sessions, plus 17 standalone airline confirmations and 115 standalone tracking desk
 questions. The recorded phase is taken before `mail.in`. A later `followup.read` gives the phase when the handler ran.
 Standalone confirmations and tracking questions use the linked shipment session's phase, or unknown if the log
 has no link. Tracking is linked using `tracking.answered.shipment_sessions`.
 
 | Sender and kind | Count | Action recorded |
 | --- | --- | --- |
-| Airline or trucker, bid | 1,291 | 1,250 arrived while the session was still open, 41 after the quote or acceptance. 1,285 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
+| Airline or trucker, bid | 1,292 | 1,251 arrived while the session was still open, 41 after the quote or acceptance. 1,286 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
 | Airline, confirmation | 128 | 120 confirmed, six duplicates, two unmatched on historically stuck mail bookings (rounds 27 and 29, #323). The confirmation in round 171 hit a mailbox error when telling the customer (C15, Generalize). |
-| Customer, reply | 441 | 127 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
+| Customer, reply | 442 | 127 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
 | Customer, answer to our question | 12 | Routed as `other/thread:question`. Cases and first-quote outcomes are handled in Scope and the request-scoring axes. |
 | Trucker, attached pickup offer | 1 | Routed as a tariff and failed (round 69, T4, Supply). |
-| Tracking desk, question | 114 | Latest recorded answer matched 110 shipments at `confirmed`, one at `at_origin` (F23), and two stuck in `booking`. One question remains unmatched. Three were unmatched at some point, including two later matched. |
+| Tracking desk, question | 115 | Latest recorded answer matched 111 shipments at `confirmed`, one at `at_origin` (F23), and two stuck in `booking`. One question remains unmatched. Three were unmatched at some point, including two later matched. |
 
 The historical `reply_unhandled` cohort was 119 notes across 67 sessions before 22.11. The mail bodies show 107
 acknowledgments, six promises of dangerous-goods documents, two pickup answers, two corrections and two cancellation
@@ -879,13 +879,14 @@ change and a yes). Tracking covers the customer and the desk, own and unknown re
 in the body or attached to a French question. The milestone cases compare the recorded Voice statuses with
 a normal confirmation, including the English draft for a French attachment enquiry. F24 compares a customer's
 objection in English, French, German and an attachment with a booking instruction, an explicit change before and
-after confirmation, and a supplier replying to a bid request.
+after confirmation, and a supplier replying to a bid request. F1 has fixtures from all six live rounds plus a
+number with a dot as the thousands separator. F1b checks a price cap on both sides of the existing total.
 
 | # | Case | Live | Right action | Today | Status, owner |
 | --- | --- | --- | --- | --- | --- |
 | F1 | price-match request after the quote, en/de/fr, after a decline | 6 rounds | `hold`: one reply keeping the price, quote open, the yes books | decline, person, or booked before the yes | **gap**, after the quote: #480 closed (`MATCH` held seven yeses); a new pull request follows |
 | F2 | price-match request that declines in its own sentence | never | decline | decline | right |
-| F1b | an acceptance conditioned on a stated lower price ("we accept the quote provided you match 2,900 EUR") | offline probe | book when our total meets the cap; otherwise keep the quote open | an acceptance can book without the cap check | **gap**, after the quote (`followup.conditional`) |
+| F1b | an acceptance conditioned on a stated lower price ("we accept the quote provided you match 2,900 EUR") | two fixtures, cap below or above our total | book when our total meets the cap; otherwise keep the quote open | an acceptance can book without the cap check | **gap**, after the quote (`followup.conditional`) |
 | F3 | price-match request after the booking | never | person | person | right |
 | F4 | acceptance in Spanish or Italian | never | book | nothing | **gap**, after the quote (`booking.ACCEPT`) |
 | F5 | decline "nous ne donnerons pas suite" | never | decline | nothing (quote stays open) | **gap**, after the quote (`booking.DECLINE`) |
