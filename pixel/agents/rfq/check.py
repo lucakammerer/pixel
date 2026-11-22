@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
 
 from pixel.agents.rfq import compose
-from pixel.agents.rfq.extract import DG_DOCUMENTS, number, own_words
+from pixel.agents.rfq.extract import DG_DOCUMENTS, number, own_words, shipments
 from pixel.contracts import Preference, Quote, RateOption, Source
 from pixel.pricing.calc import CBM_KG, insurance_in_currency
 from pixel.pricing.selection import TRUST, allowed, implausible
@@ -357,6 +357,8 @@ def _accounting(q: Quote, request: str, options: list[RateOption], files: tuple[
     if (lots := lot_weight(text)) is not None:
         ways.add(lots)
     if any(_close(weight, w) for w in ways):
+        return []
+    if any(_close(weight, part.weight_kg) for part in shipments(q.rfq, text)):  # one of several shipments, each quoted
         return []
     shown = ", ".join(f"{w:g} kg" for w in sorted(ways)[:6]) if ways else "none"
     each = [f for f in figures if f.per_piece == 0]
