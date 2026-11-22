@@ -496,8 +496,8 @@ insurance premium, today's reading by rules). A rejected round names no best pri
 it above quoted / 0.95, `too_high` below quoted / 1.05. "Past the bound" means today's total lies beyond that bound,
 so it is within 5 % of the scorer's best for every best up to the range shown; it is not proof of the best itself.
 
-**Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted every `feedback`
-event, and the service writes one per poll until a round settles). **Today 18 of the 28 move past the verdict's
+**Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted `feedback` events:
+round 93 was written 40 times, once per 10 s poll from 00:21 to 00:28 UTC, round 94 three times). **Today 18 of the 28 move past the verdict's
 bound with the source or rule that was missing then, 1 moves short of it (67), 9 do not move or cannot be
 replayed offline.** Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
 scorer's best today.
