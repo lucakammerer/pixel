@@ -79,6 +79,11 @@ NOTE = {
     "de": ("Benötigte Dokumente: {}.", "Aus Ihrer Anfrage vermerkt: {}."),
     "fr": ("Documents nécessaires : {}.", "Noté de votre demande : {}."),
 }
+AIRLINE_ALTERNATIVE = {
+    "en": "We could not get a rate from the airline you specified. The price above is for the alternative shown.",
+    "de": "Für die gewünschte Airline haben wir keinen Tarif erhalten. Der Preis oben gilt für die genannte Alternative.",
+    "fr": "Nous n’avons pas obtenu de tarif auprès de la compagnie demandée. Le prix ci-dessus concerne l’alternative indiquée.",
+}
 MONEY = re.compile(rf"[€$£]|\b(?:{'|'.join(extract.CURRENCIES)})\b")
 SENTENCE = re.compile(r"(?<=[.!?])\s+|\n")
 WORD = re.compile(r"[^\W\d_][\w'’-]+")
@@ -104,7 +109,9 @@ def leftover(text: str, airlines: set[str] = frozenset(), subject: str = "") -> 
             words = [w for w in WORD.findall(sentence.casefold()) if w not in FRAME_WORDS and len(w) > 2]
             if not words or any(p.search(sentence) for p in CONSUMED):
                 continue
-            if airlines and extract.excluded_airlines(sentence, airlines)[0]:
+            if airlines and (
+                extract.required_airlines(sentence, airlines) or extract.excluded_airlines(sentence, airlines)[0]
+            ):
                 continue
             left.append(sentence.strip())
     return left
@@ -199,6 +206,8 @@ def with_note(body: str, requirements: dict, language: str) -> str:
     docs, noted = NOTE.get(language, NOTE["en"])
     lines = [t.format(", ".join(items)) for t, items in ((docs, requirements.get("documents")),
                                                          (noted, requirements.get("conditions"))) if items]  # fmt: skip
+    if requirements.get("unmet_carrier"):
+        lines.append(AIRLINE_ALTERNATIVE.get(language, AIRLINE_ALTERNATIVE["en"]))
     if not lines:
         return body
     paragraphs = body.split("\n\n")

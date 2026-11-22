@@ -157,3 +157,10 @@ async def test_a_lane_nothing_else_prices_asks_the_desk_and_mails_the_airlines_i
     await bids.record(ctx, mail(RATEDESK, desk))
     await bids.record(ctx, mail(RATEDESK, desk))
     assert [r["email"] for r in kinds(ctx, "bid.requested")] == [RATEDESK, "two@air"]
+
+
+async def test_only_the_requested_airline_gets_a_bid_enquiry(ctx, offline):  # noqa: F811
+    answer_rates(offline, "no lane")
+    request = rfq(required_carriers=("Air Two",))
+    await engine.options(ctx, request, deadline(0.1))
+    assert [bid["email"] for bid in kinds(ctx, "bid.requested")] == ["two@air"]

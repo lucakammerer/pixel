@@ -28,8 +28,7 @@
     "total": "3221.50",
     "currency": "EUR"
    },
-   "today": "Cobalt Skylift 2346.00 EUR.",
-   "known_gap": "Only exclusions are read (`excluded_carriers`); 'Vega Skyfreight only' needs the mirror rule and an allow-filter in `selection.select` Owner: Accuracy."
+   "today": "Vega Skyfreight 3221.50 EUR."
   },
   {
    "fixture": "next-cases/ready-after-tariff-validity.json",

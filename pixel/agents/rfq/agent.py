@@ -39,14 +39,14 @@ def _fx_for(currency: str, options: list[RateOption]) -> Decimal | None:
 
 def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Prose | None, fallback: bool) -> Quote:
     required = novelty.mapped(ctx, rfq.session_id)
-    if required.get("only_airlines") or required.get("arrive_by"):
-        ready = compose.ready_date(compose.customer_body(ctx, rfq.message_id)) or rfq.received_at.date()
-        arrive_by = date.fromisoformat(required["arrive_by"]) if required.get("arrive_by") else None
-        options = selection.required(options, required.get("only_airlines") or (), arrive_by, ready)
-    option = selection.select(rfq, options)
+    request = compose.customer_body(ctx, rfq.message_id)
+    arrive_by = date.fromisoformat(required["arrive_by"]) if required.get("arrive_by") else None
+    ready = (compose.ready_date(request) or rfq.received_at.date()) if arrive_by else None
+    option = selection.select(rfq, options, only=required.get("only_airlines") or (), arrive_by=arrive_by, ready=ready)
+    if not selection.requested_carrier(rfq, option.carrier, option.carrier_code):
+        required = {**required, "unmet_carrier": True}
     if rfq.currency and option.currency != rfq.currency:
         option = calc.in_currency(option, rfq.currency, _fx_for(rfq.currency, options))
-    request = compose.customer_body(ctx, rfq.message_id)
     premium = _insurance(ctx, rfq, request, options, option)
     if premium:
         option = calc.with_insurance(option, premium)
@@ -177,7 +177,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         except Exception:  # noqa: BLE001, S110  late or failed: the quote goes out with the fixed phrases
             pass  # a late task keeps running and stores its slots for the fallback
     prose = compose.stored(ctx, rfq.session_id)
-    if not options:
+    if not options or (rfq.required_carriers and not selection.requested_options(rfq, options)):
         return None
     try:
         rfq = await asyncio.wait_for(asyncio.shield(novel), max((deadline.target_at - timing.now()).total_seconds(), 0))
@@ -303,6 +303,8 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
     if rfq.door_pickup and not allow_partial:
         options = [o for o in options if o.trucker]
     if not options:
+        return None
+    if rfq.required_carriers and not allow_partial and not selection.requested_options(rfq, options):
         return None
     return await _in_language(ctx, _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True))
 

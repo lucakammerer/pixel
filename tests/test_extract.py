@@ -914,6 +914,26 @@ def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
 
 
 @pytest.mark.parametrize(
+    ("text", "required", "excluded"),
+    [
+        ("Please quote Alpha Air only, no other airline.", ("Alpha Air",), ()),
+        ("Bitte ausschließlich mit Alpha fliegen.", ("Alpha Air",), ()),
+        ("Nur Angebote von Alpha Air oder Beta Cargo bitte.", ("Alpha Air", "Beta Cargo"), ()),
+        ("Alpha (AA) only, not Beta Cargo.", ("Alpha Air",), ("Beta Cargo",)),
+        ("We only ask that you do not use Beta Cargo.", (), ("Beta Cargo",)),
+        ("We asked not only Alpha Air but also Beta Cargo.", (), ()),
+        ("Only Alpha Air was available last time.", (), ()),
+        ("Alpha Air only flies on Fridays.", (), ()),
+        ("Only if it is cheaper, use Beta Cargo.", (), ()),
+    ],
+)
+def test_airline_restrictions_apply_to_the_named_carriers(text, required, excluded):
+    airlines = {"Alpha Air", "Beta Cargo"}
+    assert extract.required_airlines(text, airlines) == required
+    assert extract.excluded_airlines(text, airlines)[0] == excluded
+
+
+@pytest.mark.parametrize(
     "body",
     [
         "Please quote AAA to BBB, 300 kg, 1 cbm. We will arrange the truck to your warehouse ourselves.",

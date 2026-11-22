@@ -11,11 +11,12 @@ import httpx
 
 from pixel import llm
 from pixel.api.client import ApiError
+from pixel.api.mailbox import RATEDESK
 from pixel.contracts import Message, RateOption, Rfq, Source
 from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import calc, session, store
+from pixel.pricing import calc, selection, session, store
 
 POLL_S = 0.5
 # Grouped thousands only when a separator is there: an ungrouped "1195.90" is one amount, not "119". The Swiss group
@@ -568,7 +569,10 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
         )
         return sent.id
 
-    sent = await asyncio.gather(*(one(name, email) for name, email in carriers))
+    sent = await asyncio.gather(*(
+        one(name, email) for name, email in carriers
+        if pickup or email == RATEDESK or selection.requested_carrier(rfq, name)
+    ))  # fmt: skip
     return [message_id for message_id in sent if message_id is not None]
 
 

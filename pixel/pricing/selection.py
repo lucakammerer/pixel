@@ -75,6 +75,16 @@ def allowed(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
     return [o for o in options if o.carrier.casefold() not in out and (o.carrier_code or "").casefold() not in out]
 
 
+def requested_carrier(rfq: Rfq, name: str, code: str | None = None) -> bool:
+    """Whether the known name or code satisfies the request's airline restriction."""
+    names = {carrier.casefold() for carrier in rfq.required_carriers}
+    return not names or bool(names & {name.casefold(), (code or "").casefold()})
+
+
+def requested_options(rfq: Rfq, options: list[RateOption]) -> list[RateOption]:
+    return [option for option in allowed(rfq, options) if requested_carrier(rfq, option.carrier, option.carrier_code)]
+
+
 def required(
     options: list[RateOption], only: Iterable[str] = (), arrive_by: date | None = None, ready: date | None = None
 ) -> list[RateOption]:
@@ -92,10 +102,21 @@ def required(
     return kept or options
 
 
-def select(rfq: Rfq, options: list[RateOption]) -> RateOption:
+def select(
+    rfq: Rfq,
+    options: list[RateOption],
+    *,
+    only: Iterable[str] = (),
+    arrive_by: date | None = None,
+    ready: date | None = None,
+) -> RateOption:
     """The one option to quote: cheapest or fastest as the customer asked, compared in EUR, all-in. Airline bids
     compete like sheets and portal rates (round 28); only the trucker is chosen balanced (`engine.combine`)."""
     if not options:
         raise ValueError("no option to select from")
     options = allowed(rfq, options) or options  # with every airline ruled out, an answer still beats none (R1)
+    if rfq.required_carriers:
+        options = requested_options(rfq, options) or options
+        only = ()
+    options = required(options, only, arrive_by, ready)
     return min(options, key=_fastest if rfq.preference == Preference.FASTEST else _cheapest)
