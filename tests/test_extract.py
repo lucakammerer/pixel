@@ -392,6 +392,12 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
         ("The cheapest option please, ideally urgent.", False),
         ("Best regards, Nordwind Express GmbH", False),
         ("Bitte so schnell wie möglich.", True),
+        ("Price is secondary, transit time is key.", True),
+        ("Bitte die kürzeste Laufzeit.", True),
+        ("We need the shortest lead time, please go for express.", True),
+        ("The shortest transit we had was 3 days, but price is what counts now.", False),
+        ("Not the shortest transit, the best rate. Not time-sensitive.", False),
+        ("This is our first flight shipment with you.", False),
         ("", False),
     ],
 )
