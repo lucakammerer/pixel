@@ -1808,7 +1808,13 @@ def _gross(sources: list[tuple[str, str]], patterns: tuple[re.Pattern, ...], tho
 
 
 async def _crosscheck(
-    ctx: Context, rfq: Rfq, message: Message, text: str, sources: list[tuple[str, str]], deadline: Deadline
+    ctx: Context,
+    rfq: Rfq,
+    message: Message,
+    text: str,
+    sources: list[tuple[str, str]],
+    deadline: Deadline,
+    from_documents: frozenset[str] = frozenset(),
 ) -> tuple[Rfq, dict | None]:
     """The rules' reading of a request with attachments checked by a larger model reading the same text
     (`PIXEL_MODEL_CHECK`): at first sight the rules took the mail's figures over the attached packing list's (rounds
@@ -1850,8 +1856,11 @@ async def _crosscheck(
         return in_documents if getattr(rfq, field) in in_documents else _gross(sources, patterns, thousands)
 
     gross = {"weight_kg": stated("weight_kg", WEIGHT, True), "volume_cbm": stated("volume_cbm", VOLUME, False)}
+    # A figure the rules took from the attached documents stands, stated as a total or added up from their rows.
     taken = {
-        f: getattr(read, f) for f in differs if f in ("pieces", "preference") or getattr(read, f) in gross.get(f, ())
+        f: getattr(read, f)
+        for f in differs
+        if f not in from_documents and (f in ("pieces", "preference") or getattr(read, f) in gross.get(f, ()))
     }
     events.emit(ctx, "rfq.crosscheck", "rfq", session_id=message.session_id, message_id=message.id,
                 payload={"model": result.model, "differs": differs, "taken": sorted(taken)})  # fmt: skip
@@ -1938,7 +1947,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
     if rfq is not None and files and ctx.settings.model_check:
-        rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline)
+        documented = frozenset(f for f, names in evidence.items() if names and "mail" not in names)
+        rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline, documented)
     if rfq is None:
         try:
             result = await llm.ask_json(

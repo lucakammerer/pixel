@@ -26,6 +26,7 @@ from pixel import llm
 from pixel.agents.rfq import extract
 from pixel.api.mailbox import to_message
 from pixel.config import settings
+from pixel.contracts import LlmResult
 from pixel.core import db
 from pixel.core.context import Context
 
@@ -221,6 +222,7 @@ class Case:
     layout: str
     raw: dict  # the mail as the mailbox returns it, attachment included
     want: dict  # the document's figures
+    mail: dict  # the figures the mail states
 
 
 def cases(fixture: Path = FIXTURE) -> list[Case]:
@@ -256,7 +258,7 @@ def cases(fixture: Path = FIXTURE) -> list[Case]:
         }
         want = {"origin": truth["origin"], "destination": truth["destination"], "weight_kg": D(truth["weight_kg"]),
                 "volume_cbm": volume(truth), "pieces": truth["pieces"]}  # fmt: skip
-        found.append(Case(base["seen_live"], change, o, fmt, layout, raw, want))
+        found.append(Case(base["seen_live"], change, o, fmt, layout, raw, want, figures))
     return found
 
 
@@ -296,7 +298,18 @@ def gap_for(gaps: dict[str, str], case: Case) -> str | None:
     return gaps.get(f"{case.change}:{case.layout}") or gaps.get(case.change)
 
 
-async def _read(case: Case) -> Result:
+def _mail_reading(case: Case) -> LlmResult:
+    """A cross-check that reads the mail's figures, as gpt-4.1 did in round 130 (1510 kg for the letter's 1144)."""
+    m = case.mail
+    data = {k: None for k in extract.SCHEMA["required"]} | {
+        "origin": m["origin"], "destination": m["destination"], "weight_kg": m["weight_kg"],
+        "volume_cbm": m["volume_cbm"], "pieces": m["pieces"], "lots": [], "preference": "cheapest",
+        "door_pickup": False, "language": "en",
+    }  # fmt: skip
+    return LlmResult(data=data, model="adversarial", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+
+async def _read(case: Case, adversarial: bool = False) -> Result:
     conn = db.connect(":memory:")
     db.init(conn)
     ctx = Context(settings(), conn, None, None, None, None)
@@ -305,6 +318,8 @@ async def _read(case: Case) -> Result:
 
     async def no_model(*a, **kw):
         asked.append(kw.get("purpose"))
+        if adversarial and kw.get("purpose") == "rfq.crosscheck":
+            return _mail_reading(case)
         raise _ModelNeeded
 
     try:
@@ -328,11 +343,12 @@ def extract_deadline():
     return deadline_for(datetime(2026, 11, 21, 16, 0, tzinfo=UTC), settings())
 
 
-def audit(fixture: Path = FIXTURE) -> list[Result]:
+def audit(fixture: Path = FIXTURE, adversarial: bool = False) -> list[Result]:
+    """With `adversarial`, the model's cross-check reads every figure as the mail states it."""
     gaps = json.loads(fixture.read_text()).get("known_gaps", {})
 
     async def run() -> list[Result]:
-        return [await _read(c) for c in cases(fixture)]
+        return [await _read(c, adversarial) for c in cases(fixture)]
 
     results = asyncio.run(run())
     for r in results:

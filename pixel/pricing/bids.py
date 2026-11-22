@@ -128,7 +128,13 @@ PICKUP_SPAN = re.compile(
 )
 WAITING = re.compile(r"\b(?:waiting|wartezeit|standzeit)\b", re.IGNORECASE)
 VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
-FX = re.compile(r"1\s*([A-Z]{3})\s*=\s*(\d+[.,]\d+)\s*EUR|(\d+[.,]\d+)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})")
+FX = re.compile(
+    r"1\s*([A-Z]{3})\s*=\s*(\d+(?:[.,]\d+)?)\s*EUR|(\d+(?:[.,]\d+)?)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})"
+)
+# An answer that names its exchange rate in a form `FX` cannot read borrows none (`known_fx`): the model reads it.
+RATE_NAMED = re.compile(
+    r"\b(?:exchange|conversion)\s+rate|\bwechselkurs|\btaux\s+de\s+change|\btipo\s+de\s+cambio", re.IGNORECASE
+)
 DESK_LINE = re.compile(r"^\s*[-*•]\s*(?P<name>.+?)\s*\((?P<code>[A-Z0-9]{2,3})\):\s*(?P<rest>.+)$", re.MULTILINE)
 RATE_ID = re.compile(r"rate_id\s+(\S+?)[,;]?(?:\s|$)")
 OFF_PORTAL = re.compile(r"not on the portal\b.*?(?P<email>[\w.+-]+@[\w-]+(?:\.[\w-]+)*)", re.IGNORECASE)
@@ -352,7 +358,8 @@ def parse(
     if DECLINE.search(text) or not (price := _price(text, rfq)):
         return None
     total, currency = price
-    fx = None if currency == "EUR" else _fx(text, currency) or (known_fx and known_fx(currency))
+    borrow = known_fx if known_fx and not RATE_NAMED.search(text) else None
+    fx = None if currency == "EUR" else _fx(text, currency) or (borrow and borrow(currency))
     days = _days(text)
     if total <= 0 or (currency != "EUR" and (fx is None or fx <= 0)) or (needs_transit and days is None):
         return None
@@ -523,14 +530,40 @@ async def _read_with_model(ctx: Context, message: Message, rfq: Rfq, needs_trans
 CHECK_WAIT_S = 3  # gpt-4.1-mini answers in about 1 s; a bid must not miss `collect`'s cutoff waiting for it
 
 
-def _stated(text: str, total: Decimal) -> bool:
-    """The total stands in the text as the whole shipment's amount: not per kg, per hour or per another unit."""
-    for m in re.finditer(AMOUNT, text):
-        tail = re.sub(rf"^\s*(?:{CURRENCY}|[€$£])", "", text[m.end() :])
-        if _amount(m.group()) == total and not (
-            PER_KG.match(tail) or OTHER_BASIS.match(tail) or KG_LABEL.search(text[: m.start()])
-        ):
+# One part of a charge breakdown inside a sentence: "a base charge of EUR 74.44 and a weight charge of EUR 62.16".
+PART_BEFORE = re.compile(
+    r"\b(?:base|weight|fuel|security|screening|handling|documentation|awb|freight)(?:\s+(?:charge|surcharge|fee))?"
+    r"\s*(?:of|:)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _stated(text: str, total: Decimal, currency: str) -> bool:
+    """The total stands in the text as the whole shipment's price: in that currency, or as a labelled total ("Offer
+    total 181.96"); never a rate per kg or per hour, a side price ("rates from", a minimum, "was", an option, "extra"),
+    one charge of several, an exchange rate or a bare figure (a lead time in hours, a postcode, an offer number)."""
+    previous = ""
+    for line in FX.sub("", UNWRAP.sub(lambda m: f"{m.group(1) or ''} ", text)).splitlines():
+        previous, wrapped = line, previous  # a pdf wraps "a base charge of" and "EUR 74.44" onto two lines
+        if (m := TOTAL_LINE.match(line)) and _amount(m.group("n")) == total:
             return True
+        prices = list(PRICED.finditer(line))
+        for i, m in enumerate(prices):
+            code = m.group("c1") or m.group("c2")
+            if _amount(m.group("n1") or m.group("n2")) != total or SYMBOLS.get(code.lower(), code) != currency:
+                continue
+            before = line[prices[i - 1].end() if i else 0 : m.start()]
+            after = line[m.end() : prices[i + 1].start() if i + 1 < len(prices) else len(line)]
+            if PER_KG.match(after) or OTHER_BASIS.match(after) or KG_LABEL.search(before):
+                continue
+            if SIDE_BEFORE.search(before) or SIDE_AFTER.match(after) or PART_BEFORE.search(f"{wrapped} {before}"):
+                continue
+            if not i and CHARGE_LINE.match(before):
+                continue
+            return True
+        for m in re.finditer(AMOUNT, line):  # a labelled total without its currency
+            if _amount(m.group()) == total and TOTAL_BEFORE.search(line[: m.start()]) and not line[m.end() :].strip():
+                return True
     return False
 
 
@@ -551,7 +584,7 @@ async def _crosscheck(
         return option, "rules"
     if read is None or (read.total, read.currency) == (option.total, option.currency):
         return option, "rules"
-    taken = read.currency == option.currency and _stated(_own_text(message.body), read.total)
+    taken = read.currency == option.currency and _stated(_own_text(message.body), read.total, read.currency)
     events.emit(ctx, "bid.crosscheck", "pricing", session_id=message.session_id, message_id=message.id,
                 payload={"rules": f"{option.total} {option.currency}", "model": f"{read.total} {read.currency}",
                          "taken": taken})  # fmt: skip

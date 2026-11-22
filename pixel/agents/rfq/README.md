@@ -22,7 +22,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   too (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s), as an `rfq.crosscheck` event. Pieces and the wish win as
   the model reads them; its weight or volume only when code reads that figure as a gross total with its unit in the
   customer's own words or documents (`_gross`: never net, tare, per piece, superseded, forwarded or in pounds); a
-  destination never, it is only reported. On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
+  destination never, it is only reported. A figure the rules took from the attached documents (`evidence`: no
+  "mail") is never replaced, stated as a total or added up from the rows (benchmark section 11 runs once more with a
+  cross-check that reads every figure as the mail states it). On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
   the prose (`prose.raw`) and `compose.adopt` checks it; only without either, `compose.prose` runs in parallel. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
   failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (no bid
   to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by
@@ -528,8 +530,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   price (`_price`). Truckers bring new layouts as a pdf, docx or voice message (rounds 63 to 65), so an offer that
   stands only in an attachment is read by the model too (`pricing/bids.py` `_crosscheck`, at most 3 s, so no answer
   misses `collect`'s cutoff); a `bid.crosscheck` event reports a difference. The model's total wins only in the
-  rules' currency and when the text states it as the shipment's amount (`_stated`). An answer in the mail itself
-  costs no call: on 359 answers of rounds 9 to 72 the model read no other total.
+  rules' currency and when the text states it as the shipment's price (`_stated`): in that currency or after a total
+  label, never a lead time, postcode or offer number, a side price, one charge or an exchange rate;
+  `tools/simulate.py` `swayed_bids` has the model answer every other amount of each generated offer. An answer in
+  the mail itself costs no call: on 359 answers of rounds 9 to 72 the model read no other total.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
