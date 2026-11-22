@@ -13,6 +13,9 @@ HEADERS = [
     "________________________________\nFrom: Tobias Auer\nSent: Sunday, 25 October 2026 09:12\nSubject: {subject}",
     "________________________________\nVon: Tobias Auer\nGesendet: Sonntag, 25. Oktober 2026 09:12\nBetreff: {subject}",
     "From: Tobias Auer\nSent: Sunday, 25 October 2026 09:12\nSubject: {subject}",
+    "*From:* Tobias Auer\n*Sent:* Sunday, 25 October 2026 09:12\n*Subject:* {subject}",
+    "Begin forwarded message:\n\nFrom: Tobias Auer\nSubject: {subject}",
+    "Anfang der weitergeleiteten Nachricht:\n\nVon: Tobias Auer\nBetreff: {subject}",
 ]
 
 
@@ -53,3 +56,10 @@ FIELD_REQUESTS = [
 @pytest.mark.parametrize("body", FIELD_REQUESTS)
 def test_a_request_laid_out_as_fields_stays_whole(body):
     assert extract.own_words(body) == body
+
+
+def test_quoted_lines_above_a_reply_are_not_read():
+    body = (
+        "On Sun, 25 Oct 2026, Tobias Auer wrote:\n> Please quote MUC to ORD, 900 kg.\n\nNow please FRA to JFK, 300 kg."
+    )
+    assert extract.own_words(body).strip() == "Now please FRA to JFK, 300 kg."
