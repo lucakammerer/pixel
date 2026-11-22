@@ -36,6 +36,8 @@ Captured carrier answers, each to a request in the wording of `pixel/pricing/bid
 
 `synthetic-novel-requirement.json` is `rfq-port-to-port.json` with two requirements no rule reads: only one airline,
 at JFK by a date, and the customs documents named (`tests/test_novelty.py`).
+`synthetic-ready-date-unread.json` is round 118's request with its ready date in words no rule reads ("Die Abholung
+ist ab dem 26.11.2026 möglich"): the model must be asked and fill the ready date (`tests/test_novelty.py`).
 
 Captured mails of a request, from the request to the confirmed booking:
 

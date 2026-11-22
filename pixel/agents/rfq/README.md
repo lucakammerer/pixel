@@ -78,8 +78,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   arrival is only "arrive … by / no later than <date>" with nothing but the place between (`ARRIVE_BY`; "Shanghai,
   China" allowed, "arrival airport" a label), never a reply-by or a details-by date, never a past shipment
   (`ARRIVAL_CONTEXT`, the last words before "arrival") and never a date before the request; a date without a year is
-  this year's unless that lies more than half a year back (`_stated_date`). A sentence the rule leaves is read by `novelty.py`, whose date counts
-  only as written. `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
+  this year's unless that lies more than half a year back (`_stated_date`). A sentence the rule leaves, and one with a coming date it does not take,
+  is read by `novelty.py`, whose date counts only as written. `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
   `pricing/calc.py` `arrival` for the delivery date including pickup. When no price meets the timing, the quote goes
   out at once with the best one and `novelty.py` `with_note` names the alternative: bids were collected until
   `target_at`, so a later price that meets it is unlikely.
@@ -241,11 +241,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - `novelty.py` (R33): a requirement no rule reads yet, caught in the round it first appears. `leftover` keeps the
   sentences of the mail and its documents that none of the extractors' patterns (`CONSUMED`), no airline ruled out by
   name and more than the frame of a request (`FRAME_WORDS`) account for; the subject, the signature and lines of names
-  or headings are skipped. Nothing left (35 of 37 request fixtures, all 27 scored openings): no call. Something left:
+  or headings are skipped. A sentence with a coming date in the customer's own words is left too unless the rules
+  read that date as the ready date or latest arrival, or it follows a reply-by or validity word (`unread_dates`,
+  `SET_ASIDE`): round 118's "Die Ware steht am 2026-11-26 zur Abholung bereit" counted as read because another rule
+  used the sentence, so the transit ran from today. 15 of the 119 stored requests have such a date (round 118 among 16 before #362), 12 of them
+  without other leftovers (about 0.03 cost points per quote). Nothing left (35 of 37 request fixtures, all 27 scored
+  openings): no call. Something left:
   `check`, spawned by `agent.py` `handle` beside the bids, sends only those sentences to `PIXEL_MODEL_CHECK`
   (`rfq.novelty`, at most `WAIT_S` = 8 s, 150 output tokens) and maps them: airlines ruled out (into
   `Rfq.excluded_carriers`, a new `rfq.extracted`), the only airlines allowed and a latest arrival date
   (`pricing/selection.py` `required`, arrival by `pricing/calc.py` `arrival`; when no option meets them all stay),
+  the ready date only where the rules found none (`Rfq.ready_on`, a new `rfq.extracted`),
   documents and conditions the quote names (`with_note`, before the booking line). A name or date the sentences do not
   hold is dropped, and so is a phrase with a currency: the scorer reads our price from the mail. A mapped requirement or
   a failed call goes to `PIXEL_ALERT_URL` at once (`novel_requirement`, with the sentences), not after the verdict.

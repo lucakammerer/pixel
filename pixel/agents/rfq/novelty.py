@@ -59,9 +59,10 @@ FRAME_WORDS = set(FRAME.split())
 SYSTEM = (
     "An air freight customer's request. Code read the lane, cargo, pickup and the cheapest or fastest wish; these "
     "sentences are what it could not place. Map each requirement they set for this quote: airlines ruled out or "
-    "the only airlines allowed (as written), the latest arrival date (YYYY-MM-DD, only as written in the "
-    "sentences), documents the quote must name, and any other condition in a short phrase in the customer's "
-    "language. Nothing about prices. Empty lists and null when the sentences set no requirement."
+    "the only airlines allowed (as written), the latest arrival date and the date the goods are ready or can be "
+    "collected (YYYY-MM-DD, only as written in the sentences), documents the quote must name, and any other "
+    "condition in a short phrase in the customer's language. Nothing about prices. Empty lists and null when the "
+    "sentences set no requirement."
 )
 STRINGS = {"type": "array", "items": {"type": "string"}}
 SCHEMA = {
@@ -70,10 +71,11 @@ SCHEMA = {
         "exclude_airlines": STRINGS,
         "only_airlines": STRINGS,
         "arrive_by": {"type": ["string", "null"]},
+        "ready_on": {"type": ["string", "null"]},
         "documents": STRINGS,
         "conditions": STRINGS,
     },
-    "required": ["exclude_airlines", "only_airlines", "arrive_by", "documents", "conditions"],
+    "required": ["exclude_airlines", "only_airlines", "arrive_by", "ready_on", "documents", "conditions"],
     "additionalProperties": False,
 }
 NOTE = {
@@ -95,6 +97,16 @@ MONEY = re.compile(rf"[€$£]|\b(?:{'|'.join(extract.CURRENCIES)})\b")
 # No split after a dotted abbreviation: "Corrosive liquid, n.o.s. (contains phosphoric acid)" stays one sentence.
 SENTENCE = re.compile(r"(?<=[.!?])(?<!\.\w\.)\s+|\n")
 WORD = re.compile(r"[^\W\d_][\w'’-]+")
+DATE = re.compile(
+    rf"(?<![\w.,/-])(?P<value>{extract.DATE_VALUE}|\d{{1,2}}/\d{{1,2}}(?:/\d{{4}})?)(?![\w/-])", re.IGNORECASE
+)
+# A date right after these words is not the shipment's: our answer by a date, a quote's validity.
+SET_ASIDE = re.compile(
+    r"\b(?:reply|respond|answer|quote|quotation|offer|send|confirm|advise|let us know|feedback|valid\w*"
+    r"|antwort\w*|rückmeld\w*|angebot\w*|senden|schicken|bestätig\w*|mitteil\w*|gültig\w*"
+    r"|répon\w*|envoy\w*|devis|offre|valable)\b(?:\W+\w+){0,3}\W*$",
+    re.IGNORECASE,
+)
 
 
 def leftover(text: str, airlines: set[str] = frozenset(), subject: str = "") -> list[str]:
@@ -125,6 +137,34 @@ def leftover(text: str, airlines: set[str] = frozenset(), subject: str = "") -> 
     return left
 
 
+def _date(value: str, on: date) -> date | None:
+    """A written date resolved like the rules' (`extract._stated_date`); "26/11" day first, else month first."""
+    if "/" not in value:
+        return extract._stated_date(value, on)
+    first, second, *year = value.split("/")
+    return extract._stated_date(f"{first}.{second}.{''.join(year)}", on) or extract._stated_date(
+        f"{second}.{first}.{''.join(year)}", on
+    )
+
+
+def unread_dates(text: str, rfq: Rfq) -> list[str]:
+    """The sentences with a coming date that no field holds (round 118: "Die Ware steht am 2026-11-26 zur Abholung
+    bereit" counted as read because another rule used the sentence, so the transit was measured from today). A date
+    is accounted for as the ready date or the latest arrival the rules read, as a reply-by or a quote's validity
+    (`SET_ASIDE`), below the sign-off, or when it is not after the request day: that moves no price."""
+    on, read, left, signed = rfq.received_at.date(), {rfq.ready_on, rfq.arrive_by}, [], False
+    for line in text.splitlines():
+        signed = bool(line.strip()) and (signed or bool(extract.SIGN_OFF.match(line)))
+        for sentence in [] if signed else SENTENCE.split(line):
+            if any(
+                (day := _date(m["value"], on)) and day > on and day not in read
+                and not SET_ASIDE.search(sentence[: m.start()])
+                for m in DATE.finditer(sentence)
+            ):  # fmt: skip
+                left.append(sentence.strip())
+    return left
+
+
 def _named(found: list[str], said: str, airlines: set[str]) -> tuple[str, ...]:
     """Only names the sentences themselves hold, a model's guess never moves the selection; with the airline of our
     list each one stands for ("Zephyr Steppe" for "Zephyr Steppe Cargo")."""
@@ -132,20 +172,13 @@ def _named(found: list[str], said: str, airlines: set[str]) -> tuple[str, ...]:
     return tuple(sorted(names | {k for n in names for k in extract.excluded_airlines(f"not {n}", airlines)[0]}))
 
 
-def _arrive_by(value: str | None, said: str) -> str | None:
+def _as_written(value: str | None, said: str, on: date) -> str | None:
     """The model's date only when the sentences write it out."""
-    written = set()
-    for m in compose.DATE.finditer(said):
-        y, mo, d, dd, mm, yy = m.groups()
-        try:
-            written.add(date(int(y), int(mo), int(d)) if y else date(int(yy), int(mm), int(dd)))
-        except ValueError:
-            continue
     try:
         day = date.fromisoformat(value or "")
     except ValueError:
         return None
-    return day.isoformat() if day in written else None
+    return day.isoformat() if day in {_date(m["value"], on) for m in DATE.finditer(said)} else None
 
 
 def _phrases(found: list[str], most: int) -> list[str]:
@@ -153,12 +186,15 @@ def _phrases(found: list[str], most: int) -> list[str]:
     return [p.strip() for p in found if p.strip() and len(p) <= 80 and not MONEY.search(p)][:most]
 
 
-async def check(ctx: Context, rfq: Rfq, text: str, subject: str = "") -> Rfq:
+async def check(ctx: Context, rfq: Rfq, text: str, subject: str = "", mail: str | None = None) -> Rfq:
     """Emits `rfq.novelty` with what is left over and what it maps to; the RFQ with airlines the sentences rule
-    out. No call when nothing is left; at most WAIT_S, never raises."""
+    out and the ready date the rules left empty. `mail` is the customer's own words, whose dates must each be
+    accounted for (`unread_dates`); a document's dates are not. No call when nothing is left; at most WAIT_S,
+    never raises."""
     try:
         airlines = store.airline_names(ctx)
         left = leftover(text, airlines, subject)
+        left += [s for s in unread_dates(text if mail is None else mail, rfq) if s not in left]
     except Exception as exc:  # noqa: BLE001  the check must never cost the quote
         events.emit(ctx, "error", "rfq", session_id=rfq.session_id, payload={"where": "novelty", "error": repr(exc)})
         return rfq
@@ -176,7 +212,8 @@ async def check(ctx: Context, rfq: Rfq, text: str, subject: str = "") -> Rfq:
         mapped = {
             "exclude_airlines": _named(data["exclude_airlines"], said, airlines),
             "only_airlines": _named(data["only_airlines"], said, airlines),
-            "arrive_by": _arrive_by(data["arrive_by"], said),
+            "arrive_by": _as_written(data["arrive_by"], said, rfq.received_at.date()),
+            "ready_on": _as_written(data["ready_on"], said, rfq.received_at.date()),
             "documents": _phrases(data["documents"], 4),
             "conditions": _phrases(data["conditions"], 3),
         }
@@ -187,10 +224,15 @@ async def check(ctx: Context, rfq: Rfq, text: str, subject: str = "") -> Rfq:
         poller.spawn(ctx, feedback.post(ctx, [{"issue": "novel_requirement", "session": rfq.session_id,
                                                "at": timing.now().isoformat()[:19], "leftover": said,
                                                "mapped": mapped}]))  # fmt: skip
-    if not mapped.get("exclude_airlines"):
+    update = {}
+    if mapped.get("exclude_airlines"):
+        update["excluded_carriers"] = tuple(sorted({*rfq.excluded_carriers, *mapped["exclude_airlines"]}))
+    ready = date.fromisoformat(mapped["ready_on"]) if mapped.get("ready_on") else None
+    if ready and rfq.ready_on is None and (rfq.arrive_by is None or ready < rfq.arrive_by):  # the rules' date wins
+        update["ready_on"] = ready
+    if not update:
         return rfq
-    rfq = rfq.model_copy(update={"excluded_carriers": tuple(sorted({*rfq.excluded_carriers,
-                                                                    *mapped["exclude_airlines"]}))})  # fmt: skip
+    rfq = rfq.model_copy(update=update)
     events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                 payload=rfq.model_dump(mode="json"))  # fmt: skip
     return rfq

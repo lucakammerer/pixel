@@ -287,6 +287,182 @@ What follows:
   model (166 of 528), "1.234 t" in a lot read as 1234 t; read by rules since #279. Wrong in every harness: 0.
   Open: which shipment the scorer prices in a multi-shipment mail (evidence: the board's verdict on the first
   round answered with the first shipment). Next: the live mail since mail 26279.
+- 22.11. 01:50, unseen-shape cycle 17 (live to round 97, mail 28462). Live: 93 to 95 and 97 rejected too low, 96
+  "declined_in_scope". Both new requests (96 door FRA-GRU, 97 FRA-ORD own delivery, both fastest) read by rules as by
+  hand; no new mail shape. The losses are the rate API outage: in 96 the portal answered 503, the rate desk and four
+  airlines asked by mail never replied, five pickups were priced and no air price existed, so our "no rate in time"
+  mail counted as a decline; in 97 only the two sheets were left and the fastest portal airline was missing. Owner:
+  the main loop (d09c708 asks the desk in its words, 9266e77 answers at the deadline, #305 waits for the desk).
+  Round 93's feedback was emitted 40 times between 00:21 and 00:27, then stopped (after b72af35). Generated, LEVERS
+  e5: a non-numeric `X-RateLimit-Limit` or `X-RateLimit-Remaining` raised and dropped a valid rate; the portal now
+  keeps the last usable value (`speed/ignore-invalid-portal-quota-headers`). Wrong in every harness: 0.
+- 22.11. 02:05, unseen-shape cycle 18 (insurance terms). Round 91's insurance sentence (goods value 22000 EUR,
+  110 %, 0.40 %: 96.80 EUR by hand) written 23 ways: value as "EUR 22,000", "22.000 EUR", "€22,000", "22k EUR";
+  rate as "0,40 %", "4 ‰", "0.40 percent"; "plus 10 %", "CIF value + 10 %", the insured sum alone, a minimum premium
+  that binds or not, German with "Promille", labelled lines. 21 right; "per cent" and "pct" read no insurance at all,
+  so the quote would lack the premium (too low). Fixed on `cost/insurance-per-cent`, with the reader's first test.
+  Wrong in every harness: 0.
+- 22.11. 02:20, unseen-shape cycle 19 (live to round 98, mail 28808; required airlines). Live: 98 rejected too low,
+  the same as 93 to 97 (fastest, rate API down, a sheet airline quoted); read by rules as by hand, no new shape.
+  Owner: the main loop. Generated: the required-airline reader (#303, not yet seen live) on 23 hand-labelled
+  sentences with a carrier from the list: no false requirement, 7 missed ("can only accept X", "only work with X",
+  "must fly with X", "muss mit X fliegen", "requires X", "X is our only approved carrier", "X, no other airline").
+  Six read since `cost/required-airline-wording`; a bare code ("only NV") stays unread, the reader knows names only.
+  Found on the way, not registered (generated only): "does not require X" rules X out in `excluded_airlines`.
+  Owner: Cost. Wrong in every harness: 0.
+- 22.11. 02:40, unseen-shape cycles 20 and 21 (live to round 99, mail 29155). Live: 99 again fastest with the rate
+  API down, a sheet airline as fallback; read by rules as by hand. #310 (rates from the portal page) merged since.
+  Main checked against the earlier unseen-shape fixes, none of which were pushed: quoted history under an Outlook
+  header without an address, a German or bold one, a line of underscores, "Sent:/Subject:" alone, "Begin forwarded
+  message:" or '>' lines above the reply is still not cut on main; `cost/history-headers` rebased onto main with
+  its languages kept (section 10: 304/375 by rules, the 71 left are the seven requests read from an attachment, a
+  voice message or in Chinese or French, as on main). Lots: main reads "à", "per pallet" and "each" after the
+  figure since #296, but "each 142 kg net (160 kg gross)" still gives 684 kg instead of 1122 by rules, and
+  "Posten", "2)" and G.W./N.W. go to the model; `cost/lot-net-first-and-labels` ports both onto main with
+  `check.py`. Wrong in every harness: 0.
+- 22.11. 03:05, unseen-shape cycle 22 (live to round 100, mail 29581; arrival, transit and readiness limits). Live:
+  100 quoted on the portal again, verdict pending; read by rules as by hand. Generated: `extract.schedule` (#aa41620,
+  not yet seen live) on 26 hand-labelled sentences: 12 missed ("must be delivered by", "have to be in Toronto no
+  later than", "ETA no later than", "required delivery date", "muss spätestens am ... sein", "transit time: max 4
+  days", "no more than 4 days in transit", "can be collected from", "pickup possible from", and more), none wrong.
+  The first fix also read "will be delivered to FRA by ..." and "will be in Frankfurt by ..." as arrival limits (our
+  pickup side); only "must", "have to", "need to" or "should" set one now. Reading a clause exposed a hole in
+  `novelty.leftover`: it dropped a whole sentence once any rule matched, so "only accepts deliveries flown by
+  Kestrel, and the cargo must be at JFK by ..." no longer sent the airline requirement to the model. It now splits
+  at ";" and ", and"/", but"; no captured mail changes whether the model is called. `cost/schedule-wording`, rebased
+  on main with #317; `cost/required-airline-wording` rebased onto #317's "no airline other than". Wrong: 0.
+- 22.11. 03:30, unseen-shape cycle 23 (live to round 102, mail 30263; price anchors). Live: 100 and 101 accepted at
+  the best price. New live shape: a price set beside the request, "another forwarder has already offered us about
+  1620 EUR all-in" (101) and "our budget for this shipment is around 3300 EUR all-in" (102, pending). Both ignored
+  and read by rules as by hand; captured on `generalization/live-price-anchors`. Generated: ten more anchors (a rate
+  per kg, per piece, per cbm, a German budget, a cap, a competitor's transit) all read the same; "last month we
+  shipped 1250 kg to RUH for 1900 EUR" made the rules give up and the fallback guess 1250 kg. Cargo figures now skip
+  sentences about a past shipment (`cost/past-shipment-figures`). Wrong in every harness: 0.
+- 22.11. 03:55, unseen-shape cycles 24 and 25 (live to round 103, mail 30484). Live: 102 accepted at the best price
+  (the budget ignored). New live shape, round 103: "quote the same shipment as in my earlier request, "Air freight
+  quote request: STR to MEL", sent on 2026-11-21 at 23:18 UTC ... the cargo and pickup details are unchanged ... the
+  new destination is LAX". gpt-4.1 read it (1841 kg, 4.63 cbm, delivered to STR; pieces lost) and it was accepted at
+  the best price 4455.22: the scorer prices the earlier request's cargo. Offline the rules read nothing, and the
+  quoted subject would give them the old lane STR-MEL. `cost/earlier-request` reads it by rules from the earlier
+  request (by the quoted subject, else the latest), with a new destination, weight, volume, pieces, wish or currency
+  from the mail; German quotes, no subject, a changed weight, the same destination and fastest read as expected; two
+  new airports or an unknown subject stay with the model. Wrong in every harness: 0.
+- 22.11. 04:05, unseen-shape cycle 26 (live to round 104, mail 30805). Lost: 104, "declined_in_scope". The same
+  shape as 103 ("the same shipment as in my request "Air freight quote request to ATL" ... the new destination is
+  BOM"), but gpt-4.1 read weight 0 and no origin this time; we asked for the facts, then sent "no rate in time".
+  `cost/earlier-request` read it once "earlier" was no longer required: DUS-BOM, 585 kg, 5.01 cbm, 11 pieces,
+  fastest, pickup at 40043, the earlier request's facts. P0 while it is not live. Wrong in every harness: 0.
+  Main fixed the shape meanwhile (564c4a5, `_earlier_request`): it fills the model's reading, so it needs the model
+  call and the exact quoted subject, and the rules' reading of a restated figure keeps the quoted subject's old lane
+  ("... except the gross weight, now 2000 kg" read STR-MEL, 2000 kg, volume 0). `cost/earlier-request`, rebased on
+  main, reads by rules first (all eight variants and rounds 103 and 104), main's fill stays for the model's reading.
+- 22.11. 04:20, unseen-shape cycle 27 (live to round 106, mail 31260). 105 accepted at the best price, 106 read by
+  rules, pending. New live shape, no round of its own: 27 s after 105's request, "nordlicht.audio@" (the customer
+  is "nordlicht-audio@") wrote "our usual mailbox has been down ... could you confirm your price for our shipment to
+  Bangkok (BKK) to this address". A lookalike sender asking for a price to be sent elsewhere. The router sent it to
+  the model as a new request; we asked it for postcode, weight and volume, then mailed "no rate in time". Nothing of
+  the real quote went to it. Open, not guessed: whether the scorer wants it refused, ignored or answered at the
+  known address. Cheapest evidence: a verdict, points or a follow-up for session 30919 on `GET /v1/board/me`.
+  Owner: Speed (router) and the main loop. Wrong in every harness: 0.
+- 22.11. 04:40, unseen-shape cycle 28 (customer replies: a conditional acceptance). The cap reader (49cb553, one live
+  wording) on 16 hand-labelled replies: no booking against a cap, but "400 EUR or less", "max. 400 EUR" (the
+  sentence split after "max."), "if you can match 400 EUR" and "within a budget of 300 EUR" kept no cap, so a person
+  instead of the booking. `generalization/conditional-cap-wording` reads them; "if the dates match 2026-11-27" stays
+  no cap. Wrong in every harness: 0.
+- 22.11. 04:50, unseen-shape cycle 29 (live to round 106, mail 31447). 106 accepted at the best price. The lookalike
+  sender of cycle 27: `GET /v1/board/me` lists no row for it (only rounds), and round 105's real customer kept its
+  tracking +10; the main loop took the shape in #346 (`accuracy/lookalike-sender`, live). Nothing to add here.
+- 22.11. 05:00, unseen-shape cycle 30 (live to round 107, mail 31482). Round 107 came from the real customer
+  nordlicht-audio@ and was routed `other` by #346's `sender:lookalike`: the impostor's own mail (30919) had been
+  stored as a request before #346, so the real address looked like its lookalike; no quote. Seen at 01:45:49 in a
+  read-only copy, the hot-repair session alerted; fixed by #351 (an address counts as a lookalike only when its first
+  mail came after the original's). A duplicate fix here (`speed/lookalike-established`, by request count) is dropped.
+  31482 itself could only be saved through the operator UI.
+- 22.11. 05:10, unseen-shape cycle 31 (the asked departure airport). #330's reader on 16 hand-labelled sentences:
+  "please do not route via FRA", "please avoid routing via FRA" and "routing via FRA is not possible for us; please
+  use MUC" all asked for FRA, the airport refused (P0: the wrong origin); "fly out of MUC", "ex MUC" and "cannot
+  depart from FRA, so please use MUC" asked for nothing. `cost/departure-negation` reads refusal per clause. Wrong: 0.
+  Live: 106 accepted at the best price; 107 "no answer" (the lookalike misroute, fixed by #351); 108 read by rules,
+  pending. Cursor: mail 31930.
+- 22.11. 05:25, unseen-shape cycle 32 (airline exclusions). `excluded_airlines` on 16 hand-labelled sentences:
+  "No X, please" and "we don't want X for this one" ruled nothing out (round 42's loss if X is quoted); "never had
+  issues with X" and "does not require X" ruled X out (a cheapest airline dropped). `cost/exclusion-negated-positives`
+  strips negated positives, reads "n't" and a "no" right before the name. Wrong in every harness: 0.
+- 22.11. 05:40, unseen-shape cycle 33 (live to round 109, mail 32325). 108 accepted at the best price. 109 combines
+  pounds (3258.44 lb), cubic feet (306.18), the buyer's-import framing and insurance on frame terms: read by rules as
+  by hand, 1478.0035 kg, 8.6700 cbm, premium 90000 x 110 % x 0.45 % = 445.50 added (2956.00 + 445.50 = 3401.50);
+  pending. Generated on the earlier-request shape: a pickup the new mail moves ("now from our site in 80331 Munich")
+  kept the old pickup and origin; `cost/earlier-request` now takes the new postcode and its zone's airport. Tracking:
+  main reads "51447 - ORD", "→" and "1 233 kg" itself now; lower-case codes are the only form left. Wrong: 0.
+- 22.11. 05:55, unseen-shape cycle 34 (live to round 110). 109 accepted at the best price (pounds, cubic feet and the
+  insurance premium right). 110: import framing, an old request quoted below and "attach your offer as a PDF", read by
+  rules as by hand, pending. Generated on the trucker offers of rounds 63 and 64 (discount, fuel row, "Gesamt" with
+  decimal commas, a minimum note, letters with parts or the amount in words): main reads 10 of 11; "Total net
+  165.70" goes to the model (P2, left). Wrong: 0.
+- 22.11. 06:15, unseen-shape cycle 35 (languages; live to round 110). A second impostor variant came live at
+  02:03:24 ("kessler-feinmechanik.mail@", "new mail address: offer for Lima"); safe by the model's routing, reported to
+  the hot repair, covered by #353. Generated: round 108's door request in Spanish, Italian, Dutch and Portuguese went to
+  the model (destination, pickup and some piece words unknown). Read by rules, the fastest wish in those languages
+  would have been taken for the default cheapest, so the wish words came with it. `cost/romance-dutch-requests`:
+  all four languages and fastest by rules, "per kg"/"per AWB" untouched. Wrong in every harness: 0.
+- 22.11. 06:25, unseen-shape cycle 36 (customer replies; live to round 112). 110 and 111 accepted at the best price;
+  112 is round 61's shape again (mail "non-dangerous", packing spec UN1760 Class 8), flagged with DGD and MSDS asked,
+  pending. Generated: 20 hand-labelled replies to `booking.intent`: "let's go with this offer" and "d'accord, merci
+  de réserver" were no acceptance, "found a cheaper option elsewhere", "decided against it" and "c'est trop cher" no
+  decline, so a person instead of the booking or the close. `generalization/reply-intent-wording`. Wrong: 0.
+- 22.11. 06:40, unseen-shape cycle 37 (live to round 113). 112 accepted at the best price. Lost: 113, "one_of_two".
+  Two shipments from one Munich pickup, to RUH and DXB on numbered lines, "a separate all-in price for each". The
+  model read one summed shipment without a destination, so we asked for the destination the lines gave (a question
+  before the quote, 12 s lost); then only RUH was quoted. The verdict settles cycle 10's open question: the scorer
+  wants every shipment priced. Why DXB was left out (live events): its airline options came, its own trucker requests
+  went out, but `bids.record` files trucker answers under the session's reading (RUH), so DXB never had a pickup and
+  `_with_shipments` drops a door shipment without one. Owner: Accuracy (`bids.record`), sent to the hot repair. Fixed
+  here: no question when the lines give the destination (`cost/multi-shipment-no-question`). Wrong: 0.
+  Since: ca0ff52 prices a further shipment's bids on its own lane, 270e4bb splits the lines on the first read (my
+  question fix superseded, dropped).
+- 22.11. 06:55, unseen-shape cycle 38 (live to round 114). 114: the earlier-request shape a third time, now "the
+  same shipment again? My earlier request, "Air freight quote to YYZ", ..." in two sentences; read live by the model
+  (gpt-4.1) as by hand, MUC-ICN 1240 kg. The rules-first reading took "same shipment" and "request" from one sentence;
+  it now needs a pointer anywhere plus the quoted subject (or "my/earlier request" for the latest one) and reads 114 by
+  rules. Rebuilt on main as `cost/earlier-request-v2` (68af0c3; the old branch conflicted per commit). The review
+  thread's #306 trap ("please reply by 25 November" as a latest arrival) on `cost/schedule-wording`: "the offer has to
+  be in our system by 25 November" was one; an arrival limit now needs the goods as its subject. Wrong: 0.
+- 22.11. 07:10, unseen-shape cycle 39 (live to round 117). 114 to 116 accepted at the best price (116: pounds and cubic
+  feet read as by hand). 117: the earlier-request shape a fourth time (103, 104, 114, 117), pointing to round 115; read
+  live by the model again (DUS-JFK, 1061 kg, 5.97 cbm, pickup 47914), by rules on `cost/earlier-request-v2` the same.
+  One of the four was lost when the model failed (104). Wrong: 0.
+- 22.11. 07:25, unseen-shape cycle 40 (live to round 118). 117 accepted at the best price. Lost: 118, too low. German,
+  door STR-EZE: "Die Ware steht am 2026-11-26 zur Abholung bereit. Die Sendung muss spätestens am 2026-12-01 am
+  Zielflughafen EZE eintreffen ... die günstigste" of those that meet it. Main's `schedule` read neither date (German
+  puts the verb last), so the cheapest overall went out (Nova Atlas, 7 days); by hand only Fjordline (4 days) arrives
+  by 1 December. `accuracy/german-verb-last-limits` (8f85f8c, on main 46317e5): `READY_LAST` and a "muss ...
+  spätestens am" form inside main's `ARRIVAL_CONTEXT` guard; sent to the hot repair. "1 Packstück" reads no pieces
+  (no price effect). `cost/schedule-wording` conflicts with #356's rebuilt arrival reader; its English forms wait.
+  Since: #362 reads the German ready date, the subject's "Ankunft bis" gave main the arrival; the body-only form is
+  `accuracy/german-verb-last-arrival` (ee3c07d on ff47d14, not URGENT any more, for the review thread).
+- 22.11. 07:45, unseen-shape cycle 41 (live to round 120). 118 lost (above), 119 accepted at the best price (a
+  competitor's 2130 EUR ignored), 120 read by rules, pending. Main's rebuilt arrival reader on my 25 sentences: 12
+  missed, none wrong. Ported into its guarded structure as `cost/schedule-wording-v2` (60fab6e, stacked on the German
+  fix): 25 of 25, "please send the ETA by" kept out by its `ARRIVAL_CONTEXT`; the novelty clause split came along
+  (main's novelty test needs it). The old `cost/schedule-wording` is deleted. Wrong: 0.
+- 22.11. 08:00, unseen-shape cycle 42 (live to round 121). Lost: 120, too low: the rate API down again (Lumen and
+  Tamarind 503), no desk, airline or portal-page rate, the fastest sheet airline quoted (the outage of 93 to 99;
+  reported to the hot repair). The German fix went to main as #363 (the review thread narrowed it: only an arrival
+  verb after the date sets a limit). `cost/schedule-wording-v2` rebased on 52f69d7 (4bd9ab6), green. 121 read by
+  rules. Wrong: 0.
+- 22.11. 08:15, live to round 123: 121 too low, 122 "declined_in_scope", both the outage again (portal 503, the desk
+  and the portal airlines silent by mail, the browser page behind a bot challenge, "403 Just a moment..."). All read
+  by rules as by hand; nothing for the reading. Owner: the main loop.
+- 22.11. 08:45, live to round 125: 123 too low, the outage again: Polaris' portal page "403 Just a moment...",
+  Kestrel's mail unpriced, so the sheet alone (Orion 3512.14) answered a fastest request. Read by rules as by hand.
+  124 accepted (60, door CGN-SGN, Lumen and Westfalenroute, 2129.30 = best); the portal answers again. 125 read by
+  rules as by hand under a quoted older request with its own lane and weight in "Original Message" and the subject.
+  Branches: `cost/history-headers-v2` (ac7b3e9: Apple "Begin forwarded message:", bold Outlook labels, ">" lines
+  above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
+  wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
+  volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 04:55, merged from the cycles above: `cost/insurance-per-cent` #372, `cost/past-shipment-figures` #374,
+  `speed/ignore-invalid-portal-quota-headers` #375.
 - 22.11. 02:30, axis C (infrastructure, never seen live): mailbox, gateway, clock and restart replayed offline in
   `tests/fixtures/next-cases/infra/`. Found: a mail the poll cannot map stalled the poller for good (#324, merged);
   two mailbox 503s on the quote lost the request (#327); a skewed `received_at` dropped it as expired or held it an
