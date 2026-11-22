@@ -90,7 +90,7 @@ TOTAL_LINE = re.compile(
     rf"^\s*(?:grand\s+)?(?:{TOTAL_LABEL}(?:\s+(?:amount|sum))?|sum|summe)(?:\s+(?P<c>{CURRENCY}))?[\s:,-]*(?P<n>{AMOUNT})\s*$",
     re.IGNORECASE,
 )
-KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kg|kilograms?|kilogramm)\b"
+KG_BASIS = r"(?:/\s*|(?:per|pro)\s+)(?:chargeable\s+)?(?:kgs?|kilograms?|kilogramm)\b"
 PER_KG = re.compile(r"^\s*" + KG_BASIS, re.IGNORECASE)
 KG_LABEL = re.compile(KG_BASIS + r"\s*(?:is\s*|[=:]\s*)?$", re.IGNORECASE)
 # A basis other than the whole shipment ("per pallet", "/ 100 kg"); "per shipment" or "per AWB" is the flat total.
@@ -128,8 +128,9 @@ PICKUP_SPAN = re.compile(
 )
 WAITING = re.compile(r"\b(?:waiting|wartezeit|standzeit)\b", re.IGNORECASE)
 VALIDITY_HOURS = re.compile(r"\bvalid\s+for\s+" + HOURS.pattern, re.IGNORECASE)
+# Only currency codes: "950.00 EUR per AWB" or "2.10 EUR/KGS" is a price, never an exchange rate.
 FX = re.compile(
-    r"1\s*([A-Z]{3})\s*=\s*(\d+(?:[.,]\d+)?)\s*EUR|(\d+(?:[.,]\d+)?)\s*EUR\s*(?:per|/)\s*(?:1\s*)?([A-Z]{3})"
+    rf"1\s*({CURRENCY})\s*=\s*(\d+(?:[.,]\d+)?)\s*EUR|(\d+(?:[.,]\d+)?)\s*EUR\s*(?:per|/)\s*(?:1\s*)?({CURRENCY})\b"
 )
 # An answer that names its exchange rate in a form `FX` cannot read borrows none (`known_fx`): the model reads it.
 RATE_NAMED = re.compile(
