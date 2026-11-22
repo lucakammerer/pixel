@@ -379,6 +379,12 @@ The causes, all owned by this thread unless the row says otherwise:
 - **G10**: `orchestrator.NOT_AIR` matches a mode said in passing ("by ship" for the inbound leg, "rail freight" in
   the goods' name, "our sea freight team"); an in-scope request is declined.
 
+Proof against the other direction: `uv run python -m tools.scope_proof <copy of the live database>` replays every
+live request offline through today's router, rules and scope decision beside the scorer's verdict and what we sent
+live. On main at round 183: 125 of 125 accepted quotes still served; declined are round 159 (the import, accepted as
+a decline), round 177 (sea, `out_of_scope_quoted`) and the impostor of session 30919 (no answer). Every scope pull
+request states this count.
+
 The class fix (next pull requests, read path, for the review thread): decide scope before the question (G1), then
 one scope reading: a rule that only notices a mode, service or non-request word in any language (subject, body and
 attachment, G2, G6, G7, G8) hands the mail to the extraction call, which returns one more field, what is asked, and
