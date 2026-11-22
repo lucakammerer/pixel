@@ -26,7 +26,7 @@ ACCEPT = re.compile(
     r"\b(?:(?:we|i)\s+(?:hereby\s+)?(?:accept|approve)(?!\s+(?:that|no|any)\b)|accept(?:ed)?\s+(?:it|(?:this|your|the)\s+(?:offer|quote|quotation|rate))"
     r"|(?:offer|quote) accepted|confirm\s+(?:the|this|our)\s+booking|go ahead|book\s+(?:it|this|the\s+shipment|with)\b"
     r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|(?<!as )agreed"
-    r"|(?:would|['’]d)\s+like\s+to\s+(?:book|proceed)|arrange\s+the\s+booking"
+    r"|(?:would|['’]d)\s+like\s+to\s+(?:book|proceed)|arrange\s+the\s+booking|place\s+the\s+(?:shipment|order)\s+with\s+you"
     r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag\b|einverstanden"
     r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen)",
     re.IGNORECASE,
@@ -34,7 +34,7 @@ ACCEPT = re.compile(
 DECLINE = re.compile(
     r"\b(decline|no thanks|(?<!not )too (?:low|high)|not competitive|pass on (?:this|it|that|your offer)|not interested|"
     r"(?<!not )too expensive|went with|"
-    r"another (?:offer|forwarder)|"
+    r"another (?:offer|forwarder)(?!\s+(?:has|have)\s+(?:quoted|offered))|"
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:yet\s+)?(?:go ahead|accept(?:ed)?|book(?:ed)?|proceed|confirm(?:ed)?|take it|move forward|be moving forward)|"
     r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
