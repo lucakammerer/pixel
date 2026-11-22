@@ -5,6 +5,9 @@ commit, or a later merge that touches the same function or rule, puts it back in
 
 | PR | Author | Head | Verdict | The finding that mattered |
 | --- | --- | --- | --- | --- |
+| #498 | lucakammerer | b572a81 | ok after a fix by C (taken over from A), merge held for the demo | "No need to correct the offer" sent a new quote (fixed: `NO_NEED`); B's rate-check rows requote at the new figure; 1 of 450 live replies reads differently, F7 (session 2149) |
+| #505 | lucakammerer | 31d0c80 | ok (C), merge held for the demo | a yes held on "siempre que", "purché", "mits"; [17] 187 → 219 right with no right case lost; 0 of 2241 live mails read differently |
+| #513 | lucakammerer | 709ade8 | ok (C, taken over from B), merge held for the demo | an import written by its lane alone stays as written and is declined; only one live lane was ever turned round, an import already kept on `main` |
 | #481 | lucakammerer | 563d5e1 | ok after a fix by C (taken over from B) | a weight after "Bestellung"/"commande" without a space or in kilos ("450kg", "300 kilos", "1200 x 800") became "Your reference"; 0 of 2144 live mails read differently |
 | #489 | lucakammerer | d05530e | ok after a note, docs conflict resolved | per-piece weights in Korean/Turkish read as totals by rules ("7 parça, her biri 195 kg" → 195 kg); now the model reads them without a total; the wish part went live alone as #508 (round 186) |
 | #496 | lucakammerer (supply) | e00a507 | ok | bid expiry read; nothing selects on it; validity no longer read as pickup hours |
