@@ -22,7 +22,7 @@ from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.crm import quotes
-from pixel.pricing import bids, engine, portal_rates, store
+from pixel.pricing import bids, engine, pickup, portal_rates, store
 
 NOW = datetime.now(UTC)
 IDS = count(100)
@@ -503,14 +503,18 @@ async def test_a_late_start_still_waits_for_the_pickup_and_mailed_bids(ctx, monk
     assert all(o.pickup == D("75.00") for o in found)
 
 
-async def earlier_pickups(ctx) -> Rfq:
-    """Two earlier requests of zone 12 both truckers answered (Truck A 50 + 0.10/kg in 10 h, Truck B 20 + 0.10/kg in
-    30 h), a sheet for the lane, and a door-to-port request of 100 kg: balanced takes Truck A at 60.00."""
+def air_one(ctx) -> None:
     store.upsert(ctx, [LaneTariff(
         carrier="Air One", origin="AAA", destination="BBB", currency="EUR", valid_from=date(2000, 1, 1),
         valid_to=date(2100, 1, 1), version="v", transit_days=3, minimum=D(50), breaks=((D(0), D("2.00")),),
         fuel_per_kg=D("0.50"), security_per_kg=D("0.10"), source="test",
     )])  # fmt: skip
+
+
+async def earlier_pickups(ctx) -> Rfq:
+    """Two earlier requests of zone 12 both truckers answered (Truck A 50 + 0.10/kg in 10 h, Truck B 20 + 0.10/kg in
+    30 h), a sheet for the lane, and a door-to-port request of 100 kg: balanced takes Truck A at 60.00."""
+    air_one(ctx)
     for session_id, kg, a, b in ((2, 200, "70.00", "40.00"), (3, 400, "90.00", "60.00")):
         earlier = rfq(door_pickup=True, pickup_zone="12").model_copy(
             update={"session_id": session_id, "weight_kg": D(kg)}
@@ -547,6 +551,22 @@ async def test_the_fallback_estimates_a_pickup_only_once_the_truckers_had_their_
     events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=late.model_dump(mode="json"))
     quote = await agent.fallback(ctx, 1)
     assert (quote.option.trucker, quote.total) == ("Truck A", D("320.00"))
+
+
+async def test_a_trucker_price_a_repair_left_out_is_no_memory(ctx, monkeypatch):
+    monkeypatch.setattr(quotes, "new_id", lambda ctx: f"Q-{next(IDS)}")
+    air_one(ctx)
+    late = rfq(door_pickup=True, pickup_postcode="12345", pickup_zone="12").model_copy(
+        update={"received_at": NOW - timedelta(seconds=ctx.settings.quote_target_s)}
+    )
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=late.model_dump(mode="json"))
+    events.emit(ctx, "option.found", "pricing", session_id=1,
+                payload={"option": engine.sheet_options(ctx, late)[0].model_dump(mode="json")})  # fmt: skip
+    await bids.record(ctx, mail("a@truck", "Pickup EUR 5.00. Pickup time: 10 hours"))
+    events.emit(ctx, "option.vetoed", "rfq", session_id=1, payload={"kind": "trucker", "name": "Truck A"})
+    quote = await agent.fallback(ctx, 1, allow_partial=True)
+    assert (quote.option.trucker, quote.total) == (None, D("260.00"))
+    assert pickup.estimates(ctx, late.model_copy(update={"session_id": 2}), []) == []
 
 
 @pytest.mark.parametrize(

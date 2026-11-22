@@ -1,13 +1,15 @@
 import json
+from datetime import timedelta
 from decimal import Decimal
-from itertools import combinations
-from statistics import median
+from itertools import takewhile
 
 from pixel.contracts import RateOption, Rfq, Source
-from pixel.core import events
+from pixel.core import events, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import bids, calc, selection, session, store
+
+MEMORY_H = 24  # the trucker answers the memory reads: a bounded scan of the newest events, whatever the log's size
 
 
 def zone_of(postcode: str) -> str:
@@ -27,16 +29,23 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
 
 
 def _answers(ctx: Context) -> dict[tuple[str, str], list[RateOption]]:
-    """Every trucker's priced answers so far by (trucker, zone), oldest first: the pickup price memory. An answer
-    counts when it prices the request its session had read (zone, airport, chargeable weight) and its own request
-    did not distrust it (`selection.implausible`, round 67)."""
+    """Every trucker's priced answers of the last MEMORY_H hours by (trucker, zone), oldest first: the pickup price
+    memory. An answer counts when it prices the request its session had read (zone, airport, chargeable weight),
+    its own request did not distrust it (`selection.implausible`, round 67) and no repair of its session left it out
+    (`option.vetoed`, as `session.options`)."""
+    since = (timing.now() - timedelta(hours=MEMORY_H)).isoformat()
     rows = ctx.db.execute(
-        "SELECT o.session_id, o.payload, (SELECT r.payload FROM events r WHERE r.session_id = o.session_id"
-        " AND r.kind = 'rfq.extracted' AND r.id < o.id ORDER BY r.id DESC LIMIT 1) AS rfq FROM events o"
-        " WHERE o.kind = 'option.found' AND json_extract(o.payload, '$.option.trucker') IS NOT NULL ORDER BY o.id"
-    ).fetchall()
+        "SELECT o.ts, o.session_id, o.kind, o.payload, CASE o.kind WHEN 'option.found' THEN (SELECT r.payload"
+        " FROM events r WHERE r.session_id = o.session_id AND r.kind = 'rfq.extracted' AND r.id < o.id"
+        " ORDER BY r.id DESC LIMIT 1) END AS rfq FROM events o WHERE o.kind = 'option.vetoed' OR (o.kind ="
+        " 'option.found' AND json_extract(o.payload, '$.option.trucker') IS NOT NULL) ORDER BY o.id DESC"
+    )  # newest first, read only down to `since`
     sessions: dict[int, list[tuple[str, RateOption]]] = {}
-    for row in rows:
+    vetoes: dict[int, list[dict]] = {}
+    for row in reversed(list(takewhile(lambda row: row["ts"] >= since, rows))):
+        if row["kind"] == "option.vetoed":
+            vetoes.setdefault(row["session_id"], []).append(json.loads(row["payload"]))
+            continue
         if not row["rfq"]:
             continue
         asked, answer = Rfq.model_validate(json.loads(row["rfq"])), session.option(json.loads(row["payload"])["option"])
@@ -44,23 +53,14 @@ def _answers(ctx: Context) -> dict[tuple[str, str], list[RateOption]]:
         if asked.pickup_zone and read == (answer.origin, answer.chargeable_kg):
             sessions.setdefault(row["session_id"], []).append((asked.pickup_zone, answer))
     memory: dict[tuple[str, str], list[RateOption]] = {}
-    for found in sessions.values():
+    for session_id, found in sessions.items():
+        out = vetoes.get(session_id, [])
+        found = [(zone, answer) for zone, answer in found if not any(session.vetoed(answer, v) for v in out)]
         peers = [answer for _, answer in found]
         for zone, answer in found:
             if not selection.implausible(answer, peers):
                 memory.setdefault((answer.trucker, zone), []).append(answer)
     return memory
-
-
-def _line(answers: list[RateOption]) -> tuple[Decimal, Decimal] | None:
-    """A trucker's price in one zone as (base, rate per chargeable kg): the median rate between every two answers
-    and the median base it leaves, so one answer at another price level does not move the line. None from one
-    weight, or when the answers contradict a price that grows with the weight."""
-    points = [(a.chargeable_kg, a.total_eur) for a in answers]
-    rates = [(p2 - p1) / (k2 - k1) for (k1, p1), (k2, p2) in combinations(points, 2) if k1 != k2]
-    if not rates or (rate := median(rates)) <= 0:
-        return None
-    return median(price - rate * kg for kg, price in points), rate
 
 
 def estimates(ctx: Context, rfq: Rfq, found: list[RateOption]) -> list[RateOption]:
@@ -73,23 +73,19 @@ def estimates(ctx: Context, rfq: Rfq, found: list[RateOption]) -> list[RateOptio
         return []
     try:
         memory = _answers(ctx)
-        lines = {key: line for key, answers in memory.items() if (line := _line(answers))}
-        # A trucker with one answer in the zone: that price moved along the shape of the lines known, the fixed
-        # charge as the kg it is worth (median over all truckers and zones); without any line, the price as it was.
-        fixed_kg = median(base / rate for base, rate in lines.values()) if lines else None
+        lines = {
+            key: line
+            for key, answers in memory.items()
+            if (line := calc.pickup_line([(a.chargeable_kg, a.total_eur) for a in answers]))
+        }
+        fixed_kg = calc.pickup_fixed_kg(list(lines.values()))
         kg = calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
         estimated = []
         for name, _ in store.carriers(ctx, "trucker", rfq.pickup_zone):
             if not (answers := memory.get((name, rfq.pickup_zone))):
                 continue
-            last = answers[-1]
-            if line := lines.get((name, rfq.pickup_zone)):
-                price = line[0] + line[1] * kg
-            elif fixed_kg is not None and fixed_kg > 0:
-                price = last.total_eur * (fixed_kg + kg) / (fixed_kg + last.chargeable_kg)
-            else:
-                price = last.total_eur
-            if (price := calc.money(price)) <= 0:
+            last = (answers[-1].chargeable_kg, answers[-1].total_eur)
+            if (price := calc.pickup_estimate(kg, lines.get((name, rfq.pickup_zone)), last, fixed_kg)) <= 0:
                 continue
             hours = next((a.pickup_hours for a in reversed(answers) if a.pickup_hours is not None), None)
             estimated.append(RateOption(

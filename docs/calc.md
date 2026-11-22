@@ -39,6 +39,13 @@ Decimal only; a model never computes, compares or writes a price (P1).
   option's currency with its exchange rate when that is not EUR. Truckers price by zone and quote only with a
   five-digit postcode: a pickup known by its town alone is asked with the zone's first one (`bids._postcode`; two
   postcodes of one zone got the same price and pickup time).
+- **Pickup memory** (`pickup.estimates`): no trucker answered by the target time. Each of the zone's truckers is
+  priced from its answers in that zone over the last `pickup.MEMORY_H` hours (an answer its own request distrusted
+  or a repair left out does not count) as a line, base + rate × chargeable kg (`calc.pickup_line`): the rate is the
+  median of the rates between every two answers, the base the median of what each answer leaves, so one answer at
+  another price level does not move it. A trucker with one answer in the zone (or none at two weights) gets that
+  price scaled by (F + kg) / (F + its kg), F the median base / rate over all lines known (`calc.pickup_fixed_kg`);
+  without any line, the price as it was (`calc.pickup_estimate`). Its pickup hours are those of its last answer.
 - **Cargo insurance** (`calc.with_insurance`): the premium on the customer's stated terms is added to the all-in
   total in the quote's currency. The quote checker includes the premium in its arithmetic and comparison price.
 - **EUR** (`calc.to_eur`): amount × the rate's own exchange rate (EUR per unit), rounded to cents.
