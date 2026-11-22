@@ -855,8 +855,8 @@ acknowledgments. An existing signature-reading gap accounts for one of the no-pr
 
 ### The table: every case, right action, today
 
-Final-window priority is F1 (six scored rounds). The #480 fix shown in F1 was reviewed and closed without a
-merge. Its replacement is on local branch `after-quote/price-match-2`. #498 covers F6–7 and #505 covers F4–5.
+F1 was the final-window priority, with failures in six scored rounds. The #480 replacement stayed on local branch
+`after-quote/price-match-2` because #498 (F6–7) and #505 (F4–5) were still open at the 11:30 Berlin cutoff.
 F20 was reproduced offline. The snapshot has no observed customer request for a different customer's shipment.
 
 Steps taken from each live case: the opposite (a competitor mentioned in a decline; a cap in "match 4,000 EUR"),
@@ -865,11 +865,13 @@ booked, confirmed, cancelled), another channel (body, attachment, a new thread q
 (en, de, fr, es, it), another unit (kg, lb, tonnes, litres), and combined cases (a yes and a match request, or a
 change and a yes). Tracking covers the customer and the desk, own and unknown references, and a foreign reference
 in the body or attached to a French question. The milestone cases compare the recorded Voice statuses with
-a normal confirmation, including the English draft for a French attachment enquiry.
+a normal confirmation, including the English draft for a French attachment enquiry. F24 compares a customer's
+objection in English, French, German and an attachment with a booking instruction, an explicit change before and
+after confirmation, and a supplier replying to a bid request.
 
 | # | Case | Live | Right action | Today | Status, owner |
 | --- | --- | --- | --- | --- | --- |
-| F1 | price-match request after the quote, en/de/fr, after a decline | 6 rounds | `hold`: one reply keeping the price, quote open, the yes books | `hold` | fixed #480 (review) |
+| F1 | price-match request after the quote, en/de/fr, after a decline | 6 rounds | `hold`: one reply keeping the price, quote open, the yes books | decline, person, or booked before the yes | **gap**, after the quote: #480 closed (`MATCH` held seven yeses); a new pull request follows |
 | F2 | price-match request that declines in its own sentence | never | decline | decline | right |
 | F1b | an acceptance conditioned on a stated lower price ("we accept the quote provided you match 2,900 EUR") | fixture on local branch | book when our total meets the cap; otherwise keep the quote open | an acceptance can book without the cap check | **gap**, after the quote (`followup.conditional`) |
 | F3 | price-match request after the booking | never | person | person | right |
