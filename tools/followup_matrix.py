@@ -17,6 +17,7 @@ import io
 import json
 import sqlite3
 import sys
+from bisect import bisect_left
 from collections import defaultdict
 from collections.abc import Iterator
 from contextlib import closing
@@ -289,8 +290,8 @@ def recorded_census(path: Path, after_event: int = 0) -> Iterator[dict]:
         }
         customers = dict(conn.execute("SELECT id, customer FROM sessions"))
         carriers = {address.lower(): kind for address, kind in conn.execute("SELECT email, kind FROM carriers")}
-        phases: dict[int, str] = {}
-        arrivals: dict[int, tuple[int, str]] = {}
+        phases: dict[int, list[tuple[int, str]]] = defaultdict(list)
+        arrivals: dict[int, int] = {}
         trace: dict[int, list[dict]] = defaultdict(list)
         scores = {}
         scored_sessions = {}
@@ -299,9 +300,9 @@ def recorded_census(path: Path, after_event: int = 0) -> Iterator[dict]:
             end = event
             eid, _, kind, sid, mid, payload = event
             if kind == "mail.in":
-                arrivals[mid] = eid, phases.get(sid, "open")
+                arrivals[mid] = eid
             if kind in LIVE_PHASE:
-                phases[sid] = LIVE_PHASE[kind]
+                phases[sid].append((eid, LIVE_PHASE[kind]))
             if kind in LIVE_TRACE and mid is not None:
                 data = json.loads(payload)
                 trace[mid].append(
@@ -339,12 +340,23 @@ def recorded_census(path: Path, after_event: int = 0) -> Iterator[dict]:
         sid, kind = mail["session_id"], mail["kind"]
         if mail["direction"] != "in" or (mid == sid and kind not in ("booking_confirmation", "tracking_question")):
             continue
-        arrival, phase = arrivals.get(mid, (None, "unknown"))
+        arrival = arrivals.get(mid)
         if after_event and (arrival is None or arrival <= after_event):
             continue
         # Standalone confirmations can be matched to a booking in another thread. The event gives that session.
         outcome = trace.get(mid, [])
         confirmed = next((e["session_id"] for e in outcome if e["event"] == "booking.confirmed"), None)
+        phase_session = sid
+        if mid == sid:
+            tracked = next(
+                (e.get("shipment_sessions", []) for e in reversed(outcome) if e["event"] == "tracking.answered"), []
+            )
+            phase_session = confirmed or (tracked[0] if len(tracked) == 1 else None)
+        phase = "unknown"
+        if arrival is not None and phase_session is not None:
+            history = phases.get(phase_session, [])
+            index = bisect_left(history, (arrival, ""))
+            phase = history[index - 1][1] if index else "open"
         address = parseaddr(mail["sender"])[1].lower()
         parent = mails.get(mail["in_reply_to"], {})
         if address == TRACKING:
