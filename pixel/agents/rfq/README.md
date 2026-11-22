@@ -77,7 +77,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `pricing/selection.py` `select` prefers compliant prices and `pricing/bids.py` `request` limits airline enquiries to
   the requested carriers. If recovery reaches the deadline with only another airline's price, `novelty.py`
   `with_note` identifies that price as an alternative.
-- `extract.py` `schedule` reads explicit ready and latest arrival dates and a maximum air transit in days. A latest
+- `extract.py` `schedule` reads explicit ready and latest arrival dates and a maximum air transit in days, in the
+  mail and in its attached documents (`read_request`); a document's date stands against the mail's, as its cargo does
+  (rounds 33 to 35, 130: the scorer prices the document), and is in `rfq.evidence` as `document_schedule`. A latest
   arrival is only "arrive … by / no later than <date>" with nothing but the place between (`ARRIVE_BY`; "Shanghai,
   China" allowed, "arrival airport" a label), never a reply-by or a details-by date, never a past shipment
   (`ARRIVAL_CONTEXT`, the last words before "arrival") and never a date before the request; a date without a year is

@@ -1003,6 +1003,25 @@ def test_a_ready_date_this_autumn_stays_this_year():
     assert extract.schedule("Cargo available from 15 October.", date(2026, 11, 22))[0] == date(2026, 10, 15)
 
 
+async def test_an_attached_documents_schedule_is_read_and_stands_against_the_mails(conn, monkeypatch):
+    """Neither the rules (the mail only) nor `novelty` (sentences a rule matches count as read) read these dates."""
+
+    async def refused(ctx, **kw):
+        raise RuntimeError("no model")
+
+    class Box:
+        async def attachment(self, message_id, attachment_id):
+            return b"SHIPPING INSTRUCTION\nCargo ready on 2026-11-29\nLatest arrival: 2026-12-04\nMax transit 4 days\n"
+
+    monkeypatch.setattr(llm, "ask_json", refused)
+    ctx = Context(settings(), conn, Box(), None, None, None)
+    message = Message(id=1, session_id=1, direction="in", sender="c@x", to="us@x", subject="RFQ FRA-JFK",
+                      body="Please quote FRA to JFK, 300 kg, 1.2 cbm, ready on 2026-11-27, arriving by 2026-12-10. Details attached.",
+                      sent_at=RECEIVED, attachments=[Attachment(id=0, filename="si.txt", content_type="text/plain", size=1)])  # fmt: skip
+    rfq = await extract.extract(ctx, message, DEADLINE)
+    assert (rfq.ready_on, rfq.arrive_by, rfq.max_transit_days) == (date(2026, 11, 29), date(2026, 12, 4), 4)
+
+
 @pytest.mark.parametrize(
     ("text", "required", "excluded"),
     [
