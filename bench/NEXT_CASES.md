@@ -148,7 +148,7 @@ one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window 
 Open and unverified: C5, C6, C8, C11, C14 and C16 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
 merged and the organisers turn that lever.
-## Axis E: outage drills (22.11.2026 10:30, live snapshot to round 174)
+## Axis E: outage drills (22.11.2026, live snapshot to round 194)
 
 `uv run python -m tools.outage_drill <database> --last 60`: each accepted round replayed offline on the state and
 portal answers it met (`tools/capture.py`), every mail of its session at its own time (a change after our quote is
@@ -162,16 +162,16 @@ round 166.
 
 | Drill | Right of 60 | Beyond the baseline | Cause | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- | --- |
-| `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 50 | baseline | 161, 149, 132 (Korean), 171, 131 and 126 (Turkish): the rules read no destination, pickup, pieces or wish in them, #489 open reads all six as the model did; 167 (Korean lots with "each", "로트 1: 카톤 4개"): the guess quotes 1964.76 against 4745.69, open, Cost; 168, 174 fixed by #463; 143, 139, 178: a document whose bytes the database does not hold (not measurable offline) | `extract.by_rules`, the lots in Korean | Cost (`extract.py`), generalize |
-| `portal_429` (every rate read 429, `Retry-After: 60`) | 49 | 2 (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
-| E4 `portal_429`, `portal_hangs` | 49 | 2 | 172 and 152: under a 429 or a hang the first request's rate reads land (from the card) after the customer's change; the requote quoted the cheaper price of the older weight (1585.45 against 2231.04). `portal_down` and `airlines_silent` are at the baseline: the drill scored the requote at a position the replay never reached (a first quote held as superseded) | `agent.requote`, #503 open (51 of 60 with it) | generalize |
-| `mail_twice`, `mail_late` (90 s) | 50 | 0 | — | — | — |
-| E3 `truckers_silent` | 49 | 1 | round 108: the pickup memory holds no answer of that zone within 24 h (D5's open part) | `pickup.estimates` | Accuracy |
+| `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 55 | baseline | 139, 143, 178 and 191 lack their attachment bytes; 167 falls back to the last Korean lot | `extract._lots` (167) | Cost; Generalize for replay coverage |
+| `portal_down`, `portal_429`, `portal_nonsense`, `portal_hangs` | 55 | 0 | #462 uses the rate card when a 429 outlasts the deadline; #503 fixes E4, where an old-weight rate arrived after the customer's change | — | — |
+| `mail_twice`, `airlines_silent` | 55 | 0 | — | — | — |
+| E5 `mail_late` (90 s) | 53 | 2 | 189 and 131 ask for the pickup, then fall back immediately because the 60-second reply window runs from storage. The customer's answer arrives 12–13 seconds after the question. At 45 s of added delay both prices reproduce; at 50 s, 189 quotes the wrong pickup from memory and 131 has no quote | `extract._ask` | Cost (reply wait), Speed (deadline) |
+| E3 `truckers_silent` | 54 | 1 | 132 has no usable estimate in zone 55 when the responding trucker is silent. The fallback excludes pickup: 2152.79 EUR instead of 2432.20, with or without a simultaneous 90 s mail delay | `pickup.estimates` | Accuracy |
 
 Round 56 checks the rate version at the first request after a change (`tests/test_outage_drill.py`). Unavailable
 rates with no observation of the new version are the known gap C16. The normal portal and a 503 after one or
 two recorded reads of the new version are controls. The version's exact activation time is not in the snapshot.
-The newer gateway drill through round 187 improves from 50 to 56 of 60 with #489. Round 167 still falls back
+On the same sample through round 187, the gateway drill improves from 50 to 56 of 60 with #489. Round 167 still falls back
 to the last Korean lot (407 kg and 3.62 cbm) and quotes 2140.07 EUR instead of the scorer's 4745.69. Its
 three lots total 1223 kg, 9.2264 cbm and 13 pieces. Both single and duplicate delivery reproduce the gap and
 send one quote. The English control with declared per-piece volumes passes. Owner: Cost (`extract._lots`).

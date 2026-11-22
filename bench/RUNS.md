@@ -543,6 +543,16 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 10:47 UTC, outage matrix after #489 (last 60 accepted through round 194). Gateway and portal failures,
+  duplicate mail and silent airlines yield 55 timely quotes within 5%. The five baseline differences are
+  round 167 (Korean lots) and four requests whose attachment bytes are absent. Mail late yields 53:
+  189 and 131 still match at 45 seconds of delay, then fall outside the pickup-answer window at 50 seconds.
+  Silent truckers yield 54: round 132 has no pickup estimate, and adding a 90-second mail delay gives the
+  same airport-to-airport fallback at 315 seconds. The failures and owners are in Axis E.
+  Live cursor 59141: all 16 further mails routed as live and tracking matched. Round 195 was accepted.
+  Session 58766 replayed with the same lane, quantities, airline and trucker. The pickup component replayed
+  at 338.84 EUR versus 324.30 EUR sent, accounting for the 14.54 EUR difference. The scorer feedback had not
+  yet been linked to the session in this snapshot (Price/Supply).
 - 22.11. 10:41 UTC, Korean lots and the gateway. On the captured round 167, the scorer's 4745.69 EUR used
   1223 kg, 9.2264 cbm and 13 pieces. The parser's gateway fallback used 407 kg and 3.62 cbm and sent 2140.07
   EUR once, with both ordinary and duplicate delivery. The English control reads all three lots. Cost owns
