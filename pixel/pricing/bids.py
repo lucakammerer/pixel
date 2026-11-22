@@ -18,6 +18,7 @@ from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.pricing import calc, selection, session, store
+from pixel.voice import calls
 
 POLL_S = 0.5
 DESK_CUTOFF_S = 115  # leave five seconds to compose and send for full response-time points (R29)
@@ -830,6 +831,12 @@ async def record(ctx: Context, message: Message) -> None:
         await _ask_listed(ctx, message, rfq)
 
 
+def _calling(ctx: Context, session_id: int, deadline: Deadline) -> bool:
+    """A person is calling a carrier of this session (`voice/calls.py`): its bid is still awaited, never past the
+    hard deadline."""
+    return timing.now() < deadline.hard_at and calls.holding(ctx, session_id, "carrier")
+
+
 async def collect(
     ctx: Context,
     session_id: int,
@@ -849,7 +856,7 @@ async def collect(
     if pending_desk is not None:
         desk_until = max(until, min(deadline.received_at + timedelta(seconds=DESK_CUTOFF_S), deadline.recovery_at))
     extended = False
-    while expected and timing.now() < desk_until:
+    while expected and (timing.now() < desk_until or _calling(ctx, session_id, deadline)):
         rows = ctx.db.execute(
             "SELECT json_extract(payload,'$.request_id'), json_extract(payload,'$.carrier') FROM events "
             "WHERE session_id=? AND kind='bid.received' AND json_extract(payload,'$.origin')=? "
@@ -867,7 +874,10 @@ async def collect(
         now = timing.now()
         remaining = (cutoff - now).total_seconds()
         if remaining <= 0:
-            break
+            if not _calling(ctx, session_id, deadline):
+                break
+            await asyncio.sleep(POLL_S)
+            continue
         if now >= until and not extended:
             events.emit(ctx, "bid.desk_wait", "pricing", session_id=session_id, message_id=pending_desk,
                         payload={"until": desk_until.isoformat()})  # fmt: skip

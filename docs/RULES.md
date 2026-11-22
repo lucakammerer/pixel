@@ -89,6 +89,7 @@ When sources disagree the API wins, then the brief. Status: `open` until code an
 | P4 | Every mail in and out, every decision and every model call is an event. CRM and UI read that log | `core/events.py` |
 | P5 | Nothing from one dataset version is hardcoded; tariffs carry a version and a validity | `pricing/store.py` |
 | P6 | The repo is public. Keys live in `.env` only and are never printed, logged or committed | `config.py`, `api/client.py` |
+| P7 | A voice call is started only by a person, only while its answer can still change the quote, and its answer enters the thread as a mail would: the rules read it, the agent never names or computes a price, and the waits it holds open end before the hard deadline | `voice/calls.py` `targets`, `answer`, `holding`; `agents/rfq/extract.py` `_ask`; `pricing/bids.py` `collect` |
 
 ## Where the sources disagree
 

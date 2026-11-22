@@ -35,6 +35,7 @@ from pixel.ui.page import (
     tabs,
     when,
 )  # fmt: skip
+from pixel.voice import calls as voice
 
 router = APIRouter()
 
@@ -378,7 +379,7 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
             drafts += "</details>"
 
     main = (
-        tools + _quote_panel(quote) + drafts + options_html
+        _calls_panel(ctx, session_id) + tools + _quote_panel(quote) + drafts + options_html
         + f'<h2>Activity<span class=count>{len(evs)}</span></h2><div class=panel id=timeline>'
         + "".join(render_events(ctx, evs)) + "</div>"
     )  # fmt: skip
@@ -399,9 +400,32 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
         "document.getElementById('timeline').insertAdjacentHTML('beforeend',e.html);"
         "if(/^(quote|booking|human|customer|option[.]found|bid[.]received|mail[.]held)/.test(e.kind)){"
         "clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{"
-        "if(editing){document.getElementById('session-updated').hidden=false;}else{location.reload();}},600);}});"
+        "if(editing||window.pixelCallLive){document.getElementById('session-updated').hidden=false;}"
+        "else{location.reload();}},600);}});"
     )
     return layout(f"Request {session_id}", body, nav="sessions", script=script)
+
+
+def _calls_panel(ctx: Context, session_id: int) -> str:
+    """Call a carrier whose bid is late or the customer our question waits for (`voice/calls.py`). What they say
+    reaches the thread as an answer by mail would; shown only while it can still change the quote."""
+    targets = voice.targets(ctx, session_id) if voice.configured(ctx) else []
+    if not targets:
+        return ""
+    rows = "".join(
+        f"<div class='pad' style='display:flex;gap:12px;align-items:center'><div class=grow><b>{esc(t.name)}</b>"
+        f"<div class=muted>{'Customer: our question is unanswered' if t.party == 'customer' else 'Pickup bid' if t.pickup else 'Airline bid'}"
+        f"{' · ' + esc(', '.join(t.missing)) if t.missing else ' · not answered yet'}</div></div>"
+        f"<button type=button class=btn data-call-email='{esc(t.email)}' data-call-name='{esc(t.name)}'>Call</button></div>"
+        for t in targets
+    )  # fmt: skip
+    return (
+        f"<h2 id=calls>Call<span class=count>{len(targets)}</span></h2>"
+        f"<div class=panel id=voice-calls data-session='{session_id}'>{rows}"
+        "<div class=pad><div id=call-status role=status hidden></div>"
+        "<button type=button class=btn id=call-hang-up hidden>Hang up</button></div><div id=call-log></div></div>"
+        "<script type=module src='/voice/call.js'></script>"
+    )
 
 
 def _attachments(ctx: Context, session_id: int, message_id: int) -> list[dict]:
