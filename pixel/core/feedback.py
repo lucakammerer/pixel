@@ -118,7 +118,7 @@ def _quoted(ctx: Context, session_id: int) -> RateOption | None:
         "SELECT payload FROM events WHERE session_id = ? AND kind = 'quote.drafted' ORDER BY id DESC LIMIT 1",
         (session_id,),
     ).fetchone()
-    return RateOption.model_validate(json.loads(row["payload"])["option"]) if row else None
+    return session.option(json.loads(row["payload"])["option"]) if row else None
 
 
 def _scored(row: dict[str, Any]) -> Decimal | None:
