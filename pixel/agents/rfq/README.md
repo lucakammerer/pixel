@@ -108,6 +108,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   cargo restated at the chargeable weight we priced is none (`followup.py` `_priced`); a cancellation (`CANCELS`, en/de/fr/es/it; it wins over "Auftrag") after the acceptance cancels the booking
   (`cancel`), before it declines the quote; a change after the acceptance goes to a person with what changed; a
   tracking question after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
+  `booking.py` `_acknowledges_no_price` also closes out a plain acknowledgment sent directly in reply to our
+  no-price message without alerting an operator.
   `tools/followup_matrix.py` runs every sender, phase and intent (`tests/fixtures/thread-followups.json`) and
   the change mail in six languages, three unit systems and five attachment formats.
 - `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
