@@ -15,7 +15,7 @@ from pixel.contracts import Attachment, LlmResult, Message, Preference
 from pixel.core import events, outbox, poller
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
-from pixel.pricing import store
+from pixel.pricing import calc, store
 from pixel.pricing.pickup import zone_of
 
 RECEIVED = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
@@ -1242,3 +1242,33 @@ async def test_a_mail_with_one_line_per_shipment_asks_no_destination(conn, monke
 
 async def _model(data: dict) -> LlmResult:
     return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+
+ROUND_91 = "Please include cargo insurance: goods value 22000 EUR, insured at 110 % of that value, premium rate 0.40 %."
+
+
+@pytest.mark.parametrize(
+    ("text", "premium"),
+    [
+        (ROUND_91, "96.80"),
+        (ROUND_91.replace("110 %", "110 per cent").replace("0.40 %", "0.40 per cent"), "96.80"),
+        (ROUND_91.replace("110 %", "110 pct").replace("0.40 %", "0.40 pct"), "96.80"),
+        (ROUND_91.replace("0.40 %", "4 ‰"), "96.80"),
+        (ROUND_91.replace("insured at 110 % of that value", "insured at the value plus 10 %"), "96.80"),
+        (ROUND_91 + " Minimum premium EUR 150.", "150.00"),
+        ("Bitte mit Transportversicherung: Warenwert 22.000 EUR, Versicherungswert 110 %, Prämie 4 Promille.", "96.80"),
+    ],
+)
+def test_the_insurance_terms_a_request_states_give_its_premium(text, premium):
+    """Round 91 priced the premium on the customer's terms; written another way, the same terms give the same premium."""
+    value, _, share, rate, minimum = extract.insurance(text)
+    assert calc.insurance_premium(value, share, rate, minimum) == Decimal(premium)
+
+
+def test_a_past_shipment_beside_the_request_is_not_its_cargo():
+    """Round 101 set an earlier offer beside the request; a past shipment's weight is no figure of this one."""
+    rfq = extract.by_rules(
+        mail("Please quote DUS to RUH, 4 pieces, 990 kg gross, 5.75 cbm. Last month we shipped 1250 kg to RUH."),
+        DEADLINE,
+    )
+    assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(990), Decimal("5.75"), 4)

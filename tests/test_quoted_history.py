@@ -13,7 +13,6 @@ HEADERS = [
     "________________________________\nFrom: Tobias Auer\nSent: Sunday, 25 October 2026 09:12\nSubject: {subject}",
     "________________________________\nVon: Tobias Auer\nGesendet: Sonntag, 25. Oktober 2026 09:12\nBetreff: {subject}",
     "From: Tobias Auer\nSent: Sunday, 25 October 2026 09:12\nSubject: {subject}",
-    "---\nSubject: {subject}",
 ]
 
 
@@ -32,7 +31,7 @@ def test_an_old_request_below_an_address_less_header_is_not_read(header):
     )
 
 
-@pytest.mark.parametrize("header", HEADERS[:3])
+@pytest.mark.parametrize("header", HEADERS)
 def test_our_quote_below_an_address_less_header_does_not_accept(header):
     thanks = "Hi Lena,\n\nThanks for booking the shipment. Please let me know once the airline confirms.\n\nSara\n\n"
     ours = "Hi Sara,\n\nthe best option is 1483.43 EUR all-in. Just reply to this mail and we will book it for you."

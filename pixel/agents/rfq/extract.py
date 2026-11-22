@@ -294,7 +294,7 @@ NO_INSURANCE = re.compile(
     r"(?i)\bno\s+(?:cargo\s+)?insurance|insurance\s+(?:is\s+)?not\s+(?:needed|required|wanted)|own\s+(?:insurance\s+)?policy"
     r"|keine\s+(?:transport)?versicherung|ohne\s+(?:transport)?versicherung"
 )
-PERCENT = re.compile(rf"{NUM}\s*(%|‰|(?i:per\s*mille|promille|prozent|percent))")
+PERCENT = re.compile(rf"{NUM}\s*(%|‰|(?i:per\s*mille|promille|prozent|per\s*cent|pct\b))")
 MONEY = re.compile(rf"(?i:(EUR|USD|GBP|CHF|€|\$)\s*{NUM}(k\b)?|{NUM}(k\b)?\s*(EUR|USD|GBP|CHF|€|\$))")
 MINIMUM = re.compile(r"(?i)(?:minimum|mindest|min\.)\D{0,25}$")
 UPLIFT = re.compile(r"(?i)(?:plus|\+|zuzüglich|zzgl\.?)\s*$")
@@ -310,7 +310,7 @@ def insurance(text: str) -> tuple[Decimal, str, Decimal, Decimal, Decimal] | Non
         value = number(m.group(1))
         if value is None:
             continue
-        if m.group(2) not in ("%",) and not m.group(2).lower().startswith(("prozent", "percent")):
+        if m.group(2) == "‰" or "mille" in m.group(2).lower():
             value /= 10
         before = text[max(0, m.start() - 40) : m.start()]
         if UPLIFT.search(before):
@@ -733,8 +733,8 @@ def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
 
 
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
-# Outlook's header without an address counts only with its dated "Sent:" next to "From:", or a rule over "Subject:"
-# or "Sent:": a request laid out as "From: FRA / To: ORD" or "Von: FRA / Datum: ab 25.11." stays the customer's.
+# Outlook's header without an address counts only by its dated "Sent:", next to "From:" or under a rule: a request
+# laid out as "From: FRA / To: ORD" or "Von: FRA / Datum: ab 25.11." stays the customer's.
 SENT = r"(?:sent|gesendet)[ \t]*:[^\n]*(?:\b(?:19|20)\d\d\b|\b\d{1,2}:\d\d)"
 HISTORY = re.compile(
     r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht"
@@ -747,7 +747,7 @@ HISTORY = re.compile(
     r"|.{0,120}(?:写道|寫道)[:：]\s*$|>"
     rf"|(?:from|von)[ \t]*:[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*{SENT}"
     rf"|{SENT}[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*(?:from|von)[ \t]*:"
-    rf"|[-_]{{3,}}[ \t]*\n[ \t]*(?:subject|betreff)[ \t]*:|[-_]{{3,}}[ \t]*\n[ \t]*{SENT})",
+    rf"|[-_]{{3,}}[ \t]*\n[ \t]*{SENT})",
     re.IGNORECASE | re.MULTILINE,
 )
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
@@ -897,6 +897,13 @@ def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> De
     return max(values, default=None)
 
 
+PAST_SHIPMENT = re.compile(
+    r"[^.!?\n]*\b(?:last\s+(?:time|month|week|year)|previously|letztes\s+mal|letzten\s+monat|letzte\s+woche"
+    r"|letztes\s+jahr)\b[^.!?\n]*[.!?]?",
+    re.IGNORECASE,
+)
+
+
 def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo: dict | None = None) -> Rfq | None:
     """Regex and lookup tables. None unless origin, destination and weight are certain. With `guess`, for a model
     that cannot be reached: the largest gross weight and volume the mail names, rather than no quote at all."""
@@ -907,17 +914,18 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
         lane = ("", destination)  # the origin is the pickup zone's airport, set in `extract`
     if lane and cargo and cargo.get("destination"):
         lane = (lane[0], cargo["destination"])  # the attached document's (`_cargo_sources`)
+    figures = PAST_SHIPMENT.sub("", text)  # "Last month we shipped 1250 kg ..." is not this shipment
     if cargo is None:
-        lots = _lots(text)
-        pieces = lots[2] if lots else _pieces(text)
-        weight = lots[0] if lots else _weight(text, pieces)
-        volume = lots[1] if lots else _volume(text, pieces)
+        lots = _lots(figures)
+        pieces = lots[2] if lots else _pieces(figures)
+        weight = lots[0] if lots else _weight(figures, pieces)
+        volume = lots[1] if lots else _volume(figures, pieces)
     else:
         pieces, weight, volume = (cargo.get(k) for k in ("pieces", "weight_kg", "volume_cbm"))
     if guess:
-        weight = weight or _largest(WEIGHT, text, thousands=True)
-        volume = volume or _largest(VOLUME, text, thousands=False)
-    elif volume is None and (DIMS.search(text) or any(p.search(text) for p in VOLUME)):
+        weight = weight or _largest(WEIGHT, figures, thousands=True)
+        volume = volume or _largest(VOLUME, figures, thousands=False)
+    elif volume is None and (DIMS.search(figures) or any(p.search(figures) for p in VOLUME)):
         return None  # a volume is given but not certain: under-reading it under-prices the chargeable weight
     if lane is None or weight is None:
         return None

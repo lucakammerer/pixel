@@ -210,6 +210,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   feet, litres, dimensions times the pieces on their line, sums; round 79's 95 cubic feet priced as 95 cbm; only a
   WARN when the request has attachments, which may govern).
   When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
+  A share or rate may be written "%", "percent", "per cent", "pct", "Prozent" or per mille ("‰", "Promille").
   `compose.insured` confirms coverage in the mail alongside the single all-in amount.
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
@@ -305,6 +306,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - When the model reads a request, it copies each piece group as written (`lots`: pieces, weight and unit, per piece
   or not, volume or one piece's dimensions) and `extract.py` `_model_lots` adds them up. Its own total for the
   three-lot mail without labels was 1094 kg against 1952 kg. A weight in pounds is converted by code.
+- A request can set a price or an earlier shipment beside its own figures: "another forwarder offered about 1620 EUR",
+  "our budget is around 3300 EUR" (rounds 101, 102: ignored, accepted at the best price), "last month we shipped
+  1250 kg". Cargo figures are read without sentences about a past shipment (`PAST_SHIPMENT`); a request that only
+  says "same as last time: 990 kg" goes to the model.
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
@@ -348,9 +353,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
   to the model. Outlook's header without an address ends the customer's words too (`HISTORY`, `SENT`), but only by
   what a quoted header alone has: "From:"/"Von:" within a few lines of a "Sent:"/"Gesendet:" with a year or a time,
-  or a rule over "Subject:"/"Betreff:" or such a "Sent:". Without it our own quote below a thank-you ("we will book
-  it for you") read as an acceptance; any field after a rule, or "Datum:" after "Von:", would cut a request laid out
-  as "From: FRA / To: ORD" (#186).
+  or a rule over such a "Sent:". Without it our own quote below a thank-you ("we will book it for you") read as an
+  acceptance; any field after a rule, or "Datum:" after "Von:", would cut a request laid out as "From: FRA / To: ORD"
+  (#186).
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
