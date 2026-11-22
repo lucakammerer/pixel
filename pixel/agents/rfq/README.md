@@ -308,6 +308,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "our budget is around 3300 EUR" (rounds 101, 102: ignored, accepted at the best price), "last month we shipped
   1250 kg". Cargo figures are read without sentences about a past shipment (`PAST_SHIPMENT`); a request that only
   says "same as last time: 990 kg" goes to the model.
+
+
+- A request in Spanish, Italian, Dutch or Portuguese is read by rules like a French one: the destination after
+  "a", "para", "hacia", "per DFW", "naar"; the pickup as "recogida", "ritiro", "ophalen", "recolha"; pieces as
+  "bultos", "colli", "volumes", "stuks"; "más/mais rápida", "più veloce", "snelste" fastest and "más económica",
+  "più economica", "goedkoopste", "mais barata" cheapest. Read by rules without the wish words, a fastest request
+  would have been quoted cheapest. Portuguese is still answered in English (`_language`).
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
