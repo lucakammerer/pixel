@@ -254,20 +254,31 @@ def unconfirmed(ctx):
     ]
 
 
-@pytest.mark.parametrize("purpose", ["booking", "tracking", "bid_request"])
-@pytest.mark.parametrize("failures", [1, 2])
-async def test_a_non_quote_mail_the_mailbox_refuses_with_a_500_is_tried_once_more_then_settled(
-    conn, monkeypatch, purpose, failures
+@pytest.mark.parametrize("purpose", ["booking", "tracking", "question", "bid_request", "bid_pickup", "ratedesk"])
+@pytest.mark.parametrize(
+    "answers",
+    [
+        [ApiError(500, "Internal Server Error")],
+        [ApiError(503, "busy")],
+        [ApiError(500, "Internal Server Error"), ApiError(429, "slow down", retry_after=0.01)],
+        [ApiError(500, "Internal Server Error")] * 2,
+    ],
+)
+async def test_a_non_quote_mail_the_mailbox_refuses_with_a_5xx_is_tried_once_more_then_settled(
+    conn, monkeypatch, purpose, answers
 ):
     """C15, session 51345: the booking notice got a 500 and was never sent again; its entry was reported at every
-    restart. One more try, then settled either way."""
+    restart. One more try, then settled either way; a 429 between is waited out, not counted."""
     monkeypatch.setattr(outbox, "RESEND_BACKOFF_S", (0.0,))
-    ctx = make_ctx(conn, RecordingMailbox([ApiError(500, "Internal Server Error")] * failures))
+    monkeypatch.setattr(outbox, "RESENT", ())  # `no_price`'s own resending aside
+    failures = sum(e.status >= 500 for e in answers)
+    ctx = make_ctx(conn, RecordingMailbox(answers))
     rfq = ingest_rfq(ctx)
-    to = rfq.sender
-    if purpose == "bid_request":
+    to = {"ratedesk": RATEDESK}.get(purpose, rfq.sender)
+    if purpose in ("bid_request", "bid_pickup"):
         to = "carrier@example.test"
-        conn.execute("INSERT INTO carriers (name, kind, email, serves) VALUES ('c', 'airline', ?, '')", (to,))
+        kind = "airline" if purpose == "bid_request" else "trucker"
+        conn.execute("INSERT INTO carriers (name, kind, email, serves) VALUES ('c', ?, ?, '')", (kind, to))
     send = outbox.send(ctx, to=to, subject="s", body="b", session_id=rfq.session_id, purpose=purpose)
     if failures == 1:
         await send
@@ -287,4 +298,13 @@ async def test_a_refused_translation_is_tried_once_more_in_english(conn, monkeyp
     await outbox.send(ctx, to=rfq.sender, subject="s", body="Say\x013n Deniz", session_id=rfq.session_id,
                       purpose="booking", english="Dear Deniz")  # fmt: skip
     assert ctx.mailbox.bodies == ["Say\x013n Deniz", "Dear Deniz"]
+    assert unconfirmed(ctx) == []
+
+
+async def test_a_non_quote_mail_refused_with_a_4xx_is_not_tried_again_but_settled(conn):
+    ctx = make_ctx(conn, RecordingMailbox([ApiError(422, "bad")]))
+    rfq = ingest_rfq(ctx)
+    with pytest.raises(ApiError):
+        await outbox.send(ctx, to=rfq.sender, subject="s", body="b", session_id=rfq.session_id, purpose="booking")
+    assert ctx.mailbox.bodies == ["b"]
     assert unconfirmed(ctx) == []
