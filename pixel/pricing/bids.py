@@ -16,7 +16,7 @@ from pixel.contracts import Message, RateOption, Rfq, Source
 from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import calc, selection, session, store
+from pixel.pricing import calc, conditions, selection, session, store
 
 POLL_S = 0.5
 DESK_CUTOFF_S = 115  # leave five seconds to compose and send for full response-time points (R29)
@@ -548,12 +548,25 @@ async def request(ctx: Context, rfq: Rfq, carriers: list[tuple[str, str]], *, pi
     maps the answers back to the session through them."""
 
     async def one(name: str, email: str) -> int | None:
+        body = _desk_body(rfq) if email == RATEDESK else _body(rfq, pickup)
+        if pickup:
+            liftgate, cutoff = conditions.pickup_requirements(ctx, rfq)
+            instructions = ["A liftgate is required."] if liftgate else []
+            if cutoff:
+                instructions.append(f"The site closes at {cutoff:%H:%M} local time. Pickup must be earlier.")
+            if instructions:
+                body = body.replace(
+                    "Please reply with your price and currency.",
+                    " ".join(instructions) + " Please confirm these requirements with your price and currency.",
+                )
         try:
             sent = await outbox.send(
                 ctx,
                 to=email,
-                subject=_subject(rfq, pickup),
-                body=_desk_body(rfq) if email == RATEDESK else _body(rfq, pickup),
+                subject=(
+                    f"{_subject(rfq, pickup)} [RFQ {rfq.message_id}]" if email == RATEDESK else _subject(rfq, pickup)
+                ),
+                body=body,
                 session_id=rfq.session_id,
                 purpose="bid_pickup" if pickup else "bid_request",  # the router places answers by the "bid" prefix
             )
@@ -668,10 +681,18 @@ async def record(ctx: Context, message: Message) -> None:
     listed, option = by_rules(message)
     unread: list[str] = []
     attached = bool(message.attachments and not listed and option is None)
+    requirements = conditions.pickup_requirements(ctx, rfq) if pickup else (False, None)
+    if message.attachments and any(requirements) and not conditions.pickup_fits(requirements, _own_text(message.body)):
+        attached = True
     if attached:
         body, unread = await _with_attachments(ctx, message)
         message = message.model_copy(update={"body": body})
         listed, option = by_rules(message)
+    if any(requirements) and not conditions.pickup_fits(requirements, _own_text(message.body)):
+        events.emit(ctx, "bid.received", "pricing", session_id=message.session_id, message_id=message.id,
+                    payload={"carrier": name, "pickup": True, "priced": False, "request_id": enquiry,
+                             "ignored": "pickup requirements not confirmed"})  # fmt: skip
+        return
     read_by = "rules"
     if option is not None and attached and ctx.settings.model_check:
         option, read_by = await _crosscheck(ctx, message, rfq, option, needs_transit=not pickup)
@@ -712,7 +733,8 @@ async def record(ctx: Context, message: Message) -> None:
             "origin": rfq.origin,
             "destination": rfq.destination,
         }
-        | ({"unread": unread} if unread else {}),
+        | ({"unread": unread} if unread else {})
+        | ({"pickup_terms": conditions.pickup_terms(requirements)} if any(requirements) else {}),
     )
     for option in listed:
         events.emit(ctx, "option.found", "pricing", session_id=message.session_id, message_id=message.id,

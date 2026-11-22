@@ -31,8 +31,10 @@ kind, `by` (`rules` or `model`) and the rule that decided.
 5. It has an attachment of a tariff file type and comes from a carrier of the carrier list or starts a thread:
    `tariff`. From a carrier without one: `carrier_bid`.
 6. It answers our quote: `customer_reply`.
-7. A new thread that names a weight or volume, or two upper-case three-letter codes: `customer_rfq`.
-8. Any other mail in a customer's thread (a colleague before our quote): `customer_reply`.
+7. A new thread asking for tracking with a booking or team reference goes to tracking. The tracking handler
+   verifies who can see the shipment. An explicit dated carrier notice can be routed to tariffs without a file.
+8. A new thread that names a weight or volume, or two upper-case three-letter codes: `customer_rfq`.
+9. Any other mail in a customer's thread (a colleague before our quote): `customer_reply`.
 
 `classify` asks `llm.ask_json` (purpose `route`, at most 20 output tokens) only when none of these match. When that
 call fails, a new thread becomes `customer_rfq` (a missed request costs the whole request, R1) and anything else

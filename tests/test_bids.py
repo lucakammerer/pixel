@@ -12,11 +12,13 @@ import pytest
 
 from pixel import llm
 from pixel.agents.rfq import agent, extract
+from pixel.agents.router import agent as router
+from pixel.agents.tariffs import agent as tariffs
 from pixel.agents.tariffs.agent import _spoken
-from pixel.api.mailbox import to_message
+from pixel.api.mailbox import RATEDESK, to_message
 from pixel.config import settings
 from pixel.contracts import Attachment, LaneTariff, LlmResult, Message, RateOption, Rfq, Source
-from pixel.core import events, outbox
+from pixel.core import events, outbox, poller
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.crm import quotes
@@ -107,6 +109,81 @@ def ctx(conn, monkeypatch):
 
 def kinds(ctx, kind):
     return [json.loads(r[0]) for r in ctx.db.execute("SELECT payload FROM events WHERE kind = ?", (kind,))]
+
+
+async def test_desk_enquiries_for_matching_shipments_have_distinct_subjects(ctx, monkeypatch):
+    subjects = []
+
+    async def send(ctx, **kwargs):
+        subjects.append(kwargs["subject"])
+        return mail("us@x", "")
+
+    monkeypatch.setattr(outbox, "send", send)
+    request = rfq()
+    await bids.request(ctx, request, [("Rate desk", RATEDESK)])
+    await bids.request(ctx, request.model_copy(update={"session_id": 2, "message_id": 2, "volume_cbm": D(2)}),
+                       [("Rate desk", RATEDESK)])  # fmt: skip
+    assert len(set(subjects)) == 2
+
+
+@pytest.mark.parametrize("state", ["suspended", "withdrawn"])
+async def test_trusted_notice_blocks_valid_sheet_and_stored_rates_until_resumption(ctx, state):
+    request = rfq()
+    day = NOW.date()
+    tariff = LaneTariff(carrier="Air One", origin=request.origin, destination=request.destination, currency="EUR",
+                        valid_from=day, valid_to=day + timedelta(days=10), version="original", transit_days=2,
+                        minimum=D(0), breaks=((D(0), D(2)),), fuel_per_kg=D("0.10"), security_per_kg=D(0),
+                        source="test")  # fmt: skip
+    store.upsert(ctx, [tariff])
+    [old] = engine.sheet_options(ctx, request)
+    update = mail("one@air", f"New bookings on {request.origin}-{request.destination} {state} from {day}.")
+    assert router.rules(ctx, update)[0].value == "tariff"
+    await tariffs.handle(ctx, update.model_copy(update={"sender": "unknown@example.test"}))
+    assert engine.combine(request, [old], ctx=ctx) == [old]
+    await tariffs.handle(ctx, update)
+    assert not engine.sheet_options(ctx, request) and not engine.combine(request, [old], ctx=ctx)
+    await tariffs.handle(
+        ctx, mail("one@air", f"New bookings on {request.origin}-{request.destination} resumed on {day}.")
+    )
+    assert engine.combine(request, [old], ctx=ctx) == [old]
+
+
+async def test_fuel_bulletin_uses_document_issue_day_and_invalidates_stale_fallback(ctx):
+    request = rfq()
+    day = NOW.date()
+    issue = day + timedelta(days=1)
+    tariff = LaneTariff(carrier="Air One", origin=request.origin, destination=request.destination, currency="EUR",
+                        valid_from=day, valid_to=day + timedelta(days=10), version="original", transit_days=2,
+                        minimum=D(0), breaks=((D(0), D(2)),), fuel_per_kg=D("0.10"), security_per_kg=D(0),
+                        source="test")  # fmt: skip
+    store.upsert(ctx, [tariff])
+    [old] = engine.sheet_options(ctx, request)
+    bulletin = mail("one@air", f"New fuel surcharge: EUR 0.25/kg effective {issue}, based on AWB issue date.")
+    assert router.rules(ctx, bulletin)[0].value == "tariff"
+    await tariffs.handle(ctx, bulletin)
+    assert not engine.sheet_options(ctx, request) and not engine.combine(request, [old], ctx=ctx)
+    poller.store(ctx, mail("c@x", f"AWB issue date: {issue}").model_copy(update={"id": request.message_id}))
+    [revised] = engine.sheet_options(ctx, request)
+    assert (revised.total, revised.evidence_message_id) == (D(225), bulletin.id)
+    assert engine.combine(request, [old, revised], ctx=ctx) == [revised]
+
+
+@pytest.mark.parametrize(
+    "body,priced",
+    [
+        ("Pickup EUR 80. Pickup at 14:00 with a liftgate.", True),
+        ("Pickup EUR 30. Pickup at 16:00 with a liftgate.", False),
+        ("Pickup EUR 30. Pickup at 14:00 without a liftgate.", False),
+        ("Pickup EUR 30.", False),
+    ],
+)
+async def test_pickup_requires_evidence_of_equipment_and_site_window(ctx, body, priced):
+    request = rfq(door_pickup=True, pickup_zone="12", pickup_postcode="12345")
+    poller.store(ctx, mail("c@x", "No loading dock. The site closes at 15:00.")
+                 .model_copy(update={"id": request.message_id}))  # fmt: skip
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=request.session_id, payload=request.model_dump(mode="json"))
+    await bids.record(ctx, mail("a@truck", body))
+    assert kinds(ctx, "bid.received")[-1]["priced"] == priced
 
 
 @pytest.mark.parametrize(

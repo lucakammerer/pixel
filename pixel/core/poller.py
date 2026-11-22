@@ -32,13 +32,15 @@ def session_of(ctx: Context, message: Message) -> int:
         return message.references[0]
     # The rate desk answers in a thread of its own and names our mail by its subject.
     if message.sender == RATEDESK and (named := NAMES_OUR_MAIL.search(message.body)):
-        row = ctx.db.execute(
-            "SELECT session_id FROM messages WHERE direction = 'out' AND recipient = ? AND subject = ?"
-            " ORDER BY id DESC LIMIT 1",
+        sessions = ctx.db.execute(
+            "SELECT DISTINCT session_id FROM messages WHERE direction = 'out' AND recipient = ? AND subject = ?"
+            " LIMIT 2",
             (message.sender, named.group(1)),
-        ).fetchone()
-        if row:
-            return row["session_id"]
+        ).fetchall()
+        if len(sessions) == 1:
+            return sessions[0]["session_id"]
+        if sessions:
+            return message.id  # a legacy subject can name several sessions
     match = CONFIRMED.search(message.subject) or CONFIRMED.search(message.body)
     if match and (booking := bookings.by_reference(ctx, match.group(1).rstrip(".,:;"))):
         return booking.session_id

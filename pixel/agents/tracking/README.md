@@ -22,6 +22,10 @@ evidence and origin airport or pickup postcode. A postcode requires a door-picku
 precedence over a matching zone from a quote whose postcode was missing. Exact weights take precedence over
 rounded matches within 1 kg or 1%, whichever is greater.
 
+A message asking for tracking by a booking or team reference may open a new thread. `handle` only includes
+shipment data for its original customer or the designated tracking desk. A reference alone does not establish
+permission to see the shipment.
+
 A customer asking in their own thread ("Where is our shipment?", routed here by `agents/rfq/followup.py`) means
 that thread's shipment (`_own_shipment`) when nothing else identifies one.
 

@@ -81,6 +81,24 @@ async def test_portal_down_books_by_mail_to_the_address_given(pipe, accepted):
     assert b.via == "email" and b.status == BookingStatus.REQUESTED
     (sent,) = pipe.sent
     assert sent["to"] == "bookings@kestrel.example" and b.team_reference in sent["body"]
+    assert "Only book at the price and currency above" in sent["body"]
+
+
+async def test_portal_only_rate_never_becomes_an_email_booking(pipe, accepted):
+    pipe.ctx.portal = Portal(BookingUnavailable("This rate is portal-only. Contact bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    assert b.status == BookingStatus.FAILED and not pipe.sent
+
+
+@pytest.mark.parametrize("status", ["Status: QU. Space pending.", "Confirmed for 3 of 5 pcs. Balance pending."])
+async def test_pending_or_partial_airline_reply_does_not_confirm(pipe, accepted, status):
+    pipe.ctx.portal = Portal(BookingUnavailable("Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    reply = mail(31, 1, sender="bookings@kestrel.example", subject="Booking confirmation",
+                 body=f"Booking reference: BK-AB12CD34\nYour reference: {b.team_reference}\n{status}")  # fmt: skip
+    await booking.handle_confirmation(pipe.ctx, reply)
+    assert bookings.for_session(pipe.ctx, 1).status == BookingStatus.REQUESTED
+    assert kinds(pipe.ctx)[-1] == "human.note" and len(pipe.sent) == 1
 
 
 async def test_no_rate_id_books_by_mail_with_the_carrier_list(pipe):

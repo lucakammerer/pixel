@@ -8,6 +8,7 @@ from typing import NamedTuple
 from pixel.agents.rfq import compose, extract
 from pixel.agents.rfq.compose import COMPANY, DEFAULT_SIGNER, TEXT, in_kind, ready_date
 from pixel.agents.rfq.extract import number
+from pixel.api.mailbox import TRACKING
 from pixel.contracts import Message, Shipment
 from pixel.core import events, outbox
 from pixel.core.context import Context
@@ -266,9 +267,17 @@ async def handle(ctx: Context, message: Message) -> None:
     destination, weight, company) in the CRM and
     answers in the thread from the CRM alone. Says so plainly when we hold no such shipment."""
     found, reference = match(ctx, await question(ctx, message), message.sender)
-    if not found and (own := _own_shipment(ctx, message)):
+    desk = message.sender.casefold() == TRACKING.casefold()
+    if not desk:
+        found = [shipment for shipment in found if shipment.customer.casefold() == message.sender.casefold()]
+    if not found and reference is None and (own := _own_shipment(ctx, message)):
         found = [own]
-    body = answer(found, reference, message.body, details(ctx, found, message.body), signer=ctx.settings.signer)
+    if not desk and not found and reference:
+        hello, bye = greeting(message.body)
+        body = (f"{hello}\n\nPlease ask the original booking contact to request the shipment update."
+                f"\n\n{bye}\n{ctx.settings.signer}\n{COMPANY}")  # fmt: skip
+    else:
+        body = answer(found, reference, message.body, details(ctx, found, message.body), signer=ctx.settings.signer)
     if (language := extract._language(extract._text(message))) != "en":  # answered in the asker's language
         english = body
         names = tuple(

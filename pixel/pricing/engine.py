@@ -1,4 +1,5 @@
 import asyncio
+import json
 from decimal import Decimal
 
 from pixel.api.mailbox import RATEDESK
@@ -6,7 +7,7 @@ from pixel.contracts import LaneTariff, RateOption, Rfq, Source
 from pixel.core import events, feedback, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import bids, calc, pickup, portal_rates, selection, session, store
+from pixel.pricing import bids, calc, conditions, pickup, portal_rates, selection, session, store
 
 PORTAL_HEAD_START_S = 1.0
 
@@ -39,9 +40,15 @@ def _fx_eur(ctx: Context, tariff: LaneTariff) -> Decimal | None:
 def _priced(ctx: Context, rfq: Rfq, tariffs: list[LaneTariff], emit: bool = True) -> list[RateOption]:
     found = []
     for tariff in tariffs:
+        if conditions.lane_suspended(ctx, tariff.carrier, rfq, timing.now().date()):
+            continue
         try:
             fx = None if tariff.currency == "EUR" else _fx_eur(ctx, tariff)
-            option = calc.price_tariff(tariff, rfq, fx)
+            fuel, evidence = conditions.fuel_revision(ctx, tariff.carrier, tariff.currency, rfq)
+            revised = tariff if fuel is None else tariff.model_copy(update={"fuel_per_kg": fuel})
+            option = calc.price_tariff(revised, rfq, fx)
+            if evidence is not None:
+                option = option.model_copy(update={"evidence_message_id": evidence})
         except ValueError as exc:
             events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                         payload={"source": "sheet", "carrier": tariff.carrier, "error": str(exc)})  # fmt: skip
@@ -109,6 +116,28 @@ def _distrusted(ctx: Context, rfq: Rfq, option: RateOption) -> None:
                              "total_eur": str(option.total_eur), "error": "implausible"})  # fmt: skip
 
 
+def _current(ctx: Context, rfq: Rfq, option: RateOption) -> bool:
+    if option.trucker:
+        requirements = conditions.pickup_requirements(ctx, rfq)
+        if not any(requirements):
+            return True
+        row = ctx.db.execute(
+            "SELECT json_extract(payload, '$.pickup_terms') FROM events WHERE kind='bid.received'"
+            " AND session_id=? AND message_id=? AND json_extract(payload, '$.priced')=1 ORDER BY id DESC LIMIT 1",
+            (rfq.session_id, option.evidence_message_id),
+        ).fetchone()
+        return bool(row and row[0] and json.loads(row[0]) == conditions.pickup_terms(requirements))
+    if conditions.lane_suspended(ctx, option.carrier, rfq, timing.now().date()):
+        return False
+    if option.source == Source.SHEET:
+        try:
+            _, evidence = conditions.fuel_revision(ctx, option.carrier, option.currency, rfq)
+        except ValueError:
+            return False
+        return evidence == option.evidence_message_id
+    return True
+
+
 def combine(
     rfq: Rfq, options: list[RateOption], rule: str = selection.DEFAULT_RULE, ctx: Context | None = None
 ) -> list[RateOption]:
@@ -116,6 +145,8 @@ def combine(
     Without a pickup price a door-to-port request is priced port-to-port rather than not at all. A bid
     `selection.implausible` distrusts takes no part; with `ctx` it is recorded."""
     matching = [o for o in options if session.on_lane(o, rfq)]
+    if ctx is not None:
+        matching = [o for o in matching if _current(ctx, rfq, o)]
     peers = selection.allowed(rfq, matching) or matching  # an airline the customer ruled out is no yardstick
     distrusted = [o for o in matching if selection.implausible(o, peers)]
     for option in distrusted if ctx is not None else ():
@@ -141,6 +172,7 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     carriers = [
         (name, email) for name, email in store.carriers(ctx, "airline", rfq.destination)
         if selection.requested_carrier(rfq, name)
+        and not conditions.lane_suspended(ctx, name, rfq, timing.now().date())
     ]  # fmt: skip
     priced = {o.carrier.casefold() for o in sheets if selection.requested_carrier(rfq, o.carrier, o.carrier_code)}
 
@@ -148,6 +180,7 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
         return {
             option.carrier.casefold() for option in session.for_request(ctx, rfq)
             if not option.trucker and selection.requested_carrier(rfq, option.carrier, option.carrier_code)
+            and _current(ctx, rfq, option)
         }  # fmt: skip
 
     candidates = bids.worth_asking(ctx, rfq, [(n, e) for n, e in carriers if n.casefold() not in priced])

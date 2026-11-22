@@ -18,6 +18,11 @@ non-EUR sheet or its mail states one), or `tariff.failed` with the findings of `
 
 ## Implementation
 
+- `handle` records an explicit suspension, resumption or dated fuel bulletin from a listed airline as
+  `tariff.notice`. `pricing/conditions.py` reads the effective date and scope. A suspension applies to new bookings
+  on that lane. An independently dated replacement fuel charge applies to its own currency and air waybill issue
+  date. If the issue date could change the applicable charge and is unknown, other sources may still quote.
+
 - `parse`: every text format becomes lines (`_lines`: xlsx rows, docx paragraphs and tables in order, PDF text,
   txt, csv rows as cells like an xlsx row's (`;` or a tab between them when the file has one, else `,`); a voice
   message, mp3, wav, m4a or ogg, one line per spoken sentence by a local `faster-whisper` model

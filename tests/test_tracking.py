@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from test_crm import mail, quote
 
+from pixel.agents.router import agent as router
 from pixel.agents.tracking import agent
 from pixel.api.mailbox import to_message
 from pixel.crm import quotes, shipments
@@ -43,6 +44,16 @@ async def test_unknown_shipment_gets_an_honest_answer(pipe):
     await agent.handle(pipe.ctx, mail(42, 42, sender="tracking@hackloop.mail", body="Where is BK-ZZZZ9999?"))
     body = pipe.sent[0]["body"]
     assert "no shipment under BK-ZZZZ9999" in body and "confirmed" not in body
+
+
+async def test_reference_from_a_new_sender_does_not_disclose_shipment_details(pipe):
+    booked(pipe.ctx)
+    ask = mail(42, 42, sender="consignee@example.test", subject="ETA for BK-AB12CD34", body="Where is it?")
+    assert router.rules(pipe.ctx, ask)[0].value == "tracking_question"
+    await agent.handle(pipe.ctx, ask)
+    assert "original booking contact" in pipe.sent[0]["body"] and "Kestrel" not in pipe.sent[0]["body"]
+    await agent.handle(pipe.ctx, ask.model_copy(update={"id": 43, "sender": "buyer@acme.example"}))
+    assert "Kestrel Airways" in pipe.sent[-1]["body"]
 
 
 def shipped(ctx, session_id, customer, origin, destination, kg, postcode=None, zone=None):

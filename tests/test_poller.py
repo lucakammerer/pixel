@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pixel.api.mailbox import to_message
+from pixel.api.mailbox import RATEDESK, to_message
 from pixel.config import settings
 from pixel.contracts import Booking
 from pixel.core import poller
@@ -85,3 +85,17 @@ def test_standalone_confirmation_session(conn, subject, body, known):
     expected = booking.session_id if known else message.id
     assert poller.ingest(ctx, message).session_id == expected
     assert conn.execute("SELECT session_id FROM events WHERE kind = 'mail.in'").fetchone()[0] == expected
+
+
+def test_desk_matches_unique_subject_and_leaves_ambiguous_legacy_subject_unassigned(conn):
+    ctx = Context(settings(), conn, None, None, None, None)
+    template = FakeMailbox(["synthetic-tracking.json"]).mails[0]
+    for mid, sid, subject in [(1, 10, "Rate request"), (2, 20, "Rate request"), (3, 10, "Rate request [RFQ 10]")]:
+        poller.store(ctx, template.model_copy(update={"id": mid, "session_id": sid, "direction": "out",
+                                                      "to": RATEDESK, "subject": subject}))  # fmt: skip
+    reply = template.model_copy(update={"sender": RATEDESK, "in_reply_to": None, "references": ()})
+    ambiguous = reply.model_copy(update={"body": 'Rates for your mail "Rate request"'})
+    specific = reply.model_copy(update={"body": 'Rates for your mail "Rate request [RFQ 10]"'})
+    assert poller.session_of(ctx, ambiguous) == reply.id
+    assert poller.session_of(ctx, specific) == 10
+    assert poller.session_of(ctx, ambiguous.model_copy(update={"in_reply_to": 2})) == 20

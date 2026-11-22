@@ -19,6 +19,7 @@ flowchart TD
     O --> RFQ[RFQ agent<br/>extract: rules, else one model call]
     RFQ --> ENG[pricing engine<br/>local sheets first, portal and mail bids]
     T --> ST[(tariff store<br/>version + validity)]
+    T -->|suspensions and fuel updates| ENG
     ST --> ENG
     PORTAL[rate portal] --> ENG
     BID --> ENG
@@ -32,7 +33,7 @@ flowchart TD
 
     BK -->|book by rate id| PORTAL
     BK --> CRM[(CRM<br/>quotes, bookings, shipments)]
-    TR --> CRM
+    TR -->|identify and authorize| CRM
     TR --> OUT
     BK --> OUT
 

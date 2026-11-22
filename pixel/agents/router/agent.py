@@ -4,6 +4,7 @@ from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.contracts import MailKind, Message
 from pixel.core.context import Context
 from pixel.core.events import emit
+from pixel.pricing import conditions
 
 TARIFF_FILES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "jpeg", "docx")
 TARIFF_NAME = re.compile(r"tariff|tarif|rate|preis|price")
@@ -14,6 +15,17 @@ REFUSED = re.compile(
     r"|\bno (?:space|capacity)\b|\b(?:declined|rejected|cancell?ed)\b",
     re.IGNORECASE,
 )
+PENDING_BOOKING = re.compile(
+    r"\b(?:wait[- ]?list(?:ed)?|space\s+(?:is\s+)?pending|pending\s+(?:space|confirmation)|"
+    r"status\s*:\s*(?:pending|on request|QU)|(?:booking|space)\s+(?:is\s+)?on request|"
+    r"subject to (?:space|confirmation)|partially confirmed)\b",
+    re.IGNORECASE,
+)
+CONFIRMED_PIECES = re.compile(
+    r"\bconfirmed\s+(?:for\s+)?(?:only\s+)?(\d{1,6})\s+(?:of|out of)\s+(\d{1,6})\s+(?:pieces?|pcs)\b", re.IGNORECASE
+)
+TRACKING_ASK = re.compile(r"\b(?:tracking|ETA for|where is|status of|when (?:will|does) .*arrive)\b", re.IGNORECASE)
+SHIPMENT_REFERENCE = re.compile(r"\b(?:BK-[A-Z0-9]{4,}|PX-[A-F0-9]{6})\b", re.IGNORECASE)
 TEAM_REFERENCE = re.compile(r"\bPX-[0-9A-F]{6}\b")  # crm/shipments.py, sent with every booking
 WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³|lbs?|pounds?|t|tons?|tonnes?|tonnen)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
@@ -24,6 +36,12 @@ SYSTEM = (
     "something), customer_reply (answers a quote: accepts, declines, asks about it), tracking_question (asks where "
     "a shipment is), other."
 )
+
+
+def booking_pending(text: str) -> bool:
+    return bool(PENDING_BOOKING.search(text)) or any(
+        int(confirmed) < int(total) for confirmed, total in CONFIRMED_PIECES.findall(text)
+    )
 
 
 def _carrier_kind(ctx: Context, address: str) -> str | None:
@@ -74,11 +92,13 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
     if (
         purposes[:1] == ["booking"]
         and sender != customer
-        and BOOKED.search(message.body)
+        and (BOOKED.search(message.body) or booking_pending(message.body))
         and not REFUSED.search(message.body)
     ):
         return MailKind.BOOKING_CONFIRMATION, "thread:booking_request"
     carrier = _carrier_kind(ctx, sender)
+    if carrier == "airline" and conditions.notice(f"{message.subject}\n{message.body}", message.sent_at.date()):
+        return MailKind.TARIFF, "carrier:tariff_notice"
     files = [a.filename.lower() for a in message.attachments if a.filename.rsplit(".", 1)[-1].lower() in TARIFF_FILES]
     text = f"{message.subject}\n{message.body}"
     asks = bool(WEIGHT.search(text) or LANE.search(text))
@@ -90,6 +110,8 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
         return MailKind.CARRIER_BID, "sender:carrier"
     if any(p.endswith("quote") for p in purposes):
         return MailKind.CUSTOMER_REPLY, "thread:quote"
+    if not in_thread and SHIPMENT_REFERENCE.search(text) and TRACKING_ASK.search(text):
+        return MailKind.TRACKING_QUESTION, "reference:tracking_question"
     if not in_thread and asks:
         return MailKind.CUSTOMER_RFQ, "new_thread"
     # A colleague writing in the customer's thread before our quote: `followup.read` reads what it says.

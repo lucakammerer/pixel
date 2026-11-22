@@ -90,7 +90,7 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                   portal   actual weight, then the next break           option.found
                   bids     mail carriers with outstanding prices        bid.requested → bid.received
                            portal outage + sheet price: pending desk until 115 s   bid.desk_wait
-                  pickup   mail truckers for a door-to-port request     option.found
+                  pickup   mail truckers with site requirements; use confirmed bids  option.found
                 selection.select → compose.render → outbox.send_quote  quote.sent
   recovery      unanswered after 150 s or handler exits                quote.recovery
   fallback      watch stored options for a complete, compliant price              quote.waiting
@@ -99,9 +99,10 @@ customer_reply      followup.read: phase, intent, changes                       
                     change before the acceptance → requote in reply to the change mail   quote.sent
                     affirmative booking of a delivered quote → shipment → book by rate id or mail
                     tracking after the acceptance → tracking agent; thank-you → nothing
-booking_confirmation  "Booking … confirmed" → shipment confirmed → customer told         booking.confirmed
-tracking_question   CRM lookup → one identified shipment or a request for its reference   tracking.answered
+booking_confirmation  full confirmation → shipment confirmed; pending or partial → operator
+tracking_question   CRM lookup → disclose only to the original customer or tracking desk tracking.answered
 tariff              attachments → parse → validate → activate          tariff.ingested | tariff.failed
+                    dated carrier conditions → price or availability checks             tariff.notice
 feedback            core/feedback.py every 10 s: points per request, the option the scorer's best price was,
                     the balanced rule that fits; what needs repair goes to PIXEL_ALERT_URL        feedback
 watchdog            core/watchdog.py every 5 s: a request without our quote 90 s after it was stored

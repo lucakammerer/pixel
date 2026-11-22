@@ -8,13 +8,14 @@ from datetime import UTC, datetime
 import httpx
 
 from pixel.agents.rfq import compose, extract, followup
+from pixel.agents.router.agent import REFUSED, booking_pending
 from pixel.api.client import ApiError
 from pixel.api.portal import BookingUnavailable, PortalBooking, RateExpired
 from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus, Rfq
-from pixel.core import db, events, outbox
+from pixel.core import db, events, outbox, timing
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
-from pixel.pricing import calc, portal_rates, session
+from pixel.pricing import calc, conditions, portal_rates, session
 
 NO_PRICE_ACK = re.compile(
     r"(?:understood[,.]?\s+)?(?:thanks|thank you)(?: for (?:letting me know|the update))?[.!]?",
@@ -60,6 +61,8 @@ AIRLINE_REFERENCE = re.compile(r"\bbooking reference:?\s*(\S+)", re.IGNORECASE)
 OURS = re.compile(r"\byour reference:?\s*(\S+?)[.,;]?\s*$", re.IGNORECASE | re.MULTILINE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 REQUEST_WAIT_S, REQUEST_POLL_S = 20.0, 0.5
+PORTAL_ONLY = re.compile(r"\b(?:(?:portal|online)[ -]only|only (?:when booked )?(?:online|(?:via|through|in) the portal)"
+                         r"|(?:rate|price) (?:is )?valid (?:online|via the portal) only)\b", re.IGNORECASE)  # fmt: skip
 
 
 def intent(text: str) -> str:
@@ -110,9 +113,7 @@ async def handle_reply(ctx: Context, message: Message) -> None:
 
         await tracking.handle(ctx, message)
         return
-    if act == "nothing" or (
-        read.intent == "thanks" and read.phase == "open" and _acknowledges_no_price(ctx, message)
-    ):
+    if act == "nothing" or (read.intent == "thanks" and read.phase == "open" and _acknowledges_no_price(ctx, message)):
         return
     if act == "cancel":
         await cancel(ctx, sent, message)
@@ -154,10 +155,13 @@ def _acknowledges_no_price(ctx: Context, message: Message) -> bool:
     own = followup.own_words(message)
     if not NO_PRICE_ACK.fullmatch(extract._unsigned(own).strip() or own):
         return False
-    return ctx.db.execute(
-        "SELECT 1 FROM messages WHERE id=? AND session_id=? AND direction='out' AND purpose='no_price'",
-        (message.in_reply_to, message.session_id),
-    ).fetchone() is not None
+    return (
+        ctx.db.execute(
+            "SELECT 1 FROM messages WHERE id=? AND session_id=? AND direction='out' AND purpose='no_price'",
+            (message.in_reply_to, message.session_id),
+        ).fetchone()
+        is not None
+    )
 
 
 async def _request(ctx: Context, session_id: int, quote: Quote | None) -> Rfq | None:
@@ -203,6 +207,8 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
             payload={"shipment": shipment.id, "rate_id": booking.rate_id, "carrier": booking.carrier},
         )  # fmt: skip
 
+    if conditions.lane_suspended(ctx, booking.carrier, quote.rfq, timing.now().date()):
+        return _failed(ctx, booking, "carrier suspended new bookings on this lane")
     if booking.via == "email" or not booking.rate_id:
         return await _book_by_mail(ctx, quote, booking, "booking by email")
     try:
@@ -278,19 +284,27 @@ async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to:
                          reference=booking.team_reference, airline_reference=booking.booking_reference or "-")  # fmt: skip
 
 
-async def confirmed_references(ctx: Context, message: Message) -> tuple[str | None, str | None]:
+def _references(subject: str, text: str) -> tuple[str | None, str | None]:
     """The airline's booking reference and ours, from the subject, the body or an attached confirmation."""
-    attached = await extract._attachments(ctx, message) if message.attachments else []
-    text = "\n".join([message.body, *(line for _, lines in attached for line in lines)])
-    match = CONFIRMED.search(message.subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
+    match = CONFIRMED.search(subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
     # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
     ours = OURS.search(text)
     return (match.group(1).strip(".,:;") if match else None), (ours.group(1) if ours else None)
 
 
+async def _confirmation_text(ctx: Context, message: Message) -> str:
+    attached = await extract._attachments(ctx, message) if message.attachments else []
+    return "\n".join([followup.own_words(message), *(line for _, lines in attached for line in lines)])
+
+
+async def confirmed_references(ctx: Context, message: Message) -> tuple[str | None, str | None]:
+    return _references(message.subject, await _confirmation_text(ctx, message))
+
+
 async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told."""
-    reference, ours = await confirmed_references(ctx, message)
+    text = await _confirmation_text(ctx, message)
+    reference, ours = _references(message.subject, text)
     booking = (
         (reference and bookings.by_reference(ctx, reference))
         or (ours and bookings.by_team_reference(ctx, ours))
@@ -303,6 +317,11 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
         )  # fmt: skip
         return
     if booking.status == BookingStatus.CANCELLED:  # the airline's late confirmation of a booking the customer withdrew
+        return
+    status_text = f"{message.subject}\n{text}"
+    if booking_pending(status_text) or REFUSED.search(status_text):
+        events.emit(ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
+                    payload={"note": "Airline response does not confirm the whole booking"})  # fmt: skip
         return
     if booking.status != BookingStatus.CONFIRMED:
         booking = booking.model_copy(
@@ -335,6 +354,10 @@ async def _portal_book(ctx: Context, rate_id: str, team_reference: str) -> Porta
 
 
 async def _book_by_mail(ctx: Context, quote: Quote, booking: Booking, why: str) -> Booking:
+    evidence = ctx.db.execute("SELECT subject, body FROM messages WHERE id = ?",
+                              (quote.option.evidence_message_id,)).fetchone()  # fmt: skip
+    if PORTAL_ONLY.search(why) or (evidence and PORTAL_ONLY.search("\n".join(evidence))):
+        return _failed(ctx, booking, "accepted rate is restricted to online booking")
     address = _airline_address(ctx, booking.carrier, why)
     if address is None:
         return _failed(ctx, booking, f"no address to book by mail: {why}")
@@ -351,7 +374,10 @@ async def _book_by_mail(ctx: Context, quote: Quote, booking: Booking, why: str) 
     ]
     if booking.rate_id:
         lines.append(f"Rate id: {booking.rate_id}")
-    lines += ["", "Please confirm with your booking reference.", "", "Thank you,", "PIXEL Air Freight"]
+    lines += [
+        "", "Only book at the price and currency above. If they differ, send the new offer before booking.",
+        "Please confirm with your booking reference.", "", "Thank you,", "PIXEL Air Freight",
+    ]  # fmt: skip
     try:
         await outbox.send(
             ctx, to=address, subject=f"Booking request {booking.team_reference}: {_lane(quote)}",

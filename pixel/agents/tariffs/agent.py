@@ -782,6 +782,14 @@ def _reference_csv(ctx: Context, content: bytes) -> bool:
 
 async def handle(ctx: Context, message: Message) -> None:
     """A tariff mail: download attachments, ingest each, emit `tariff.ingested` or `tariff.failed`."""
+    from pixel.pricing import conditions
+
+    carrier = store.carrier_by_email(ctx, message.sender)
+    if carrier and carrier[1] == "airline":
+        notice = conditions.notice(f"{message.subject}\n{message.body}", message.sent_at.date())
+        if notice:
+            events.emit(ctx, "tariff.notice", "tariffs", session_id=message.session_id, message_id=message.id,
+                        payload={**notice, "carrier": carrier[0]})  # fmt: skip
     files = [(a.filename, await ctx.mailbox.attachment(message.id, a.id)) for a in message.attachments]
     for key, document in _documents(files).items():
         if key.lower().endswith(".csv") and _reference_csv(ctx, document[0][1]):
