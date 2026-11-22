@@ -388,6 +388,11 @@ MAIL_AXES = {
         "lbs",
         "tonnes",
         "per_piece",
+        "each_after",
+        "gross_each",
+        "a_piece",
+        "per_pallet",
+        "je",
         "lb",
         "pounds",
         "kgs",
@@ -396,6 +401,7 @@ MAIL_AXES = {
     ),
     "volume": (
         "cbm",
+        "cbm_each",
         "m3_de",
         "dims_cm",
         "dims_mm",
@@ -412,6 +418,10 @@ MAIL_AXES = {
 }
 
 
+PER_PIECE_FORMS = {"per_piece": "each {} kg", "each_after": "{} kg each", "gross_each": "{} kg gross each",
+                   "a_piece": "à {} kg", "per_pallet": "{} kg per pallet", "je": "je {} kg"}  # fmt: skip
+
+
 def _weight_text(kg: D, pieces: int, form: str) -> tuple[str, D]:
     """The weight as written, and the kg it means."""
     if form in ("lbs", "lb", "pounds"):
@@ -420,9 +430,9 @@ def _weight_text(kg: D, pieces: int, form: str) -> tuple[str, D]:
     if form == "tonnes":
         t = (kg / 1000).quantize(D("0.001"))
         return f"{t} t", t * 1000
-    if form == "per_piece":
+    if form in PER_PIECE_FORMS:
         each = (kg / pieces).quantize(D(1))
-        return f"each {each} kg", each * pieces
+        return PER_PIECE_FORMS[form].format(each), each * pieces
     return {"kg": f"{kg} kg", "thousands": f"{kg:,} kg", "de": f"{_num(kg, 'de')} kg",
             "label": f"gross weight: {kg} kg", "kgs": f"{kg} kgs", "kilos": f"{kg} kilos",
             "kilograms": f"{kg} kilograms"}[form], kg  # fmt: skip
@@ -433,6 +443,9 @@ def _volume_text(row: Row, form: str) -> tuple[str, D]:
     cbm = row.cbm.quantize(D("0.01"))
     if form == "cbm":
         return f"{cbm} cbm", cbm
+    if form == "cbm_each":
+        each = (row.cbm / row.pieces).quantize(D("0.01"))
+        return f"{each} cbm each", each * row.pieces
     if form == "m3_de":
         return f"{_num(cbm, 'de', 2)} m³", cbm
     if form in ("cubic_feet", "ft3", "cu_ft"):

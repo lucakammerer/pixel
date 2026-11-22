@@ -266,7 +266,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).
-- A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
+- A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). "Each" counts wherever
+  it stands: "- 2 pallets, 120 x 80 x 60 cm, 210 kg each", "à 30 kg", "0.58 cbm per pallet" (`_lots`, `AFTER`;
+  before, 122 of 816 generated two-lot mails summed one piece). A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.

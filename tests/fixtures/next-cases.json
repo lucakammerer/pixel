@@ -119,8 +119,7 @@
     "total": "1920.00",
     "currency": "EUR"
    },
-   "today": "Weight 390 ('210 kg each' counted once), 1478.10 EUR: 23% too low.",
-   "known_gap": "`extract` piece lines: 'each' after the dimensions in a bullet is not multiplied by the count Owner: Cost."
+   "today": "600 kg, 1.652 cbm, Vega Skyfreight 1920.00 EUR: right since `_lots` reads 'each' after the figure."
   },
   {
    "fixture": "next-cases/non-stackable.json",
@@ -132,7 +131,7 @@
     "currency": "EUR",
     "assumption": "non-stackable pieces billed at 160 cm loading height; the scorer's rule is unknown"
    },
-   "today": "Volume 3.78, 2020.03 EUR; weight 390 (same bug as dims-per-piece-mixed).",
+   "today": "Volume 3.78, 600 kg, 2020.03 EUR.",
    "known_gap": "No non-stackable rule in `extract` or `calc` Owner: Accuracy."
   },
   {
