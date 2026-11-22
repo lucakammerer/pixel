@@ -44,7 +44,8 @@ KINDS = (
     "score.total",  # team total from /v1/board/me
     "feedback",  # what a request scored and which option the scorer's best price was (core/feedback.py)
     "human.note", "human.takeover", "human.release",
-    "call.started", "call.connected", "call.answer", "call.ended", "call.transcript",  # voice/calls.py: one voice call
+    "call.ringing", "call.started", "call.connected", "call.turn", "call.answer", "call.ended", "call.transcript",
+    "shipment.updated",
     "error",
 )  # fmt: skip
 

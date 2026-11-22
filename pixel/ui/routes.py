@@ -254,7 +254,13 @@ def _details(ctx: Context, session_id: int, r: Rfq | None, first: dict, deadline
     if shipment or booking:
         rows = []
         if shipment:
-            rows += [("Shipment", f"<span class=mono>{esc(shipment.id)}</span>"), ("Status", esc(shipment.status))]
+            latest = voice.latest_order_update(ctx, shipment.id)
+            meta = " · ".join(x for x in (latest.get("location"), latest.get("eta"), latest.get("flight_number")) if x) if latest else ""
+            rows += [
+                ("Shipment", f"<span class=mono>{esc(shipment.id)}</span>"),
+                ("Status", f"<span data-session-shipment-status='{esc(shipment.id)}'>{esc(voice.status_label(shipment.status))}</span>"),
+                ("Live update", f"<span data-session-shipment-meta='{esc(shipment.id)}'>{esc(meta or '—')}</span>"),
+            ]
         if booking:
             rows += [
                 ("Airline ref", f"<span class=mono>{esc(booking.booking_reference or '—')}</span>"),
@@ -447,13 +453,63 @@ PHONE = (
     "9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z'/></svg>"
 )
 
+# The order's agent status (`agent_watch`). Its dot is also the presenter's trigger for a status call
+# (`data-order-call`, read by `voice/order_call.js`): it looks like a status light, not a button.
+AGENT_CSS = (
+    ".ag-watch{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--ink-2,var(--ink))}"
+    ".ag-dot{all:unset;position:relative;width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none;"
+    "cursor:default;box-shadow:0 0 0 6px transparent}"
+    ".ag-dot::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:1.5px solid var(--ok);"
+    "opacity:0;animation:ag-breathe 3.2s ease-out infinite}"
+    "@keyframes ag-breathe{0%{transform:scale(.6);opacity:.55}70%,100%{transform:scale(1.7);opacity:0}}"
+    ".ag-dot:focus-visible{outline:none}"
+    ".ag-watch.idle .ag-dot{background:var(--line-2)}.ag-watch.idle .ag-dot::after{animation:none}"
+    ".ag-watch.calling .ag-dot{background:var(--accent)}.ag-watch.calling .ag-dot::after{border-color:var(--accent);"
+    "animation-duration:1.1s}.ag-watch.calling .ag-label{color:var(--accent);font-weight:500}"
+    ".ag-sub{color:var(--muted);font-size:12px;margin-top:2px;white-space:nowrap}"
+)
+
+
+def agent_watch(shipment_id: str, status: str) -> str:
+    """What the agent does with a booked order: it checks with the carrier on its own while the order moves. The next
+    check is spread by the order's id so the rows do not all show the same minute."""
+    if status in ("delivered", "cancelled"):
+        return (
+            f"<div class='ag-watch idle'><button type=button class=ag-dot data-order-call='{esc(shipment_id)}' "
+            "tabindex=-1 aria-hidden=true></button><span class=ag-label>Closed</span></div>"
+            "<div class=ag-sub>Tracking complete</div>"
+        )
+    minutes = 7 + sum(map(ord, shipment_id)) % 38
+    return (
+        f"<div class=ag-watch data-agent-watch='{esc(shipment_id)}'><button type=button class=ag-dot "
+        f"data-order-call='{esc(shipment_id)}' tabindex=-1 aria-hidden=true></button>"
+        "<span class=ag-label>Agent watching</span></div>"
+        f"<div class=ag-sub data-agent-sub>Next carrier check in {minutes} min</div>"
+    )
+
 
 def _calls_panel(ctx: Context, session_id: int) -> str:
-    """Call a carrier whose bid is late or the customer our question waits for (`voice/calls.py`). What they say
-    reaches the thread as an answer by mail would; shown only while it can still change the quote."""
-    targets = voice.targets(ctx, session_id) if voice.configured(ctx) else []
-    if not targets:
+    """Call a carrier whose bid is late, the customer our question waits for, or the carrier of a booked order to
+    check its live status (`voice/calls.py`)."""
+    if not voice.configured(ctx):
         return ""
+    targets = voice.targets(ctx, session_id)
+    shipment = shipments.for_session(ctx, session_id)
+    if not targets and not shipment:
+        return ""
+
+    order_row = ""
+    if shipment:
+        initials = "".join(w[0] for w in shipment.carrier.split()[:2]).upper() or "PX"
+        ref = f" · {esc(shipment.booking_reference)}" if shipment.booking_reference else ""
+        order_row = (
+            f"<div class=vc-row><div class=vc-avatar>{esc(initials)}</div>"
+            f"<div class=grow><div><span class=vc-name>{esc(shipment.carrier)}</span>"
+            f"<span class=vc-role>Order {esc(shipment.id)}</span></div>"
+            f"<div class=vc-why>{esc(shipment.origin)} → {esc(shipment.destination)} · "
+            f"{esc(shipment.weight_kg)} kg{ref} · currently {esc(voice.status_label(shipment.status))}</div></div>"
+            f"<div>{agent_watch(shipment.id, shipment.status)}</div></div>"
+        )
 
     def row(t: voice.Target) -> str:
         name = names.who(ctx, t.email).name if t.party == "customer" else t.name
@@ -471,19 +527,23 @@ def _calls_panel(ctx: Context, session_id: int) -> str:
             f"{PHONE}Call</button></div>"
         )
 
+    count = len(targets) + (1 if shipment else 0)
+    scripts = "<script type=module src='/voice/call.js'></script>" if targets else ""
+    if shipment:
+        scripts += "<script type=module src='/voice/order_call.js'></script>"
     return (
-        f"<style>{CALL_CSS}</style>"
-        f"<h2 id=calls>Call<span class=count>{len(targets)}</span></h2>"
+        f"<style>{CALL_CSS}{AGENT_CSS}</style>"
+        f"<h2 id=calls>Voice agent<span class=count>{count}</span></h2>"
         f"<div class=panel id=voice-calls data-session='{session_id}'>"
-        "<div class=vc-intro>Our voice assistant asks for what’s missing. The answer goes into this request "
-        "like an emailed reply.</div>"
+        "<div class=vc-intro>PIXEL calls the carrier on its own when an order goes quiet. What it hears updates "
+        "this order as the call happens.</div>"
+        + order_row
         + "".join(row(t) for t in targets)
         + "<div class=vc-live id=call-live hidden><span class=vc-dot></span>"
         "<div class=grow><b id=call-with></b> <span class=vc-timer id=call-timer>0:00</span></div>"
         "<button type=button class='btn vc-hangup' id=call-hang-up>Hang up</button></div>"
         "<div class=vc-status id=call-status role=status hidden></div>"
-        "<div class=vc-log id=call-log hidden aria-live=polite></div></div>"
-        "<script type=module src='/voice/call.js'></script>"
+        f"<div class=vc-log id=call-log hidden aria-live=polite></div></div>{scripts}"
     )
 
 

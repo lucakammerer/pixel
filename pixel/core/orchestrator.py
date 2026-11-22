@@ -120,10 +120,16 @@ async def quote_with_deadline(ctx: Context, message: Message) -> None:
     try:
         # A request first seen after the takeover time (a restart, a poll backlog) keeps its handler until `hard_at`:
         # recovery asks no airline, so a takeover at once would leave a bid-only lane without a price.
+        from pixel.voice import calls as voice
+
         started = now()
         recovery_at = deadline.recovery_at if started <= deadline.recovery_at else deadline.hard_at
         timeout = max(0.0, (recovery_at - started).total_seconds())
         done, _ = await asyncio.wait({task}, timeout=timeout)
+        while not done and now() < deadline.hard_at and (
+            voice.holding(ctx, session_id, "carrier") or voice.holding(ctx, session_id, "customer")
+        ):
+            done, _ = await asyncio.wait({task}, timeout=1.0)
         if done:
             task.result()
         else:

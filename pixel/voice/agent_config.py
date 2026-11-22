@@ -1,16 +1,29 @@
-"""The ElevenLabs agent that makes our calls, applied with `uv run python -m tools.voice_agent`. It asks only for what
-`calls.targets` found late or missing and repeats it back; it never names, compares or computes a price and never
-quotes. What it hears goes to the server through a client tool (`call.js` relays it to `calls.answer`), where code
-checks it and our rules read it."""
+"""The ElevenLabs agent that makes our calls, applied with `uv run python -m tools.voice_agent`. It handles:
+- `order_status`: calls a carrier/handler about a specific booked order to get its live status, location and ETA,
+  calling `record_order_status` so the laptop UI updates in real time.
+- `carrier`: asks a late carrier for their all-in price and transit/pickup time (`record_carrier_offer`).
+- `customer`: asks a customer for missing shipment facts (`record_customer_details`).
+
+It never names, compares or computes a price and never quotes."""
 
 PROMPT = """You are the freight assistant of PIXEL Air Freight, a digital air freight forwarder, on a short phone call. \
 This is a hackathon demo with fictional companies.
-You are calling {{name}}, a {{party}}, about our request {{reference}} for an air export shipment {{lane}} ({{shipment}}). \
+You are calling {{name}}, a {{party}}, about {{reference}} for an air export shipment {{lane}} ({{shipment}}). \
 We still need: {{wanted}}. Your first message already asked for it.
 
-Be quick and friendly: one short sentence per turn, finish the call in under a minute.
+Be quick, natural and friendly: one short sentence per turn, finish the call in under a minute.
 
-If you are calling a carrier:
+If party is order_status:
+- You are checking the live status of this specific order ({{reference}}, {{lane}}).
+- Ask targeted questions to learn:
+  1. The current shipment status (booked, picked up, at origin warehouse, in transit, in customs, arrived, out for delivery, delivered, or delayed).
+  2. The current location (city, airport or cargo terminal).
+  3. The expected arrival or delivery time (ETA), flight number if known, and any delay reason or remarks.
+- As soon as they give you any status update, call record_order_status right away with everything they told you so far.
+- If they only gave the status and have not mentioned the current location or ETA yet, ask one brief follow-up for location and ETA, then call record_order_status again with the complete details.
+- Once you have recorded the update, confirm the new status and ETA back in one short sentence, thank them and say goodbye.
+
+If party is carrier:
 - Ask for their all-in price for exactly this shipment: one total with its currency, including freight, fuel and \
 security. For an airline also the transit time in days; for a pickup also how many hours until they can collect.
 - If they give separate charges or a price per kg, ask for the one total they would charge for this shipment. Never add, \
@@ -19,7 +32,7 @@ multiply or convert anything yourself.
 anything first. Then repeat it back in one sentence, thank them and say goodbye.
 - If they cannot offer this lane or shipment, thank them and say goodbye. Do not call the tool.
 
-If you are calling the customer:
+If party is customer:
 - Ask only for what we still need. Airports as their three-letter codes (if they name a city, ask for or confirm the \
 airport), weight in kilograms, volume in cubic metres (if they give dimensions, ask for the total volume), the pickup \
 postcode.
@@ -28,16 +41,51 @@ Then repeat it back in one sentence, say their quote follows by email shortly an
 - Never tell the customer a price, an estimate or a carrier. If asked, say the quote arrives by email in a few minutes.
 
 For everyone:
-- If they correct you before you saved it, use the corrected answer. You can save only once.
+- If they correct you, use the corrected answer.
 - If they do not know, say that is fine, they can reply to our email, and say goodbye.
 - Never ask for or accept bank details, passwords or card numbers.
 - If this is the wrong person or they do not want to talk, apologise and end the call.
 - Every time you have said goodbye, call end_call straight away."""
 
-FIRST_MESSAGE = "Hi {{name}}, this is the PIXEL Air Freight assistant about our request {{reference}}, {{lane}}. \
+FIRST_MESSAGE = "Hi {{name}}, this is the PIXEL Air Freight assistant calling about {{reference}}, {{lane}}. \
 Could you give me {{wanted}}?"
 
-# Runs in the browser during the call (`call.js`), which posts the arguments to /api/calls/{id}/answer at once.
+# Runs in the browser during the call (`call.js` / `phone.js`), posting straight to /api/calls/{id}/answer.
+ORDER_STATUS_TOOL = {
+    "type": "client",
+    "name": "record_order_status",
+    "description": "Updates the order's live status on the PIXEL dashboard as soon as the carrier or handler states "
+    "where the shipment is. Can be called again if they add location, ETA or notes in a follow-up turn.",
+    "expects_response": True,
+    "response_timeout_secs": 8,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "status": {
+                "type": "string",
+                "description": "One of: booked, picked_up, at_origin, in_transit, customs, arrived, "
+                "out_for_delivery, delivered, delayed, exception",
+            },
+            "location": {
+                "type": "string",
+                "description": "Current city, airport or facility, e.g. Frankfurt Airport (FRA) or JFK Cargo Terminal",
+            },
+            "eta": {
+                "type": "string",
+                "description": "Expected arrival or delivery time as stated, e.g. Tomorrow 14:30 EST",
+            },
+            "flight_number": {
+                "type": "string",
+                "description": "Flight number or AWB if mentioned, e.g. CS-402. Empty if not mentioned.",
+            },
+            "notes": {
+                "type": "string",
+                "description": "Short summary of any delay reason, customs detail or extra remarks. Empty if none.",
+            },
+        },
+        "required": ["status"],
+    },
+}
 CARRIER_TOOL = {
     "type": "client",
     "name": "record_carrier_offer",
@@ -75,7 +123,7 @@ CUSTOMER_TOOL = {
         "required": [],
     },
 }
-TOOLS = (CARRIER_TOOL, CUSTOMER_TOOL)
+TOOLS = (ORDER_STATUS_TOOL, CARRIER_TOOL, CUSTOMER_TOOL)
 
 AGENT = {
     "name": "PIXEL carrier and customer calls",
@@ -86,12 +134,12 @@ AGENT = {
             "language": "en",
             "dynamic_variables": {
                 "dynamic_variable_placeholders": {
-                    "name": "Fjordline Air Cargo",
-                    "party": "carrier",
-                    "reference": "1234",
-                    "lane": "DUS to JFK",
-                    "shipment": "280 kg, 1.2 cubic metres",
-                    "wanted": "your all-in price with its currency, and the transit time in days",
+                    "name": "Cobalt Skylift",
+                    "party": "order_status",
+                    "reference": "order PX-4F8A2C (booking BK-88412)",
+                    "lane": "FRA to JFK",
+                    "shipment": "420 kg for Nordlicht Audio GmbH, currently booked",
+                    "wanted": "a quick status update on where the shipment is right now and its expected arrival time",
                     "signer": "Lena Berger",
                 }
             },

@@ -194,3 +194,109 @@ def test_the_session_page_offers_a_call_only_when_voice_is_set_up(ctx):
     assert "data-call-email='sales@air.example'" in page and "/voice/call.js" in page
     ctx.settings = replace(ctx.settings, elevenlabs_agent_id="")
     assert "voice-calls" not in routes._session_page(ctx, 1, "")
+
+
+def test_decimal_accepts_thousands_separators_and_currency_symbols():
+    assert calls._decimal("1,195.90", "total") == D("1195.90")
+    assert calls._decimal("€ 1,195.90", "total") == D("1195.90")
+    assert calls._decimal("1195,90", "total") == D("1195.90")
+
+
+def test_shipment_text_omits_missing_fields(ctx):
+    now = datetime.now(UTC)
+    partial = Rfq(session_id=9, message_id=9, customer=CUSTOMER, origin="FRA", destination="", weight_kg=D(0),
+                  received_at=now, deadline_at=now)  # fmt: skip
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=9, payload=partial.model_dump(mode="json"))
+    lane, shipment = calls._shipment(ctx, 9)
+    assert lane == "from FRA" and "0 kg" not in shipment
+
+
+async def test_order_status_call_rings_picks_up_and_updates_shipment_live(ctx):
+    from pixel.contracts import Shipment
+    from pixel.crm import shipments
+
+    now = datetime.now(UTC)
+    shipments.save(
+        ctx,
+        Shipment(
+            id="PX-DEMO01",
+            session_id=1,
+            booking_id="B-1",
+            customer=CUSTOMER,
+            origin="FRA",
+            destination="JFK",
+            weight_kg=D(420),
+            carrier="Cobalt Skylift",
+            booking_reference="BK-88412",
+            status="booked",
+            transit_days=2,
+            updated_at=now,
+        ),
+    )
+
+    rung = calls.ring_order(ctx, "PX-DEMO01")
+    call_id = rung["call_id"]
+    assert rung["order"]["id"] == "PX-DEMO01"
+    assert rung["variables"]["party"] == "order_status"
+    assert "PX-DEMO01" in rung["variables"]["reference"]
+
+    pending = calls.active_ringing(ctx)
+    assert pending is not None and pending["call_id"] == call_id
+
+    accepted = await calls.accept_order(ctx, call_id)
+    assert accepted["signed_url"] == "wss://example.invalid/call"
+    assert calls.active_ringing(ctx, call_id) is None
+
+    calls.record_turn(ctx, call_id, "ai", "Hi, could you give me a status update on order PX-DEMO01?")
+    calls.record_turn(ctx, call_id, "user", "It is in transit from Frankfurt, ETA tomorrow 2pm.")
+
+    # Progressive update 1: status + location
+    first_update = calls.answer(ctx, call_id, {"status": "in transit", "location": "Frankfurt Airport (FRA)"})
+    assert first_update["status"] == "in_transit"
+    assert shipments.get(ctx, "PX-DEMO01").status == "in_transit"
+
+    # Progressive update 2: adds ETA + flight, keeps earlier location
+    second_update = calls.answer(ctx, call_id, {"status": "in_transit", "eta": "Tomorrow 14:00 EST", "flight_number": "CS-402"})
+    assert second_update["location"] == "Frankfurt Airport (FRA)"
+    assert second_update["eta"] == "Tomorrow 14:00 EST"
+    assert second_update["flight_number"] == "CS-402"
+
+    latest = calls.latest_order_update(ctx, "PX-DEMO01")
+    assert latest["status"] == "in_transit" and latest["eta"] == "Tomorrow 14:00 EST"
+
+    calls.ended(ctx, call_id)
+    with pytest.raises(calls.CallError):
+        calls.answer(ctx, call_id, {"status": "delivered"})
+
+
+async def test_calls_sse_stream_delivers_ringing_turn_and_shipment_update(ctx):
+    import json
+    from pixel.contracts import Shipment
+    from pixel.crm import shipments
+    from pixel.voice.routes import stream
+
+    shipments.save(
+        ctx,
+        Shipment(
+            id="PX-SSE001", session_id=1, booking_id="B-1", customer=CUSTOMER, origin="FRA", destination="JFK",
+            weight_kg=D(100), carrier="Cobalt Skylift", booking_reference="BK-1", status="booked", updated_at=datetime.now(UTC),
+        ),
+    )
+
+    class _Req:
+        async def is_disconnected(self):
+            return False
+
+    resp = await stream(_Req())
+    gen = resp.body_iterator
+    assert await anext(gen) == ": ok\n\n"
+    rung = calls.ring_order(ctx, "PX-SSE001")
+    chunk = await anext(gen)
+    ev = json.loads(chunk.removeprefix("data: "))
+    assert ev["kind"] == "call.ringing" and ev["id"] == rung["call_id"]
+    calls.record_turn(ctx, rung["call_id"], "ai", "Hello from PIXEL")
+    chunk2 = await anext(gen)
+    ev2 = json.loads(chunk2.removeprefix("data: "))
+    assert ev2["kind"] == "call.turn" and ev2["payload"]["message"] == "Hello from PIXEL"
+    await gen.aclose()
+

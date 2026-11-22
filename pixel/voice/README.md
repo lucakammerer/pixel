@@ -52,3 +52,6 @@ over HTTPS.
 - A call answer is stored like a mail, so `messages` holds rows with ids from `VOICE_IDS`. They have no copy in the
   5U mailbox: never reply to one by its id.
 - The session page does not reload on new events while a call is live (`window.pixelCallLive`), or the call would end.
+- Order status calls show no call button: the CRM and the request page show the order as watched by the agent
+  (`ui/routes.py` `agent_watch`). The presenter starts a call with the order's status dot or the key C over its row
+  (`order_call.js`); in the call, P shows the phone screen beside it and Esc closes it.

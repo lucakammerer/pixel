@@ -1,9 +1,12 @@
-"""Voice calls through ElevenLabs: a person on the session page calls a carrier whose bid is late or a customer who
-has not yet answered our question for a missing fact. The browser holds the call (`call.js`); the agent's client tool
-sends what it heard here, and `answer` turns it into an incoming mail in the thread, so the router and the same rules
-read it as if it had been mailed: a carrier's price by `pricing/bids.py` `record`, a customer's fact by
-`agents/rfq/extract.py` `_ask`. The agent only asks and repeats back; it never names, compares or computes a price.
-Every step is an event (`call.*`); nothing about a call is kept in memory."""
+"""Voice calls through ElevenLabs:
+- Order status demo calls: a person clicks a button linked to a specific shipment/order on the laptop, a simulated
+  phone screen (`/phone` or inline) rings so it can be picked up, the ElevenLabs agent asks targeted questions about
+  that order's status/location/ETA, and `answer_order` updates the shipment in the CRM and streams visual feedback
+  live to the laptop screen.
+- Late carrier / missing customer fact calls: a person on the session page calls a carrier whose bid is late or a
+  customer who has not yet answered our question for a missing fact, injecting the answer as an incoming mail.
+
+Every step is an event (`call.*`, `shipment.updated`); nothing about a call is kept in memory."""
 
 import re
 from dataclasses import asdict, dataclass
@@ -21,6 +24,7 @@ EL = "https://api.elevenlabs.io/v1"
 # A live call holds the wait for a bid or an answer open this long from its start, also when the browser never
 # reports its end. Calls start only while the request can still be priced after it (`START_MARGIN`).
 CALL_MAX_S = 120
+RING_MAX_S = 120
 END_GRACE_S = 5  # after the call ended: its answer is stored, the bid is still being read
 START_MARGIN = timedelta(seconds=30)  # left for pricing and sending between a call's longest end and the hard deadline
 # Ids of call answers: far above every mailbox id, so `_ask`'s "after our question" still holds, and below 2**53 so
@@ -30,6 +34,61 @@ FACT_NAMES = {"pickup": "the pickup postcode", "origin": "the departure airport"
               "weight": "the gross weight in kg", "volume": "the volume in cubic metres or the dimensions"}  # fmt: skip
 IATA = re.compile(r"^[A-Z]{3}$")
 POSTCODE = re.compile(r"^[A-Z0-9][A-Z0-9 -]{1,9}$")
+
+ORDER_STATUS_LABELS: dict[str, str] = {
+    "booking": "Booking",
+    "booked": "Booked",
+    "confirmed": "Confirmed",
+    "picked_up": "Picked up",
+    "at_origin": "At origin hub",
+    "in_transit": "In transit",
+    "customs": "In customs",
+    "arrived": "Arrived",
+    "out_for_delivery": "Out for delivery",
+    "delivered": "Delivered",
+    "delayed": "Delayed",
+    "exception": "Exception",
+}
+ORDER_STATUS_ALIASES: dict[str, str] = {
+    "booking": "booking",
+    "booked": "booked",
+    "confirmed": "confirmed",
+    "picked up": "picked_up",
+    "picked_up": "picked_up",
+    "collected": "picked_up",
+    "pickup complete": "picked_up",
+    "at origin": "at_origin",
+    "at_origin": "at_origin",
+    "origin warehouse": "at_origin",
+    "at airport": "at_origin",
+    "at origin airport": "at_origin",
+    "in transit": "in_transit",
+    "in_transit": "in_transit",
+    "transit": "in_transit",
+    "airborne": "in_transit",
+    "departed": "in_transit",
+    "en route": "in_transit",
+    "on the way": "in_transit",
+    "customs": "customs",
+    "in customs": "customs",
+    "customs clearance": "customs",
+    "cleared customs": "customs",
+    "arrived": "arrived",
+    "landed": "arrived",
+    "at destination": "arrived",
+    "out for delivery": "out_for_delivery",
+    "out_for_delivery": "out_for_delivery",
+    "delivered": "delivered",
+    "completed": "delivered",
+    "delayed": "delayed",
+    "delay": "delayed",
+    "held": "delayed",
+    "on hold": "delayed",
+    "exception": "exception",
+    "issue": "exception",
+    "problem": "exception",
+    "damaged": "exception",
+}
 
 
 class CallError(Exception):
@@ -54,6 +113,27 @@ def configured(ctx: Context) -> bool:
     return bool(ctx.settings.elevenlabs_api_key and ctx.settings.elevenlabs_agent_id)
 
 
+def normalize_order_status(raw: str) -> str:
+    """Maps a spoken or model-supplied order status into a canonical status key."""
+    cleaned = re.sub(r"[^a-z0-9_ ]+", " ", str(raw or "").strip().lower()).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    if not cleaned:
+        raise CallError(400, "status is required.")
+    if cleaned in ORDER_STATUS_ALIASES:
+        return ORDER_STATUS_ALIASES[cleaned]
+    underscored = cleaned.replace(" ", "_")
+    if underscored in ORDER_STATUS_LABELS:
+        return underscored
+    for phrase, key in ORDER_STATUS_ALIASES.items():
+        if phrase in cleaned:
+            return key
+    return underscored[:40]
+
+
+def status_label(key: str) -> str:
+    return ORDER_STATUS_LABELS.get(key, key.replace("_", " ").capitalize())
+
+
 def _received_at(ctx: Context, session_id: int) -> datetime | None:
     row = ctx.db.execute("SELECT sent_at FROM messages WHERE id = ?", (session_id,)).fetchone()
     return datetime.fromisoformat(row["sent_at"]) if row else None
@@ -73,9 +153,10 @@ def targets(ctx: Context, session_id: int) -> list[Target]:
     """Carriers asked for a bid that has not come while the bids are still collected, and the customer while
     `_ask` still waits for the answer to our question. None once the quote is out (R4: only the first counts) or too
     late for a call to change it: a later answer would be read by nothing."""
-    from pixel.agents.rfq.extract import ASK_WAIT_S, FACTS
+    from pixel.agents.rfq.extract import ASK_WAIT_S, FACTS, _unknown
     from pixel.core import outbox
     from pixel.core.orchestrator import deadline_for
+    from pixel.pricing import session
 
     last, received = _last_start(ctx, session_id), _received_at(ctx, session_id)
     now = timing.now()
@@ -109,26 +190,37 @@ def targets(ctx: Context, session_id: int) -> list[Target]:
         ).fetchone()
     ):
         missing = tuple(fact for fact, words in FACTS.items() if any(w in question["body"] for w in words))
+        if not missing and (rfq := session.rfq(ctx, session_id)):
+            missing = tuple(_unknown(rfq))
         found.append(Target("customer", question["recipient"], question["recipient"], question["id"], missing=missing))
     return found
 
 
-def _started(ctx: Context, call_id: int) -> Event:
-    row = ctx.db.execute("SELECT session_id FROM events WHERE id = ? AND kind = 'call.started'", (call_id,)).fetchone()
+def _call_root(ctx: Context, call_id: int) -> Event:
+    row = ctx.db.execute(
+        "SELECT session_id FROM events WHERE id = ? AND kind IN ('call.started', 'call.ringing')",
+        (call_id,),
+    ).fetchone()
     if row is None:
         raise CallError(404, "Unknown call.")
     return next(e for e in events.for_session(ctx, row["session_id"], call_id - 1) if e.id == call_id)
 
 
 def _calls(ctx: Context, session_id: int) -> dict[int, list[Event]]:
-    """Every call of the session by its id, with its later events."""
-    calls: dict[int, list[Event]] = {}
+    """Every call of the session by its root id (`call.started` or `call.ringing`), with its later events."""
+    found: dict[int, list[Event]] = {}
     for e in events.for_session(ctx, session_id):
-        if e.kind == "call.started":
-            calls[e.id] = [e]
-        elif e.kind.startswith("call.") and e.payload.get("call_id") in calls:
-            calls[e.payload["call_id"]].append(e)
-    return calls
+        if e.kind == "call.ringing":
+            found[e.id] = [e]
+        elif e.kind == "call.started":
+            root_id = e.payload.get("call_id")
+            if root_id in found:
+                found[root_id].append(e)
+            else:
+                found[e.id] = [e]
+        elif e.kind.startswith("call.") and e.payload.get("call_id") in found:
+            found[e.payload["call_id"]].append(e)
+    return found
 
 
 def holding(ctx: Context, session_id: int, party: str) -> bool:
@@ -139,8 +231,11 @@ def holding(ctx: Context, session_id: int, party: str) -> bool:
     if not ctx.db.execute("SELECT 1 FROM events WHERE session_id = ? AND kind = 'call.started' AND ts > ? LIMIT 1",
                           (session_id, recent)).fetchone():  # fmt: skip
         return False
-    for started, *later in _calls(ctx, session_id).values():
-        if started.payload.get("party") != party or now >= started.ts + timedelta(seconds=CALL_MAX_S):
+    for root, *later in _calls(ctx, session_id).values():
+        if root.payload.get("party") != party:
+            continue
+        started = root if root.kind == "call.started" else next((e for e in later if e.kind == "call.started"), None)
+        if started is None or now >= started.ts + timedelta(seconds=CALL_MAX_S):
             continue
         ended = next((e for e in later if e.kind == "call.ended"), None)
         if ended is None or now < ended.ts + timedelta(seconds=END_GRACE_S):
@@ -162,8 +257,22 @@ def _shipment(ctx: Context, session_id: int) -> tuple[str, str]:
     rfq = session.rfq(ctx, session_id)
     if rfq is None:
         return "", ""
-    pieces = f", {rfq.pieces} pieces" if rfq.pieces else ""
-    return f"{rfq.origin} to {rfq.destination}", f"{rfq.weight_kg} kg, {rfq.volume_cbm} cubic metres{pieces}"
+    if rfq.origin and rfq.destination:
+        lane = f"{rfq.origin} to {rfq.destination}"
+    elif rfq.origin:
+        lane = f"from {rfq.origin}"
+    elif rfq.destination:
+        lane = f"to {rfq.destination}"
+    else:
+        lane = "this air freight shipment"
+    parts = []
+    if rfq.weight_kg and rfq.weight_kg > 0:
+        parts.append(f"{rfq.weight_kg} kg")
+    if rfq.volume_cbm and rfq.volume_cbm > 0:
+        parts.append(f"{rfq.volume_cbm} cubic metres")
+    if rfq.pieces:
+        parts.append(f"{rfq.pieces} pieces")
+    return lane, ", ".join(parts) or "air freight cargo"
 
 
 def _wanted(target: Target) -> str:
@@ -200,25 +309,171 @@ async def start(ctx: Context, session_id: int, email: str) -> dict:
     return {"call_id": started.id, "signed_url": signed["signed_url"], "dynamic_variables": variables}
 
 
+def ring_order(ctx: Context, shipment_id: str) -> dict:
+    """Starts a simulated order-status phone call for a specific shipment. Emits `call.ringing` so the fake phone
+    screen (`/phone` or inline) rings and the laptop screen opens the live visual feedback monitor."""
+    from pixel.crm import shipments
+    from pixel.ui import names
+
+    if not configured(ctx):
+        raise CallError(503, "Voice calls are not set up: ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID.")
+    shipment = shipments.get(ctx, shipment_id.strip())
+    if shipment is None:
+        raise CallError(404, f"Unknown order {shipment_id}.")
+    customer_name = names.who(ctx, shipment.customer).name
+    ref = f"order {shipment.id}" + (f" (booking {shipment.booking_reference})" if shipment.booking_reference else "")
+    lane = f"{shipment.origin} to {shipment.destination}"
+    details = f"{shipment.weight_kg} kg for {customer_name}, currently marked as {status_label(shipment.status).lower()}"
+    variables = {
+        "party": "order_status",
+        "name": shipment.carrier,
+        "reference": ref,
+        "lane": lane,
+        "shipment": details,
+        "wanted": "a quick status update on where the shipment is right now and its expected arrival time",
+        "signer": ctx.settings.signer,
+    }
+    order = {
+        "id": shipment.id,
+        "session_id": shipment.session_id,
+        "customer": customer_name,
+        "customer_email": shipment.customer,
+        "origin": shipment.origin,
+        "destination": shipment.destination,
+        "weight_kg": str(shipment.weight_kg),
+        "carrier": shipment.carrier,
+        "booking_reference": shipment.booking_reference or "",
+        "status": shipment.status,
+        "status_label": status_label(shipment.status),
+    }
+    ringing = events.emit(
+        ctx,
+        "call.ringing",
+        "voice",
+        session_id=shipment.session_id,
+        payload={
+            "party": "order_status",
+            "shipment_id": shipment.id,
+            "name": shipment.carrier,
+            "order": order,
+            "variables": variables,
+        },
+    )
+    return {
+        "call_id": ringing.id,
+        "order": order,
+        "variables": variables,
+        "phone_url": f"/phone?call_id={ringing.id}",
+    }
+
+
+def active_ringing(ctx: Context, call_id: int | None = None) -> dict | None:
+    """Returns the pending ringing order call (matching `call_id`, or the most recent one within `RING_MAX_S`)."""
+    cutoff = (timing.now() - timedelta(seconds=RING_MAX_S)).isoformat()
+    if call_id is not None:
+        rows = ctx.db.execute(
+            "SELECT id, session_id FROM events WHERE id = ? AND kind = 'call.ringing'", (call_id,)
+        ).fetchall()
+    else:
+        rows = ctx.db.execute(
+            "SELECT id, session_id FROM events WHERE kind = 'call.ringing' AND ts > ? ORDER BY id DESC LIMIT 5",
+            (cutoff,),
+        ).fetchall()
+    for row in rows:
+        chain = _calls(ctx, row["session_id"]).get(row["id"], [])
+        if not chain:
+            continue
+        if any(e.kind in ("call.started", "call.ended") for e in chain[1:]):
+            continue
+        root = chain[0]
+        return {
+            "call_id": root.id,
+            "session_id": root.session_id,
+            "order": root.payload.get("order", {}),
+            "variables": root.payload.get("variables", {}),
+        }
+    return None
+
+
+async def accept_order(ctx: Context, call_id: int) -> dict:
+    """Called when the human picks up the fake phone screen. Fetches an ElevenLabs signed URL and emits
+    `call.started`."""
+    if not configured(ctx):
+        raise CallError(503, "Voice calls are not set up: ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID.")
+    root = _call_root(ctx, call_id)
+    if root.kind != "call.ringing":
+        raise CallError(409, "This call cannot be picked up.")
+    chain = _calls(ctx, root.session_id).get(call_id, [])
+    if any(e.kind == "call.ended" for e in chain):
+        raise CallError(409, "This call has already ended.")
+    if any(e.kind == "call.started" for e in chain):
+        raise CallError(409, "This call was already picked up.")
+    signed = await _el(ctx, f"/convai/conversation/get-signed-url?agent_id={ctx.settings.elevenlabs_agent_id}")
+    variables = root.payload.get("variables", {})
+    events.emit(
+        ctx,
+        "call.started",
+        "voice",
+        session_id=root.session_id,
+        payload={
+            "call_id": call_id,
+            "party": "order_status",
+            "shipment_id": root.payload.get("shipment_id"),
+            "name": root.payload.get("name"),
+            "order": root.payload.get("order", {}),
+            "variables": variables,
+        },
+    )
+    return {
+        "call_id": call_id,
+        "signed_url": signed["signed_url"],
+        "dynamic_variables": variables,
+        "order": root.payload.get("order", {}),
+    }
+
+
+def record_turn(ctx: Context, call_id: int, role: str, message: str) -> None:
+    """Streams one spoken turn from the phone screen to the laptop monitor via `call.turn`."""
+    root = _call_root(ctx, call_id)
+    text = str(message or "").strip()
+    if not text:
+        return
+    clean_role = "agent" if role in ("ai", "agent") else "user"
+    events.emit(
+        ctx,
+        "call.turn",
+        "voice",
+        session_id=root.session_id,
+        payload={"call_id": call_id, "role": clean_role, "message": text[:1000]},
+    )
+
+
 def connected(ctx: Context, call_id: int, conversation_id: str) -> None:
-    started = _started(ctx, call_id)
+    root = _call_root(ctx, call_id)
     if not re.fullmatch(r"[\w-]{1,100}", conversation_id):
         raise CallError(400, "Invalid conversation id.")
-    events.emit(ctx, "call.connected", "voice", session_id=started.session_id,
+    events.emit(ctx, "call.connected", "voice", session_id=root.session_id,
                 payload={"call_id": call_id, "conversation_id": conversation_id})  # fmt: skip
 
 
 def ended(ctx: Context, call_id: int, error: str = "") -> None:
-    started = _started(ctx, call_id)
-    if any(e.kind == "call.ended" for e in _calls(ctx, started.session_id).get(call_id, [])):
+    root = _call_root(ctx, call_id)
+    if any(e.kind == "call.ended" for e in _calls(ctx, root.session_id).get(call_id, [])):
         return
-    events.emit(ctx, "call.ended", "voice", session_id=started.session_id,
+    events.emit(ctx, "call.ended", "voice", session_id=root.session_id,
                 payload={"call_id": call_id} | ({"error": error[:300]} if error else {}))  # fmt: skip
 
 
 def _decimal(value: object, name: str) -> Decimal:
+    raw = re.sub(r"[^\d.,-]", "", str(value or "").strip())
+    if "," in raw and "." in raw:
+        raw = raw.replace(",", "") if raw.rfind(".") > raw.rfind(",") else raw.replace(".", "").replace(",", ".")
+    elif raw.count(",") == 1 and len(raw.split(",")[1]) <= 2:
+        raw = raw.replace(",", ".")
+    elif "," in raw:
+        raw = raw.replace(",", "")
     try:
-        number = Decimal(str(value).strip().replace(",", "."))
+        number = Decimal(raw)
     except InvalidOperation:
         raise CallError(400, f"{name} is not a number.") from None
     if not number.is_finite() or number <= 0:
@@ -263,19 +518,120 @@ def body(target: Target, fields: dict) -> str:
     return said + "\n".join(lines)
 
 
-def answer(ctx: Context, call_id: int, fields: dict) -> int:
-    """The agent's client tool during the call: stores what it heard as an incoming mail in the thread and hands it
-    to the orchestrator like a polled one. One answer per call; returns the mail's id."""
+def answer_order(ctx: Context, call_id: int, fields: dict) -> dict:
+    """Processes the ElevenLabs `record_order_status` tool call: updates the shipment in CRM and emits
+    `shipment.updated` so the laptop screen reflects the change live."""
+    from pixel.crm import shipments
+
+    root = _call_root(ctx, call_id)
+    chain = _calls(ctx, root.session_id).get(call_id, [])
+    if any(e.kind == "call.ended" for e in chain):
+        raise CallError(409, "This call is over.")
+    shipment_id = str(root.payload.get("shipment_id") or "")
+    shipment = shipments.get(ctx, shipment_id)
+    if shipment is None:
+        raise CallError(404, f"Unknown order {shipment_id}.")
+
+    # Merge with any earlier update in this same call so progressive updates keep earlier fields.
+    prior: dict[str, str] = {}
+    for ev in chain:
+        if ev.kind == "call.answer" and isinstance(ev.payload.get("fields"), dict):
+            for k, v in ev.payload["fields"].items():
+                if v:
+                    prior[k] = str(v)
+
+    new_status = normalize_order_status(fields.get("status") or prior.get("status", ""))
+    location = str(fields.get("location") or prior.get("location") or "").strip()[:160]
+    eta = str(fields.get("eta") or prior.get("eta") or "").strip()[:120]
+    flight_number = str(fields.get("flight_number") or prior.get("flight_number") or "").strip()[:40]
+    notes = str(fields.get("notes") or prior.get("notes") or "").strip()[:300]
+
+    previous_status = shipment.status
+    now = timing.now()
+    updated = shipment.model_copy(update={"status": new_status, "updated_at": now})
+    shipments.save(ctx, updated)
+
+    merged_fields = {
+        "status": new_status,
+        "location": location,
+        "eta": eta,
+        "flight_number": flight_number,
+        "notes": notes,
+    }
+    payload = {
+        "call_id": call_id,
+        "shipment_id": shipment.id,
+        "previous_status": previous_status,
+        "status": new_status,
+        "status_label": status_label(new_status),
+        "location": location,
+        "eta": eta,
+        "flight_number": flight_number,
+        "notes": notes,
+        "updated_at": now.isoformat(),
+    }
+    events.emit(ctx, "call.answer", "voice", session_id=root.session_id,
+                payload={"call_id": call_id, "shipment_id": shipment.id, "fields": merged_fields})  # fmt: skip
+    events.emit(ctx, "shipment.updated", "voice", session_id=root.session_id, payload=payload)
+    return payload
+
+
+def latest_order_update(ctx: Context, shipment_id: str) -> dict | None:
+    """Most recent `shipment.updated` payload for a shipment, if any."""
+    row = ctx.db.execute(
+        "SELECT payload FROM events WHERE kind = 'shipment.updated' AND json_extract(payload, '$.shipment_id') = ?"
+        " ORDER BY id DESC LIMIT 1",
+        (shipment_id,),
+    ).fetchone()
+    if not row:
+        return None
+    import json
+
+    return json.loads(row["payload"])
+
+
+def call_state(ctx: Context, call_id: int) -> dict:
+    """Full live snapshot of one call (status, spoken turns, latest shipment update) for instant catch-up."""
+    root = _call_root(ctx, call_id)
+    chain = _calls(ctx, root.session_id).get(call_id, [])
+    turns = [
+        {"id": e.id, "role": e.payload.get("role", "user"), "message": e.payload.get("message", "")}
+        for e in chain
+        if e.kind == "call.turn"
+    ]
+    shipment_id = str(root.payload.get("shipment_id") or "")
+    latest_update = None
+    if shipment_id:
+        for ev in reversed(events.for_session(ctx, root.session_id, call_id - 1)):
+            if ev.kind == "shipment.updated" and ev.payload.get("call_id") == call_id:
+                latest_update = ev.payload
+                break
+    ended_ev = next((e for e in chain if e.kind == "call.ended"), None)
+    return {
+        "call_id": call_id,
+        "started": any(e.kind in ("call.started", "call.connected") for e in chain),
+        "ended": ended_ev is not None,
+        "error": ended_ev.payload.get("error", "") if ended_ev else "",
+        "turns": turns,
+        "latest_update": latest_update,
+    }
+
+
+def answer(ctx: Context, call_id: int, fields: dict) -> int | dict:
+    """The agent's client tool during the call: for order-status calls updates the shipment live; for carrier/customer
+    calls stores what it heard as an incoming mail in the thread and hands it to the orchestrator."""
     from pixel.core import orchestrator, poller
 
-    started = _started(ctx, call_id)
-    session_id = started.session_id
-    calls = _calls(ctx, session_id).get(call_id, [])
-    if any(e.kind == "call.answer" for e in calls):
+    root = _call_root(ctx, call_id)
+    if root.payload.get("party") == "order_status":
+        return answer_order(ctx, call_id, fields)
+    session_id = root.session_id
+    chain = _calls(ctx, session_id).get(call_id, [])
+    if any(e.kind == "call.answer" for e in chain):
         raise CallError(409, "This call's answer is already recorded.")
-    if timing.now() >= started.ts + timedelta(seconds=CALL_MAX_S) or any(e.kind == "call.ended" for e in calls):
+    if timing.now() >= root.ts + timedelta(seconds=CALL_MAX_S) or any(e.kind == "call.ended" for e in chain):
         raise CallError(409, "This call is over.")
-    target = Target(**{k: tuple(v) if k == "missing" else v for k, v in started.payload.items() if k != "variables"})
+    target = Target(**{k: tuple(v) if k == "missing" else v for k, v in root.payload.items() if k != "variables"})
     text = body(target, fields)
     asked = ctx.db.execute("SELECT subject, sender FROM messages WHERE id = ?", (target.asked_id,)).fetchone()
     subject = asked["subject"] if asked else f"Session {session_id}"
@@ -297,11 +653,11 @@ def answer(ctx: Context, call_id: int, fields: dict) -> int:
 async def transcript(ctx: Context, call_id: int) -> dict | None:
     """ElevenLabs' summary and transcript of a finished call, fetched until it is done and then kept as
     `call.transcript`. None while ElevenLabs is still processing it."""
-    started = _started(ctx, call_id)
-    calls = _calls(ctx, started.session_id).get(call_id, [])
-    if kept := next((e for e in calls if e.kind == "call.transcript"), None):
+    root = _call_root(ctx, call_id)
+    chain = _calls(ctx, root.session_id).get(call_id, [])
+    if kept := next((e for e in chain if e.kind == "call.transcript"), None):
         return kept.payload
-    conversation = next((e.payload["conversation_id"] for e in calls if e.kind == "call.connected"), None)
+    conversation = next((e.payload["conversation_id"] for e in chain if e.kind == "call.connected"), None)
     if conversation is None:
         return None
     call = await _el(ctx, f"/convai/conversations/{conversation}")
@@ -316,5 +672,5 @@ async def transcript(ctx: Context, call_id: int) -> dict | None:
             {"role": t.get("role"), "message": t["message"]} for t in call.get("transcript") or [] if t.get("message")
         ],
     }
-    events.emit(ctx, "call.transcript", "voice", session_id=started.session_id, payload=payload)
+    events.emit(ctx, "call.transcript", "voice", session_id=root.session_id, payload=payload)
     return payload

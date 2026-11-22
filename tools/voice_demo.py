@@ -1,11 +1,11 @@
-"""The voice calls of `pixel/voice/` on a demo request: the real app on its own database, no poller, no gateway, no
-mail. Each request has a late airline, a late trucker and an unanswered question to its customer, so the request's page
-shows the Call panel. Needs ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in .env (`tools.voice_agent`).
+"""Starts the UI on a local demo database with realistic booked orders so you can demonstrate the simulated
+phone call and live laptop status updates without touching the 5U mailbox or gateway.
 
-uv run python -m tools.voice_demo                 # http://localhost:8010, a fresh request at /demo/new
+    uv run python -m tools.voice_demo
 
-The deadlines are stretched to 15 minutes and the question's wait to 10, so a call can be tried at leisure.
-"""
+Then open:
+- Laptop (audience view): http://localhost:8010/demo/new
+- Phone screen (simulated phone): http://localhost:8010/phone"""
 
 import argparse
 import csv
@@ -14,15 +14,17 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-DB = "data/voice-demo.sqlite3"
 KIT = Path("data/start-kit")
-US = "pixel@hackloop.mail"
+DB = "data/voice-demo.sqlite3"
+US = "team@hackloop.mail"
 
 
 def seed(ctx) -> int:
-    """One new request with its bid requests and its question, all sent just now. Returns its session id."""
-    from pixel.contracts import Rfq
+    """Seeds two realistic booked shipments/orders plus one open RFQ so both the Order Status Call demo
+    (`/crm/shipments` and `/sessions/{id}`) and carrier/customer follow-up calls work immediately."""
+    from pixel.contracts import Booking, BookingStatus, Preference, Quote, QuoteStatus, RateOption, Rfq, Shipment, Source
     from pixel.core import events
+    from pixel.crm import bookings, quotes, shipments
     from pixel.pricing import store
 
     with (KIT / "carrier-list.csv").open(encoding="utf-8") as f:
@@ -30,73 +32,142 @@ def seed(ctx) -> int:
     with (KIT / "pickup_zones.csv").open(encoding="utf-8") as f:
         store.save_zones(ctx, list(csv.DictReader(f)))
     store.save_carriers(ctx, carriers)
-    airline = next(c for c in carriers if c["kind"] == "airline" and "ORD" in c["serves"].split())
-    trucker = next(c for c in carriers if c["kind"] == "trucker" and "60" in c["serves"].split())
+
     now = datetime.now(UTC)
     first = (ctx.db.execute("SELECT MAX(id) FROM messages WHERE id < 1000000000").fetchone()[0] or 0) + 1
-    customer = "demo-buyer@hackloop.mail"
-    mails = [
-        (
-            first,
-            "in",
-            None,
-            customer,
-            US,
-            "Air freight FRA-ORD, 420 kg",
-            "Hello, please quote door pickup in 60311 Frankfurt to ORD, 420 kg, 6 pallets. Thank you.",
-        ),
-        (
-            first + 1,
-            "out",
-            "bid_request",
-            US,
-            airline["email"],
-            "Rate request FRA-ORD, 420 kg",
-            "Hello,\n\nplease quote air freight for this shipment:\nFrom: FRA\nTo: ORD\n...",
-        ),
-        (
-            first + 2,
-            "out",
-            "bid_pickup",
-            US,
-            trucker["email"],
-            "Pickup request 60311 to FRA, 420 kg",
-            "Hello,\n\nplease quote a pickup ...",
-        ),
-        (
-            first + 3,
-            "out",
-            "question",
-            US,
-            customer,
-            "Re: Air freight FRA-ORD, 420 kg",
-            "Hello,\n\nthank you for your request. Could you tell us the volume or the dimensions of the pieces? ...",
-        ),
+
+    # Seed two booked orders for the live pitch demo
+    demo_orders = [
+        {
+            "sid": first,
+            "ship_id": "PX-4F8A2C",
+            "booking_id": "B-4F8A2C",
+            "booking_ref": "BK-88412",
+            "quote_id": "Q-4F8A2C",
+            "customer": "nordlicht-audio@hackloop.mail",
+            "subject": "Air freight FRA-JFK, 420 kg — Automotive sensors",
+            "body": "Hi,\n\nPlease quote fastest air freight from FRA to JFK for 420 kg, 1.8 cbm.\n\nMira Petersen\nNordlicht Audio GmbH",
+            "origin": "FRA",
+            "destination": "JFK",
+            "weight": Decimal("420"),
+            "volume": Decimal("1.8"),
+            "carrier": "Cobalt Skylift",
+            "price": Decimal("1485.00"),
+            "transit": 2,
+            "status": "booked",
+        },
+        {
+            "sid": first + 10,
+            "ship_id": "PX-9C2E71",
+            "booking_id": "B-9C2E71",
+            "booking_ref": "BK-91044",
+            "quote_id": "Q-9C2E71",
+            "customer": "kessler-feinmechanik@hackloop.mail",
+            "subject": "Urgent air export MUC-ORD, 265 kg — Optical lenses",
+            "body": "Hello,\n\nWe need air freight from MUC to ORD, 265 kg, 1.1 cbm.\n\nJonas Kessler\nKessler Feinmechanik",
+            "origin": "MUC",
+            "destination": "ORD",
+            "weight": Decimal("265"),
+            "volume": Decimal("1.1"),
+            "carrier": "Helix Air Freight",
+            "price": Decimal("1120.50"),
+            "transit": 3,
+            "status": "in_transit",
+        },
     ]
-    for id_, direction, purpose, sender, to, subject, body in mails:
+
+    for o in demo_orders:
+        sid = o["sid"]
         ctx.db.execute(
-            "INSERT INTO messages (id, session_id, direction, kind, purpose, sender, recipient, subject, body,"
-            " in_reply_to, sent_at, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')",
-            (id_, first, direction, "customer_rfq" if id_ == first else None, purpose, sender, to, subject, body,
-             None if id_ == first else first, now.isoformat()),
-        )  # fmt: skip
-    events.emit(ctx, "mail.in", "poller", session_id=first, message_id=first,
-                payload={"from": customer, "subject": mails[0][5], "sent_at": now.isoformat()})  # fmt: skip
-    request = Rfq(session_id=first, message_id=first, customer=customer, origin="FRA", destination="ORD",
-                  weight_kg=Decimal(420), pieces=6, door_pickup=True, pickup_postcode="60311", pickup_zone="60",
-                  received_at=now, deadline_at=now)  # fmt: skip
-    events.emit(ctx, "rfq.extracted", "rfq", session_id=first, payload=request.model_dump(mode="json"))
-    for mail, carrier, pickup in [(mails[1], airline, False), (mails[2], trucker, True)]:
-        events.emit(ctx, "bid.requested", "pricing", session_id=first, message_id=mail[0],
-                    payload={"carrier": carrier["name"], "email": carrier["email"], "pickup": pickup,
-                             "origin": "FRA", "destination": "ORD"})  # fmt: skip
-    events.emit(ctx, "mail.out", "outbox", session_id=first, message_id=first + 3,
-                payload={"to": customer, "subject": mails[3][5], "purpose": "question"})  # fmt: skip
+            "INSERT OR REPLACE INTO sessions (id, customer, state, received_at, deadline_at) VALUES (?, ?, 'booked', ?, ?)",
+            (sid, o["customer"], now.isoformat(), now.isoformat()),
+        )
+        ctx.db.execute(
+            "INSERT OR REPLACE INTO messages (id, session_id, direction, kind, purpose, sender, recipient, subject, body,"
+            " in_reply_to, sent_at, data) VALUES (?, ?, 'in', 'customer_rfq', NULL, ?, ?, ?, ?, NULL, ?, '{}')",
+            (sid, sid, o["customer"], US, o["subject"], o["body"], now.isoformat()),
+        )
+        rfq = Rfq(
+            session_id=sid,
+            message_id=sid,
+            customer=o["customer"],
+            origin=o["origin"],
+            destination=o["destination"],
+            weight_kg=o["weight"],
+            volume_cbm=o["volume"],
+            preference=Preference.FASTEST,
+            received_at=now,
+            deadline_at=now,
+        )
+        opt = RateOption(
+            source=Source.PORTAL,
+            carrier=o["carrier"],
+            origin=o["origin"],
+            destination=o["destination"],
+            chargeable_kg=o["weight"],
+            billed_kg=o["weight"],
+            freight=o["price"],
+            total=o["price"],
+            currency="EUR",
+            total_eur=o["price"],
+            transit_days=o["transit"],
+        )
+        quote = Quote(
+            id=o["quote_id"],
+            session_id=sid,
+            rfq=rfq,
+            option=opt,
+            total=o["price"],
+            currency="EUR",
+            subject=f"Re: {o['subject']}",
+            body=f"All-in rate {o['price']} EUR via {o['carrier']}.",
+            status=QuoteStatus.ACCEPTED,
+            created_at=now,
+            sent_at=now,
+        )
+        quotes.save(ctx, quote)
+        booking = Booking(
+            id=o["booking_id"],
+            quote_id=o["quote_id"],
+            session_id=sid,
+            team_reference=o["ship_id"],
+            via="portal",
+            carrier=o["carrier"],
+            booking_reference=o["booking_ref"],
+            price=o["price"],
+            currency="EUR",
+            status=BookingStatus.CONFIRMED,
+            created_at=now,
+            confirmed_at=now,
+        )
+        bookings.save(ctx, booking)
+        shipment = Shipment(
+            id=o["ship_id"],
+            session_id=sid,
+            booking_id=o["booking_id"],
+            customer=o["customer"],
+            origin=o["origin"],
+            destination=o["destination"],
+            weight_kg=o["weight"],
+            carrier=o["carrier"],
+            booking_reference=o["booking_ref"],
+            status=o["status"],
+            transit_days=o["transit"],
+            updated_at=now,
+        )
+        shipments.save(ctx, shipment)
+        events.emit(ctx, "mail.in", "poller", session_id=sid, message_id=sid,
+                    payload={"from": o["customer"], "subject": o["subject"], "sent_at": now.isoformat()})  # fmt: skip
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=sid, payload=rfq.model_dump(mode="json"))
+        events.emit(ctx, "booking.confirmed", "rfq", session_id=sid,
+                    payload={"booking_id": o["booking_id"], "booking_reference": o["booking_ref"]})  # fmt: skip
+
     return first
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8010)
     args = parser.parse_args()
     # Before pixel.config reads them: no mailbox, no gateway, nothing sent.
@@ -118,10 +189,24 @@ def main() -> None:
 
     @app.get("/demo/new", include_in_schema=False)
     async def new(request: Request):
-        return RedirectResponse(f"/sessions/{seed(request.app.state.ctx)}#calls", status_code=303)
+        seed(request.app.state.ctx)
+        return RedirectResponse("/crm/shipments", status_code=303)
 
-    print(f"Voice demo: http://localhost:{args.port}/demo/new")
-    uvicorn.run(app, host="127.0.0.1", port=args.port, timeout_graceful_shutdown=3)
+    # Seed automatically on first startup so refreshing /crm/shipments directly never shows an empty CRM.
+    orig_lifespan = app.router.lifespan_context
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def demo_lifespan(a):
+        async with orig_lifespan(a):
+            seed(a.state.ctx)
+            yield
+
+    app.router.lifespan_context = demo_lifespan
+
+    print(f"Laptop (audience view): http://localhost:{args.port}/crm/shipments")
+    print(f"Fake phone screen:      http://localhost:{args.port}/phone")
+    uvicorn.run(app, host=args.host, port=args.port, timeout_graceful_shutdown=3)
 
 
 if __name__ == "__main__":
