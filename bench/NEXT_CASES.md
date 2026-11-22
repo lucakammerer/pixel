@@ -528,7 +528,6 @@ it or after booking, body and file and later correction, another language and sc
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
 
-| Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round |
 
 ## Axis P: price against the scorer's best (22.11.2026 11:20, live database to round 179)
 
@@ -606,8 +605,7 @@ limit and a door pickup whose ready day is a Friday, read with `tools.price_ledg
 
 Open: 67 (the balanced total below the verdict's bound), 35 (which figure), 15 to 18 and 20 (the pickup place),
 130/33/34 (proof needs the attachments, not stored). Nothing in this axis is wrong today that has no owner.
-||||||| d5406de
-| Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round |
+
 ## Axis F: after the quote (22.11.2026 11:00, live database to round 179)
 
 Every incoming mail of the live database that is not the first of its session, re-read through today's
@@ -677,4 +675,3 @@ es, it), two at once (a yes and a match request; a change and a yes).
 
 0 wrong outside these known gaps (`tools.followup_matrix`: every non-right case carries its `known_gap` and owner).
 Next in this lane, most frequent and cheapest first: F4 and F5 (one regex each), F6 and F7, F8, F17.
-||||||| bc36f69
