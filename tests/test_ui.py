@@ -284,6 +284,7 @@ def test_timeline_folds_background_steps():
     assert html.index("Mail received") < html.index("evgroup") < html.index("Quote sent")
     assert all(f'id="ev{e.id}"' in html for e in evs)  # nothing is dropped, only folded
     assert not is_minor("booking.confirmed") and not is_minor("human.takeover") and is_minor("quote.checked")
+    assert not is_minor("quote.checked", {"blocking": ["total"]}) and not is_minor("quote.unmet", {"alert": True})
 
 
 def test_mail_with_a_carrier_is_background():

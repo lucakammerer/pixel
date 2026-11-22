@@ -193,7 +193,7 @@ def background(ev: Event, mails: dict[int, dict]) -> bool:
     """A background step of the timeline: an internal kind, or mail with someone other than whoever opened the
     thread (a carrier's bid, the rate desk), which a person rarely needs to follow."""
     if ev.kind not in ("mail.in", "mail.out"):
-        return is_minor(ev.kind)
+        return is_minor(ev.kind, ev.payload)
     mail, first = mails.get(ev.message_id or 0), mails.get(ev.session_id or 0)
     if not mail or not first:
         return False
@@ -413,7 +413,8 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
         _calls_panel(ctx, session_id) + tools + (_quote_panel(quote) if quote or not tools else "") + drafts
         + options_html
         + f"<h2>Activity<span class=count>{len(evs)}</span>"
-        + (f"<span class='count muted'>· {minor.count(True)} automatic steps folded</span>" if any(minor) else "")
+        + f"<span class='count muted' id=folded{'' if any(minor) else ' hidden'}>· "
+        + f"<span>{minor.count(True)}</span> automatic steps folded</span>"
         + "</h2><div class=panel id=timeline>"
         + group_events(evs, list(rows), list(minor)) + "</div>"
     )  # fmt: skip
@@ -430,6 +431,8 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
         # A live background step joins the folded line at the end of the timeline, as `group_events` folds it.
         "function foldEvent(tl,html){const tp=document.createElement('template');tp.innerHTML=html;"
         "const row=tp.content.firstElementChild;let g=tl.lastElementChild;"
+        "const f=document.getElementById('folded');if(row.classList.contains('minor')&&f){f.hidden=false;"
+        "f.firstElementChild.textContent=+f.firstElementChild.textContent+1;}"
         "if(!row.classList.contains('minor')||!g||!g.matches('details.evgroup,.ev.minor')){tl.append(row);return;}"
         "if(!g.matches('details')){const d=document.createElement('details');d.className='evgroup';"
         "d.innerHTML='<summary class=ev><span class=t></span><div></div><span class=\"kind mono\">show all</span></summary>';"
@@ -664,8 +667,8 @@ def _sourcing(
     )
     read = operator.usable(rfq)
     found = len(pricing_session.for_request(ctx, rfq)) if read else 0
-    asked, answered = ({str(e.payload.get("carrier", "")).casefold() for e in evs if e.kind == k}
-                       for k in ("bid.requested", "bid.received"))  # fmt: skip
+    asked, answered = ({str(e.payload.get("carrier", "")).casefold() for e in evs if e.kind in k}
+                       for k in (("bid.requested",), ("bid.received", "carrier.lanes")))  # fmt: skip
     waiting = len(asked - answered)
 
     def btn(action: str, label: str, primary: bool) -> str:

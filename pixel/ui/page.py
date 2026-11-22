@@ -322,12 +322,16 @@ LABELS = {
 KEY = frozenset({
     "mail.in", "mail.out", "mail.held", "rfq.extracted", "rfq.dangerous_goods", "quote.sent",
     "quote.fallback", "quote.missed", "quote.stuck", "tracking.answered", "followup.read", "error", "call.started",
-    "call.ended", "call.answer", "call.transcript", "shipment.updated", "feedback", "score",
+    "call.ended", "call.answer", "call.transcript", "shipment.updated", "feedback", "score", "attachment.unreadable",
 })  # fmt: skip
 KEY_PREFIXES = ("customer.", "booking.", "human.", "tariff.")
 
 
-def is_minor(kind: str) -> bool:
+def is_minor(kind: str, payload: dict | None = None) -> bool:
+    """A background step; a check that blocked the quote or unmet asks that raised an alert stay visible."""
+    p = payload or {}
+    if (kind == "quote.checked" and p.get("blocking")) or (kind == "quote.unmet" and p.get("alert")):
+        return False
     return kind not in KEY and not kind.startswith(KEY_PREFIXES)
 
 
@@ -443,7 +447,7 @@ def event_row(ev: Event, mail: dict[str, Any] | None = None, *, new: bool = Fals
             )
         main = f"{what} <span class=d>{detail}</span>" if detail else what
     actor = f"{esc(ev.kind)} · {esc(ev.actor)}"
-    minor = is_minor(ev.kind) if minor is None else minor
+    minor = is_minor(ev.kind, ev.payload) if minor is None else minor
     cls = "ev" + (" minor" if minor else "") + (" new" if new else "")
     return (
         f'<div class="{cls}" id="ev{ev.id}"><span class=t>{clock(ev.ts)}</span>'
