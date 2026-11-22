@@ -514,6 +514,19 @@ def _unsigned(text: str) -> str:
     return text
 
 
+# The language a customer asks us to answer in: "Please reply in German, our shipping office does not read English".
+NAMED_LANGUAGE = {"german": "de", "deutsch": "de", "allemand": "de", "english": "en", "englisch": "en",
+                  "anglais": "en", "french": "fr", "französisch": "fr", "français": "fr", "spanish": "es",
+                  "spanisch": "es", "español": "es", "italian": "it", "italienisch": "it", "italiano": "it",
+                  "dutch": "nl", "niederländisch": "nl", "polish": "pl", "polnisch": "pl", "portuguese": "pt",
+                  "turkish": "tr", "swedish": "sv", "czech": "cs"}  # fmt: skip
+ASKED_LANGUAGE = re.compile(
+    r"\b(?:reply|respond|answer|write|antwort\w*|schreib\w*|r[ée]pond\w*)\b[^.\n]{0,40}?\b(?:in|auf|en)\s+"
+    rf"({'|'.join(NAMED_LANGUAGE)})\b",
+    re.IGNORECASE,
+)
+
+
 def _language(text: str, said: object = None, attached: str = "") -> str:
     """The script's language, else the language with the most common words, English on a tie (round 70 was French,
     answered in English). The mail's words above its sign-off decide first (a Polish line signed "Thanks and
@@ -521,6 +534,8 @@ def _language(text: str, said: object = None, attached: str = "") -> str:
     besides codes (a German packing list made "new request attached, FRA-JFK" German), the sign-off last. The
     model's ISO code (`said`) counts only for a language our word lists do not know: it once answered "de" for an
     English mail full of German place names."""
+    if asked := ASKED_LANGUAGE.search(_unsigned(text)):
+        return NAMED_LANGUAGE[asked.group(1).lower()]
     said = said.strip().lower() if isinstance(said, str) and re.fullmatch(r"\s*[A-Za-z]{2}\s*", said) else None
     own = said if said not in LANGUAGES else None
     unsigned = _unsigned(text)
