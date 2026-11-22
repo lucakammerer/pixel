@@ -401,5 +401,121 @@
    "today": "Before accuracy/trucker-currency-fx: a USD price with no rate in the answer was no price (the model needs one too), so only Taunusfracht counted: 2562.62, 1.7% high. Now the rate comes from the newest priced source in USD (`bids.known_fx`). Offline the start kit has no USD source, so the replay still shows 2562.62.",
    "known_gap": "Priced only once some source of the night stated a rate for that currency (portal, desk or a carrier); a currency no source ever priced (CHF, PLN) stays unpriced. Owner: Accuracy."
   }
- ]
+ ],
+  "axis_b_note": "Axis B (bench/NEXT_CASES.md): flows after the quote, run by the harness named per row, never by tools.kpi. today_before is what main did before #323, #328, #332, #336 and #339.",
+  "axis_b": [
+    {
+      "case": "B1",
+      "name": "expired-rate-during-rate-outage",
+      "harness": "tests/test_booking.py::test_expired_rate_without_a_fresh_one_books_by_mail_with_the_airline",
+      "expected": "booking by mail to the airline of the carrier list, booking requested, no exception",
+      "today_before": "crashed, booking requested for good"
+    },
+    {
+      "case": "B2",
+      "name": "cancel-after-booking-raised",
+      "harness": "tests/test_booking.py::test_a_cancellation_after_the_booking_cancels_at_the_portal_and_tells_the_customer",
+      "expected": "portal cancel, booking and shipment cancelled, customer told",
+      "today_before": "ValueError: unknown event kind booking.cancelled"
+    },
+    {
+      "case": "B3",
+      "name": "rate-id-unknown-or-taken",
+      "harness": "tests/test_booking.py::test_unknown_or_taken_rate_books_a_fresh_one",
+      "expected": "fresh rate booked",
+      "today_before": "booking.failed"
+    },
+    {
+      "case": "B4",
+      "name": "confirmation-only-attached",
+      "harness": "thread-followups.json#airline_confirmation_attachment_only",
+      "expected": "booking_confirmation",
+      "today_before": "tariff"
+    },
+    {
+      "case": "B5",
+      "name": "conditional-acceptance",
+      "harness": "thread-followups.json#conditional_accept_under_cap; tests/test_booking.py::test_a_conditional_acceptance_books_only_when_our_total_meets_its_cap",
+      "expected": "book when the quoted total meets the cap, else human.note",
+      "today_before": "dropped as thanks; German cap split at the thousands dot and booked"
+    },
+    {
+      "case": "B6",
+      "name": "confirmation-unlisted-address",
+      "harness": "thread-followups.json#confirmation_from_unknown_address_new_thread",
+      "expected": "booking_confirmation",
+      "today_before": "customer_rfq"
+    },
+    {
+      "case": "B7",
+      "name": "airline-refuses-booking",
+      "harness": "thread-followups.json#airline_refuses_booking_by_mail; tests/test_router.py::test_an_airline_refusing_our_booking_by_mail_confirms_nothing",
+      "expected": "booking failed for a person, then the next option booked",
+      "today_before": "carrier_bid, booking requested",
+      "known_gap": "Owner: Shared (booking.py). The refusal fails the booking for a person; booking the next option by itself is open"
+    },
+    {
+      "case": "B8",
+      "name": "cancel-portal-down-or-mail-booking",
+      "harness": "tests/test_booking.py::test_a_cancellation_the_portal_refuses_is_sent_to_the_airline",
+      "expected": "cancellation mail to the airline, booking cancelled, customer told",
+      "today_before": "human.note, customer not told"
+    },
+    {
+      "case": "B9",
+      "name": "booking-failed-customer-silent",
+      "harness": "tests/test_booking.py::test_another_portal_error_fails",
+      "expected": "the customer hears within the round",
+      "today_before": "booking.failed only",
+      "known_gap": "Owner: Shared (booking.py _failed). No notice to the customer after a failed booking"
+    },
+    {
+      "case": "B10",
+      "name": "booking-503-no-hint-portal-airline",
+      "harness": "tests/test_booking.py::test_expired_rate_without_a_fresh_one_or_an_address_fails_and_never_raises",
+      "expected": "the rate desk asked for the airline's address, booking by mail",
+      "today_before": "booking.failed",
+      "known_gap": "Owner: Shared (booking.py _airline_address). No address source beyond the 503 message and the carrier list"
+    },
+    {
+      "case": "B11",
+      "name": "fresh-rate-dearer-than-quote",
+      "harness": null,
+      "expected": "a decided policy",
+      "today_before": "booked at the fresh price silently",
+      "known_gap": "Owner: team decision. Never reproduced in a fixture"
+    },
+    {
+      "case": "B12",
+      "name": "change-after-booking",
+      "harness": "thread-followups.json#booked/en/kg_cbm",
+      "expected": "cancel, rebook, quote in reply if the scorer scores it",
+      "today_before": "person",
+      "known_gap": "Owner: Shared (followup.action). Scorer rule unknown"
+    },
+    {
+      "case": "B13",
+      "name": "confirmation-unknown-reference",
+      "harness": "thread-followups.json#confirmation_from_unknown_address_unknown_reference",
+      "expected": "booking_confirmation (unmatched, an error, no quote)",
+      "today_before": "customer_rfq",
+      "known_gap": "Owner: Speed (router.rules)"
+    },
+    {
+      "case": "B14",
+      "name": "confirmation-before-201",
+      "harness": null,
+      "expected": "the booking stays confirmed",
+      "today_before": "unverified",
+      "known_gap": "Owner: Shared (booking.book). Not reproduced"
+    },
+    {
+      "case": "B15",
+      "name": "new-request-in-booked-thread",
+      "harness": "thread-followups.json#new_request_in_booked_thread",
+      "expected": "unknown (R4)",
+      "today_before": "person",
+      "known_gap": "Owner: team decision. Never seen live"
+    }
+  ]
 }
