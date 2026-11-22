@@ -198,7 +198,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   or headings are skipped. A sentence with a coming date in the customer's own words is left too unless the rules
   read that date as the ready date or latest arrival, or it follows a reply-by or validity word (`unread_dates`,
   `SET_ASIDE`): round 118's "Die Ware steht am 2026-11-26 zur Abholung bereit" counted as read because another rule
-  used the sentence, so the transit ran from today. 16 of the 119 stored requests have such a date, 12 of them
+  used the sentence, so the transit ran from today. 15 of the 119 stored requests have such a date (round 118 among 16 before #362), 12 of them
   without other leftovers (about 0.03 cost points per quote). Nothing left (35 of 37 request fixtures, all 27 scored
   openings): no call. Something left:
   `check`, spawned by `agent.py` `handle` beside the bids, sends only those sentences to `PIXEL_MODEL_CHECK`
