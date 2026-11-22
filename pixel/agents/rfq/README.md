@@ -380,7 +380,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   (`ANSWERED`) and those the request left at their default (`_stated`); origin and destination only when asked
   (`kept`), also in the rules' guess when the gateway fails. Benchmark section 15 answers every captured request.
   When the rules cannot read the request even with the answer (round 104: "the same shipment as in my request ...
-  for ATL", now to BOM, two destinations), `_from_answer` reads the asked facts from the answer alone.
+  for ATL", now to BOM, two destinations), `_from_answer` reads the asked facts from the answer alone, a destination
+  too: the one airport code the answer names besides the origin, in any script ("도착 공항은 MIA입니다", session 46780,
+  where `\b` finds no boundary between Latin and Hangul).
+- A request no rule reads (Korean, Chinese, Arabic, Cyrillic) goes to the one `rfq.extract` call as written, never
+  translated first. The model can put a mail's only airport into origin ("MIA행", bound for MIA, session 46780):
+  `extract.py` `_served_lane` makes an origin no tariff, zone or airline leaves from but one flies to the
+  destination, and the pickup zone names the origin. Without it the request asked for the destination it gave.
 - A request in French, Spanish or Italian counts "colis", "palettes", "bultos", "piezas" or "pezzi" as pieces and
   "tout compris en EUR" as the currency asked for (round 70's capture).
 - A model asked for the origin of a door-to-port request guesses an airport from the town's name, one no airline

@@ -1272,6 +1272,8 @@ def _from_answer(read: Rfq, said: str, facts: list[str]) -> Rfq | None:
         update |= {"door_pickup": True, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode)}
     elif "origin" in facts and (lane := _lane(said)) and lane[1] == read.destination:
         update["origin"] = lane[0]
+    if "destination" in facts and (code := _destination_only(said) or _one_code(said, read.origin)):
+        update["destination"] = code
     lots = _lots(said)
     pieces = lots[2] if lots else _pieces(said)
     if "weight" in facts and (weight := lots[0] if lots else _weight(said, pieces)):
@@ -1281,6 +1283,29 @@ def _from_answer(read: Rfq, said: str, facts: list[str]) -> Rfq | None:
     if not update:
         return None
     return read.model_copy(update=update | {"missing": tuple(m for m in read.missing if m not in update)})
+
+
+# A code between letters of another script: "도착 공항은 MIA입니다" (session 46780), where `\b` sees no boundary.
+ANY_SCRIPT_CODE = re.compile(r"(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])")
+
+
+def _one_code(text: str, origin: str) -> str | None:
+    """The one airport code an answer names besides the origin, in any script."""
+    codes = {c for c in ANY_SCRIPT_CODE.findall(text) if _airport(c) and c != origin}
+    return codes.pop() if len(codes) == 1 else None
+
+
+def _served_lane(ctx: Context, rfq: Rfq) -> Rfq:
+    """The model put a mail's only airport into origin and left the destination empty: "MIA행" (bound for MIA) in a
+    Korean door request from Moenchengladbach (session 46780), so it asked for a destination the mail gave. An origin
+    no tariff, zone or airline leaves from but one flies to is the destination."""
+    if ctx is None or rfq.destination or not rfq.origin:
+        return rfq
+    origins, destinations = store.airports(ctx)
+    if not origins or rfq.origin in origins or rfq.origin not in destinations:
+        return rfq
+    missing = tuple(m for m in rfq.missing if m != "destination") + ("origin",) * (not rfq.door_pickup)
+    return rfq.model_copy(update={"origin": "", "destination": rfq.origin, "missing": missing})
 
 
 def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
@@ -2019,7 +2044,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             )  # fmt: skip  never the gateway's text: it can quote the OpenAI key
             rfq = guessed.model_copy(update={"extracted_by": "guess"})
         else:
-            rfq = _from_model(result.data, message, deadline)
+            rfq = _served_lane(ctx, _from_model(result.data, message, deadline))
             rfq = _earlier_request(ctx, mail, rfq)
             if cargo:
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})

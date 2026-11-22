@@ -1514,3 +1514,28 @@ async def test_a_cargo_photo_beside_a_written_request_never_rides_along(conn, mo
     except RuntimeError:
         pass
     assert seen and all(images == () for images in seen)
+
+
+async def test_a_door_request_s_only_airport_read_as_origin_is_its_destination(conn, monkeypatch):
+    """Session 46780: "CCC행" (bound for CCC) read as the origin, the destination asked for although the mail gave it."""
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "11", "area": "Town", "airport": "AAA"}])
+    store.save_carriers(ctx, [{"name": "Air", "kind": "airline", "email": "air@example.com", "serves": "CCC"}])
+    data = {"origin": "CCC", "destination": None, "weight_kg": "549", "volume_cbm": "5.26", "pieces": 3, "lots": [],
+            "preference": "cheapest", "door_pickup": True, "pickup_postcode": "11680", "currency": "EUR",
+            "language": "ko", "first_name": None}  # fmt: skip
+
+    async def ask_json(ctx, **kw):
+        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    monkeypatch.setattr(llm, "ask_json", ask_json)
+    body = "CCC (Town, US)행 항공 운송입니다. 총중량은 549 kg, 부피는 5.26 cbm. 11680 (Town)에서 픽업 가능합니다."
+    rfq, _ = await extract.read_request(ctx, mail(body), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.missing) == ("AAA", "CCC", ())
+
+
+def test_an_answer_in_another_script_fills_the_destination():
+    read = extract.by_rules(mail("Pickup at 11680 Town, 549 kg, 5.26 cbm, to BBB."), DEADLINE)
+    read = read.model_copy(update={"destination": "", "missing": ("destination",)})
+    answered = extract._from_answer(read, "도착 공항은 CCC입니다. EUR로 부탁드립니다.", ["destination"])
+    assert (answered.destination, answered.missing) == ("CCC", ())
