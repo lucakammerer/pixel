@@ -68,9 +68,6 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
-- A negation of something good rules no airline out: "we don't mind X", "never had issues with X", "does not
-  require X" (`NEGATED_POSITIVE`); "don't want X" and "No X, please" do rule it out, "no pickup needed, X is
-  fine" does not.
 - `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names ("<airline> only",
   "nur mit ...", and "no airline other than ...", "keine andere Airline als ...", which `excluded_airlines` no longer
   reads as ruling that airline out).
@@ -356,9 +353,6 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
-- A departure the customer refuses is never the one asked for: "please do not route via FRA", "avoid FRA",
-  "routing via FRA is not possible; please use MUC". `_asked_departure` reads each clause: one with a negation
-  refuses its codes, the asked airport is the one served code left; "fly out of MUC" and "ex MUC" ask too.
 - A pickup abroad ("collected from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria") has no zone, so no
   trucker and no zone airport. Asking for its postcode got the customer's address back and then a no-price reply.
   `extract.py` `_abroad_pickup` (a country abroad on a pickup line, or a postcode of other than five digits) asks
@@ -406,17 +400,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
   or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
+- A per-piece net weight with the gross one in its bracket ("each 142 kg net (160 kg gross)") makes the gross
+  per piece too (`NET_FIRST`); `check.py` reads the same, or it blocks the right weight. Lot lines may be
+  labelled "Posten 2:" or numbered ("2) 3 pallets"), gross and net written "G.W." and "N.W." (`LOT_LABEL`).
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
 - A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0
   under-prices a light, bulky shipment.
 - "Not urgent", "no rush" and "price matters more than speed" contain the urgency words: they mean cheapest. A
   superlative the customer wrote (fastest, cheapest) decides; without one, a hurry they describe ("as quickly as
-  possible", "time-critical", "speed matters more", "shortest transit time", "kürzeste Laufzeit", "transit time is
-  key", "price is secondary", "next flight out", "time-sensitive", "AOG") means fastest; "price is what counts" beats
-  a transit the mail also mentions (`PRICE_FIRST`). "Express" counts only as a service or a wish ("express please",
-  "go for express"), not in a company's name. The model reads no wish when the rules read the request, so a missed
-  one is quoted as cheapest. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
+  possible", "time-critical", "speed matters more") means fastest. "Express" counts only as a service, not in a
+  company's name. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
   "quickly" alone is about our reply, not the flight.
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
@@ -501,8 +495,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as
-  strict xfails: a currency in words, as a symbol, as "Price: USD" or beside a second currency reads as none and is
-  quoted in EUR.
+  strict xfails: speed without a superlative or "urgent" ("next flight out", "shortest transit",
+  "time-sensitive", "AOG", "Express please") reads as cheapest; a currency in words, as a symbol, as "Price:
+  USD" or beside a second currency reads as none and is quoted in EUR.
 
 ## Open
 
