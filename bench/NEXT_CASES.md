@@ -149,8 +149,8 @@ round 166.
 | Drill | Right of 60 | Beyond the baseline | Cause | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- | --- |
 | `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 50 | baseline | 161, 149, 132 (Korean), 171, 131 and 126 (Turkish): the rules read no destination, pickup, pieces or wish in them, #489 open reads all six as the model did; 167 (Korean lots with "each", "로트 1: 카톤 4개"): the guess quotes 1964.76 against 4745.69, open, Cost; 168, 174 fixed by #463; 143, 139, 178: a document whose bytes the database does not hold (not measurable offline) | `extract.by_rules`, the lots in Korean | Cost (`extract.py`), generalize |
-| `portal_429` (every rate read 429, `Retry-After: 60`) | 48 | 2, as `portal_down` (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
-| E4 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page), `airlines_silent` | 48 | 2 | 172 and 152: the change after our quote gets no requote; the quote before it was right | the requote path (`agents/rfq/agent.py`), cause not yet read | Accuracy |
+| `portal_429` (every rate read 429, `Retry-After: 60`) | 49 | 2 (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
+| E4 `portal_429`, `portal_hangs` | 49 | 2 | 172 and 152: under a 429 or a hang the first request's rate reads land (from the card) after the customer's change; the requote quoted the cheaper price of the older weight (1585.45 against 2231.04). `portal_down` and `airlines_silent` are at the baseline: the drill scored the requote at a position the replay never reached (a first quote held as superseded) | `agent.requote`, #503 open (51 of 60 with it) | generalize |
 | `mail_twice`, `mail_late` (90 s) | 50 | 0 | — | — | — |
 | E3 `truckers_silent` | 49 | 1 | round 108: the pickup memory holds no answer of that zone within 24 h (D5's open part) | `pickup.estimates` | Accuracy |
 
@@ -232,6 +232,7 @@ What the scorer reads from our first reply beyond the price, reconstructed from 
 | 7 | an airline the customer ruled out is not offered | `excluded_airline` (1: 42) | — | the airline named in the reply |
 | 8 | dangerous goods the documents reveal are answered with the documents they need | `dg_docs_missing` (1: 10) | the mail said "non-dangerous", the packing list `PL_53839.xlsx` said otherwise | named documents (DGD, MSDS) |
 | 9 | the total within 5 % of the scorer's best, both ways (owned by the price goal since 09:10) | `too_low` (18), `too_high` (10) | accuracy falls on both sides: round 13 was 2.67 % below the best and earned 33 of 45 (about 4.5 points per %). With several shipments its `quoted` is the sum of all (62, 127, 151, 153, 158, all accepted): it reads more than one amount. Insurance terms stated in the request are in its all-in (91, `too_low`) | the all-in total, in EUR |
+| 11 | a wish the request states is acted on, not only repeated | `not_what_was_asked` (1: 186) | 186: a Turkish "en hızlı seçenek" (fastest); the rules read cheapest, the novelty call mapped the wish into `conditions`, and the reply quoted the cheapest with "Talebinizden not aldım: en hızlı seçenek" | the option and content against the wish |
 | — | the airline and the trucker are **not** compared | — | 172: our airline differed from the scorer's at the same total, 45 of 45; 13: another trucker, accepted | — |
 
 Order: 1, then 2 before 3 (round 156). Where 5 to 8 stand against 9 is unproven: every loss on 5 to 8 had a price we
@@ -247,7 +248,8 @@ cannot place against the scorer's best (rejected rounds carry no `best`).
 | 76 (22:37) | 5 PDF | 4 in a row (76 to 79) | 2 h |
 | 96 (00:43) | 3 decline, while the rate API was down (93 to 99) | 96, 104, 122 | 1.7 h |
 | 113 (02:23) | 6 two shipments | 113, 150 | 6.5 h |
-| 177 (08:50) | 4 another mode of transport | 1 so far | — |
+| 177 (08:50) | 4 another mode of transport | 1 so far | 56 min |
+| 186 (09:46) | 11 a wish only noted, in a language the rules do not read | 1 so far | — |
 
 The pattern: every new check is one more field of the generator's request (an attachment fact, an exclusion, a
 language, an attachment wish, a shipment count, a mode), introduced alone in one round, repeated for 1 to 4 rounds, and
@@ -255,6 +257,33 @@ from then on **combined** with older ones: 156 is Korean + an "import" by the bu
 pounds and cubic feet + an arrival deadline + the buyer's "import" + PDF. Price levers move the same way from endpoint
 to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123). A new
 check came every 0.6 to 6.5 hours; the last one is 2 hours old at this writing, so the next is due.
+
+### Wishes we recognised and only noted (audit of 22.11. 10:00, every `rfq.novelty` with `conditions` or `documents`)
+
+13 live sessions, 112 to 186. Acted = the quote's option, price, attachment or a sentence answers it; noted = only
+"Noted from your request: …" repeats it.
+
+| Kind of wish | Sessions (round) | Acted | Only noted | The scorer | Changes the right option or content |
+| --- | --- | --- | --- | --- | --- |
+| fastest or cheapest | 149, 167 (ko), 171 (tr), 186 (tr) | 149, 167 by the model's read; 171 cheapest by default | **186** | `not_what_was_asked` | yes: the option |
+| truck to the airport | 118 (de), 132, 149, 161 (ko) | all: pickup priced | — | accepted (118 lost `too_low` on an arrival limit the rules then missed, read since) | yes, acted |
+| we deliver to the airport | 137 (de) | port-to-port | — | accepted | yes, acted |
+| among the dates that fit, the cheapest | 170 | cheapest within `arrive_by` | — | accepted | yes, acted |
+| dangerous goods in the attachment | 112, 128 | DGD and MSDS named | the note too | accepted | yes, acted |
+| PDF for filing | 161, 165, 167, 179 | every quote carries the PDF | 161 and 167 also say "Documents we will need: PDF, 견적서": the customer's own ask read as a document we want from them | accepted (179 lost on price) | content wrong, not scored so far |
+| one air waybill, lots not split | 167 (ko) | priced as one | the sentence noted; `compose.ONE_AWB` answers only English and German | accepted | content |
+| earliest flight and arrival asked | 186 (tr) | — | not even noted: no arrival sentence | (the round failed on the option) | content |
+| pieces, EUR, all-in | 132, 171 | in the quote | noted | accepted | no |
+
+Ranked predictions of `not_what_was_asked` from the kinds only noted, each stepped in every direction:
+
+| # | Prediction | Directions tested (offline, `extract`, `compose` on this commit) | Today | Fix belongs in | Owner |
+| --- | --- | --- | --- | --- | --- |
+| N1 | fastest asked in a language the rules read but have no word for | `extract._preference`: tr, ko, zh, ja, pl "fastest" read **cheapest**; es, it, nl, pt, fr, de read fastest. Another channel: the wish only in a later mail is the requote's (axis B). Two wishes that conflict ("fastest, price decides") read by `PRICE_FIRST` | wrong for tr, pl; ko, zh, ja right only when the model reads the mail | the case: novelty's wish into the selection; the class: `extract.FASTEST`, `CHEAPEST` words | Hot repair A (186), Cost (`extract.py`) |
+| N2 | the earliest arrival asked and not answered | `compose.ready_date`: en "ready on 2026-11-26" and fr read; de "am 2026-11-26 zur Abholung bereit", tr "2026-11-26 tarihinde hazır", ko "2026-11-26에 출고 가능" none, so no arrival sentence although `rfq.ready_on` holds the date (it is used only with a latest arrival). 96 and 122 asked for it in English (both lost before a quote) | wrong for de, tr, ko | `compose.answers`: the read ready date when the request gives one | Checklist |
+| N3 | the PDF ask read as a document we need | 161, 167: "Documents we will need: PDF, 견적서" | wrong content, accepted twice | `novelty.with_note`: the offer itself is no document to ask for | Checklist (review thread merges) |
+| N4 | a wish no option can meet | an arrival no airline makes: `selection` quotes the nearest with "unmet_schedule" named (R9); a required airline missing: named at the deadline (R9) | right (by reading `novelty.with_note`) | — | — |
+| N5 | one air waybill in a language without the sentence | 167 (ko): noted only | content | `compose.ONE_AWB` | Checklist, low |
 
 ### The 20 most likely next checks
 

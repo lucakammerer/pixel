@@ -87,7 +87,9 @@ def mails(raws: list[dict], state: dict, which: str) -> list[dict]:
 
 
 def outcome(events: list[Event], late_s: float, nth: int) -> tuple[Decimal | None, float | None]:
-    """The scored quote's total in EUR and its seconds from storage; (None, None) when none left."""
+    """The scored quote's total in EUR and its seconds from storage; (None, None) when none left. A requote the scorer
+    scored is our last quote when an earlier one was held as superseded (a change before the first quote left)."""
+    nth = min(nth, max(sum(e.kind == "quote.sent" for e in events) - 1, 0))
     quote = capture.quoted(events, nth)
     sent = next(iter([e for e in events if e.kind == "quote.sent"][nth:]), None)
     arrived = next((e for e in events if e.kind == "mail.in"), None)

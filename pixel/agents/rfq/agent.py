@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from pixel import llm
 from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, repair, unmet
-from pixel.contracts import Message, Quote, RateOption, Rfq
+from pixel.contracts import Message, Preference, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline, deadline_for, out_of_scope
@@ -89,6 +89,8 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
     )
     if premium:
         body = compose.insured(body, rfq)
+    if not premium and compose.both_options(request):
+        body = _other_option(rfq, options, option, body)
     calls = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE kind = 'llm.call' AND session_id = ?", (rfq.session_id,)
     ).fetchone()[0]
@@ -116,6 +118,18 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
                          **({"required": required} if required else {})})  # fmt: skip
     quotes.save(ctx, quote)  # booking finds the session's quote in the CRM, also when the fallback sends it
     return quote
+
+
+def _other_option(rfq: Rfq, options: list[RateOption], option: RateOption, body: str) -> str:
+    """ "Your cheapest and your fastest": the other one of the two in the same reply, with its own total, when it is
+    another option in the quote's currency."""
+    other = Preference.CHEAPEST if rfq.preference == Preference.FASTEST else Preference.FASTEST
+    second = selection.select(rfq.model_copy(update={"preference": other}), options)
+    if rfq.currency and second.currency != rfq.currency:
+        second = calc.in_currency(second, rfq.currency, _fx_for(rfq.currency, options))
+    if second.currency != option.currency or second.total == option.total:
+        return body
+    return compose.other_option(body, rfq, second, other.value)
 
 
 def _insurance(ctx: Context, rfq: Rfq, request: str, options: list[RateOption], option: RateOption) -> Decimal | None:
@@ -491,7 +505,11 @@ async def requote(ctx: Context, message: Message, rfq: Rfq) -> Quote | None:
             "SELECT payload FROM events WHERE session_id = ? AND kind = 'option.found' AND id > ? ORDER BY id",
             (rfq.session_id, marker),
         ).fetchall()
-        fresh = [RateOption.model_validate(json.loads(r["payload"])["option"]) for r in rows]
+        # A rate for the older facts can land after the change (a read waiting out a 429, the rate card behind it):
+        # an airline's price for another chargeable weight is not one for this request.
+        kg = calc.chargeable_kg(rfq.weight_kg, rfq.volume_cbm)
+        fresh = [o for r in rows if (o := RateOption.model_validate(json.loads(r["payload"])["option"])).trucker
+                 or o.chargeable_kg == kg]  # fmt: skip
         rule = feedback.pickup_rule(ctx)
         options = engine.combine(rfq, fresh, rule, ctx) or engine.combine(rfq, session.for_request(ctx, rfq), rule, ctx)
         if rfq.door_pickup:
