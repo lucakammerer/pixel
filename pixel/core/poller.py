@@ -3,8 +3,10 @@
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
+from math import isfinite
 
 from pixel.agents.rfq.booking import CONFIRMED
+from pixel.api.client import ApiError
 from pixel.api.mailbox import RATEDESK, mapping_gaps
 from pixel.contracts import Message
 from pixel.core import db
@@ -14,6 +16,7 @@ from pixel.crm import bookings
 
 SINCE_KEY = "poller.since_id"
 NAMES_OUR_MAIL = re.compile(r'your mail "(.+?)"')
+POLL_LIMIT = re.compile(r"\bone poll per (\d+(?:\.\d+)?) seconds?\b", re.IGNORECASE)
 
 
 def session_of(ctx: Context, message: Message) -> int:
@@ -104,6 +107,7 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
     """Loops forever: poll with the stored `since_id`, store, emit `mail.in`, dispatch without blocking the loop.
     `since_id` moves only after a mail is stored, so a restart neither loses nor repeats one (R2)."""
     since_id = int(db.get(ctx.db, SINCE_KEY) or 0)
+    interval = ctx.settings.poll_seconds
     failing = False
     while True:
         try:
@@ -113,12 +117,18 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
             if not failing:  # one event per outage, not one per second
                 emit(ctx, "error", "poller", payload={"where": "poll", "error": f"{type(e).__name__}: {e}"})
             failing = True
-            await asyncio.sleep(ctx.settings.poll_seconds)
+            delay = interval
+            if isinstance(e, ApiError) and e.status == 429:
+                if limit := POLL_LIMIT.search(e.detail):
+                    interval = max(interval, float(limit[1]))
+                    delay = interval
+                if e.retry_after is not None and isfinite(e.retry_after):
+                    delay = max(delay, e.retry_after)
+            await asyncio.sleep(delay)
             continue
         for message in messages:
             if not accept(ctx, message, on_message):
                 # Preserve the last durable cursor so a transient storage failure cannot lose this mail.
-                await asyncio.sleep(ctx.settings.poll_seconds)
                 break
             since_id = message.id
             db.put(ctx.db, SINCE_KEY, str(since_id))
@@ -126,5 +136,6 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
             if next_since_id > since_id:
                 since_id = next_since_id
                 db.put(ctx.db, SINCE_KEY, str(since_id))
-        if len(messages) < 200:
-            await asyncio.sleep(ctx.settings.poll_seconds)
+            if len(messages) >= 200 and interval == ctx.settings.poll_seconds:
+                continue
+        await asyncio.sleep(interval)

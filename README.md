@@ -7,7 +7,7 @@ session live and step in.
 
 ```mermaid
 flowchart TD
-    MB[(5U mailbox)] -->|push on arrival, poll every second| P[poller]
+    MB[(5U mailbox)] -->|push on arrival, poll at the allowed cadence| P[poller]
     P --> R{router}
     R -->|customer request| O[orchestrator<br/>deadline per request]
     R -->|carrier bid, desk answer| BID[pricing: bids]
