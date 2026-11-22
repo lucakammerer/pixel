@@ -459,7 +459,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   in the live mailbox. Offline KPI replay advances its clock through this wait and can deliver captured bids.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
-- The legs around the flight are no lane labels: "we deliver to HAM ourselves" names the departure airport,
+- The legs around the flight are no lane labels: "we deliver (them) to HAM ourselves" names the departure airport,
   "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).
