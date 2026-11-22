@@ -25,6 +25,7 @@ from tools import kpi, replay
 ROOT = Path(__file__).parent.parent
 CASES = ROOT / "tests" / "fixtures" / "next-cases" / "scope"
 EXPECTED = CASES.parent / "scope.json"
+LATE_S = 60  # a scope rule declines at once; the fallback answers without a price at `hard_at`
 BLANK = {"origin": None, "destination": None, "weight_kg": None, "volume_cbm": None}
 
 
@@ -49,10 +50,16 @@ def stub(reading: dict | None, route: str):
 
 
 def outcome(evs, customer: str) -> str:
-    """What the customer got, in order: question, quote, no_price (at once, or late after a price was sought), none."""
-    sought = any(e.kind in ("bid.requested", "option.found", "option.failed") for e in evs)
-    got = [e.payload.get("purpose") or "other" for e in evs if e.kind == "mail.out" and e.payload.get("to") == customer]
-    got = [("no_price late" if sought else "no_price") if p == "no_price" else p for p in got]
+    """What the customer got, in order: question, quote, no_price (at once, or late: at `hard_at`, after the rules
+    found nothing to decline and no price came), none."""
+    start = evs[0].ts if evs else None
+    got = []
+    for e in evs:
+        if e.kind == "mail.out" and e.payload.get("to") == customer:
+            purpose = e.payload.get("purpose") or "other"
+            if purpose == "no_price":
+                purpose += " late" if (e.ts - start).total_seconds() > LATE_S else ""
+            got.append(purpose)
     return " → ".join(got) or "none"
 
 

@@ -306,6 +306,8 @@ async def test_a_sea_freight_request_gets_no_price_and_its_answer_at_once(conn, 
     await asyncio.wait_for(orchestrator.quote_with_deadline(ctx, message), timeout=1)
     assert "quote.sent" not in kinds(ctx)
     assert ctx.mailbox.sent == [message.sender]
+    reply = conn.execute("SELECT body FROM messages WHERE purpose='no_price'").fetchone()["body"]
+    assert "air export freight only" in reply  # why, not "no rate in time"
     assert not orchestrator.out_of_scope(ctx, ingest_rfq(ctx).id)
 
 
