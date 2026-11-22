@@ -1147,6 +1147,28 @@ async def test_a_question_for_a_missing_fact_is_asked_in_the_customers_language(
     assert asked[0].startswith("Hola:") and "volume" in asked[0]
 
 
+async def test_a_translated_question_keeps_the_signers_name_as_written(conn, monkeypatch):
+    ctx = Context(settings(), conn, None, None, None, None)
+    request = poller.ingest(ctx, mail("안녕하세요. AAA-BBB 항공 운송 견적 부탁드립니다. 총중량 600 kg입니다.").model_copy(
+        update={"id": 9300, "session_id": 9300, "sender": "buyer@hackloop.mail"}))  # fmt: skip
+    asked = []
+
+    async def transliterating(ctx, **kw):  # round 156: the name came back in Hangul
+        korean = "안녕하세요.\n\n부피를 알려주시겠습니까?\n\n감사합니다"
+        name = "\n레나 베르거" if ctx.settings.signer in kw["user"] else ""
+        return LlmResult(data={"body": korean + name}, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        asked.append(body)
+        return request.model_copy(update={"id": 9301, "direction": "out"})
+
+    monkeypatch.setattr(llm, "ask_json", transliterating)
+    monkeypatch.setattr(outbox, "send", send)
+    monkeypatch.setattr(extract, "ASK_WAIT_S", 0)
+    await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert asked[0].startswith("안녕하세요") and asked[0].endswith(f"\n{ctx.settings.signer}")
+
+
 @pytest.mark.parametrize(
     "volume, written",
     [("95.00", "a total volume of 95.00 cubic feet"), ("2690", "a volume of 2690 litres")],
