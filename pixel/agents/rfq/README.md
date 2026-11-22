@@ -222,7 +222,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   They stay in the request's language for the whole thread, also when the customer accepts in English: a language
   without `booking.CUSTOMER` text gets the English notice translated (`compose.localize`, at most
   `booking.TRANSLATE_WAIT_S`), sent only when `compose.kept` finds every reference, name and figure; the question
-  for a missing fact (`extract.py` `_ask`) likewise for a language without `ASK` text.
+  for a missing fact (`extract.py` `_ask`) likewise for a language without `ASK` text, its signer's name left out
+  of the translation and signed below it by code (round 156 got the name back in Hangul and went out in English).
 
 - `check.py`: the last look at every quote `_quote` drafts, the fallback's too, by code alone and independent of how
   the quote was built. `check.run` re-derives what it can from the customer's mail, the RFQ, the session's options

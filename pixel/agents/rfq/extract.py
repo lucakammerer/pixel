@@ -1392,10 +1392,12 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
     if rfq.language not in ASK:
         from pixel.agents.rfq import compose  # compose reads this module's word lists
 
-        english = body
-        body = await compose.localize(ctx, rfq.language, message.session_id, body, ASK_TRANSLATE_S,
-                                      lambda text: compose.kept(english, text, (ctx.settings.signer,)),
-                                      "question.translate")  # fmt: skip
+        # Round 156: the translation wrote the signer's name in Hangul, the check refused it, and the question went out
+        # in English (wrong_language). The model never sees the name; code signs below the translated text.
+        english = body.removesuffix(f"\n{ctx.settings.signer}")
+        body = await compose.localize(ctx, rfq.language, message.session_id, english, ASK_TRANSLATE_S,
+                                      lambda text: compose.kept(english, text, ()), "question.translate")  # fmt: skip
+        body = f"{body}\n{ctx.settings.signer}"
     try:
         question = await outbox.send(
             ctx, to=message.sender, subject=subject, session_id=message.session_id, in_reply_to=message.id,
