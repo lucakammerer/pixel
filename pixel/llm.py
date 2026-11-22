@@ -1,6 +1,9 @@
-"""The only module that calls the LLM gateway. Every call becomes an `llm.call` event with tokens and cost."""
+"""The only module that calls the LLM gateway. Every call becomes an `llm.call` event with tokens and cost, and a
+call that returned keeps its parsed `answer` under its `prompt` hash: `tools.replay` answers the same prompt from it,
+offline and free, so a round the model read can be replayed."""
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -53,6 +56,13 @@ def _cost(response: dict[str, Any], model: str, tokens_in: int, tokens_out: int)
     if price is None:
         return None
     return (tokens_in * price[0] + tokens_out * price[1]) / Decimal(1_000_000)
+
+
+def prompt_hash(payload: dict[str, Any]) -> str:
+    """The exact prompt of a gateway call: its schema name (the purpose), system and user content, images included.
+    Not the model: a replay runs with the local `PIXEL_MODEL` and should still meet the answer the live one gave."""
+    asked = [payload["response_format"]["json_schema"]["name"], payload["messages"]]
+    return hashlib.sha256(json.dumps(asked, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:24]
 
 
 async def ask_json(
@@ -114,7 +124,13 @@ async def ask_json(
         "llm.call",
         "llm",
         session_id=session_id,
-        payload={"purpose": purpose, "model": model, "cost_unknown": cost is None},
+        payload={
+            "purpose": purpose,
+            "model": model,
+            "cost_unknown": cost is None,
+            "prompt": prompt_hash(payload),
+            "answer": data,
+        },
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         cost_usd=cost or Decimal(0),
