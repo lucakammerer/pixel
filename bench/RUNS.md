@@ -543,6 +543,18 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 11:15, generalize cycles 4 and 5 (live to mail 54466, round 179; cursor was 49317). Every one of the 149
+  incoming mails since the cursor replayed with `tools.capture` and compared, mail by mail: the route live and in the
+  replay is the same for all 149; the 12 tracking questions answered with the same statuses; 52343 and 54267 (a
+  lookalike sender: "new mail address", "our mailbox is down") left unanswered, as live; sessions 163 to 166, 168 to
+  170, 172 (with its requote), 173 to 176 quoted as live. Not as live, each with its reason: 167, 171, 54126 read by
+  the model (Korean, Turkish; #489 reads 171 and 54126 by rules); 177 out of scope (the scope goal's); 178 the packing
+  list's bytes are not stored (765 kg live, the mail's 1155 offline); 179 lost too high, hot repair A (#472).
+  Fixed in the tools: a later mail of a session is replayed (#467), the session's own question is not in the state, so
+  the replay asks again as live (round 131 had guessed an old site). C15 (a refused non-quote mail sent once more,
+  then settled) in #474. Korean and Turkish requests by rules in #489: rounds 126, 131, 132, 149, 161 and 171 quote
+  as live without the model; in every direction: a port lane by the customer's own delivery, the ablative origin,
+  "teslime hazır" no pickup, the wish in Chinese and Japanese, a unit or currency glued to a particle.
 - 22.11. 10:15, generalize cycle 3 (live snapshot to mail 53010, round 174; cursor was 50649). Rounds 162 to 174
   all accepted at 60. Replayed with `tools.capture`: 9 of 13 as live; 167 (Korean) and 171 (Turkish) were read by the
   model, 168 and 174 (English) too. New live shape, closed for the class: "we deliver to Frankfurt airport (FRA)
