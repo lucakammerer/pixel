@@ -1528,3 +1528,15 @@ async def test_a_cargo_photo_beside_a_written_request_never_rides_along(conn, mo
     except RuntimeError:
         pass
     assert seen and all(images == () for images in seen)
+
+
+def test_a_door_request_never_departs_from_an_airport_no_truck_serves(conn):
+    """Round 156: "the buyer imports it; we arrange the air freight to MIA" was read as origin MIA, no destination.
+    The pickup zone's airport departs and MIA is the destination, so no question goes out."""
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "41", "area": "Moenchengladbach", "airport": "DUS"}])
+    read = extract.Rfq(session_id=1, message_id=1, customer="c@x", origin="MIA", destination="", door_pickup=True,
+                       pickup_postcode="41680", pickup_zone="41", weight_kg=Decimal(549), received_at=DEADLINE.received_at,
+                       deadline_at=DEADLINE.expires_at, missing=("destination",))  # fmt: skip
+    rfq = extract._zone_origin(ctx, read, "MIA (Miami, US)행 항공 운송, 41680 (Moenchengladbach) 픽업")
+    assert (rfq.origin, rfq.destination, rfq.missing) == ("DUS", "MIA", ())

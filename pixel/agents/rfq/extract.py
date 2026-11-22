@@ -1282,6 +1282,12 @@ def _from_answer(read: Rfq, said: str, facts: list[str]) -> Rfq | None:
         update |= {"door_pickup": True, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode)}
     elif "origin" in facts and (lane := _lane(said)) and lane[1] == read.destination:
         update["origin"] = lane[0]
+    if "destination" in facts and len(codes := {c for c in re.findall(r"(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])", said) if _airport(c)}) == 1:
+        # Round 156: "도착 공항은 MIA입니다" answered the destination the model had read as the origin of an import
+        # trucked from a German postcode; the pickup zone then gives the origin (`_zone_origin`).
+        update["destination"] = codes.pop()
+        if read.origin == update["destination"]:
+            update["origin"] = ""
     lots = _lots(said)
     pieces = lots[2] if lots else _pieces(said)
     if "weight" in facts and (weight := lots[0] if lots else _weight(said, pieces)):
@@ -1445,11 +1451,16 @@ def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
     were missed."""
     if not rfq.pickup_zone or not (airport := store.airport_of(ctx, rfq.pickup_zone)):
         return rfq
+    update = {}
     if rfq.door_pickup and (asked := _asked_departure(ctx, text)):
         airport = asked
     elif rfq.origin and (not rfq.door_pickup or names_code(text, rfq.origin)):
-        return rfq
-    return rfq.model_copy(update={"origin": airport, "missing": tuple(m for m in rfq.missing if m != "origin")})
+        if not rfq.door_pickup or rfq.origin in store.zone_airports(ctx):
+            return rfq
+        if not rfq.destination:  # round 156: "the buyer imports it, air freight to MIA" read MIA as the departure
+            update = {"destination": rfq.origin}
+    missing = tuple(m for m in rfq.missing if m not in ("origin", *update))
+    return rfq.model_copy(update={"origin": airport, **update, "missing": missing})
 
 
 def _declared(lines: list[str]) -> str | None:
