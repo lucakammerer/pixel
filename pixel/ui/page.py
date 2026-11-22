@@ -9,23 +9,22 @@ from urllib.parse import quote as urlquote
 from pixel.contracts import Event
 
 CSS = """
-:root{--bg:#f4f5f8;--surface:#fff;--sunk:#f2f4f7;--ink:#14161c;--ink-2:#454a57;--muted:#7f8594;--line:#e6e8ee;
---line-2:#d6dae3;--accent:#2a5bd7;--accent-2:#6d4ae0;--navy:#34416a;--ok:#17804f;--warn:#b25b00;--bad:#c2331d;--human:#7a45d6;
---hover:#f6f7fa;--shadow-sm:0 1px 2px rgba(20,22,28,.04),0 1px 3px rgba(20,22,28,.05);
---shadow:0 1px 2px rgba(20,22,28,.04),0 6px 20px -6px rgba(20,22,28,.10);
---shadow-lg:0 2px 4px rgba(20,22,28,.04),0 18px 40px -14px rgba(42,91,215,.22);color-scheme:light}
+:root{--bg:#faf9f7;--surface:#fff;--sunk:#f5f2ef;--ink:#14161c;--ink-2:#4a4540;--muted:#8a827b;--line:#ebe6e1;
+--line-2:#d9d2cb;--accent:#d95f3b;--accent-2:#e8795a;--navy:#2b2622;--ok:#17804f;--warn:#b25b00;--bad:#c2331d;--human:#7a45d6;
+--hover:#f8f5f2;--tint:#fbe6de;color-scheme:light}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Jost,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 -webkit-font-smoothing:antialiased}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.top{height:56px;display:flex;align-items:stretch;gap:28px;padding:0 24px;background:rgba(255,255,255,.78);
--webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);
-border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+.top{height:60px;display:flex;align-items:center;gap:28px;padding:0 12px 0 24px;background:#fff;
+border:1px solid var(--line);border-radius:999px;position:sticky;top:14px;z-index:10;max-width:1240px;margin:14px auto 0}
 .brand{display:flex;align-items:center}
 .brand img{display:block;border-radius:3px}
-.top nav{display:flex;gap:22px}
-.top nav a{display:flex;align-items:center;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
-.top nav a:hover{color:var(--ink);text-decoration:none}.top nav a.on{color:var(--ink);border-color:var(--ink)}
+.top nav{display:flex;gap:6px}
+.top nav a{display:flex;align-items:center;height:38px;padding:0 16px;border-radius:999px;color:var(--ink);
+font-size:13px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;transition:background .2s,color .2s}
+.top nav a:hover{background:var(--hover);text-decoration:none}
+.top nav a.on{background:var(--tint);color:var(--accent)}
 .live{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
 .live i{width:7px;height:7px;border-radius:50%;background:var(--line-2);position:relative}
 .live.on i{background:var(--ok)}.live.on i::after{content:"";position:absolute;inset:0;border-radius:50%;
@@ -42,8 +41,7 @@ h2{font-size:16px;font-weight:500;letter-spacing:-.01em;margin:40px 0 12px}h2 .c
 .crumb a{color:var(--muted)}
 .muted{color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 .num{font-variant-numeric:tabular-nums}
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow-sm);font-size:13px}
-.stats,.strip,.hero{box-shadow:var(--shadow-sm)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:13px}
 .panel:has(>table){overflow-x:auto}
 .panel.pad{padding:16px 18px}
 table{width:100%;border-collapse:collapse}
@@ -85,8 +83,7 @@ textarea{min-height:200px;font-family:ui-monospace,SFMono-Regular,Menlo,monospac
 resize:vertical}
 .btn{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:6px;border:1px solid var(--line-2);
 background:var(--surface);color:var(--ink);cursor:pointer;font-weight:500;white-space:nowrap;font-size:13px}
-.btn:hover{background:var(--hover)}.btn.primary{background:linear-gradient(180deg,#3a69e4,var(--accent));border-color:var(--accent);color:#fff;
-box-shadow:0 1px 2px rgba(42,91,215,.25),0 6px 16px -6px rgba(42,91,215,.55)}
+.btn:hover{background:var(--hover)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.primary:hover{opacity:.88}
 form.inline{display:inline;margin:0}
 .notice{display:flex;align-items:center;gap:14px;padding:11px 14px;border-radius:8px;margin-bottom:16px;
@@ -186,6 +183,8 @@ def layout(title: str, body: str, *, nav: str = "", script: str = "") -> str:
     return (
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · PIXEL</title>'
+        f'<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        f'<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet">'
         f'<style>{CSS}</style></head><body><header class=top><a class=brand href="/">'
         f'<img src="/assets/pixel-logo.png" alt="PIXEL" width="104" height="20"></a><nav>{links}</nav>'
         f"<span class=live id=live><i></i><span>Connecting</span></span></header>"
