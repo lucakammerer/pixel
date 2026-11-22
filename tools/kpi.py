@@ -116,7 +116,9 @@ async def measure(fixtures: Path, db: str | None, online: bool) -> dict:
     requests = (
         _stored(db)
         if db
-        else {p.stem: [json.loads(p.read_text(encoding="utf-8"))] for p in sorted(fixtures.glob("*.json"))}
+        else {
+            p.stem: replay.raws_of(json.loads(p.read_text(encoding="utf-8"))) for p in sorted(fixtures.glob("*.json"))
+        }
     )
     source = db or await _kit()
     rows = []
