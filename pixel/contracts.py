@@ -97,6 +97,7 @@ class Rfq(Model):
     extracted_by: str = "rules"  # "rules" | "model"
     missing: tuple[str, ...] = ()
     excluded_carriers: tuple[str, ...] = ()  # airline names or codes the customer ruled out
+    required_carriers: tuple[str, ...] = ()  # the only airlines the customer allows
 
 
 class LaneTariff(Model):
