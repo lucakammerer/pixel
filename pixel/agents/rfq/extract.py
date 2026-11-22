@@ -1621,6 +1621,11 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             if field not in asked and (field in ("origin", "destination") or _stated(value)):
                 kept[field] = value
         again = rules()
+        if again is None and not files:
+            # Session 30544: the request also named an older lane ("as in my request ... to ATL"), so request and
+            # answer together have two destinations; the answer read alone has one, and the request's facts are kept.
+            alone = by_rules(mail.model_copy(update={"body": own_words(said)}), deadline)
+            again = alone.model_copy(update=kept) if alone else None
         if (
             again is None
             and read.door_pickup
