@@ -798,7 +798,7 @@ WEEKDAY = (
 )
 STATED_DATE = rf"[ \t]*(?:{WEEKDAY}\b\.?,?[ \t]+)?(?P<value>{DATE_VALUE})(?![\w-])"
 READY_ON = re.compile(
-    r"\b(?:ready|bereit|abholbereit|available|verfügbar|prête?s?)\b[ \t]*"
+    r"\b(?:ready|bereit|abholbereit|available|verfügbar|prête?s?)\b[ \t]*(?:date\b[ \t]*)?"
     r"(?:(?:for (?:pickup|collection)|zur Abholung)[ \t]+)?"
     r"(?:(?:on|from|am|ab|le)[ \t]+|:[ \t]*)?" + STATED_DATE,
     re.IGNORECASE,
