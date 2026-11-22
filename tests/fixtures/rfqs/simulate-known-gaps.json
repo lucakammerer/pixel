@@ -6,5 +6,65 @@
       "distractor": "second_lane"
     },
     "note": "An airline answer that also names another lane's rate and transit time: two labelled transit times disagree, `bids._days` refuses and the model reads the bid. Owner: Accuracy."
+  },
+  {
+    "family": "shipments",
+    "axes": {
+      "lanes": "same_lane"
+    },
+    "note": "Several shipments: the same lane twice with different cargo. `extract.shipments` splits only lines with different airports (a lot list must stay one shipment), so the second is not quoted. Owner: Cost (`extract.py`)."
+  },
+  {
+    "family": "shipments",
+    "axes": {
+      "lanes": "door_and_port"
+    },
+    "note": "Several shipments: one collected at the door, one delivered to the airport by the customer. `extract.shipments` gives every shipment the mail's pickup, so the second is priced with a truck. Owner: Cost (`extract.py`)."
+  },
+  {
+    "family": "shipments",
+    "axes": {
+      "lanes": "two_postcodes"
+    },
+    "note": "Several shipments, each collected at its own postcode: `extract.shipments` gives every shipment the first pickup and its airport; a further shipment's own zone airport would also need `store.airport_of` in `agent.handle`. Owner: Cost (`extract.py`)."
+  },
+  {
+    "family": "shipments",
+    "axes": {
+      "layout": [
+        "paragraphs",
+        "table",
+        "also"
+      ]
+    },
+    "note": "Several shipments not written one numbered or bulleted line each: a paragraph per shipment, a table in the body, 'we also have' in running text. `extract.shipments` splits `SHIPMENT_LINE`s only, so one shipment is quoted. Owner: Cost (`extract.py`)."
+  },
+  {
+    "family": "shipments",
+    "axes": {
+      "layout": "subject"
+    },
+    "note": "Several shipments: a further shipment only in the subject. `extract.shipments` reads the body's lines, so it is not quoted. Owner: Cost (`extract.py`)."
+  },
+  {
+    "family": "shipments",
+    "axes": {
+      "layout": [
+        "attachment_each",
+        "attachment_sections"
+      ]
+    },
+    "note": "Several shipments only in attachments: one packing list per shipment or one list with a section each. `extract.shipments` reads the mail's lines, the documents give one shipment's cargo. Owner: Cost (`extract.py`)."
+  },
+  {
+    "family": "shipments",
+    "axes": {
+      "wishes": [
+        "cheapest_fastest",
+        "exclude_one",
+        "arrive_by_one"
+      ]
+    },
+    "note": "Several shipments with a wish for one of them (cheapest for one and fastest for the other, an airline ruled out or a latest arrival for shipment 2 only): `extract.shipments` copies the mail's wishes to every shipment. Owner: Cost (`extract.py`)."
   }
 ]

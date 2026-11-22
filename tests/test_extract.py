@@ -68,6 +68,9 @@ def test_delivery_legs_around_the_flight_do_not_turn_the_lane():
             "Please include delivery from BBB airport to the door.")  # fmt: skip
     rfq = extract.by_rules(mail(body), DEADLINE)
     assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
+    # Round 154: "from Munich Airport (MUC) to RUH ... we will deliver them to MUC ourselves" went to the model.
+    rfq = extract.by_rules(mail("Please quote from Town Airport (AAA) to BBB, 631 kg. We will deliver them to AAA ourselves."), DEADLINE)
+    assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
 
 
 async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
@@ -1323,6 +1326,25 @@ async def test_a_pickup_abroad_asks_nothing_and_the_model_names_the_nearest_of_o
             "Alpenstrasse 48, 5020 Salzburg, Austria.\n\nBest regards\nAnna")  # fmt: skip
     rfq = await extract.extract(ctx, mail(body), DEADLINE)
     assert (rfq.origin, rfq.door_pickup, rfq.pickup_zone, rfq.missing) == ("BBB", True, None, ())
+
+
+@pytest.mark.parametrize("origin, door", [("", True), ("MIA", False)])
+async def test_a_destination_the_mail_names_is_not_asked_for(conn, monkeypatch, origin, door):
+    """Round 156: the model alone read a Korean import and gave no destination, or the destination as the origin; we
+    asked for the destination the mail named and sent no quote."""
+
+    async def no_question(*args, **kw):
+        raise AssertionError("the mail names its destination")
+
+    monkeypatch.setattr(extract, "_ask", no_question)
+    monkeypatch.setattr(llm, "ask_json", lambda ctx, **kw: _model({"origin": origin, "destination": "", "weight_kg": "549",
+                        "volume_cbm": "5.26", "pieces": 3, "door_pickup": door, "pickup_postcode": "41680"}))  # fmt: skip
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("41680"), "area": "Town", "airport": "AAA"}])
+    store.save_carriers(ctx, [{"name": "Air", "kind": "airline", "email": "air@hackloop.mail", "serves": "MIA"}])
+    body = "MIA행 항공 운송 견적 요청. 화물은 총 3개이며, 총중량은 549 kg, 부피는 5.26 cbm입니다. 41680 Moenchengladbach."
+    rfq = await extract.extract(ctx, mail(body), DEADLINE)
+    assert (rfq.destination, rfq.origin) == ("MIA", "AAA")
 
 
 async def test_a_mail_with_one_line_per_shipment_asks_no_destination(conn, monkeypatch):
