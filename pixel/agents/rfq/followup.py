@@ -4,7 +4,7 @@ Round 86: the customer changed the cargo ten seconds after our quote and asked f
 our answer to that mail and saw none. A mail's place in the thread says little: what it says decides. `read` gives the
 phase the mail meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `cancelled`, `declined`), its
 intent
-(`change`, `cancel`, `accept`, `decline`, `conditional`, `tracking`, `question`, `thanks`) and the request fields it changes, from its own
+(`change`, `cancel`, `accept`, `decline`, `conditional`, `match`, `tracking`, `question`, `thanks`) and the request fields it changes, from its own
 words and else from an attached document; `action` is what the session does with it (`conditional`, "book it if it stays below EUR X", books only when
 `selection.within_cap` says our total meets the cap), `booking.handle_reply` does it.
 No model call."""
@@ -187,7 +187,8 @@ def _priced(rfq: Rfq, cargo: dict) -> bool:
 
 def action(read: Followup) -> str:
     """What the session does with the mail (`booking.handle_reply`): requote, track, cancel, decline, book, rebook (an
-    acceptance again: only a replay of the first resumes its booking), nothing, or person."""
+    acceptance again: only a replay of the first resumes its booking), hold (the price stays, said once), nothing, or
+    person."""
     phase, intent = read.phase, read.intent
     if intent == "change":
         return "requote" if phase in PRICED_AGAIN else "person"
@@ -203,13 +204,15 @@ def action(read: Followup) -> str:
         return {"quoted": "decline", "declined": "decline"}.get(phase, "person")
     if intent == "conditional":
         return "book_if" if phase in ("quoted", "declined") else "person"
+    if intent == "match":
+        return "hold" if phase in ("quoted", "declined") else "person"
     if intent == "thanks" and phase != "open":
         return "nothing"
     return "person"
 
 
 async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | None, said: str) -> Followup:
-    """`said` is the reply's accept, decline or other (`booking.reply_intent`). A change wins over an acceptance
+    """`said` is the reply's accept, decline, match or other (`booking.reply_intent`). A change wins over an acceptance
     ("book it, but it is 320 kg now" books nothing at the old weight). Emits `followup.read`."""
     own = own_words(message)
     now = phase(ctx, quote)
@@ -231,9 +234,11 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         intent = "cancel"
     # A cap outweighs an acceptance ("falls … unter 3.200 € bleibt, bitte buchen" reads as one after the split at
     # "3."); a condition without a cap never does ("Bitte buchen Sie. Wenn die Buchung bestätigt ist, …" books).
-    elif (booked_if := conditional(own))[0] and (booked_if[1] is not None or said not in ("accept", "decline")):
+    elif (booked_if := conditional(own))[0] and (
+        booked_if[1] is not None or said not in ("accept", "decline", "match")
+    ):
         intent, cap = "conditional", booked_if[1]
-    elif said in ("accept", "decline"):
+    elif said in ("accept", "decline", "match"):
         intent = said
     elif TRACKING.search(own) and now in BOOKED:
         intent = "tracking"

@@ -67,6 +67,25 @@ async def test_acceptance_books_once_and_tells_customer(pipe, accepted):
     assert told["to"] == "buyer@acme.example" and told["in_reply_to"] == 20 and team_reference in told["body"]
 
 
+async def test_a_price_match_request_keeps_the_price_and_the_yes_after_it_books(pipe):
+    """Rounds 144 and 166 booked on "we'd like to place it with you … could you match their rate?" before the yes
+    (scorer: not booked); 108, 132, 157 and 175 left it unanswered. The price stays, said once; the yes books."""
+    quotes.save(pipe.ctx, quote(1))
+    pipe.ctx.portal = Portal(None)
+    ask = ("Thanks for the offer. It works for us, and I'd like to place the shipment with you. Another forwarder "
+           "quoted 7 percent less for the same shipment. Could you match their rate?")  # fmt: skip
+    await booking.handle_reply(pipe.ctx, mail(20, 1, subject="Re: Your quote", body=ask))
+    await booking.handle_reply(pipe.ctx, mail(21, 1, subject="Re: Your quote", body=ask))
+    (told,) = pipe.sent
+    assert told["in_reply_to"] == 20 and "can't go any lower" in told["body"]
+    assert quotes.get(pipe.ctx, "Q-1").total.to_eng_string() in told["body"].replace(",", "")
+    assert pipe.ctx.portal.calls == [] and quotes.get(pipe.ctx, "Q-1").status == QuoteStatus.SENT
+
+    await booking.handle_reply(pipe.ctx, mail(22, 1, subject="Re: Your quote", body="That's fine, please book it."))
+    assert len(pipe.ctx.portal.calls) == 1 and kinds(pipe.ctx)[-3:] == [
+        "customer.accepted", "booking.requested", "booking.booked"]  # fmt: skip
+
+
 async def test_lost_connection_retries_and_gets_the_same_booking(pipe, accepted):
     pipe.ctx.portal = Portal(httpx.ConnectError("reset"), None)
     b = await booking.book(pipe.ctx, "Q-1")

@@ -90,7 +90,7 @@ async def reply_intent(ctx: Context, message: Message) -> str:
     """The reply's own words decide; only when they say nothing does an attachment (a signed offer, a letter)."""
     own = followup.own_words(message)
     subject = "" if extract.REPLY_SUBJECT.match(message.subject) else message.subject
-    said = intent(own or subject)
+    said = "match" if _asks_to_match(own) else intent(own or subject)
     # A reply that asks something ("Bleibt der Preis gleich?") wants a person, whatever its attachment says.
     if said == "other" and message.attachments and "?" not in own:
         said = intent("\n".join(line for _, lines in await extract._attachments(ctx, message) for line in lines))
@@ -145,6 +145,9 @@ async def handle_reply(ctx: Context, message: Message) -> None:
             payload={"note": "Customer reply needs a person", "intent": read.intent, "phase": read.phase,
                      "changes": {k: str(v) for k, v in read.changes.items()}, "has_quote": quote is not None},
         )  # fmt: skip
+        return
+    if act == "hold":  # the price stays, the quote stays open: the customer's yes still books
+        await _tell_customer(ctx, sent, message.id, "hold", price=compose.money(sent.total), currency=sent.currency)
         return
     if act == "decline":
         quotes.set_status(ctx, sent.id, QuoteStatus.DECLINED)
@@ -517,6 +520,9 @@ CUSTOMER = {
                      "to know where your shipment is, just ask.",
         "cancelled": "As requested, we have cancelled your booking {airline_reference} with {airline} from {origin} "
                      "to {destination} ({weight} kg). Your reference {reference} is closed.",
+        "hold": "Thanks for letting me know. Our {price} {currency} {scope} from {origin} to {destination} passes on "
+                "the airline's rate at cost, without a margin, so I can't go any lower.\n\nThe offer stands: just "
+                "reply and I'll book it right away.",
     },
     "de": {
         "booked": "Danke für Ihre Zusage. Ihre Sendung von {origin} nach {destination} ({weight} kg) ist jetzt bei "
@@ -527,6 +533,9 @@ CUSTOMER = {
                      "Sie wissen möchten, wo Ihre Sendung gerade ist, fragen Sie einfach.",
         "cancelled": "Wie gewünscht haben wir Ihre Buchung {airline_reference} bei {airline} von {origin} nach "
                      "{destination} ({weight} kg) storniert. Ihre Referenz {reference} ist geschlossen.",
+        "hold": "Danke für den Hinweis. Unsere {price} {currency} {scope} von {origin} nach {destination} geben den "
+                "Tarif der Airline zum Einkaufspreis weiter, ohne Aufschlag, darunter kann ich leider nicht gehen."
+                "\n\nDas Angebot steht: Antworten Sie einfach, dann buche ich sofort.",
     },
     "fr": {
         "booked": "Merci pour votre accord. Votre envoi de {origin} à {destination} ({weight} kg) est maintenant "
@@ -538,6 +547,9 @@ CUSTOMER = {
                      "savoir où se trouve votre envoi, il suffit de demander.",
         "cancelled": "Comme demandé, nous avons annulé votre réservation {airline_reference} avec {airline} de "
                      "{origin} à {destination} ({weight} kg). Votre référence {reference} est clôturée.",
+        "hold": "Merci de me le signaler. Nos {price} {currency} {scope} de {origin} à {destination} reprennent le "
+                "tarif de la compagnie au prix coûtant, sans marge, je ne peux donc pas descendre plus bas.\n\n"
+                "L'offre reste valable : répondez simplement et je réserve aussitôt.",
     },
 }  # fmt: skip
 # The quote's voice carries on into its booking mail: a welcome a person adds, once per thread. The mail already
@@ -552,6 +564,35 @@ AIR_ONLY = {
     "de": "für den Flughafen-zu-Flughafen-Transport ohne Abholung",
     "fr": "pour le transport d'aéroport à aéroport, sans enlèvement",
 }
+
+
+# Asks us to lower the price, mostly to another forwarder's ("Another forwarder quoted 7 percent less. Could you match
+# their rate?"): rounds 108, 132, 144, 157, 166 and 175. Read as a decline or an acceptance it went unanswered or was
+# booked before the customer's yes; the scorer added 10 points where our reply kept the price (144, 166).
+MATCH = re.compile(
+    r"\b(?:can|could|would|will|able\s+to)\s+(?:you\s+)?(?:\w+\s+){0,3}?(?:match|beat|undercut)\b|\bplease\s+match\b"
+    r"|\b(?:do|go)\s+(?:any\s+)?(?:better|lower|cheaper)\b|\b(?:lower|reduce|drop|cut|sharpen)\s+(?:your|the|this)\s+"
+    r"(?:price|rate|offer|quote)|\b(?:room|flexibility)\s+(?:on|in|for)\s+(?:the\s+|your\s+)?(?:price|rate)"
+    r"|\bmitgehen\b|\bgleichziehen\b|\b(?:preis|angebot)\w*\s+(?:\w+\s+){0,2}(?:senken|reduzieren|nachbessern)\b"
+    r"|\bgünstiger\s+(?:anbieten|machen|werden)\b|\bs['’]aligner\b|\baligner\s+(?:votre|vos|sur)\b|\bfaire\s+mieux\b"
+    r"|\bbaisser\s+(?:votre|le|ce)\s+(?:prix|tarif)|\bigualar\b|\bmejorar\s+(?:su|el|este)\s+precio|\bpareggiare\b"
+    r"|\bevenaren\b",
+    re.IGNORECASE,
+)
+RIVAL = re.compile(
+    r"\b(?:another|other|a\s+competing)\s+(?:offer|forwarder|quote|agent|provider)|\bcompetitor"
+    r"|\b(?:anderer|andere[rns]?)\s+(?:spediteur|anbieter|angebot)|\bconcurren|\bcompetidor|\bconcorrent",
+    re.IGNORECASE,
+)
+
+
+def _asks_to_match(text: str) -> bool:
+    """A request to lower the price, unless the mail also turns the offer down in a sentence of its own ("Another
+    forwarder quoted less, so we will not go ahead")."""
+    if not MATCH.search(text):
+        return False
+    rest = " ".join(s for s in re.findall(r"[^.!?\n]+[.!?]?", text) if not RIVAL.search(s) and not MATCH.search(s))
+    return intent(rest) != "decline"
 
 
 TRANSLATE_WAIT_S = 15

@@ -184,7 +184,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   A delivered offer can be booked even when it went out through the deadline fallback.
 - Every customer mail later in the thread goes through `followup.py` `read`, by rules and without a model call: the
   phase it meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `cancelled`, `declined`), its
-  intent (`change`, `cancel`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states
+  intent (`change`, `cancel`, `accept`, `decline`, `conditional`, `match`, `tracking`, `question`, `thanks`) and the request fields it states
   differently (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup
   postcode; beside a word of change the preference or currency; never a hypothetical question, our own chargeable or
   billed weight quoted back, or a signature's postcode). A `followup.read` event records each. `followup.action` is
@@ -210,6 +210,14 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
   The cap may also follow its amount ("400 EUR or less", "2000 euros tops") or be "match 400 EUR", "within a
   budget of 300 EUR"; "max." does not end the sentence, and a date after the word is no cap.
+- A request to lower the price ("Another forwarder quoted 7 percent less. Could you match their rate?", "Können Sie
+  beim Preis mitgehen?", "Pouvez-vous vous aligner ?") is `booking.reply_intent` `match` (`booking.MATCH`), unless a
+  sentence without the rival or the ask turns the offer down. In phase `quoted` or `declined` the action is `hold`:
+  one short mail in the thread (`_tell_customer` "hold") says the price is the airline's rate at cost and stands, the
+  quote stays open, and the customer's yes after it books. Rounds 108, 132, 157 and 175 read it as a decline or a
+  question and left it unanswered; 144 and 166 read "we'd like to place the shipment with you" as the yes and booked
+  before it (scorer: not booked, +10 for the price kept). A cap ("if you can match 4,000 EUR, book") stays
+  `conditional`; after the booking a person.
 
 
 - An acceptance or a decline in other words books or closes too: "let's go with this offer", "merci de réserver";
