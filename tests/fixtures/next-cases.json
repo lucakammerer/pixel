@@ -49,8 +49,7 @@
      "PO-2026-4471"
     ]
    },
-   "today": "Price right, reference missing.",
-   "known_gap": "`compose.render` never echoes the customer's reference Owner: Frontend."
+   "today": "The customer reference appears in the email and PDF."
   },
   {
    "fixture": "next-cases/cost-breakdown-required.json",

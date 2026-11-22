@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from pixel import llm
 from pixel.agents.rfq.extract import own_words, words_of
 from pixel.contracts import Message, Preference, RateOption, Rfq
-from pixel.core import events
+from pixel.core import events, pdf
 from pixel.core.context import Context
 
 CENT = Decimal("0.01")
@@ -142,6 +142,7 @@ TEXT = {
         ),
         "departure": "That is with a departure from {origin} on {depart}.",
         "one_awb": "All lots travel together as one consignment under a single air waybill, as you asked.",
+        "reference": "Your reference {ref} is on the offer.",
         "cutoff": "The exact drop-off cut-off at {origin} comes with the airline's booking, and I will pass it on "
         "as soon as I have it.",
         "months": (
@@ -252,6 +253,7 @@ TEXT = {
         ),
         "departure": "Der Abflug ab {origin} wäre dann am {depart}.",
         "one_awb": "Alle Positionen reisen wie gewünscht zusammen als eine Sendung unter einem Luftfrachtbrief.",
+        "reference": "Ihre Referenz {ref} steht auf dem Angebot.",
         "cutoff": "Den genauen Anlieferschluss in {origin} nennt die Airline mit der Buchung; ich gebe ihn Ihnen "
         "weiter, sobald ich ihn habe.",
         "months": (
@@ -359,6 +361,7 @@ TEXT = {
         "departure": "Le départ de {origin} serait alors le {depart}.",
         "one_awb": "Comme demandé, tous les lots voyagent ensemble en une seule expédition, sous une seule lettre de "
         "transport aérien.",
+        "reference": "Votre référence {ref} figure sur l'offre.",
         "cutoff": "L'heure limite exacte de dépôt à {origin} vient avec la réservation de la compagnie ; je vous la "
         "transmets dès que je l'ai.",
         "months": (
@@ -546,8 +549,12 @@ async def translate(ctx: Context, rfq: Rfq, option: RateOption, body: str, wait:
     `translated_ok`. The English mail on any failure or after `wait` seconds; never blocks the quote."""
     if language_of(rfq) == rfq.language:
         return body
+    subject = customer_subject(ctx, rfq.message_id)
+    request = own_words(customer_body(ctx, rfq.message_id))
+    ref = pdf.reference(f"{subject or ''}\n{request}")
     return await localize(ctx, rfq.language, rfq.session_id, body, wait,
-                          lambda text: translated_ok(body, text, option), "quote.translate")  # fmt: skip
+                          lambda text: translated_ok(body, text, option) and (not ref or ref in text),
+                          "quote.translate")  # fmt: skip
 
 
 async def localize(
@@ -664,12 +671,15 @@ def _day(d: date, t: dict) -> str:
     return t["date"].format(weekday=t["weekdays"][d.weekday()], day=d.day, month=t["months"][d.month - 1])
 
 
-def answers(rfq: Rfq, option: RateOption, request: str) -> str:
-    """What the request asked beyond the price, answered by code: the earliest arrival (ready date, a day for a
-    pickup to reach the airport, the transit), the departure that goes with it, one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
+def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> str:
+    """What the request asked beyond the price, answered by code: their own reference (also in the PDF), the
+    earliest arrival (ready date, a day for a pickup to reach the airport, the transit), the departure that goes with
+    it, one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
     try:
         t = TEXT[language_of(rfq)]
         said = []
+        if ref := pdf.reference(f"{subject or ''}\n{request}"):
+            said.append(t["reference"].format(ref=ref))
         ready = ready_date(request)
         if ready:
             arrive = ready + timedelta(days=option.transit_days + (1 if option.trucker else 0))
@@ -843,7 +853,7 @@ def render(
     title = reply_subject(subject) or TEXT[lang]["subject"].format(
         origin=option.origin, destination=option.destination, weight=weight(rfq.weight_kg, lang)
     )
-    said = answers(rfq, option, request)
+    said = answers(rfq, option, request, subject)
     if prose and prose != Prose():
         try:
             body = _body(rfq, option, prose, signer, said, request)

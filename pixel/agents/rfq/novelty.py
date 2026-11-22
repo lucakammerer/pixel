@@ -13,7 +13,7 @@ from pixel import llm
 from pixel.agents.rfq import compose, extract
 from pixel.agents.rfq.compose import COMPANY
 from pixel.contracts import Rfq
-from pixel.core import events, feedback, poller, timing
+from pixel.core import events, feedback, pdf, poller, timing
 from pixel.core.context import Context
 from pixel.pricing import store
 
@@ -24,7 +24,7 @@ CONSUMED = (
     *extract.POUNDS, *extract.TONNES, extract.DIMS, extract.PIECES, extract.FASTEST, extract.CHEAPEST,
     extract.HURRY, extract.NOT_URGENT, extract.DOOR, extract.OWN_DELIVERY, extract.POSTCODE, extract.DANGEROUS,
     extract.CURRENCY_ASK, extract.SIGN_OFF, compose.READY, compose.PICKUP_ASK, compose.DEPARTURE, compose.ONE_AWB,
-    compose.CUTOFF, compose.GOODS, compose.FRAME, compose.WELL, compose.FROM_TOWN,
+    compose.CUTOFF, compose.GOODS, compose.FRAME, compose.WELL, compose.FROM_TOWN, pdf.REFERENCE,
     re.compile(r"\bPDF\b"),  # every quote carries itself as a PDF (`core/pdf.py`, round 76)
     re.compile(r"\([A-Z]{3}\)|\b[A-Z]{3} \("),  # an airport named with its city: the lane
     re.compile(r"\bearliest\b.{0,30}\barrival|frühest\w* Ankunft", re.IGNORECASE),  # `compose.answers`
@@ -98,6 +98,8 @@ def leftover(text: str, airlines: set[str] = frozenset(), subject: str = "") -> 
         if signed or extract.SIGN_OFF.match(line):
             signed = True
             continue
+        # Keep the period in an order-number abbreviation from splitting the reference in two.
+        line = pdf.REFERENCE.sub(lambda match: match[0].replace(".", ""), line)
         for sentence in SENTENCE.split(line):
             words = [w for w in WORD.findall(sentence.casefold()) if w not in FRAME_WORDS and len(w) > 2]
             if not words or any(p.search(sentence) for p in CONSUMED):
