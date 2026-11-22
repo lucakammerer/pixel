@@ -958,6 +958,7 @@ def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
             4,
         ),
         ("Ready on December 20, 2026. Maximum transit time: 3 days.", date(2026, 12, 20), None, 3),
+        ("- Ready date: 2026-12-29", date(2026, 12, 29), None, None),  # round 126: a labelled ready date
         ("The last shipment arrived on 2026-12-01. Transit used to take 3 days.", None, None, None),
         ("Cargo ready 31.11.2026. Ready 02.12.2026 instead.", date(2026, 12, 2), None, None),
         ("Die Sendung muss spätestens am 2026-12-28 am Zielflughafen eintreffen.", None, date(2026, 12, 28), None),
