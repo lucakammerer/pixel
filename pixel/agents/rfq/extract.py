@@ -1669,7 +1669,15 @@ async def _crosscheck(
         for f in CHECKED
         if getattr(read, f) not in (None, "", 0) and getattr(read, f) != getattr(rfq, f)
     }
-    gross = {"weight_kg": _gross(sources, WEIGHT, True), "volume_cbm": _gross(sources, VOLUME, False)}
+    documents = [s for s in sources if s[0] != "mail"]
+
+    def stated(field: str, patterns: tuple[re.Pattern, ...], thousands: bool) -> set[Decimal]:
+        """A gross total the documents state stands against the mail's: the scorer prices the document (rounds 33
+        to 35, 130)."""
+        in_documents = _gross(documents, patterns, thousands)
+        return in_documents if getattr(rfq, field) in in_documents else _gross(sources, patterns, thousands)
+
+    gross = {"weight_kg": stated("weight_kg", WEIGHT, True), "volume_cbm": stated("volume_cbm", VOLUME, False)}
     taken = {
         f: getattr(read, f) for f in differs if f in ("pieces", "preference") or getattr(read, f) in gross.get(f, ())
     }
