@@ -1037,6 +1037,14 @@ def test_a_ready_date_this_autumn_stays_this_year():
         ("Bitte keine andere Fluggesellschaft außer Alpha Air.", ("Alpha Air",), ()),
         ("Keine andere Airline als Alpha Air oder Beta Cargo.", ("Alpha Air", "Beta Cargo"), ()),
         ("Any airline except Alpha is fine.", (), ("Alpha Air",)),
+        ("We can only accept Alpha Air.", ("Alpha Air",), ()),
+        ("The shipment must fly with Beta Cargo.", ("Beta Cargo",), ()),
+        ("Die Sendung muss mit Alpha fliegen.", ("Alpha Air",), ()),
+        ("Alpha Air is our only approved carrier.", ("Alpha Air",), ()),
+        ("The shipment doesn't have to fly with Beta Cargo.", (), ()),  # a negation frees the choice
+        ("Beta Cargo is the only one we do not use.", (), ("Beta Cargo",)),
+        ("Please quote Alpha Air, no other airline.", ("Alpha Air",), ()),
+        ("Our frame contract requires Beta Cargo for this lane.", ("Beta Cargo",), ()),
     ],
 )
 def test_airline_restrictions_apply_to_the_named_carriers(text, required, excluded):
