@@ -130,6 +130,8 @@ async def _read(session: dict, case: dict, content: bytes = b"") -> dict:
             read = await followup.read(ctx, message, quote, await booking._request(ctx, 1, quote), said)
             got |= {"intent": read.intent, "action": followup.action(read),
                     "changes": {k: str(v) for k, v in read.changes.items()}}  # fmt: skip
+            if "cap" in case["expected"]:
+                got["cap"] = [str(read.cap[0]), *read.cap[1:]] if read.cap else None
         if "shipment_sessions" in case["expected"] and (
             kind is router.MailKind.TRACKING_QUESTION or got.get("action") == "track"
         ):
