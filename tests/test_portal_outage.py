@@ -294,12 +294,15 @@ async def test_a_503_prices_the_airline_from_the_rate_card_at_the_current_versio
     ]
 
 
-@pytest.mark.parametrize("failure", ["connection reset", "lane list"])
+@pytest.mark.parametrize("failure", ["connection reset", "lane list", "rate limit"])
 async def test_any_outage_prices_the_airline_from_the_rate_card(ctx, offline, failure):  # noqa: F811
     """A dropped connection is no RatesUnavailable, and the lane list failed with the rates in rounds 46 and 47:
-    neither asked the card."""
+    neither asked the card. A 429 past the deadline did not either (`tools.outage_drill` portal_429, NEXT_CASES E1)."""
     if failure == "lane list":
         offline.get("/v1/portal/ports").respond(503, json={"detail": "The rate API is unavailable."})
+    elif failure == "rate limit":
+        offline.get("/v1/portal/ports").respond(200, json=PORTS)
+        offline.get("/v1/portal/rates").respond(429, headers={"Retry-After": "3600"}, json={"detail": "slow down"})
     else:
         offline.get("/v1/portal/ports").respond(200, json=PORTS)
         offline.get("/v1/portal/rates").mock(side_effect=httpx.ConnectError("connection reset"))
