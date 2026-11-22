@@ -24,15 +24,21 @@ from pixel.pricing.pickup import zone_of
 # Asks for a new price whatever changed, also a date or a detail our price does not depend on: the scorer then scores
 # our answer to this mail (round 86).
 UPDATE = re.compile(
-    r"\b(?:update|revise|adjust|redo|amend)\w*\s+(?:\w+\s+){0,2}(?:offer|quote|quotation|price|rate)"
+    r"\b(?:update|revise|adjust|redo|amend|correct|rectify)\w*\s+(?:\w+\s+){0,2}(?:offer|quote|quotation|price|rate)"
     r"|\b(?:updated|revised|new|adjusted|amended)\s+(?:offer|quote|quotation|price)|\bre-?quote"
-    r"|\bangebot\w*\s+(?:\w+\s+){0,3}(?:aktualisier|anpass|überarbeit|neu)\w*|(?:neues|aktualisiertes|angepasstes)\s+angebot"
+    r"|\bangebot\w*\s+(?:\w+\s+){0,3}(?:aktualisier|anpass|überarbeit|korrigier|neu)\w*|(?:neues|aktualisiertes|angepasstes)\s+angebot"
     r"|\bpassen\s+sie\s+(?:\w+\s+){0,3}angebot\w*\s+an\b|\bofferte\s+(?:\w+\s+){0,2}(?:aan\s*(?:te\s+)?passen|bijwerken)"
     r"|nieuwe\s+offerte"
-    r"|\b(?:mettre|mettez)\s+à\s+jour\s+(?:votre|l['’]|cette)\s*(?:offre|cotation|devis)|nouvelle\s+(?:offre|cotation)"
+    r"|\b(?:mettre|mettez|corriger|corrigez)\s+(?:à\s+jour\s+)?(?:votre|l['’]|cette)\s*(?:offre|cotation|devis)|nouvelle\s+(?:offre|cotation)"
     r"|offre\s+(?:mise\s+à\s+jour|révisée)|\bactualiz\w+\s+(?:la|su)\s+(?:oferta|cotización)"
     r"|nueva\s+(?:oferta|cotización)|\baggiorna\w*\s+(?:l['’]|la\s+)?offerta|nuova\s+offerta",
     re.IGNORECASE,
+)
+# The figure a correction replaces ("1,952 kg, not 753 kg", "statt 753 kg", "au lieu de 753 kg"): never the new one.
+REPLACED = re.compile(
+    rf"(?:,\s*|\s+|^)(?:and\s+|und\s+|et\s+)?(?:not|instead\s+of|rather\s+than|(?:an)?statt|nicht|au\s+lieu\s+de|non|pas"
+    rf"|en\s+(?:lugar|vez)\s+de|invece\s+di)\s+(?:the\s+|der\s+|die\s+|des\s+|de\s+)?{extract.NUM}\s*(?:[^\W\d_]+\.?|m³)",
+    re.IGNORECASE | re.MULTILINE,
 )
 # Says that something is different now: a preference or currency counts as changed only beside such a word.
 CHANGED = re.compile(
@@ -122,7 +128,7 @@ def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: li
     """The request fields this text states differently from `rfq`: cargo (from the text, else from the first
     attached document that states it), lane, pickup postcode, and beside a word of change the preference or currency.
     Our own chargeable or billed weight quoted back is no change."""
-    text = _stated(text)
+    text = REPLACED.sub("", _stated(text))
     cargo = _cargo(text)
     for document in documents if not cargo else ():
         if cargo := _cargo(document, document=True):

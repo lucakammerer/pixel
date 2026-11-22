@@ -186,7 +186,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   phase it meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `cancelled`, `declined`), its
   intent (`change`, `cancel`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states
   differently (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup
-  postcode; beside a word of change the preference or currency; never a hypothetical question, our own chargeable or
+  postcode; beside a word of change the preference or currency; never the figure a correction replaces (`REPLACED`:
+  "1,952 kg, not 753 kg", "statt", "au lieu de"), a hypothetical question, our own chargeable or
   billed weight quoted back, or a signature's postcode). A `followup.read` event records each. `followup.action` is
   the one table of what the session does, `booking.py` `handle_reply` does it: a change, or a plain ask for an updated
   offer without an acceptance, in phase `open`, `quoted` or `declined` is priced again on the session's newest reading
