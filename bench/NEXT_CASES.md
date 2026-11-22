@@ -411,7 +411,7 @@ still require inspection.
 | Does a fulfilled PDF request still pass when the reply also asks the customer to send the PDF? | 161 and 167 passed. The next filing request combined with an actual document requirement would test the distinction |
 | Was 156's `wrong_language` for the question or for the no-price reply? | the next foreign-language round that ends without a price |
 
-## Axis S: scope (22.11.2026, through round 194)
+## Axis S: scope (22.11.2026, through round 195)
 
 Does a mail get the kind of answer it should: a quote, or a plain answer without a price (or none for a mail that
 asks for nothing)? Round 177 priced a sea freight request as air (`out_of_scope_quoted`); rounds 96, 104 and 122 sent
@@ -440,7 +440,9 @@ The causes, all owned by this thread unless the row says otherwise:
   "vessel", TEU, 20'GP, FTL, "per LKW", courier, sea-air) and the extraction schema has no field for it, so the
   model always fills in an air request.
 - **G3**: any air word lifts the mode rule, also "Airport" in a company name and "by air" said of last month.
-- **G4**: an import by lane alone is turned round by `served_airports` and quoted as the export the other way. Fix in review (#513).
+- **G4**: `served_airports` still reverses a lane into one of our export origins and quotes it as an export.
+  Review B left #513 open at the 11:45 Berlin cutoff. A new merge in the RFQ package required another gate.
+  The live service was still on the baseline at the cutoff.
 - **G5**: a lane with neither end ours (cross-trade, domestic) is priced until `hard_at`.
 - **G6**: a service without the flight (customs, insurance, storage, crating, a truck to the airport only) becomes
   an air request.
@@ -457,7 +459,7 @@ stored customer request offline beside the scorer's verdict. It counts an explic
 question went out first. A missing rate and a missing reply are separate outcomes. Model answers replay only if
 recorded for the same prompt, and the database holds attachment metadata without the files. Every scope pull request
 reports the count of previously accepted quotes that now get a scope decline or lose their reply.
-Through round 194, main and the simulated merge of #513 both replayed 126 of 135 previously
+Through round 195, main and the simulated merge of #513 both replayed 127 of 136 previously
 accepted quotes as quotes. The remaining 9 were unpriced in replay, with zero scope declines and zero missing
 replies. Round 159 was accepted as a scope decline live and still declines. Round 177, rejected for quoting sea
 freight, now declines. On the fixtures #513 declines both written imports, including the German request with
