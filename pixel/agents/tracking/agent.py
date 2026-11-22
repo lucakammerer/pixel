@@ -271,8 +271,8 @@ async def handle(ctx: Context, message: Message) -> None:
     if not found and (own := _own_shipment(ctx, message)):
         found = [own]
     body = answer(found, reference, message.body, details(ctx, found, message.body), signer=ctx.settings.signer)
+    english = body
     if (language := extract._language(extract._text(message))) != "en":  # answered in the asker's language
-        english = body
         names = tuple(
             n for s in found[:5] for n in (s.id, s.carrier, s.booking_reference, s.origin, s.destination) if n
         )
@@ -287,7 +287,7 @@ async def handle(ctx: Context, message: Message) -> None:
     try:
         await outbox.send(
             ctx, to=message.sender, subject=subject, body=body, session_id=message.session_id,
-            in_reply_to=message.id, purpose="tracking",
+            in_reply_to=message.id, purpose="tracking", english=english,
         )  # fmt: skip
     except outbox.NotSent:
         pass  # held by the outbox (dry run or a person took over); the draft waits in the sessions UI
