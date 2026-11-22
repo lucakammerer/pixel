@@ -1,0 +1,33 @@
+{
+ "_": "C3. The same request with received_at shifted: once a naive local time (CET) that is read as UTC, once an hour behind with an offset. Main before #331: ahead, the recovery timer and fallback sit an hour late and nothing leaves in time; behind, quote.missed expired with no answer. Our first sight of the mail is 2026-11-22T01:00:05Z, the previous complete poll started 01:00:04Z. Reproduced by tests/test_poller.py::test_a_stored_time_is_moved_only_when_it_is_impossible and ::test_a_request_stamped_an_hour_early_still_gets_its_quote, tests/test_webhook.py::test_a_pushed_request_stamped_long_before_its_push_is_not_dropped_as_expired.",
+ "variants": {
+  "naive_local_ahead": {
+   "id": 91001,
+   "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+   "to": "pixel@hackloop.mail",
+   "subject": "Air freight quote FRA-HKG",
+   "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+   "received_at": "2026-11-22T02:00:00"
+  },
+  "hour_behind": {
+   "id": 91001,
+   "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+   "to": "pixel@hackloop.mail",
+   "subject": "Air freight quote FRA-HKG",
+   "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+   "received_at": "2026-11-22T01:00:00+01:00"
+  }
+ },
+ "seen_at": "2026-11-22T01:00:05+00:00",
+ "previous_complete_poll_at": "2026-11-22T01:00:04+00:00",
+ "expected": {
+  "naive_local_ahead": {
+   "deadline_from": "2026-11-22T01:00:05+00:00",
+   "event": "mail.clock"
+  },
+  "hour_behind": {
+   "deadline_from": "2026-11-22T00:59:54+00:00",
+   "event": "mail.clock"
+  }
+ }
+}

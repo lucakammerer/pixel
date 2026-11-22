@@ -287,6 +287,12 @@ What follows:
   model (166 of 528), "1.234 t" in a lot read as 1234 t; read by rules since #279. Wrong in every harness: 0.
   Open: which shipment the scorer prices in a multi-shipment mail (evidence: the board's verdict on the first
   round answered with the first shipment). Next: the live mail since mail 26279.
+- 22.11. 02:30, axis C (infrastructure, never seen live): mailbox, gateway, clock and restart replayed offline in
+  `tests/fixtures/next-cases/infra/`. Found: a mail the poll cannot map stalled the poller for good (#324, merged);
+  two mailbox 503s on the quote lost the request (#327); a skewed `received_at` dropped it as expired or held it an
+  hour (#331); a throttled attachment read a PDF-only request as empty (#333). Gateway-down for model-only requests,
+  model fallback, push timestamp format, out-of-order visibility and big attachments are documented as open in
+  `bench/NEXT_CASES.md`. Next: the verdict of the first round in which the organisers turn one of these levers.
 - 22.11. 03:30, axis D (truckers and the pickup place), offline: 14 cases, 12 as next-case fixtures, the first with
   carrier answers in the fixture (`replay.raws_of`). Fixed: a pickup time in days or minutes (#329; three truckers
   writing days quoted the cheapest, not the balanced one), a phone number, another address or a postcode abroad

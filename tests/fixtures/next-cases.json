@@ -402,6 +402,95 @@
    "known_gap": "Priced only once some source of the night stated a rate for that currency (portal, desk or a carrier); a currency no source ever priced (CHF, PLN) stays unpriced. Owner: Accuracy."
   },
   {
+   "fixture": "next-cases/infra/poll-page-unreadable-mails.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Six of seven mails mapped, the one without an id skipped and named, next_since_id 91007.",
+   "today": "Fixed by #324 (merged): before, the whole poll raised and the poller stalled on one since_id.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll"
+  },
+  {
+   "fixture": "next-cases/infra/mailbox-send-503-burst.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Quote sent after six 503s, six mail.resend events, no quote.missed.",
+   "today": "Main: two 503s in a row are quote.missed send_failed.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`core/outbox.py` `_deliver` does not send a quote again after a 5xx; fix in https://github.com/lucakammerer/pixel/pull/327 (open) Owner: Speed."
+  },
+  {
+   "fixture": "next-cases/infra/received-at-skew.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Ahead: deadline from our first sight. Behind and expired: deadline from the previous complete poll's start less 10 s. Both mail.clock.",
+   "today": "Main: ahead, nothing leaves before expiry; behind, quote.missed expired.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`core/poller.py` takes the stored time as given; fix in https://github.com/lucakammerer/pixel/pull/331 (open) Owner: Speed."
+  },
+  {
+   "fixture": "next-cases/infra/attachment-get-429.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "The PDF is fetched on the second try and the request is read with its cargo.",
+   "today": "Main: the 429 raises, the request is read without its document.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`api/mailbox.py` `attachment` does not retry 429/503; fix in https://github.com/lucakammerer/pixel/pull/333 (open) Owner: Speed."
+  },
+  {
+   "fixture": "next-cases/infra/gateway-down-model-only.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Rules-read requests quoted as usual; model-only requests: one retry, else the no-price reply.",
+   "today": "Offline replay (gateway 503 throughout): rfq-chinese-door, rfq-voice-unread and synthetic-rfq-unclear end in quote.missed no_price.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`llm.ask_json` has no retry for 429/5xx/timeout; a full outage cannot be quoted for model-only requests Owner: Cost."
+  },
+  {
+   "fixture": "next-cases/infra/gateway-model-unavailable.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Model-only extraction retried once on PIXEL_MODEL, which still answers.",
+   "today": "By code reading: fails like a gateway outage.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`llm.ask_json` has no fallback model on 404/400 Owner: Cost."
+  },
+  {
+   "fixture": "next-cases/infra/push-timestamp-format.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Push accepted (204) with the timestamp in ms or ISO.",
+   "today": "By code reading: 401 (ms) or 500 (ISO); the poll takes the mail within 1 s.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`core/webhook.py` `hook` reads the timestamp as float seconds only; latency only while polling works Owner: Speed."
+  },
+  {
+   "fixture": "next-cases/infra/out-of-order-visibility.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Both 91011 and 91012 seen.",
+   "today": "By code reading: 91011 is never polled again if its push is lost.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`core/poller.py` `run` never asks behind its since_id Owner: Speed."
+  },
+  {
+   "fixture": "next-cases/infra/large-attachment.json",
+   "expected": {
+    "see": "the fixture's expected"
+   },
+   "expected_summary": "Extraction bounded in time; what is read by then counts.",
+   "today": "Not measured.",
+   "reproduced_by": "unit tests named in the fixture, or code reading where it says so; tools.replay cannot: it sets the stored time to now and serves no poll",
+   "known_gap": "`extract._attachments` has no time bound and `to_thread` cannot be cancelled; parse time of a 9.5 MB scan unverified Owner: Cost."
+  },
+  {
    "fixture": "next-cases/trucker-all-silent.json",
    "expected": {
     "body_states": "the scorer prices the zone 60 trucker it balances in (R13, R16): Orion 2380.00 plus a pickup no answer told us; an airport-to-airport quote is too low by the whole pickup"

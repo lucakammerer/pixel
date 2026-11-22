@@ -1,0 +1,20 @@
+{
+ "_": "C7. A request that stands only in its PDF (rounds 65-68) while GET .../attachments/{id} is throttled: 429 with Retry-After 1, then 200. Main before #333 raised on the 429 (client repeats only 500/502/504), attachment_lines read the file as empty and the request was read without its cargo. Reproduced by tests/test_api_mailbox.py::test_an_attachment_refused_for_a_moment_is_fetched_again.",
+ "mail": "../../mails/rfq-door-request-in-pdf.json",
+ "attachment_responses": [
+  {
+   "status": 429,
+   "headers": {
+    "Retry-After": "1"
+   }
+  },
+  {
+   "status": 200,
+   "body": "<the fixture's PDF>"
+  }
+ ],
+ "expected": {
+  "attachment_read": true,
+  "cargo_from": "the PDF, as rfq-door-request-in-pdf reads it today"
+ }
+}

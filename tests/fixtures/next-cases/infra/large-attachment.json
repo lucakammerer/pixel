@@ -1,0 +1,12 @@
+{
+ "_": "C14. A 9.5 MB, 400-page scanned PDF as the request's only document. attachment_lines parses it in a thread with no time bound; the orchestrator takes over at 150 s, but without an Rfq the fallback has nothing to price. Not measured: how long _lines takes on such a file is unverified.",
+ "attachment": {
+  "filename": "shipment-docs.pdf",
+  "content_type": "application/pdf",
+  "size": 9961472,
+  "pages": 400
+ },
+ "expected": {
+  "bound": "_attachments within a share of target_at; what is read by then counts, the rest is attachment.unreadable"
+ }
+}

@@ -1,0 +1,25 @@
+{
+ "_": "C11. Mail 91011 becomes visible after 91012 (two stores racing) and its push is dropped. The poll returned 91012 first, since_id moved to 91012, so 91011 is never asked for again. By code reading of core/poller.py run. Not reproduced by a test.",
+ "polls": [
+  {
+   "since_id": 91010,
+   "messages": [
+    91012
+   ]
+  },
+  {
+   "since_id": 91012,
+   "messages": []
+  }
+ ],
+ "stored_later": [
+  91011
+ ],
+ "expected": {
+  "seen": [
+   91011,
+   91012
+  ],
+  "how": "every Nth poll asks again from a since_id some ids back; ingest drops what is held"
+ }
+}

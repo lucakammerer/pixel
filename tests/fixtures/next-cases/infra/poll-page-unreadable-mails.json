@@ -1,0 +1,85 @@
+{
+ "_": "C1. One GET /v1/mailbox/messages page as the API could send it after a format change: between two readable mails, five that main before #324 could not map. Each made Mailbox.poll raise for the whole page, and the poller asked for the same since_id forever. Reproduced by tests/test_api_mailbox.py::test_one_mail_in_an_unreadable_shape_never_stops_the_poll and ::test_a_mail_without_an_id_is_skipped_and_listed.",
+ "response": {
+  "messages": [
+   {
+    "id": 91001,
+    "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote FRA-HKG",
+    "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+    "received_at": "2026-11-22T01:00:00Z"
+   },
+   {
+    "id": 91002,
+    "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote FRA-HKG",
+    "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+    "received_at": "Sun, 22 Nov 2026 01:00:30 +0000"
+   },
+   {
+    "id": 91003,
+    "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote FRA-HKG",
+    "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+    "received_at": 1795309230000
+   },
+   {
+    "id": 91004,
+    "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote FRA-HKG",
+    "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+    "received_at": "2026-11-22T01:00:00Z",
+    "references": [
+     "<CAF91001@hackloop.mail>"
+    ]
+   },
+   {
+    "id": 91005,
+    "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote FRA-HKG",
+    "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+    "received_at": "2026-11-22T01:00:00Z",
+    "attachments": [
+     {
+      "filename": "packing-list.pdf",
+      "content_type": "application/pdf"
+     }
+    ]
+   },
+   {
+    "id": null,
+    "subject": "?"
+   },
+   {
+    "id": 91007,
+    "from": "Petra Lindqvist <lindqvist-medtech@hackloop.mail>",
+    "to": "pixel@hackloop.mail",
+    "subject": "Air freight quote FRA-HKG",
+    "body": "Hello, please quote 480 kg, 2.1 cbm from FRA to HKG, ready tomorrow. Cheapest option. Thanks, Petra",
+    "received_at": "2026-11-22T01:00:00Z"
+   }
+  ],
+  "next_since_id": 91007
+ },
+ "expected": {
+  "mapped_ids": [
+   91001,
+   91002,
+   91003,
+   91004,
+   91005,
+   91007
+  ],
+  "skipped": [
+   null
+  ],
+  "next_since_id": 91007,
+  "sent_at_91002": "2026-11-22T01:00:30+00:00",
+  "sent_at_91003": "2026-11-22T01:00:30+00:00"
+ }
+}
