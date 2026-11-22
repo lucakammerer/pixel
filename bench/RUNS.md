@@ -543,6 +543,12 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 10:41 UTC, Korean lots and the gateway. On the captured round 167, the scorer's 4745.69 EUR used
+  1223 kg, 9.2264 cbm and 13 pieces. The parser's gateway fallback used 407 kg and 3.62 cbm and sent 2140.07
+  EUR once, with both ordinary and duplicate delivery. The English control reads all three lots. Cost owns
+  the Korean rule gap; the fixtures exercise it without a gateway.
+  Live cursor 58440: all 13 further mails routed as recorded. Round 193 reproduced the accepted 1412.50 EUR
+  quote. The next request reproduced its sent 638.12 EUR quote and had no attached scorer feedback in the copy.
 - 22.11. 10:35 UTC, round 192 request history. All four incoming mails since cursor 57813 routed as live to
   mail 58011. The accepted total of round 191 is 3002.00 EUR; the replay without its attachment remains 2538.40.
   Round 192's initial replay reproduced the rejected 3707.22 EUR quote. Hot Repair A shipped #529 and its

@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from tools import outage_drill
+from pixel.agents.rfq import extract
+from tools import outage_drill, replay
 
 ROUND_166 = Path(__file__).parent / "fixtures" / "sessions" / "round-166-accepted.json"
 ROUND_56 = ROUND_166.with_name("round-56-version-rollover.json")
+ROUND_167 = ROUND_166.with_name("round-167-korean-lots.json")
 BEST = Decimal("2913.96")  # the scorer's best for round 166 (`feedback.best`), our accepted quote
 
 
@@ -47,3 +49,40 @@ def test_round_56_version_rollover_at_the_start_of_a_portal_outage(visibility, d
     ):
         pytest.xfail("C16, Accuracy: the card has only the previous version when every new read fails")
     assert outage_drill.verdict(total, seconds, best) is None
+
+
+def test_round_167_lot_figures_as_english_statements():
+    expected = json.loads(ROUND_167.with_suffix(".expected.json").read_text())
+    assert extract._lots(expected["english_lots_with_declared_volume"]) == (
+        Decimal(expected["gross_kg"]),
+        Decimal(expected["volume_cbm"]),
+        expected["pieces"],
+    )
+
+
+@pytest.mark.parametrize("delivery", ["all", "twice"])
+def test_round_167_korean_lots_with_the_gateway_down(delivery):
+    raws = json.loads(ROUND_167.read_text())
+    state = json.loads(ROUND_167.with_suffix(".state.json").read_text())
+    expected = json.loads(ROUND_167.with_suffix(".expected.json").read_text())
+    events = asyncio.run(
+        replay.run(outage_drill.mails(raws, state, delivery), False, replay.seeded(state), True, state["portal"])
+    )
+    quotes = [event for event in events if event.kind == "quote.sent"]
+    assert len(quotes) == 1
+    total, seconds = outage_drill.outcome(events, 0, 0)
+    assert seconds is not None and seconds <= outage_drill.DEADLINE_S
+    reading = next(event.payload for event in events if event.kind == "rfq.extracted")
+    weight, volume = Decimal(reading["weight_kg"]), Decimal(reading["volume_cbm"])
+    if (
+        weight == Decimal(expected["known_guess_kg"])
+        and volume == Decimal(expected["known_guess_cbm"])
+        and total == Decimal(expected["known_quote_eur_without_gateway"])
+    ):
+        pytest.xfail("Cost: the gateway fallback uses the last Korean lot as the shipment")
+    assert (weight, volume, reading["pieces"]) == (
+        Decimal(expected["gross_kg"]),
+        Decimal(expected["volume_cbm"]),
+        expected["pieces"],
+    )
+    assert outage_drill.verdict(total, seconds, Decimal(expected["scorer_best_eur"])) is None
