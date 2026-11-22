@@ -28,7 +28,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by
   mail, pickup and airline, are waited for until all are in, or until the later of `target_at` and
   `PIXEL_BID_WAIT_S` after the ask, never past `hard_at`: `pricing/bids.py` `collect`); `selection.select`; `compose.render`;
-  `outbox.send_quote`, which attaches the quote's text as a PDF to every quote (R38, `core/pdf.py`). A request missing origin, destination or weight emits `error` and returns None; the
+  `outbox.send_quote`, which attaches the quote's text as a PDF to every quote (R38, `core/pdf.py`). The mail stays short; the PDF adds below it the offer number, the customer's own reference, routing, chargeable and billed weight and the all-in breakdown (`pdf.details`). A request missing origin, destination or weight emits `error` and returns None; the
   orchestrator's fallback and the UI take over. Every drafted quote is saved to the CRM (`crm/quotes.py` `save`),
   the sent one again after `send_quote`, so booking finds it also when the fallback sent it.
 - `agent.py` `served_airports` accepts codes named in the current mail or its attachments, case-insensitively,
@@ -86,15 +86,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   Questions, conditional language and replies to unsent drafts are left for the operator with `human.note`.
   A delivered offer can be booked even when it went out through the deadline fallback.
 - Every customer mail later in the thread goes through `followup.py` `read`, by rules and without a model call: the
-  phase it meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `declined`), its intent
-  (`change`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states differently
-  (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup postcode;
-  beside a word of change the preference or currency; never a hypothetical question, our own chargeable or billed
-  weight quoted back, or a signature's postcode). A `followup.read` event records each. `booking.py` `handle_reply`
-  acts on it: a change, or a plain ask for an updated offer, in phase `open`, `quoted` or `declined` is priced again
-  on the session's newest reading (`session.rfq`) with the changes applied; a change wins over an acceptance ("book
-  it, but it is 320 kg now"), cargo restated at the chargeable weight we priced is none (`followup.py` `_priced`); a change after the acceptance goes to a person with what changed; a tracking question
-  after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
+  phase it meets (`open` before our quote, `quoted`, `accepted`, `booked`, `confirmed`, `cancelled`, `declined`), its
+  intent (`change`, `cancel`, `accept`, `decline`, `tracking`, `question`, `thanks`) and the request fields it states
+  differently (`changes`: weight, volume and pieces from its own words, else from an attached document; lane; pickup
+  postcode; beside a word of change the preference or currency; never a hypothetical question, our own chargeable or
+  billed weight quoted back, or a signature's postcode). A `followup.read` event records each. `followup.action` is
+  the one table of what the session does, `booking.py` `handle_reply` does it: a change, or a plain ask for an updated
+  offer without an acceptance, in phase `open`, `quoted` or `declined` is priced again on the session's newest reading
+  (`session.rfq`) with the changes applied; a change wins over an acceptance ("book it, but it is 320 kg now"),
+  cargo restated at the chargeable weight we priced is none (`followup.py` `_priced`); a cancellation (`CANCELS`, en/de/fr/es/it; it wins over "Auftrag") after the acceptance cancels the booking
+  (`cancel`), before it declines the quote; a change after the acceptance goes to a person with what changed; a
+  tracking question after the acceptance goes to the tracking agent; a thank-you after our quote needs nobody.
+  `tools/followup_matrix.py` runs every sender, phase and intent (`tests/fixtures/thread-followups.json`) and
+  the change mail in six languages, three unit systems and five attachment formats.
 - `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
   from the best the session holds, R1), and sends a quote with its PDF in reply to the change mail
   (`outbox.send_quote(reply_to=...)`, its own claim). While it prices, `outbox.quoted` is true and a quote of the
@@ -258,6 +262,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   in the live mailbox. Offline KPI replay advances its clock through this wait and can deliver captured bids.
 - "Ready for pickup" also stands in mails whose customer delivers to the airport ("we will deliver it to MUC
   ourselves"): that is no door pickup.
+- The legs around the flight are no lane labels: "we deliver to HAM ourselves" names the departure airport,
+  "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
+  price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
+  fallback has nothing to send (`quote.missed`, `no_price`).
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à

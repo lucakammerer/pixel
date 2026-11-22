@@ -186,6 +186,11 @@ def _hold(
     return None
 
 
+def _reference(ctx: Context, quote: Quote) -> str | None:
+    row = ctx.db.execute("SELECT subject, body FROM messages WHERE id = ?", (quote.rfq.message_id,)).fetchone()
+    return pdf.reference(f"{row['subject']}\n{row['body']}") if row else None
+
+
 async def _deliver(
     ctx: Context,
     to: str,
@@ -200,7 +205,9 @@ async def _deliver(
 ) -> Message:
     to = to.strip().lower()
     # Every quote carries itself as a PDF: a customer who asked for one rejects the quote without it (round 76).
-    attachments = ((f"offer-{quote.id}.pdf", "application/pdf", pdf.offer(quote)),) if quote else ()
+    attachments = (
+        ((f"offer-{quote.id}.pdf", "application/pdf", pdf.offer(quote, _reference(ctx, quote))),) if quote else ()
+    )
     # Reply to a particular tracking question exactly once, even if its CRM data changes during a restart.
     key = json.dumps([sid, purpose, to, parent, "" if purpose == "tracking" else body], ensure_ascii=False)
     if quote:

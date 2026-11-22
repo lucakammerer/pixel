@@ -29,6 +29,14 @@ ORIGIN_LABEL = re.compile(
     rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
 )
 DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
+# The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
+# the door" the destination.
+PRE_CARRIAGE = re.compile(
+    rf"(?i:\bdeliver\w*\s+(?:it\s+|the\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
+)
+ON_CARRIAGE = re.compile(
+    rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
+)
 
 # "1 250 kg": a space (also a no-break one) between thousands, not after a date's or a range's digits.
 NUM = r"((?<![\d.,\-/])\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?![\d.,'])|\d[\d.,']*)"
@@ -253,6 +261,54 @@ def number(text: str, thousands: bool = True) -> Decimal | None:
     return value if value.is_finite() else None
 
 
+INSURANCE = re.compile(r"(?i)insur|versicher")
+NO_INSURANCE = re.compile(
+    r"(?i)\bno\s+(?:cargo\s+)?insurance|insurance\s+(?:is\s+)?not\s+(?:needed|required|wanted)|own\s+(?:insurance\s+)?policy"
+    r"|keine\s+(?:transport)?versicherung|ohne\s+(?:transport)?versicherung"
+)
+PERCENT = re.compile(rf"{NUM}\s*(%|‰|(?i:per\s*mille|promille|prozent|percent))")
+MONEY = re.compile(rf"(?i:(EUR|USD|GBP|CHF|€|\$)\s*{NUM}(k\b)?|{NUM}(k\b)?\s*(EUR|USD|GBP|CHF|€|\$))")
+MINIMUM = re.compile(r"(?i)(?:minimum|mindest|min\.)\D{0,25}$")
+UPLIFT = re.compile(r"(?i)(?:plus|\+|zuzüglich|zzgl\.?)\s*$")
+
+
+def insurance(text: str) -> tuple[Decimal, str, Decimal, Decimal, Decimal] | None:
+    """The cargo insurance the request prices itself: (goods value, its currency, insured share in %, premium rate
+    in %, minimum premium). None when it asks for none, declines it or leaves the rate or the value out."""
+    if not INSURANCE.search(text) or NO_INSURANCE.search(text):
+        return None
+    share, rate = Decimal(100), None
+    for m in PERCENT.finditer(text):
+        value = number(m.group(1))
+        if value is None:
+            continue
+        if m.group(2) not in ("%",) and not m.group(2).lower().startswith(("prozent", "percent")):
+            value /= 10
+        before = text[max(0, m.start() - 40) : m.start()]
+        if UPLIFT.search(before):
+            share = 100 + value
+        elif value >= 100:
+            share = value
+        elif value < 5 and rate is None:
+            rate = value
+    values, minimum = [], Decimal(0)
+    for m in MONEY.finditer(text):
+        amount = number(m.group(2) or m.group(4))
+        if amount is None:
+            continue
+        if m.group(3) or m.group(5):
+            amount *= 1000
+        currency = {"€": "EUR", "$": "USD"}.get(c := (m.group(1) or m.group(6)).upper(), c)
+        if MINIMUM.search(text[max(0, m.start() - 40) : m.start()]):
+            minimum = amount
+        else:
+            values.append((amount, currency))
+    if rate is None or not values:
+        return None
+    value, currency = max(values)
+    return value, currency, share, rate, minimum
+
+
 def _airport(code: str) -> str | None:
     return None if code in NOT_AIRPORTS else code
 
@@ -268,8 +324,9 @@ def _lane(text: str) -> tuple[str, str] | None:
         return pairs.pop()
     if pairs:
         return None
-    origins = {c for c in ORIGIN_LABEL.findall(text) if _airport(c)}
-    destinations = {c for c in DEST_LABEL.findall(text) if _airport(c)}
+    before, after = set(PRE_CARRIAGE.findall(text)), set(ON_CARRIAGE.findall(text))
+    origins = {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - after | before
+    destinations = {c for c in DEST_LABEL.findall(text) if _airport(c)} - before | after
     if len(origins) == 1 and len(destinations) == 1 and origins != destinations:
         return origins.pop(), destinations.pop()
     return None

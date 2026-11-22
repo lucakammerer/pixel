@@ -212,3 +212,12 @@ def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
 def test_every_kind_and_channel_has_a_case_or_a_known_gap():
     """Rounds 63 to 67 were lost to carrier answers in attachments, a channel no fixture or generated case had."""
     assert bench.print_matrix(bench.channel_coverage(), bench.channel_gaps()) == []
+
+
+def test_every_later_mail_in_a_session_is_read_and_acted_on_right():
+    from tools import followup_matrix
+
+    reads = followup_matrix.audit()
+    assert len(reads) > 150
+    assert [(r.case_id, r.got) for r in reads if not r.ok and not r.known_gap] == []
+    assert [r.case_id for r in reads if r.ok and r.known_gap] == []  # a closed gap leaves the fixture

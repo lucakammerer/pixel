@@ -73,3 +73,9 @@ async def test_a_hanging_airport_check_never_holds_the_pricing(conn, monkeypatch
     monkeypatch.setattr(agent, "AIRPORTS_WAIT_S", 0.1)
     rfq = await agent.served_airports(served(conn), request("XXX", "CCC"), mail("Pickup in Town, to CCC, 855 kg."))
     assert rfq.origin == "XXX"  # priced as read, at once
+
+
+async def test_a_lane_read_backwards_is_turned_round_without_a_model_call(conn, monkeypatch):
+    asked = answers(monkeypatch, {})
+    rfq = await agent.served_airports(served(conn), request("DDD", "AAA"), mail("From DDD airport to AAA, 855 kg."))
+    assert (rfq.origin, rfq.destination, asked) == ("AAA", "DDD", [])

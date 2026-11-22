@@ -63,6 +63,13 @@ def test_two_weights_are_not_certain():
     assert extract.by_rules(mail("AAA to BBB, 2 boxes: one 40 kg, one 60 kg"), DEADLINE) is None
 
 
+def test_delivery_legs_around_the_flight_do_not_turn_the_lane():
+    body = ("From AAA airport to Town, 350 kg, 1.4 cbm. We deliver to AAA ourselves.\n"
+            "Please include delivery from BBB airport to the door.")  # fmt: skip
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
+
+
 async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
     calls = []
 
