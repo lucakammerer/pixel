@@ -25,7 +25,27 @@ def option(stored: dict) -> RateOption:
 
 
 def options(ctx: Context, session_id: int) -> list[RateOption]:
-    return [option(p["option"]) for p in _payloads(ctx, session_id, "option.found")]
+    """Every option found, without those a repair left out (`option.vetoed`, `agents/rfq/repair.py`)."""
+    found = [option(p["option"]) for p in _payloads(ctx, session_id, "option.found")]
+    out = _payloads(ctx, session_id, "option.vetoed")
+    return [o for o in found if not any(vetoed(o, v) for v in out)] if out else found
+
+
+def veto(option: RateOption, trucker: bool) -> dict:
+    """The record of a left-out option: its trucker, or its airline (with the source, so a bid is left out and the
+    same airline's sheet or portal rate stays)."""
+    if trucker:
+        return {"kind": "trucker", "name": option.trucker}
+    return {"kind": "airline", "name": option.carrier, "source": option.source.value}
+
+
+def vetoed(option: RateOption, record: dict) -> bool:
+    """Whether `option`, a found one or one with its pickup added, is built from what `record` left out."""
+    if record.get("kind") == "trucker":
+        return option.trucker is not None and option.trucker == record.get("name")
+    if record.get("kind") != "airline" or option.carrier != record.get("name"):
+        return False
+    return record.get("source") is None or option.source.value == record["source"]
 
 
 def on_lane(option: RateOption, rfq: Rfq) -> bool:

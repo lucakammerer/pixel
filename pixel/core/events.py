@@ -20,7 +20,9 @@ KINDS = (
     "bid.desk_wait",  # pricing/bids.py: a pending desk reply extends bid collection
     "quote.drafted", "quote.sent", "quote.fallback", "quote.recovery", "quote.waiting", "quote.missed", "quote.prose", "rfq.crosscheck", "bid.crosscheck", "prose.raw",
     "quote.stuck",  # core/watchdog.py: open past its STUCK_AFTER, alerted once
-    "quote.checked",  # agents/rfq/check.py: what the last check before sending found
+    "quote.checked",  # agents/rfq/check.py: what the check found on the draft, and (`stage: sent`) on the text that leaves
+    "quote.repaired",  # agents/rfq/repair.py: one repair of a BLOCK finding, kept or not
+    "option.vetoed",  # agents/rfq/repair.py: an option a repair left out; pricing/session.py no longer offers it
     "rfq.novelty",  # agents/rfq/novelty.py: sentences no rule read, and what they ask of the quote
     "customer.accepted", "customer.declined", "customer.excludes",
     "followup.read",  # agents/rfq/followup.py: a customer's later mail in their thread, its phase, intent and changes

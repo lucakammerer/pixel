@@ -25,7 +25,9 @@ flowchart TD
     BID --> ENG
     ENG --> SEL[calc + selection<br/>code, Decimal]
     SEL --> Q[quote text]
-    Q --> OUT[outbox<br/>first quote only]
+    Q --> CHK[check + repair<br/>on the text that leaves]
+    CHK -.->|a BLOCK mended: build again| SEL
+    CHK --> OUT[outbox<br/>first quote only]
     O -->|unanswered at 2m 30s or handler ends early| REC[quote recovery]
     REC -->|sheets, portal and missing pickup enquiries| ENG
     O -.->|recovered price, late bid or hard deadline| OUT
