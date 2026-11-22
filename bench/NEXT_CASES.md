@@ -336,6 +336,93 @@ Wrong outside a known gap: 0.
 | Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round; with several shipments it read the sum, so it reads more than one amount |
 | Was 156's `wrong_language` for the question or for the no-price reply? | the next foreign-language round that ends without a price |
 
+## Axis S: scope (22.11.2026, cycle 1)
+
+Does a mail get the kind of answer it should: a quote, or a plain answer without a price (or none for a mail that
+asks for nothing)? Round 177 priced a sea freight request as air (`out_of_scope_quoted`); rounds 96, 104 and 122 sent
+a request we could have priced the answer without a price (`declined_in_scope`). The scorer tests both directions,
+so half the cases are the in-scope side. 65 mails in `tests/fixtures/next-cases/scope/`, the expected answer of each,
+written by hand from the challenge text and the domain, with how sure it is (`live`: seen scored, `text`: follows
+from the challenge text, `guess`), in `tests/fixtures/next-cases/scope.json`. No test reads either.
+`uv run python -m tools.scope_cases` replays each as live on the start kit, offline, and prints this table; exit 1 on
+a wrong case without a known gap.
+
+Branches: `mode` another mode of transport, `direction` import, cross-trade, domestic, `service` a service without
+the flight, `none` no request at all, `partial` air beside something we do not do, `lookalike` in scope although it
+looks out. "no_price after 0 s": a scope rule declined at once; "after 315 s": no rate was found and the fallback
+answered at `hard_at` (right for the scorer, late for time points). `model`: the rules gave up and the model would
+read it live; offline there is none, so today's answer is unmeasured.
+
+| Case | Branch | Expected (how sure) | Today | Verdict | Known gap |
+| --- | --- | --- | --- | --- | --- |
+| `sea-fcl-locode` | mode | no_price (live) | no_price after 0 s | right |  |
+| `sea-lcl-german` | mode | no_price (text) | no_price after 0 s | right |  |
+| `sea-spanish` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `sea-french` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `sea-locodes-only` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `sea-vessel-cutoff` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `rail-china` | mode | no_price (text) | no_price after 0 s | right |  |
+| `rail-german` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `road-ftl` | mode | no_price (text) | no_price after 315 s | model |  |
+| `road-groupage-german` | mode | no_price (guess) | no_price after 0 s | right |  |
+| `courier-parcel` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `sea-air-dubai` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `sea-from-airport-company` | mode | no_price (guess) | no_price after 315 s | model |  |
+| `sea-switch-from-air` | mode | no_price (guess) | quote | wrong | scope: `NOT_AIR` is lifted by any air word, here the past ("last month by air") |
+| `import-explicit` | direction | no_price (live) | no_price after 315 s | model |  |
+| `import-implicit` | direction | no_price (text) | quote | wrong | scope: no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it |
+| `cross-trade` | direction | no_price (text) | no_price after 315 s | right |  |
+| `domestic` | direction | no_price (guess) | no_price after 315 s | right |  |
+| `customs-only` | service | no_price (text) | quote | wrong | scope: no field for what is asked; a service without the flight is read as an air request |
+| `warehousing-only` | service | no_price (text) | no_price after 315 s | model |  |
+| `insurance-only` | service | no_price (text) | quote | wrong | scope: no field for what is asked; a service without the flight is read as an air request |
+| `truck-to-airport-only` | service | no_price (guess) | no_price after 315 s | model |  |
+| `packing-only` | service | no_price (guess) | no_price after 315 s | model |  |
+| `complaint-damage` | none | no_price (text) | quote | wrong | scope: router rule 7 (a weight or two codes in a new thread) makes a complaint a request |
+| `invoice-query` | none | no_price (text) | quote | wrong | scope: router rule 7 makes an invoice query a request |
+| `supplier-advert` | none | no_price (text) | no_price after 315 s | model |  |
+| `job-application` | none | no_price (text) | no_price after 315 s | model |  |
+| `newsletter` | none | no_price (text) | quote | wrong | scope: router rule 7 makes a newsletter a request |
+| `out-of-office` | none | no_price (text) | quote | wrong | scope: router rule 7 makes an auto-reply a request |
+| `misdirected` | none | no_price (guess) | no_price after 315 s | model |  |
+| `general-rate-card` | none | no_price (guess) | no_price after 315 s | model |  |
+| `bank-details-change` | none | no_price (text) | no_price after 315 s | model |  |
+| `air-or-sea-cheaper` | partial | quote (guess) | quote | right |  |
+| `instead-of-sea-air` | partial | quote (text) | quote | right |  |
+| `two-shipments-one-sea` | partial | quote (guess) | quote | model |  |
+| `air-plus-customs-storage` | partial | quote (text) | quote | right |  |
+| `sea-or-air-german` | partial | quote (guess) | quote | right |  |
+| `company-seaside` | lookalike | quote (text) | quote | right |  |
+| `street-seehafen` | lookalike | quote (text) | quote | right |  |
+| `shipping-loosely` | lookalike | quote (text) | quote | right |  |
+| `container-loosely` | lookalike | quote (text) | quote | right |  |
+| `port-cities-no-codes` | lookalike | quote (text) | no_price after 315 s | model |  |
+| `fob-air` | lookalike | quote (text) | quote | right |  |
+| `cif-air` | lookalike | quote (text) | quote | right |  |
+| `sea-mentioned-past` | lookalike | quote (text) | quote | right |  |
+| `seefracht-zu-langsam` | lookalike | quote (text) | quote | right |  |
+| `import-buyer-side` | lookalike | quote (live) | quote | right |  |
+| `seaport-code-beside-airport` | lookalike | quote (guess) | quote | right |  |
+| `ocean-in-product` | lookalike | quote (text) | quote | right |  |
+| `road-freight-in-goods` | lookalike | quote (text) | no_price after 0 s | wrong | scope: `orchestrator.NOT_AIR` matches a mode said in passing ("road freight" naming the goods) and no air word stops it |
+| `rail-in-goods` | lookalike | quote (text) | no_price after 0 s | wrong | scope: `orchestrator.NOT_AIR` matches a mode said in passing ("rail freight" inside the goods name) and no air word stops it |
+| `reederei-sender` | lookalike | quote (text) | quote | right |  |
+| `own-truck-to-airport` | lookalike | quote (text) | quote | right |  |
+| `courier-delivers-to-us` | lookalike | quote (text) | quote | right |  |
+| `express-loosely` | lookalike | quote (text) | quote | right |  |
+| `sea-dept-signature` | lookalike | quote (text) | quote | right |  |
+| `locode-airports` | lookalike | quote (guess) | no_price after 315 s | model |  |
+| `vessel-in-goods` | lookalike | quote (text) | quote | right |  |
+| `not-by-sea` | lookalike | quote (text) | quote | right |  |
+| `export-to-importer` | lookalike | quote (text) | quote | right |  |
+| `no-mode-german` | lookalike | quote (text) | quote | right |  |
+| `sea-forwarder-asks-air` | lookalike | quote (text) | quote | right |  |
+| `by-ship-inbound` | lookalike | quote (text) | no_price after 0 s | wrong | scope: `orchestrator.NOT_AIR` matches a mode said in passing ("by ship" for the inbound leg) and no air word stops it |
+| `port-of-loading` | lookalike | quote (text) | no_price after 315 s | model |  |
+| `by-rail-inbound` | lookalike | quote (text) | no_price after 0 s | wrong | scope: `orchestrator.NOT_AIR` matches a mode said in passing ("by rail" for the delivery to the airport) and no air word stops it |
+
+65 cases: 31 right, 12 wrong, 22 model. Every wrong case is a known gap of this thread (scope), cause in the row. #469 (set-aside wording) turned `sea-mentioned-past`, `seefracht-zu-langsam` and `not-by-sea` right.
+
 ## Axis T: supply
 
 Source census on the offline SQLite snapshot through event 18991, 22.11.2026 10:09 CET (scorer round 179).

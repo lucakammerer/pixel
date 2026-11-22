@@ -1,0 +1,404 @@
+{
+  "sea-fcl-locode": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "live",
+    "why": "round 177, the mail that started this axis"
+  },
+  "sea-lcl-german": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "Seefracht said, no air word"
+  },
+  "sea-spanish": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "sea in Spanish: no rule reads it today"
+  },
+  "sea-french": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "sea in French"
+  },
+  "sea-locodes-only": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "seaport LOCODEs and container type only, no mode word"
+  },
+  "sea-vessel-cutoff": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "ocean rates, vessel, container; 'ocean freight' not said literally"
+  },
+  "rail-china": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "rail freight said"
+  },
+  "rail-german": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "rail in German: Bahn, Schiene"
+  },
+  "road-ftl": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "full truck load, no air word"
+  },
+  "road-groupage-german": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "road in German: per LKW"
+  },
+  "courier-parcel": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "courier parcel door to door; an integrator's product, not air freight. Unsure"
+  },
+  "sea-air-dubai": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "a combined mode we cannot price; says 'air'. Unsure"
+  },
+  "sea-from-airport-company": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "sea request; 'Airport' in the sender's company name"
+  },
+  "sea-switch-from-air": {
+    "branch": "mode",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "sea asked, air named only as the past",
+    "known_gap": "scope: `NOT_AIR` is lifted by any air word, here the past (\"last month by air\")"
+  },
+  "import-explicit": {
+    "branch": "direction",
+    "expected": "no_price",
+    "sure": "live",
+    "why": "round 159, accepted as declined"
+  },
+  "import-implicit": {
+    "branch": "direction",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "an import by lane alone, no word import",
+    "known_gap": "scope: no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it"
+  },
+  "cross-trade": {
+    "branch": "direction",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "neither end is ours: cross-trade"
+  },
+  "domestic": {
+    "branch": "direction",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "domestic within Germany: not export. Unsure"
+  },
+  "customs-only": {
+    "branch": "service",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "a fee for customs alone, the flight is someone else's",
+    "known_gap": "scope: no field for what is asked; a service without the flight is read as an air request"
+  },
+  "warehousing-only": {
+    "branch": "service",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "storage only"
+  },
+  "insurance-only": {
+    "branch": "service",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "insurance only",
+    "known_gap": "scope: no field for what is asked; a service without the flight is read as an air request"
+  },
+  "truck-to-airport-only": {
+    "branch": "service",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "pickup only, the flight is not ours. Unsure"
+  },
+  "packing-only": {
+    "branch": "service",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "packing only"
+  },
+  "complaint-damage": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "a complaint with a lane and a weight",
+    "known_gap": "scope: router rule 7 (a weight or two codes in a new thread) makes a complaint a request"
+  },
+  "invoice-query": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "an invoice question",
+    "known_gap": "scope: router rule 7 makes an invoice query a request"
+  },
+  "supplier-advert": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "an advert, not a request"
+  },
+  "job-application": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "a job application"
+  },
+  "newsletter": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "a newsletter with lanes and rates",
+    "known_gap": "scope: router rule 7 makes a newsletter a request"
+  },
+  "out-of-office": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "an auto-reply whose subject holds a lane and weight",
+    "known_gap": "scope: router rule 7 makes an auto-reply a request"
+  },
+  "misdirected": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "meant for someone else"
+  },
+  "general-rate-card": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "guess",
+    "why": "a general price list, no shipment. Unsure: one question may be wanted"
+  },
+  "bank-details-change": {
+    "branch": "none",
+    "expected": "no_price",
+    "sure": "text",
+    "why": "nothing to price"
+  },
+  "air-or-sea-cheaper": {
+    "branch": "partial",
+    "expected": "quote",
+    "sure": "guess",
+    "why": "air is one of the asked modes and the only one we offer"
+  },
+  "instead-of-sea-air": {
+    "branch": "partial",
+    "expected": "quote",
+    "sure": "text",
+    "why": "air asked; sea named as the past"
+  },
+  "two-shipments-one-sea": {
+    "branch": "partial",
+    "expected": "quote",
+    "sure": "guess",
+    "why": "quote the air part, say plainly sea is not ours"
+  },
+  "air-plus-customs-storage": {
+    "branch": "partial",
+    "expected": "quote",
+    "sure": "text",
+    "why": "air priced, extras plainly not included"
+  },
+  "sea-or-air-german": {
+    "branch": "partial",
+    "expected": "quote",
+    "sure": "guess",
+    "why": "German 'See- oder Luftfracht': air is one choice"
+  },
+  "company-seaside": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'Seaside' in the company name"
+  },
+  "street-seehafen": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "Seehafen and Hafen in the address"
+  },
+  "shipping-loosely": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'shipping' for any transport, no mode named"
+  },
+  "container-loosely": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'container' meaning a box"
+  },
+  "port-cities-no-codes": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "two port cities that are also our airports, no mode named"
+  },
+  "fob-air": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "FOB is a sea Incoterm, used here with air"
+  },
+  "cif-air": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "CIF, a sea Incoterm, with air"
+  },
+  "sea-mentioned-past": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "an earlier sea shipment in passing, no air word"
+  },
+  "seefracht-zu-langsam": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "Seefracht rejected in German, no air word"
+  },
+  "import-buyer-side": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "live",
+    "why": "round 156: import of the buyer's side"
+  },
+  "seaport-code-beside-airport": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "guess",
+    "why": "a LOCODE next to the IATA code"
+  },
+  "ocean-in-product": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'Ocean' in the product and company name"
+  },
+  "road-freight-in-goods": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'road freight' names the goods' use, not the mode",
+    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"road freight\" naming the goods) and no air word stops it"
+  },
+  "rail-in-goods": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'rail freight' inside the goods' name",
+    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"rail freight\" inside the goods name) and no air word stops it"
+  },
+  "reederei-sender": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "a shipping line asks for ship spare parts by air (no air word)"
+  },
+  "own-truck-to-airport": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'LKW' for the customer's own delivery"
+  },
+  "courier-delivers-to-us": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'courier' for the delivery to the airport"
+  },
+  "express-loosely": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'express' meaning fast"
+  },
+  "sea-dept-signature": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "sea and rail in the signer's department"
+  },
+  "locode-airports": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "guess",
+    "why": "UN/LOCODEs of two airport cities, no mode named"
+  },
+  "vessel-in-goods": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'vessels' as goods"
+  },
+  "not-by-sea": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'by sea' negated"
+  },
+  "export-to-importer": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'importer' is the consignee"
+  },
+  "no-mode-german": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "no mode named at all: every request here is air"
+  },
+  "sea-forwarder-asks-air": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "another forwarder whose trade is sea asks for air"
+  },
+  "by-ship-inbound": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'by ship' for how the goods came in",
+    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"by ship\" for the inbound leg) and no air word stops it"
+  },
+  "port-of-loading": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "form words of sea trade for two airports"
+  },
+  "by-rail-inbound": {
+    "branch": "lookalike",
+    "expected": "quote",
+    "sure": "text",
+    "why": "'by rail' for the delivery to the airport",
+    "known_gap": "scope: `orchestrator.NOT_AIR` matches a mode said in passing (\"by rail\" for the delivery to the airport) and no air word stops it"
+  }
+}

@@ -61,7 +61,7 @@ def recorded(conn) -> dict:
     return json.loads(row[0])
 
 
-async def test_a_wording_ask_never_adds_text_to_the_quote_it_alerts_and_the_quote_leaves_at_once(conn, monkeypatch):
+async def test_a_wording_ask_adds_no_text_alerts_nobody_and_the_quote_leaves_at_once(conn, monkeypatch):
     added = "Cargo insurance is included in the all-in price."  # a service we did not price
     asked, posted = model(monkeypatch, ask("wording", INSURANCE) | {"add": added})
     ctx = make_ctx(conn, unmet="on", alert_url="http://alert")
@@ -69,7 +69,7 @@ async def test_a_wording_ask_never_adds_text_to_the_quote_it_alerts_and_the_quot
     drafted = await settle(ctx, f"{PLAIN}\n{INSURANCE}", target_s=20)
     assert INSURANCE in asked[0]["user"] and drafted.body in asked[0]["user"] and "offer-Q-1.pdf" in asked[0]["user"]
     assert quotes.for_session(ctx, 1) is None and recorded(conn)["asks"] == [ask("wording", INSURANCE)]
-    assert [(p["issue"], p["classes"], p["held"]) for p in posted] == [("unmet_ask", ["wording"], False)]
+    assert posted == [] and feedback.attention(conn, 5) == []  # the reader lists one on most accepted quotes
     assert (timing.now() - started).total_seconds() < 5
 
 
