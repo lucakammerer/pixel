@@ -360,6 +360,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
   customer for every fact.
+- An incoterm of EXW ("on EXW terms, ex works our plant at … 80809 München") is a door pickup (`DOOR`): the goods
+  wait at the seller's address and the forwarder collects them. Unread, the rules gave up and no quote went out.
 - A file no code reads (a video, an image outside a tariff mail, an unknown type, a pdf without text) is a deliberate
   `attachment.unreadable` with its name and type (`tariffs/agent.py` `attachment_lines`, not downloaded when its type
   has no reader), never an `error`, and the mail goes on as if it held nothing: a carrier who answered only in one
