@@ -148,12 +148,14 @@ NOT_URGENT = re.compile(
     re.IGNORECASE,
 )
 FASTEST = re.compile(
-    r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide|m(?:á|a|ai)s\s+r[aá]pid[ao]|più\s+(?:veloce|rapid[ao])|snelste)\b",
+    r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide|m(?:á|a|ai)s\s+r[aá]pid[ao]|più\s+(?:veloce|rapid[ao])|snelste"
+    r"|en\s+h[ıi]zl[ıi])\b|가장\s*빠른|최단|最快|最短|最も(?:早|速)い|一番(?:早|速)い",
     re.IGNORECASE,
 )
 CHEAPEST = re.compile(
     r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix"
-    r"|m(?:á|a|ai)s\s+(?:econ[oó]mic[ao]|barat[ao])|più\s+economic[ao]|goedkoopste)\b",
+    r"|m(?:á|a|ai)s\s+(?:econ[oó]mic[ao]|barat[ao])|più\s+economic[ao]|goedkoopste|en\s+ucuz)\b"
+    r"|가장\s*(?:저렴한|싼)|최저가|最便宜|最も安い|一番安い",
     re.IGNORECASE,
 )
 HURRY = re.compile(

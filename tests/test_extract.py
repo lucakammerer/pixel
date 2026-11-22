@@ -1736,3 +1736,17 @@ def test_a_door_request_never_departs_from_an_airport_no_truck_serves(conn):
                        deadline_at=DEADLINE.expires_at, missing=("destination",))  # fmt: skip
     rfq = extract._zone_origin(ctx, read, "MIA (Miami, US)행 항공 운송, 41680 (Moenchengladbach) 픽업")
     assert (rfq.origin, rfq.destination, rfq.missing) == ("DUS", "MIA", ())
+
+
+@pytest.mark.parametrize(
+    ("text", "wish"),
+    [
+        ("Bu gönderi için en hızlı seçeneği istiyoruz.", Preference.FASTEST),  # round 186, quoted cheapest
+        ("가장 빠른 옵션으로 견적 부탁드립니다.", Preference.FASTEST),
+        ("请报最快的方案。", Preference.FASTEST),
+        ("最も早い便でお願いします。", Preference.FASTEST),
+        ("Bu gönderi için en ucuz seçeneği istiyoruz.", Preference.CHEAPEST),
+    ],
+)
+def test_the_wish_in_turkish_korean_chinese_and_japanese(text, wish):
+    assert extract._preference(text) == wish
