@@ -39,7 +39,7 @@ DEST_LABEL = re.compile(
 # The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
 # the door" the destination.
 PRE_CARRIAGE = re.compile(
-    rf"(?i:\bdeliver\w*\s+(?:it\s+|the\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
+    rf"(?i:\bdeliver\w*\s+(?:it\s+|them\s+|(?:the|this|these|our)\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
 )
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"

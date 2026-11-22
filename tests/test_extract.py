@@ -68,6 +68,9 @@ def test_delivery_legs_around_the_flight_do_not_turn_the_lane():
             "Please include delivery from BBB airport to the door.")  # fmt: skip
     rfq = extract.by_rules(mail(body), DEADLINE)
     assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
+    # Round 154: "from Munich Airport (MUC) to RUH ... we will deliver them to MUC ourselves" went to the model.
+    rfq = extract.by_rules(mail("Please quote from Town Airport (AAA) to BBB, 631 kg. We will deliver them to AAA ourselves."), DEADLINE)
+    assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
 
 
 async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
