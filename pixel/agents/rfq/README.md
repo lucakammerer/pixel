@@ -545,6 +545,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   label, never a lead time, postcode or offer number, a side price, one charge or an exchange rate;
   `tools/simulate.py` `swayed_bids` has the model answer every other amount of each generated offer. An answer in
   the mail itself costs no call: on 359 answers of rounds 9 to 72 the model read no other total.
+- An airline or trucker can say its price in a voice message: "1231 dollars and 92 cents", "45 francs", "88 pounds and
+  10 pence", "0.7178 euros per pound" (`tariffs.agent._spoken`; "480 pounds" alone stays a weight). `tools/simulate.py`
+  says every generated offer too (place `mp3`).
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the
