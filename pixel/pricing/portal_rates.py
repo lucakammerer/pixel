@@ -82,14 +82,17 @@ async def _read(
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                     payload={"source": "portal", "carrier": name, "error": type(exc).__name__, "hint": str(exc)}
                     | ({"page": exc.page} if getattr(exc, "page", None) else {}))  # fmt: skip
-        if not isinstance(exc, RatesUnavailable) or (card := rate_card.option(ctx, rfq, code)) is None:
-            return None
-        events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
-                    payload={"option": card.model_dump(mode="json"), "why": "rate card"})  # fmt: skip
-        return card
+        return _card(ctx, rfq, code) if _outage(exc) else None
     events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
     return option
+
+
+def _card(ctx: Context, rfq: Rfq, code: str) -> RateOption | None:
+    if (card := rate_card.option(ctx, rfq, code)) is not None:
+        events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
+                    payload={"option": card.model_dump(mode="json"), "why": "rate card"})  # fmt: skip
+    return card
 
 
 def _unpriced(ctx: Context, rfq: Rfq) -> tuple[set[str | None], bool]:
@@ -167,7 +170,8 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline, *, down: asyncio.E
             down.set()
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                     payload={"source": "portal", "error": type(exc).__name__})  # fmt: skip
-        return []
+        # The lane list fails with the rates (rounds 46, 47): the card still knows the lane's airlines.
+        return [o for c in rate_card.airlines(ctx, rfq.origin, rfq.destination) if (o := _card(ctx, rfq, c))]
     if lane is None:
         return []
 

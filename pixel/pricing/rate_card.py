@@ -88,6 +88,11 @@ def _factors(current: str | None, rates: dict[Key, dict[str, dict]]) -> dict[str
     return {v: calc.version_factor(p) for v, p in pairs.items()}
 
 
+def airlines(ctx: Context, origin: str, destination: str) -> list[str]:
+    """The codes of the airlines the card holds a rate for on the lane."""
+    return sorted({c for o, d, c, _ in _rates(ctx)[1] if (o, d) == (origin, destination)})
+
+
 def option(ctx: Context, rfq: Rfq, code: str) -> RateOption | None:
     """The airline's price from the card at the current version, or None when the card lacks the bracket the
     chargeable weight falls in."""
