@@ -146,6 +146,7 @@ async def test_explicit_lane_suspension_applies_only_from_effective_date_until_r
         ("We offer 845,00 € all in, 2 Tage Laufzeit.\n\n> Please quote 100 kg, EUR 5 per kg", "845.00", "EUR", 2),
         ("EUR 900,00 all-in. Transitzeit: 3 Tage. Laufzeit des Angebots: 14 Tage.", "900.00", "EUR", 3),
         ("EUR 900.00 all-in, 2 days. Transit via DXB, 1 day stopover.", "900.00", "EUR", 2),
+        ("Freight EUR 500.00\nFuel EUR 80.00\n3 days", "580.00", "EUR", 3),  # charge lines without a total add up
     ],
 )
 def test_rules_read_a_bid(body, total, currency, days):
@@ -156,7 +157,11 @@ def test_rules_read_a_bid(body, total, currency, days):
 
 @pytest.mark.parametrize(
     "body",
-    ["Freight EUR 500.00\nFuel EUR 80.00\n3 days", "Sorry, we cannot offer this lane.", "USD 900, 3 days"],
+    [
+        "Freight EUR 500.00\nFuel EUR 80.00\nFreight EUR 500.00\n3 days",
+        "Sorry, we cannot offer this lane.",
+        "USD 900, 3 days",
+    ],
 )
 def test_rules_refuse_what_they_cannot_read(body):
     assert bids.parse(mail("one@air", body), rfq()) is None
@@ -188,7 +193,7 @@ async def test_unpriced_destination_is_mailed_and_door_to_port_adds_the_cheapest
     assert set(by_carrier) == {"Air One", "Air Two"}
     assert (by_carrier["Air One"].total, by_carrier["Air One"].trucker) == (D("775.00"), "Truck B")
     assert by_carrier["Air Two"].total == D("655.00")
-    assert [r["read_by"] for r in kinds(ctx, "bid.received")].count("model") == 1
+    assert [r["read_by"] for r in kinds(ctx, "bid.received")].count("model") == 0  # charge lines add up by rules
 
 
 async def test_a_pickup_known_by_its_town_alone_is_asked_with_a_postcode_of_its_zone(ctx, monkeypatch):
@@ -725,3 +730,17 @@ async def test_a_pickup_in_another_currency_without_its_rate_takes_the_rate_a_pr
     [found] = [o["option"] for o in kinds(ctx, "option.found") if o["option"].get("trucker")]
     assert (found["trucker"], found["currency"], found["total_eur"], found["pickup_hours"]) == (
         "Truck B", "USD", "182.53", 6)  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Option A air freight: 1,200.00 EUR\nOption B air freight: 1,500.00 EUR\nTransit 3 days",
+        "Economy freight 1,200.00 EUR\nExpress freight 1,500.00 EUR\nTransit 3 days",
+        "Air freight 1,200.00 EUR\nAir freight via DXB 1,050.00 EUR\nTransit 3 days",
+        "Freight to ORD 500.00 EUR\nFreight to JFK 520.00 EUR\nTransit 3 days",
+        "Last time: freight 900.00 EUR\nFreight 500.00 EUR\nFuel 80.00 EUR\n3 days",
+    ],
+)
+def test_alternatives_and_side_prices_are_never_added_up(body):
+    assert bids.parse(mail("air@x", body), rfq()) is None
