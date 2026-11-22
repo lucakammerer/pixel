@@ -75,9 +75,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   quotes the first and prices the others beside it; `_with_shipments` adds each one's price and, when all have one,
   their sum in a paragraph of the same quote (R4). The quote's option, PDF details and booking stay the first's.
 - `agent.py` `_other_option`: "your cheapest and your fastest, each with its price" (`compose.both_options`: both
-  words joined by "and" and a word for two, each or options, in English, German or French) quotes the wish read
-  first and names the other option after the offer with its own total (`compose.other_option`). "The cheapest and
-  fastest option" asks for one. The quote's option, PDF details and booking stay the first's.
+  words joined by "and", and options asked for as such: "two options", "zwei Angebote", "both the cheapest and the
+  fastest", "each with its price", "jeweils mit", "chacune avec") quotes the wish read first and names the other
+  option after the offer with its own total (`compose.other_option`). "Two pallets", "for each shipment" and a bare
+  "the cheapest and fastest options" ask for one total. The quote's option, PDF details and booking stay the first's.
 - `extract.py` `excluded_airlines`, `_carrier_requirements`: an airline the customer rules out (a sentence with a negation that
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.

@@ -991,7 +991,14 @@ _CHEAP = r"(?:cheapest|lowest|günstigst\w*|billigst\w*|moins\s+ch[eè]re?)"
 _FAST = r"(?:fastest|quickest|schnellst\w*|plus\s+rapide)"
 _AND = r"(?:\s+\w+){0,3}?\s+(?:and|as well as|plus|und|sowie|et)\s+(?:\w+\s+){0,2}?"
 BOTH_OPTIONS = re.compile(rf"(?i)\b(?:{_CHEAP}{_AND}{_FAST}|{_FAST}{_AND}{_CHEAP})\b")
-TWO = re.compile(r"(?i)\b(?:two|both|each|options|beide\w*|zwei|jeweils|optionen|deux|chacune?)\b")
+# Options as such: "two options", "zwei Angebote", "both the cheapest and the fastest", "each with its price". A count
+# of pallets or shipments ("two pallets", "for each shipment") never asks for a second total, nor a bare plural
+# ("the cheapest and fastest options"): one total is what 123 accepted rounds held, a second one is unproven.
+TWO = re.compile(
+    r"(?i)\b(?:two|both|2|zwei|beide\w*|deux)\s+(?:\w+\s+)?(?:options?|offers?|quotes?|quotations?|prices?|alternatives?"
+    rf"|angebote|optionen|preise|varianten|offres|propositions|prix)\b|\bboth\s+(?:the\s+|your\s+)?(?:{_CHEAP}|{_FAST})"
+    r"|\beach\s+with\s+its\s+(?:own\s+)?(?:all-in\s+)?price|\bjeweils\s+mit|\bchacune?\s+avec"
+)
 OTHER_OPTION = {
     "en": ("Your other option, the {kind}: {carrier}, {total} {currency} all-in, with {transit} in transit.",
            {"cheapest": "cheapest", "fastest": "fastest"}),

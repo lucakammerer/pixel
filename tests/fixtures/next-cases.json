@@ -570,8 +570,7 @@
     "language": "de",
     "pdf": true
    },
-   "today": "Helix 2132.80 only, German, the PDF with it (before #479).",
-   "known_gap": "two options, as `cheapest-and-fastest-both`: #479 open. Owner: Checklist."
+   "today": "Helix 2132.80 and Kestrel 1512.80 in German, both in the PDF."
   },
   {
    "fixture": "next-cases/combo-arrive-by-pdf-reference.json",
