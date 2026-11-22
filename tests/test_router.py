@@ -148,3 +148,25 @@ async def test_the_customers_answer_to_our_question_is_left_to_the_waiting_reque
     _store(ctx, rfq.model_copy(update={"id": 4723, "direction": "out", "to": rfq.sender}), "question")
     answer = poller.ingest(ctx, mail("customer-names-pickup.json"))
     assert await classify(ctx, answer) == MailKind.OTHER
+
+
+SHEET = (
+    "Testline Cargo | Air export tariff\nCurrency    EUR\nValid from  01.11.2026\nValid to    30.11.2026\n\n"
+    "Lane        Transit     Minimum     -45       +45\nCGN-SYD     5  EUR 75.00   EUR 5.92  EUR 5.03\n"
+    "DUS-JFK     5  EUR 100.00  EUR 3.96  EUR 3.21\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("subject", "body", "kind"),
+    [
+        ("Tariff update", SHEET, "tariff"),  # an airline's tariff written in the mail itself
+        ("Re: Rate request FRA-JFK, 340 kg", "FRA-JFK EUR 2.50/kg\nFRA-EWR EUR 2.60/kg\nTransit 3 days", "carrier_bid"),
+        ("Rates for you", "We can fly FRA-JFK for EUR 950.00 all-in, transit 3 days.", "carrier_bid"),  # one lane
+    ],
+)
+async def test_an_airlines_tariff_in_the_mail_itself_is_a_tariff_and_a_bid_stays_a_bid(ctx, subject, body, kind):
+    message = to_message({"id": 991, "from": "air@carrier.example", "to": "us@example.com", "subject": subject,
+                          "body": body, "sent_at": "2026-11-21T10:00:00Z"}, "in")  # fmt: skip
+    ctx.db.execute("INSERT INTO carriers (name, kind, email, serves) VALUES ('a', 'airline', ?, '')", (message.sender,))
+    assert (await classify(ctx, poller.ingest(ctx, message))).value == kind

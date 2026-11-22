@@ -29,6 +29,9 @@ CONFIRMED_SUBJECT = re.compile(r"\bbooking\s+(\S+)\s+(?:is\s+)?confirmed", re.IG
 TEAM_REFERENCE = re.compile(r"\bPX-[0-9A-F]{6}\b")  # crm/shipments.py, sent with every booking
 WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³|lbs?|pounds?|t|tons?|tonnes?|tonnen)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
+# A tariff written in the mail itself: one lane per row, "CGN-SYD  5  EUR 75.00 ...".
+LANE_ROW = re.compile(r"^[ \t]*[A-Z]{3}[ \t]*[-–/][ \t]*[A-Z]{3}\b", re.MULTILINE)
+REPLY_PREFIX = re.compile(r"^\s*(?:re|aw|fw|fwd|wg|sv|antw)\s*:", re.IGNORECASE)
 
 MODEL_KINDS = (MailKind.CUSTOMER_RFQ, MailKind.CUSTOMER_REPLY, MailKind.TRACKING_QUESTION, MailKind.OTHER)
 SYSTEM = (
@@ -147,6 +150,10 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
     # that asks for nothing brings a file named like one.
     if files and (carrier or (not in_thread and not asks and any(TARIFF_NAME.search(f) for f in files))):
         return MailKind.TARIFF, "attachment:tariff"
+    # An airline's tariff in the mail itself, outside our threads: its subject names it and its rows list lanes.
+    if (carrier == "airline" and not in_thread and not message.attachments and not REPLY_PREFIX.match(message.subject)
+            and TARIFF_NAME.search(message.subject.lower()) and len(LANE_ROW.findall(message.body)) >= 2):  # fmt: skip
+        return MailKind.TARIFF, "body:tariff"
     if carrier:
         return MailKind.CARRIER_BID, "sender:carrier"
     if any(p.endswith("quote") for p in purposes):

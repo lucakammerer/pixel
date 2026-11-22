@@ -843,6 +843,8 @@ async def handle(ctx: Context, message: Message) -> None:
         events.emit(ctx, "carrier.availability", "tariffs", session_id=message.session_id, message_id=message.id,
                     payload={**notice, "carrier": carrier[0]})  # fmt: skip
     files = [(a.filename, await ctx.mailbox.attachment(message.id, a.id)) for a in message.attachments]
+    if not files:  # the tariff written in the mail itself (`router` `body:tariff`)
+        files = [("body.txt", message.body.encode())]
     for key, document in _documents(files).items():
         if key.lower().endswith(".csv") and _reference_csv(ctx, document[0][1]):
             continue
