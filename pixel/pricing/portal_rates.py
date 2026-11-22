@@ -69,9 +69,21 @@ async def _at_next_break(ctx: Context, rfq: Rfq, deadline: Deadline, code: str, 
     return at_break.model_copy(update={"chargeable_kg": option.chargeable_kg})
 
 
+def _card(ctx: Context, rfq: Rfq, call, *args):
+    """The rate card stands in for a read or checks one: its own failure must never cost the round its options."""
+    try:
+        return call(ctx, *args)
+    except Exception as exc:  # noqa: BLE001
+        events.emit(ctx, "error", "pricing", session_id=rfq.session_id,
+                    payload={"where": "rate_card", "error": type(exc).__name__})  # fmt: skip
+        return None
+
+
 async def _read(
     ctx: Context, rfq: Rfq, deadline: Deadline, code: str, name: str, down: asyncio.Event | None = None
 ) -> RateOption | None:
+    """One rate read. A read that gives no rate for any reason but the airline being off the portal (404) is priced
+    from the rate card: an outage in any form and the quota leave the same gap."""
     try:
         option = await ctx.portal.rate(
             rfq.origin, rfq.destination, code, rfq.weight_kg, rfq.volume_cbm, not_after=deadline.target_at
@@ -82,11 +94,12 @@ async def _read(
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                     payload={"source": "portal", "carrier": name, "error": type(exc).__name__, "hint": str(exc)}
                     | ({"page": exc.page} if getattr(exc, "page", None) else {}))  # fmt: skip
-        if not isinstance(exc, RatesUnavailable) or (card := rate_card.option(ctx, rfq, code)) is None:
+        if type(exc) is NotOnPortal or (card := _card(ctx, rfq, rate_card.option, rfq, code)) is None:
             return None
         events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
-                    payload={"option": card.model_dump(mode="json"), "why": "rate card"})  # fmt: skip
-        return card
+                    payload={"option": card[0].model_dump(mode="json"), "why": "rate card", "card": card[1]})  # fmt: skip
+        return card[0]
+    _card(ctx, rfq, rate_card.check, option)
     events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
     return option
@@ -159,7 +172,8 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline, *, down: asyncio.E
     read budget. Airlines the portal sends
     elsewhere (404) and an outage answer for every airline (5xx, 403, a timeout) are reported as `option.failed`;
     `engine` mails every airline nothing else priced. `down` is set on the first outage answer, so the desk and the
-    probes do not wait for a sample."""
+    probes do not wait for a sample. When the lanes cannot be listed either, the airlines the rate card has read on
+    the lane are read (and, failing that, priced from it)."""
     try:
         lane = next((x for x in await lanes(ctx) if (x.origin, x.destination) == (rfq.origin, rfq.destination)), None)
     except (ApiError, httpx.HTTPError, ValueError, KeyError) as exc:
@@ -167,7 +181,8 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline, *, down: asyncio.E
             down.set()
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                     payload={"source": "portal", "error": type(exc).__name__})  # fmt: skip
-        return []
+        known = _card(ctx, rfq, rate_card.airlines, rfq.origin, rfq.destination)  # `ports` is down too
+        lane = Lane(rfq.origin, rfq.destination, known) if known else None
     if lane is None:
         return []
 
@@ -188,7 +203,8 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline, *, down: asyncio.E
     # use it even while an optional second read is waiting for the next window.
     improved = []
     for code, option in found:
-        best = await _at_next_break(ctx, rfq, deadline, code, option)
+        # A card price has weighed the higher breaks itself; a read for one would only fail again.
+        best = await _at_next_break(ctx, rfq, deadline, code, option) if option.rate_id else option
         if best is not option:
             events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                         payload={"option": best.model_dump(mode="json")})  # fmt: skip

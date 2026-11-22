@@ -21,6 +21,7 @@ KINDS = (
     "quote.drafted", "quote.sent", "quote.fallback", "quote.recovery", "quote.waiting", "quote.missed", "quote.prose", "rfq.crosscheck", "bid.crosscheck", "prose.raw",
     "quote.stuck",  # core/watchdog.py: open past its STUCK_AFTER, alerted once
     "rate_card.read", "rate_card.paused",  # pricing/rate_card.py: one portal rate read for the card; a pause after an error
+    "rate_card.checked",  # pricing/rate_card.py `check`: the card's price against a rate the API just gave
     "quote.checked",  # agents/rfq/check.py: what the check found on the draft, and (`stage: sent`) on the text that leaves
     "quote.repaired",  # agents/rfq/repair.py: one repair of a BLOCK finding, kept or not
     "option.vetoed",  # agents/rfq/repair.py: an option a repair left out; pricing/session.py no longer offers it

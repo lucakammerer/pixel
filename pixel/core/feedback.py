@@ -27,7 +27,7 @@ from pixel.contracts import RateOption
 from pixel.core import db, events
 from pixel.core.context import Context
 from pixel.crm import quotes
-from pixel.pricing import selection, session
+from pixel.pricing import rate_card, selection, session
 from tools.board_me import normalize, rounds_of
 
 POLL_S = 10
@@ -201,12 +201,13 @@ async def once(ctx: Context) -> int:
 
 def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
     """What went wrong in the last minutes, newest first: missed, stuck, rejected and point-losing requests, tracking
-    questions we matched to no shipment, customer replies left to a person, errors, bids read implausibly low."""
+    questions we matched to no shipment, customer replies left to a person, errors, bids read implausibly low, a rate
+    card off the portal's own rate."""
     since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
     rows = conn.execute(
         "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
         " ('quote.missed', 'quote.stuck', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'option.failed',"
-        " 'rfq.novelty')"
+        " 'rfq.novelty', 'rate_card.checked')"
         " ORDER BY id DESC",
         (since,)
     ).fetchall()  # fmt: skip
@@ -231,6 +232,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "quote_doubtful"
         elif row["kind"] == "option.failed" and p.get("error") == "implausible":
             issue = "bid_distrusted"
+        elif row["kind"] == "rate_card.checked" and abs(Decimal(p["off_pct"])) >= rate_card.DRIFT_PCT:
+            issue = "card_drift"  # a new dataset version, or one that did not change every rate by one factor
         elif row["kind"] == "rfq.novelty" and any((p.get("mapped") or {}).values()):
             issue = "novel_requirement"  # already posted by `novelty.check` the moment it was read
         if issue:

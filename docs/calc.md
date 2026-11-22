@@ -26,11 +26,16 @@ Decimal only; a model never computes, compares or writes a price (P1).
 - **Bids** (`pricing/bids.py`): the carrier's stated all-in total; when only charges are listed (read by the model),
   code adds them up. A flat price "per shipment" or "per AWB" is that total; transit counts calendar, working or
   business days alike, and a range ("2-3 days") its first figure.
-- **Rate card** (`rate_card.option`): during a 503, a portal airline at every portal rate read so far, one per
-  bracket (`calc.card_breaks`: total / weight read x the version's factor), priced like a sheet without minimum or
-  surcharges, the higher breaks included. A dataset version changes every rate by one factor (v3 equals v1,
-  v1+ef9a74 is x1.15, v1+a19eb0 x1.30): `calc.version_factor`, the median ratio over brackets read in both versions,
-  scales older reads to the current one. No rate id: `booking.book` reads a fresh rate first.
+- **Rate card** (`rate_card.option`): when a rate read gives no rate (an outage, the quota, anything but a 404), a
+  portal airline at every portal rate read so far, one per bracket (`calc.card_breaks`: total / weight read x the
+  version's factor), priced like a sheet without minimum or surcharges, the higher breaks included. A dataset version
+  changes every rate by one factor (v3 equals v1, v1+ef9a74 is x1.15, v1+a19eb0 x1.30): `calc.version_factor`, the
+  median ratio over brackets read in both versions, scales older reads to the current one; a version that shares no
+  bracket with it prices as read, and the price says `stale`, as it does when no read named the version for a round.
+  No rate id: `booking.book` reads a fresh rate first. `rate_card.check` prices every rate the API gives from the card
+  first (`calc.card_total`, `calc.off_pct`; `tools.card_proof` over a database): on the history up to 22.11. 06:43
+  UTC, 124 of 126 within 1 % (worst scaled 0.36 %), the two others at the version changes of 21.11.: a new version's
+  first read and one priced unscaled.
 - **Rate desk** (`bids.parse_desk`): one option per airline the desk prices, with the total, transit days, rate id
   and validity it states. `engine.options` asks on any outage answer (a 5xx, Cloudflare's 403, a read that timed out)
   or when no other source can price the lane. During an outage, `bids.collect` gives a pending desk reply until 115

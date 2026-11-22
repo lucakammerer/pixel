@@ -274,10 +274,13 @@ def test_a_price_without_a_rate_id_keeps_the_airline_probed(ctx):  # noqa: F811
     assert portal_rates._unpriced(ctx, rfq()) == (set(), False)
 
 
-async def test_a_503_prices_the_airline_from_the_rate_card_at_the_current_versions_factor(ctx, offline):  # noqa: F811
+@pytest.mark.parametrize("rates, ports", [("503", 200), ("429", 200), ("503", 503)])
+async def test_a_503_prices_the_airline_from_the_rate_card_at_the_current_versions_factor(ctx, offline, rates, ports):  # noqa: F811
     """Round 94: the API, its page and the desk were silent; Xenon's 3399.00 for 1133 kg, read in v1, prices 1135.6 kg.
-    A later version raised every rate by 15 % (v1+ef9a74): one bracket read in both gives the factor for all."""
-    answer_rates(offline, "503")
+    A later version raised every rate by 15 % (v1+ef9a74): one bracket read in both gives the factor for all. A spent
+    quota leaves the same gap, and so does `ports` going down with the rates (round 122 replayed offline)."""
+    answer_rates(offline, rates)
+    offline.get("/v1/portal/ports").respond(ports, json=PORTS)
     db.put(ctx.db, "rate_card.breaks.A1", '["0", "1000"]')
 
     def read(version: str, kg: str, total: str) -> None:
@@ -294,6 +297,47 @@ async def test_a_503_prices_the_airline_from_the_rate_card_at_the_current_versio
     ]
 
 
+def card_read(ctx, lane: str, version: str, kg: str, total: str) -> None:  # noqa: F811
+    origin, destination = lane.split("-")
+    events.emit(ctx, rate_card.KIND, "pricing", payload={
+        "origin": origin, "destination": destination, "code": "A1", "carrier": "Air One", "kg": kg, "total": total,
+        "currency": "EUR", "fx_eur": None, "transit_days": 2, "version": version})  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "other_lane, silent_s, total, stale",
+    [
+        ([("v1", "2000.00"), ("v2", "2300.00")], 0, "3450.00", False),  # one read of v2 elsewhere rescales this lane
+        ([("v2", None)], 0, "3000.00", True),  # v2 shares no bracket with v1: priced as read, said so
+        ([], rate_card.ROUND_S + 61, "3000.00", True),  # no read for a round: the version may have changed unseen
+    ],
+)
+def test_a_new_version_rescales_the_whole_card_or_its_price_says_it_is_stale(ctx, other_lane, silent_s, total, stale):  # noqa: F811
+    """A version can change with an outage (v1, v1+ef9a74, v1+a19eb0, v1, v2, v3 in two days): a sheet price or no
+    price was never accepted, so the card still prices, and its event says when it rests on an unconfirmed version."""
+    db.put(ctx.db, "rate_card.breaks.A1", '["0", "1000"]')
+    card_read(ctx, "AAA-BBB", "v1", "1000", "3000.00")
+    for version, other in other_lane:
+        card_read(ctx, "CCC-DDD", version, "500" if other is None else "1000", other or "1500.00")
+    later = timing.now() + timedelta(seconds=silent_s)
+    token = timing.clock.set(lambda: later)
+    try:
+        priced, note = rate_card.option(ctx, rfq().model_copy(update={"weight_kg": D(1000)}), "A1")
+    finally:
+        timing.clock.reset(token)
+    assert (priced.total, note["stale"]) == (D(total), stale)
+
+
+async def test_the_rate_card_reads_first_the_brackets_requests_fall_in_and_the_break_above_them(ctx, offline):  # noqa: F811
+    """A weight is billed at the next break when that is cheaper (`portal_rates._at_next_break`): the card needs it."""
+    answer_rates(offline, "healthy")
+    db.put(ctx.db, "rate_card.breaks.A1", '["0", "500", "1000"]')
+    db.put(ctx.db, "rate_card.breaks.A2", "[]")
+    for kg in ("600", "700", "100"):
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=7, payload={"weight_kg": kg, "volume_cbm": "0"})
+    assert [item[4] for item in await rate_card._todo(ctx)] == [D(500), D(1000), D(0)]
+
+
 async def test_the_rate_card_reads_the_bracket_requests_need_once_the_request_is_answered(ctx, offline, monkeypatch):  # noqa: F811
     answer_rates(offline, "healthy")
     offline.get("/v1/portal/brackets").respond(200, json={"breaks_kg": [0, 1000]})
@@ -304,7 +348,7 @@ async def test_the_rate_card_reads_the_bracket_requests_need_once_the_request_is
 
     async def fill() -> list[httpx.Request]:
         with pytest.raises(TimeoutError):
-            await asyncio.wait_for(rate_card.run(ctx), 0.2)
+            await asyncio.wait_for(rate_card.run(ctx), 0.5)  # one read a minute however long
         return [call.request for call in offline.calls if call.request.url.path == "/v1/portal/rates"]
 
     assert await fill() == []

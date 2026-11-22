@@ -69,6 +69,16 @@ def card_breaks(reads: list[tuple[Decimal, Decimal, Decimal, Decimal]]) -> tuple
     return tuple(sorted((bracket, total / kg * factor) for bracket, kg, total, factor in reads))
 
 
+def card_total(read_kg: Decimal, read_total: Decimal, factor: Decimal, kg: Decimal) -> Decimal:
+    """A portal read's rate per kg at the current version, billed on another weight of its bracket."""
+    return money(read_total / read_kg * factor * kg)
+
+
+def off_pct(ours: Decimal, theirs: Decimal) -> Decimal:
+    """How far our price is from theirs, in percent of theirs."""
+    return ((ours - theirs) / theirs * 100).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
 def version_factor(pairs: list[tuple[Decimal, Decimal, Decimal, Decimal]]) -> Decimal:
     """The median ratio of a bracket's rate now to its rate then, over (total now, kg, total then, kg) pairs."""
     ratios = sorted((now / now_kg) / (then / then_kg) for now, now_kg, then, then_kg in pairs)
