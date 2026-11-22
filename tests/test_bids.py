@@ -146,6 +146,7 @@ async def test_explicit_lane_suspension_applies_only_from_effective_date_until_r
         ("We offer 845,00 € all in, 2 Tage Laufzeit.\n\n> Please quote 100 kg, EUR 5 per kg", "845.00", "EUR", 2),
         ("EUR 900,00 all-in. Transitzeit: 3 Tage. Laufzeit des Angebots: 14 Tage.", "900.00", "EUR", 3),
         ("EUR 900.00 all-in, 2 days. Transit via DXB, 1 day stopover.", "900.00", "EUR", 2),
+        ("Freight EUR 500.00\nFuel EUR 80.00\n3 days", "580.00", "EUR", 3),  # charge lines without a total add up
     ],
 )
 def test_rules_read_a_bid(body, total, currency, days):
@@ -156,7 +157,11 @@ def test_rules_read_a_bid(body, total, currency, days):
 
 @pytest.mark.parametrize(
     "body",
-    ["Freight EUR 500.00\nFuel EUR 80.00\n3 days", "Sorry, we cannot offer this lane.", "USD 900, 3 days"],
+    [
+        "Freight EUR 500.00\nFuel EUR 80.00\nFreight EUR 500.00\n3 days",
+        "Sorry, we cannot offer this lane.",
+        "USD 900, 3 days",
+    ],
 )
 def test_rules_refuse_what_they_cannot_read(body):
     assert bids.parse(mail("one@air", body), rfq()) is None
@@ -188,7 +193,7 @@ async def test_unpriced_destination_is_mailed_and_door_to_port_adds_the_cheapest
     assert set(by_carrier) == {"Air One", "Air Two"}
     assert (by_carrier["Air One"].total, by_carrier["Air One"].trucker) == (D("775.00"), "Truck B")
     assert by_carrier["Air Two"].total == D("655.00")
-    assert [r["read_by"] for r in kinds(ctx, "bid.received")].count("model") == 1
+    assert [r["read_by"] for r in kinds(ctx, "bid.received")].count("model") == 0  # charge lines add up by rules
 
 
 async def test_a_pickup_known_by_its_town_alone_is_asked_with_a_postcode_of_its_zone(ctx, monkeypatch):

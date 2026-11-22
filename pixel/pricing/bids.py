@@ -60,6 +60,13 @@ SIDE_BEFORE = re.compile(
     r"[\s:]*$",
     re.IGNORECASE,
 )
+# A charge line without a total beside it ("Air freight  1,234.56 EUR", "Base charge: 67.00 EUR"): the offer's
+# total is the charges added up, when every price of the answer is one of them.
+CHARGE_LINE = re.compile(
+    r"^[^\d\n]{0,30}\b(?:air\s*freight|freight|fuel|security|screening|surcharge|handling|base(?:\s+charge)?"
+    r"|weight(?:\s+charge)?|pickup|collection|delivery|transport|trucking|documentation|awb)\b[^\d\n]{0,25}$",
+    re.IGNORECASE,
+)
 SIDE_AFTER = re.compile(r"^\s*(?:extra|more)\b", re.IGNORECASE)
 # An offer table names its currency once, in the header ("Amount (EUR)"), and its total line has none. The nearest
 # header above the total counts: "Chargeable weight (kg)" or "per kg (EUR)" over it is no price in that currency.
@@ -236,7 +243,7 @@ def _rate(text: str) -> Decimal:
 
 
 def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
-    found, labelled = set(), set()
+    found, labelled, charges, priced = set(), set(), [], 0
     unsure = False  # a charge per unit, or a total without its currency: only a labelled price counts
     header = None  # "": the nearest header names a unit that is no currency
     text = UNWRAP.sub(lambda m: f"{m.group(1) or ''} ", text)
@@ -266,8 +273,16 @@ def _price(text: str, rfq: Rfq) -> tuple[Decimal, str] | None:
             currency = m.group("c1") or m.group("c2")
             price = (calc.bid_charge(amount, per_kg, rfq), SYMBOLS.get(currency.lower(), currency))
             found.add(price)
+            priced += 1
+            if not i and CHARGE_LINE.match(before) and (per_kg or not after.strip(" .,;)")):
+                charges.append((line.strip(), amount, per_kg, price[1]))
             if TOTAL_BEFORE.search(before) or TOTAL_AFTER.match(after) or PRICE_IS.search(before):
                 labelled.add(price)
+    # A rate per hour or pallet beside them is no charge line and not counted (`OTHER_BASIS`).
+    lines = [c[0] for c in charges]
+    if (not labelled and len(charges) == priced > 1 and len({c[3] for c in charges}) == 1
+            and len(set(lines)) == len(lines)):  # fmt: skip
+        return calc.bid_total([(c[1], c[2]) for c in charges], rfq), charges[0][3]
     if unsure and not labelled:
         return None
     candidates = labelled or found

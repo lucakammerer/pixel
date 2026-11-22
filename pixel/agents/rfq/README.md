@@ -270,6 +270,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "rates from", "ab", "minimum charge", "our previous offer was", "optional insurance", "... extra". `bids._price`
   takes "we can offer" or "our offer is" as the label and skips such a price (`SIDE_BEFORE`, `SIDE_AFTER`);
   `tools/simulate.py` writes every bid layout beside each of them.
+- An answer can list only its charges, without a total ("Air freight 1,234.56 EUR", "Fuel surcharge ..."; "Base
+  charge", "Weight charge"). `bids._price` adds them up in code (`CHARGE_LINE`, `calc.bid_total`) when every price of the
+  answer is such a line, in one currency, none repeated; a rate per hour or pallet beside them is no charge.
   "The fuel (security, waiting) rate is" never labels the offer's price (`PRICE_IS`), and an amount at a line's end
   joins the next line's currency only when that line holds the currency alone (`UNWRAP`).
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
