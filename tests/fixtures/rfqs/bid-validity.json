@@ -5,6 +5,9 @@
   "cases": [
     {"id": "absolute", "carrier": "airline", "text": "Rate valid until: 21 Nov 2026 17:00 UTC", "until": "2026-11-21T17:00:00+00:00"},
     {"id": "other-party", "carrier": "trucker", "text": "Price valid until 21 Nov 2026 17:00 UTC", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "inline-after-pickup", "carrier": "trucker", "text": "We can pick it up within 12 hours, and the quote is valid until 21 Nov 2026 17:00 UTC.", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "inline-before-reference", "carrier": "trucker", "text": "This offer is valid until 21 Nov 2026 17:00 UTC. Our offer reference is TRK-10001.", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "inline-definite-quote", "carrier": "trucker", "text": "The quote is valid until 21 Nov 2026 17:00 UTC. No booking is required.", "until": "2026-11-21T17:00:00+00:00"},
     {"id": "without-expiry", "carrier": "airline", "text": "Departure scheduled for 21 Nov 2026 17:00 UTC", "until": null},
     {"id": "old-quoted-expiry", "carrier": "airline", "text": "> Rate valid until 21 Nov 2026 15:00 UTC", "until": null},
     {"id": "iso-deadline", "carrier": "airline", "text": "This quote is valid until 2026-11-21T18:00:00+01:00.", "until": "2026-11-21T17:00:00+00:00"},

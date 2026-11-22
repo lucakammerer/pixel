@@ -2,6 +2,13 @@
   {
     "family": "bid",
     "axes": {
+      "expiry": ["inline-after-pickup", "inline-before-reference", "inline-definite-quote"]
+    },
+    "note": "Round 196: pickup bids state an explicit UTC deadline inside a paragraph. The whole-line expiry reader leaves it unset. Owner: supply."
+  },
+  {
+    "family": "bid",
+    "axes": {
       "carrier": "airline",
       "distractor": "second_lane"
     },
