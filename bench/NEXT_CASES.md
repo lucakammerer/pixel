@@ -171,6 +171,10 @@ round 166.
 Round 56 checks the rate version at the first request after a change (`tests/test_outage_drill.py`). Unavailable
 rates with no observation of the new version are the known gap C16. The normal portal and a 503 after one or
 two recorded reads of the new version are controls. The version's exact activation time is not in the snapshot.
+The newer gateway drill through round 187 improves from 50 to 56 of 60 with #489. Round 167 still falls back
+to the last Korean lot (407 kg and 3.62 cbm) and quotes 2140.07 EUR instead of the scorer's 4745.69. Its
+three lots total 1223 kg, 9.2264 cbm and 13 pieces. Both single and duplicate delivery reproduce the gap and
+send one quote. The English control with declared per-piece volumes passes. Owner: Cost (`extract._lots`).
 Not drilled here: booking and tracking outages (no effect on the quote, axis B).
 
 ## Axis B: booking, tracking and the flow after the quote (22.11.2026, 02:00 to 03:30)

@@ -47,6 +47,8 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   `tests/test_outage_drill.py` replays under every drill. `round-56-version-rollover` saves the arrival state,
   the scorer's best and the first recorded rates of the new version in `.expected.json`. It exercises the
   portal outage both before and after those reads are available to the rate card (C16).
+  `round-167-korean-lots` holds the accepted Korean three-lot request, its scorer reference and hand-calculated
+  cargo totals. The gateway drill replays it with single and duplicate delivery; the English wording is a control.
 - `replay-gate.json`: round 155's session as the live database held it (request mail, reading, every option found,
   the sent quote, pickup zone), which `tests/test_replay_gate.py` builds into a database for `tools/replay_gate.py`.
 - `thread-followups.json`: round 86's session with every mail that can arrive later in it, by sender, phase and
