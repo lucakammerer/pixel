@@ -17,7 +17,7 @@ HTML = r"""<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:w
 <style>
 body{overflow-x:clip}
 .tower{--t-bg:#282322;--t-ink:#f5eee9;--t-muted:#9d938c;--t-accent:#DE5531;position:relative;width:100vw;
-margin:-102px calc(50% - 50vw) 0;height:min(92vh,900px);min-height:520px;overflow:hidden;color:var(--t-ink);
+margin:-116px calc(50% - 50vw) 0;height:100vh;min-height:520px;overflow:hidden;color:var(--t-ink);
 background:radial-gradient(1100px 640px at 50% 44%,#302a28 0%,var(--t-bg) 50%,#1f1b1a 100%)}
 .tower canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .tower::after{content:"";position:absolute;inset:0;pointer-events:none;background:

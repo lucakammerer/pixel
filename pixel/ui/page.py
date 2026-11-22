@@ -17,24 +17,27 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Jost,system-ui
 -webkit-font-smoothing:antialiased}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .top{height:60px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:28px;
-padding:0 12px 0 24px;background:#fff;border:1px solid var(--line);border-radius:999px;position:sticky;top:14px;
-z-index:10;max-width:1240px;margin:14px auto 0}
+padding:0 12px 0 24px;background:#fff;border:1px solid var(--line);border-radius:999px;position:sticky;top:24px;
+z-index:10;max-width:1240px;margin:28px auto 0}
 /* the wordmark from the pitch: an orange square and PIXEL in Satoshi Black */
 .brand{display:flex;align-items:center;gap:10px;justify-self:start;color:var(--ink);font:900 20px/1 Satoshi,Jost,system-ui,
 sans-serif;letter-spacing:-.01em;user-select:none}
 .brand:hover{text-decoration:none}
 .brand i{width:12px;height:12px;background:#DE5531;display:block;flex:none}
-.top nav{display:grid;grid-template-columns:repeat(3,148px);gap:6px}
-.top nav a{display:flex;align-items:center;justify-content:center;height:38px;padding:0 16px;border-radius:999px;color:var(--ink);
-font-size:13px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;transition:background .2s,color .2s}
+.top nav{display:grid;grid-template-columns:repeat(3,168px);gap:6px}
+.top nav a{display:flex;align-items:center;justify-content:center;height:42px;padding:0 16px;border-radius:999px;color:var(--ink);
+font-size:15px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;transition:background .2s,color .2s}
 .top nav a:hover{background:var(--hover);text-decoration:none}
 .top nav a.on{background:var(--tint);color:var(--accent)}
-.live{justify-self:end;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
-.live i{width:7px;height:7px;border-radius:50%;background:var(--line-2);position:relative}
-.live.on i{background:var(--ok)}.live.on i::after{content:"";position:absolute;inset:0;border-radius:50%;
-background:var(--ok);animation:pulse 2s ease-out infinite}
+.live{justify-self:end;display:flex;align-items:center;gap:9px;padding-right:10px;font-size:16px;font-weight:500;
+color:var(--muted)}
+.live i{width:10px;height:10px;border-radius:50%;background:var(--line-2);position:relative}
+.live.on{color:var(--ok);animation:glow 2.4s ease-in-out infinite}
+.live.on i{background:var(--ok);box-shadow:0 0 8px var(--ok)}.live.on i::after{content:"";position:absolute;inset:0;
+border-radius:50%;background:var(--ok);animation:pulse 2s ease-out infinite}
 @keyframes pulse{from{transform:scale(1);opacity:.55}to{transform:scale(3);opacity:0}}
-@media (prefers-reduced-motion:reduce){.live.on i::after{animation:none}}
+@keyframes glow{0%,100%{text-shadow:0 0 0 rgba(23,128,79,0)}50%{text-shadow:0 0 12px rgba(23,128,79,.6)}}
+@media (prefers-reduced-motion:reduce){.live.on i::after,.live.on{animation:none}}
 main{max-width:1240px;margin:0 auto;padding:28px 24px 80px}
 .head{display:flex;align-items:flex-end;gap:16px;margin-bottom:20px;flex-wrap:wrap}
 .head .grow{flex:1;min-width:0}
