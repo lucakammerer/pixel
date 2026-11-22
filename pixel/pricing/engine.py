@@ -59,6 +59,11 @@ def _portal_down(ctx: Context, rfq: Rfq) -> bool:
     ).fetchone() is not None
 
 
+def _ask_desk(ctx: Context, rfq: Rfq) -> bool:
+    """The operator may ask the desk after a 503, once per lane."""
+    return _portal_down(ctx, rfq) and _desk_enquiry(ctx, rfq) is None
+
+
 def _desk_enquiry(ctx: Context, rfq: Rfq) -> int | None:
     asked = ctx.db.execute(
         "SELECT message_id FROM events WHERE session_id=? AND kind='bid.requested' AND json_extract(payload,'$.email')=?"
