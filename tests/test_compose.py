@@ -263,6 +263,10 @@ def test_the_customers_own_reference_stands_in_the_mail(language, request_, ref)
         "Commande 300 kg vers YUL",
         "Pour la commande 25/11 merci de coter",
         "Bestellung: 2026-11-27 Abholung",
+        "Neue Bestellung 450kg nach JFK",
+        "Bestellung 450 Kilo",
+        "commande 300 kilos vers YUL",
+        "Bestellung 1200 x 800 mm",
     ],
 )
 def test_no_reference_where_none_is_given(text):
