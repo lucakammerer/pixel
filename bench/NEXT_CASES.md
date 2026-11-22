@@ -78,17 +78,21 @@ Rank = likelihood × how badly we fail today × how cheap the fix is (each 1 to 
 | C7 | `attachment-get-429` | GET of a PDF-only request's attachment: 429, then 200 | new (R7 × rounds 65-68) | 429 raises, the request is read without its cargo | waited out 3 times; [#333](https://github.com/lucakammerer/pixel/pull/333) open | `mailbox.attachment` | S | 2×3×3 |
 | C3 | `received-at-skew` | `received_at` as naive CET read as UTC (an hour ahead), or an hour behind | new | ahead: no timer fires before expiry; behind: `quote.missed expired`, no answer | ahead: now; expired against a push or a complete poll: that evidence; [#331](https://github.com/lucakammerer/pixel/pull/331) open | `poller.bounded` | S | 2×3×2 |
 | C4 | in `mailbox-send-503-burst` | the no-price reply of a lane no source prices meets a 503 (with axis A) | esc. × esc. | the R1 answer is lost | sent again after a 503; in #327 | `outbox._deliver` | S | 2×2×3 |
-| C5 | `gateway-down-model-only` | gateway 503 / 429 / timeout for the whole request | new | requests the rules read: quoted; model-only (Chinese, voice, unclear): `quote.missed no_price` | one retry inside the call's wait; a full outage stays unquotable for these | `llm.ask_json` | S | 2×3×2 |
+| C5 | `gateway-down-model-only` | gateway 503 / 429 / timeout for the whole request | new | 503: requests the rules read are quoted, model-only ones (Chinese, voice, unclear) get `quote.missed no_price`. A 60 s hang (replay probe): rules-read quoted at 100 s, the router's model call (docx, pdf) waits 60 s unbounded before the request reaches the orchestrator, model-only as with 503 | one retry inside the call's wait; a bound on `router.classify`'s call; a full outage stays unquotable for model-only requests | `llm.ask_json`, `router` | S | 2×3×2 |
 | C6 | `gateway-model-unavailable` | 404 for gpt-4.1 (`PIXEL_MODEL_CHECK`), gpt-4.1-mini still served | new | model-only extraction fails as in C5 | one retry on `PIXEL_MODEL` | `llm.ask_json` | S | 1×3×3 |
 | C11 | `out-of-order-visibility` | 91012 visible before 91011, 91011's push lost | new | 91011 is never polled again | every Nth poll from a few ids back; `ingest` drops duplicates | `poller.run` | S | 1×3×2 |
-| C14 | `large-attachment` | 9.5 MB, 400-page scan as the only document | new | unmeasured; parse unbounded, no Rfq at takeover | bounded parse; what is read by then counts | `extract._attachments` | M | 1×3×1 |
 | C8 | `push-timestamp-format` | `X-Webhook-Timestamp` in ms or ISO | new | 401 / 500, the 1 s poll takes it: latency only | read like a stored time | `webhook.hook` | S | 2×1×3 |
+| C14 | `large-attachment` | 9.5 MB, 400-page scan as the only document | new | unmeasured; parse unbounded, no Rfq at takeover | bounded parse; what is read by then counts | `extract._attachments` | M | 1×3×1 |
 | — | pushes stop | the webhook subscription is dropped | new | covered: the poll is the safety net (`test_poller`) | — | — | — | — |
 | — | push twice / out of order | same push repeated or an older one after a newer | new | covered: stored once by id (`test_webhook`) | — | — | — | — |
 | — | poll 429 with a slower minimum | "one poll per 5 seconds" | live (22.11. 01:23) | covered: interval learned from the 429 | — | — | — | — |
 | — | mailbox 429 on send | 60 mails per minute (R7) | new | covered: waited out (`test_outbox`) | — | — | — | — |
 | — | restart with a request open | deploy or crash in a request's second minute | live (every deploy) | covered: `orchestrator.recover`, handler kept to `hard_at` (`test_recover_restarts_an_open_request`) | — | — | — | — |
 | — | ready date near midnight | "ready today" at 23:30 UTC, 00:30 CET | new | not reproduced: which day the scorer takes is unknown | — | `extract` dates, `pricing/session` validity | ? | — |
+
+Cost points in a gateway outage (R28): a failed call logs 0 USD, and an 18-minute window without any spend earns no cost
+points for any of its quotes. A full outage therefore costs the window's cost points whatever we do. In a partial
+one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window above zero.
 
 Open and unverified: C5, C6, C8, C11 and C14 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
