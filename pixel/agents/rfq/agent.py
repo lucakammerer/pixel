@@ -301,7 +301,10 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
     rfq = session.rfq(ctx, session_id)
     if rfq is None:
         return None
-    options = engine.combine(rfq, session.for_request(ctx, rfq), feedback.pickup_rule(ctx), ctx)
+    stored = session.for_request(ctx, rfq)
+    options = engine.combine(rfq, stored, feedback.pickup_rule(ctx), ctx) or engine.combine(
+        rfq, engine.expired_sheet_options(ctx, rfq) + stored, feedback.pickup_rule(ctx), ctx
+    )  # a cargo ready after its sheets run out: an expired sheet's price beats no answer (R1)
     if rfq.door_pickup and not allow_partial:
         options = [o for o in options if o.trucker]
     if not options:

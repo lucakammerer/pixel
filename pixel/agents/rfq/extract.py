@@ -563,6 +563,10 @@ LASTING = re.compile(
 AIRLINE_SENTENCES = re.compile(r"(?<=[.!?;])\s+|\n+")
 AIRLINE_ONLY = r"(?:only|exclusively|solely|nur|ausschlie(?:ß|ss)lich|seulement|uniquement)"
 AIRLINE_END = r"(?=\s*(?:$|[,.!?;]|please\b|bitte\b|for (?:this|the) (?:shipment|quote)\b|für diese sendung\b))"
+# "no airline other than ...", "keine andere Airline als ...", "aucune compagnie sauf ...": one airline allowed.
+AIRLINE_NO_OTHER = (r"(?:no|keine?\w*|aucune?)\s+(?:other\s+|andere\w*\s+|autre\s+)?(?:airlines?|carriers?|"
+                    r"fluggesellschaft\w*|compagnies?(?:\s+a[ée]riennes?)?)\s+(?:other\s+than|except|but|"
+                    r"apart\s+from|au(?:ß|ss)er|als|sauf|que)")  # fmt: skip
 AIRLINE_CONNECTOR = r"(?:\s*,\s*(?:(?:or|and|oder|und|ou|et)\s+)?|\s+(?:or|and|oder|und|ou|et)\s+)"
 AIRLINE_WORD = re.compile(r"\s+(?:air\s+cargo|air\s+freight|airways|airlines?|air|cargo)$", re.IGNORECASE)
 CODE_IN_BRACKETS = re.compile(r"\(([A-Z0-9]{2})\)")
@@ -575,7 +579,8 @@ def _calls(name: str) -> set[str]:
 
 
 def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
-    """Read an exclusive instruction directly attached to known carrier names."""
+    """Read an exclusive instruction directly attached to known carrier names: "only", "exclusively", "nur" next to
+    the names, or "no airline other than" before them."""
     if not airlines:
         return ()
     aliases = {name.casefold(): name for name in sorted(airlines)}
@@ -591,13 +596,14 @@ def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
         rf"(?:(?:with|via|on|mit|von|über|avec|par|angebote von)\s+)?"
         rf"(?P<after>{listed})(?:\s+(?:fliegen|anbieten))?{AIRLINE_END}"
         rf"|(?P<before>{listed})\s+{AIRLINE_ONLY}\b{AIRLINE_END}"
+        rf"|\b{AIRLINE_NO_OTHER}\s+(?P<other>{listed})"
     )
     required = set()
     for sentence in AIRLINE_SENTENCES.split(text.casefold()):
         for match in instruction.finditer(sentence):
             if re.search(r"\b(?:not|nicht)\s+$", sentence[: match.start()]):
                 continue
-            group = match["before"] or match["after"]
+            group = match["before"] or match["after"] or match["other"]
             required.update(aliases[name] for name in re.findall(mention, group))
     return tuple(sorted(required))
 
@@ -612,7 +618,8 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
         lowered = sentence.casefold()
         required = set(required_airlines(sentence, airlines))
         names = {
-            airline for airline in airlines - required
+            airline
+            for airline in airlines - required
             if any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
         }
         if names:
@@ -674,10 +681,18 @@ def _text(message: Message) -> str:
 
 
 MONTHS = (
-    "jan january januar janv janvier", "feb february februar févr fevr février fevrier",
-    "mar march märz maerz mär mrz mars", "apr april avr avril", "may mai", "jun june juni juin",
-    "jul july juli juil juillet", "aug august août aout", "sep sept september septembre",
-    "oct october okt oktober octobre", "nov november novembre", "dec december dez dezember déc decembre décembre",
+    "jan january januar janv janvier",
+    "feb february februar févr fevr février fevrier",
+    "mar march märz maerz mär mrz mars",
+    "apr april avr avril",
+    "may mai",
+    "jun june juni juin",
+    "jul july juli juil juillet",
+    "aug august août aout",
+    "sep sept september septembre",
+    "oct october okt oktober octobre",
+    "nov november novembre",
+    "dec december dez dezember déc decembre décembre",
 )
 MONTH_NUMBER = {name: number for number, names in enumerate(MONTHS, 1) for name in names.split()}
 MONTH_NAME = "|".join(sorted(MONTH_NUMBER, key=lambda name: (-len(name), name)))
@@ -732,6 +747,7 @@ def _stated_date(value: str, on: date) -> date | None:
 
 def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]:
     """Read cargo readiness, latest arrival, and a maximum transit from explicit statements."""
+
     def first_date(pattern: re.Pattern) -> date | None:
         return next((value for match in pattern.finditer(text) if (value := _stated_date(match["value"], on))), None)
 

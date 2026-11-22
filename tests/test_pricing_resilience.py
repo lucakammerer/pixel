@@ -242,3 +242,20 @@ def test_future_shipment_uses_the_tariff_valid_on_its_ready_day(ctx):
     [sheet] = engine.sheet_options(ctx, future)
     assert (sheet.dataset_version, sheet.total) == ("revised", D(200))
     assert session.for_request(ctx, future) == [portal, sheet]
+
+
+def test_an_expired_sheet_is_the_last_resort_for_a_cargo_ready_after_it(ctx):
+    """Next case 5 without a portal rate or a bid on the lane: the expired sheet still answers (R1), but only then,
+    and it is never logged before, so its airline is still asked for a bid."""
+    request = rfq()
+    today = request.received_at.date()
+    future = request.model_copy(update={"ready_on": today + timedelta(days=7)})
+    store.upsert(ctx, [LaneTariff(
+        carrier="Example Air", origin=future.origin, destination=future.destination, currency="EUR",
+        valid_from=today, valid_to=today + timedelta(days=6), version="old", transit_days=3,
+        minimum=D(100), breaks=((D(0), D(1)),), fuel_per_kg=D(0), security_per_kg=D(0), source="old.txt",
+    )])  # fmt: skip
+    assert engine.expired_sheet_options(ctx, request) == []  # ready today: the sheet is valid
+    [expired] = engine.expired_sheet_options(ctx, future)
+    assert (expired.carrier, expired.dataset_version) == ("Example Air", "old")
+    assert kinds(ctx, "option.found") == []
