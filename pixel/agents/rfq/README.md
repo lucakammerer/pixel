@@ -28,7 +28,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by
   mail, pickup and airline, are waited for until all are in, or until the later of `target_at` and
   `PIXEL_BID_WAIT_S` after the ask, never past `hard_at`: `pricing/bids.py` `collect`); `selection.select`; `compose.render`;
-  `outbox.send_quote`, which attaches the quote's text as a PDF to every quote (R38, `core/pdf.py`). A request missing origin, destination or weight emits `error` and returns None; the
+  `outbox.send_quote`, which attaches the quote's text as a PDF to every quote (R38, `core/pdf.py`). The mail stays short; the PDF adds below it the offer number, the customer's own reference, routing, chargeable and billed weight and the all-in breakdown (`pdf.details`). A request missing origin, destination or weight emits `error` and returns None; the
   orchestrator's fallback and the UI take over. Every drafted quote is saved to the CRM (`crm/quotes.py` `save`),
   the sent one again after `send_quote`, so booking finds it also when the fallback sent it.
 - `agent.py` `served_airports` accepts codes named in the current mail or its attachments, case-insensitively,
