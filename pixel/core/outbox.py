@@ -277,7 +277,11 @@ async def _deliver(
                 ctx.db.execute("DELETE FROM mail_delivery WHERE operation = ?", (key,))  # a 503 is an answer: not sent
             pause = RESEND_BACKOFF_S[min(resends, len(RESEND_BACKOFF_S) - 1)]
             resend = quote is not None or (purpose in RESENT and e.status == 503)
-            if resend and (e.status >= 500 or e.status == 0) and asyncio.get_running_loop().time() + pause < resend_until:
+            if (
+                resend
+                and (e.status >= 500 or e.status == 0)
+                and asyncio.get_running_loop().time() + pause < resend_until
+            ):
                 resends += 1
                 emit(ctx, "mail.resend", "outbox", session_id=sid,
                      payload={"purpose": purpose, "status": e.status, "try": resends + 1})  # fmt: skip
@@ -288,7 +292,7 @@ async def _deliver(
                      payload={"where": "attachment", "error": scrub(ctx, str(e))})  # fmt: skip
                 attachments = ()
                 continue
-            translated = english is not None and english != body
+            translated = english is not None and english != body and 400 <= e.status < 500
             if quote is None:
                 # Not sent for sure (a 4xx, a 503, no connection: its row is gone above): once more, never a loop; a
                 # refused translation in English. A lost response or another 5xx may have been delivered: its row stays

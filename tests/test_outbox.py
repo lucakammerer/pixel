@@ -317,7 +317,10 @@ async def test_a_mail_whose_response_was_lost_is_never_sent_twice(conn, purpose)
     assert unconfirmed(ctx) == []
 
 
-@pytest.mark.parametrize(("status", "bodies"), [(422, ["Say\x013n Deniz", "Dear Deniz"]), (500, ["Say\x013n Deniz"])])
+@pytest.mark.parametrize(
+    ("status", "bodies"),
+    [(422, ["Say\x013n Deniz", "Dear Deniz"]), (503, ["Say\x013n Deniz"] * 2), (500, ["Say\x013n Deniz"])],
+)
 async def test_a_refused_translation_leaves_in_english_only_when_surely_not_sent(conn, monkeypatch, status, bodies):
     """Session 51345's booking notice: a translation the mailbox answered with 500 may have been stored, so it stays
     the one try; a refusal (4xx) goes out once more in English."""
