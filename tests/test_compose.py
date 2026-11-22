@@ -501,7 +501,9 @@ def test_an_offer_addressed_to_a_colleague_greets_the_colleague():
     request = "Please address the offer to my colleague Mr. Jens Hartmann.\n\nBest regards\nFrank Maier"
     _, body = compose.render(rfq("en"), OPTION, request=request)
     assert body.startswith("Dear Mr. Hartmann,")
-    _, body = compose.render(rfq("en"), OPTION, request="Please send the quote to Hamburg.\n\nBest regards\nFrank Maier")
+    _, body = compose.render(
+        rfq("en"), OPTION, request="Please send the quote to Hamburg.\n\nBest regards\nFrank Maier"
+    )
     assert body.startswith("Hello Frank,")
 
 
