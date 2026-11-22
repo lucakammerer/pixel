@@ -797,11 +797,29 @@ READY_ON = re.compile(
     r"(?:(?:on|from|am|ab|le)[ \t]+|:[ \t]*)?" + STATED_DATE,
     re.IGNORECASE,
 )
+# What turns a date near "arrival" into something other than a latest arrival: our answer by a date ("please reply
+# by"), details sent by a date, or a past shipment ("the last arrival was by 16 November"). "Arrival airport" is a
+# label, not a deadline.
+NOT_ARRIVAL = (
+    r"please|pls|kindly|reply|respond|answer|quote|send|confirm|advise|let us know|offer|details|information"
+    r"|last|previous\w*|was|were|had|used to|bitte|antwort\w*|angebot\w*|senden|schicken|bestätig\w*|mitteil\w*"
+    r"|letzte\w*|zuletzt|war|waren|répond\w*|envoy\w*|devis|dernière|était"
+)
+# Between "arrival" and "by" only the place may stand ("arrive in Hong Kong by"): no other clause, no other verb.
+ARRIVAL_SPAN = rf"(?:(?!\b(?:{NOT_ARRIVAL})\b)(?:[^.!?;,:\n]|,(?=[ \t]*(?-i:[A-Z])))){{0,40}}?"
 ARRIVE_BY = re.compile(
-    r"\b(?:arriv(?:e|es|ing|al)\b[^.!?;\n]{0,60}?(?:no later than|not later than|by)\b"
+    rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline)\s*[:=]?"
-    r"|(?:ankunft|eintreffen)\b[^.!?;\n]{0,45}?(?:spätestens(?: am)?|bis(?: zum)?)\b"
-    r"|arriv(?:ée|er)\b[^.!?;\n]{0,45}?au plus tard(?: le)?\b)" + STATED_DATE,
+    rf"|(?:ankunft|eintreffen)\b{ARRIVAL_SPAN}(?:spätestens(?: am)?|bis(?: zum)?)\b"
+    rf"|arriv(?:ée|er)\b{ARRIVAL_SPAN}au plus tard(?: le)?\b)" + STATED_DATE,
+    re.IGNORECASE,
+)
+# The last words before "arrival": "please confirm the arrival date by", "last time the arrival was by"; a request
+# verb further back ("please quote 300 kg that must arrive by") leaves the deadline standing.
+ARRIVAL_CONTEXT = re.compile(
+    r"\b(?:reply|respond|answer|quote|send|confirm|advise|let us know|last time|previous\w*|used to|antwort\w*"
+    r"|angebot\w*|senden|schicken|bestätig\w*|mitteil\w*|letzte\w* mal|zuletzt|répond\w*|envoy\w*|dernière fois)\b"
+    r"(?:\W+\w+){0,2}\W*$",
     re.IGNORECASE,
 )
 MAX_TRANSIT = re.compile(
@@ -814,7 +832,8 @@ MAX_TRANSIT = re.compile(
 
 
 def _stated_date(value: str, on: date) -> date | None:
-    """Resolve a date without a year against the request date, including next winter's dates."""
+    """Resolve a date without a year against the request date: this year's, unless that lies more than half a year
+    back."""
     try:
         if "-" in value:
             return date.fromisoformat(value)
@@ -823,8 +842,12 @@ def _stated_date(value: str, on: date) -> date | None:
             day, month = int(first), int(second) if second.isdigit() else MONTH_NUMBER[second]
         else:
             day, month = int(second), MONTH_NUMBER[first]
-        # A nearby past date can be a missed deadline. Roll only across the calendar boundary.
-        return date(int(year[0]) if year else on.year + (month < on.month - 6), month, day)
+        if year:
+            return date(int(year[0]), month, day)
+        stated = date(on.year, month, day)
+        # Up to half a year back is this year's date (a ready date passed, a missed deadline); further back the
+        # customer means next year's ("arrive by 4 January" written in December).
+        return stated if stated >= on - timedelta(days=183) else date(on.year + 1, month, day)
     except (ValueError, KeyError):
         return None
 
@@ -835,8 +858,16 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
     def first_date(pattern: re.Pattern) -> date | None:
         return next((value for match in pattern.finditer(text) if (value := _stated_date(match["value"], on))), None)
 
+    def arrive_by() -> date | None:
+        """A latest arrival is a coming date the customer sets for this shipment, never an earlier one."""
+        for match in ARRIVE_BY.finditer(text):
+            clause = re.split(r"[.!?;,:\n]", text[: match.start()])[-1]
+            if not ARRIVAL_CONTEXT.search(clause) and (value := _stated_date(match["value"], on)) and value >= on:
+                return value
+        return None
+
     transit = MAX_TRANSIT.search(text)
-    return first_date(READY_ON), first_date(ARRIVE_BY), int(transit["days"]) if transit else None
+    return first_date(READY_ON), arrive_by(), int(transit["days"]) if transit else None
 
 
 def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:

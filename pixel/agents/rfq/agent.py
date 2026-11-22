@@ -47,7 +47,7 @@ async def _with_shipments(quote: Quote, others: list[Rfq], pricing: list[asyncio
         if task not in done or task.exception():
             continue
         options = [o for o in task.result() if o.trucker or not rfq.door_pickup]
-        if not (options := selection.compliant_options(rfq, options)):
+        if not options or (rfq.required_carriers and not selection.requested_options(rfq, options)):
             continue
         option = calc.in_currency(selection.select(rfq, options), quote.currency, _fx_for(quote.currency, options))
         if option.currency == quote.currency:  # never a sum across currencies
@@ -200,7 +200,10 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         except Exception:  # noqa: BLE001, S110  late or failed: the quote goes out with the fixed phrases
             pass  # a late task keeps running and stores its slots for the fallback
     prose = compose.stored(ctx, rfq.session_id)
-    if not selection.compliant_options(rfq, options):
+    # Only a required airline is worth waiting for: a late bid of its own can still come. Bids were collected until
+    # `target_at`, so a later price meeting a missed arrival date is unlikely: that quote goes now and names the
+    # alternative (`novelty.with_note`).
+    if rfq.required_carriers and not selection.requested_options(rfq, options):
         return None
     try:
         rfq = await asyncio.wait_for(asyncio.shield(novel), max((deadline.target_at - timing.now()).total_seconds(), 0))
@@ -321,7 +324,8 @@ async def served_airports(
 
 
 async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False) -> Quote | None:
-    """The best compliant price so far. At the hard deadline, available alternatives can also be quoted."""
+    """The best price so far, from the required airline while one can still answer. At the hard deadline another
+    airline's price can also be quoted."""
     rfq = session.rfq(ctx, session_id)
     if rfq is None:
         return None
@@ -333,7 +337,7 @@ async def fallback(ctx: Context, session_id: int, *, allow_partial: bool = False
         options = [o for o in options if o.trucker]
     if not options:
         return None
-    if not allow_partial and not selection.compliant_options(rfq, options):
+    if rfq.required_carriers and not allow_partial and not selection.requested_options(rfq, options):
         return None
     return await _in_language(ctx, _quote(ctx, rfq, options, compose.stored(ctx, session_id), fallback=True))
 

@@ -74,10 +74,15 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   `pricing/selection.py` `select` prefers compliant prices and `pricing/bids.py` `request` limits airline enquiries to
   the requested carriers. If recovery reaches the deadline with only another airline's price, `novelty.py`
   `with_note` identifies that price as an alternative.
-- `extract.py` `schedule` reads explicit ready and latest arrival dates and a maximum air transit in days.
-  `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses `pricing/calc.py`
-  `arrival` for the delivery date including pickup. The fallback waits for a compliant quote until the deadline
-  and `novelty.py` `with_note` identifies the available alternative if it misses the requested timing.
+- `extract.py` `schedule` reads explicit ready and latest arrival dates and a maximum air transit in days. A latest
+  arrival is only "arrive … by / no later than <date>" with nothing but the place between (`ARRIVE_BY`; "Shanghai,
+  China" allowed, "arrival airport" a label), never a reply-by or a details-by date, never a past shipment
+  (`ARRIVAL_CONTEXT`, the last words before "arrival") and never a date before the request; a date without a year is
+  this year's unless that lies more than half a year back (`_stated_date`). A sentence the rule leaves is read by `novelty.py`, whose date counts
+  only as written. `pricing/selection.py` `meets_schedule` compares the air leg to the transit limit and uses
+  `pricing/calc.py` `arrival` for the delivery date including pickup. When no price meets the timing, the quote goes
+  out at once with the best one and `novelty.py` `with_note` names the alternative: bids were collected until
+  `target_at`, so a later price that meets it is unlikely.
   `pricing/engine.py` `sheet_options` prices only sheet versions valid on the ready date.
   `pricing/session.py` `for_request` applies the same rule to stored sheet prices.
 - `pricing/engine.py` `expired_sheet_options`: when the cargo is ready after its sheets run out and nothing else has a

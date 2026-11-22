@@ -967,6 +967,32 @@ def test_schedule_reads_only_stated_readiness_and_limits(text, ready, arrive_by,
 
 
 @pytest.mark.parametrize(
+    ("text", "arrive_by"),
+    [
+        ("Arrival airport is Hong Kong, please reply by Wednesday 25 November.", None),
+        ("Please send us your rate with transit and arrival details by 25 November.", None),
+        ("Zielflughafen und Ankunft: Hongkong, Angebot bitte bis 25.11.", None),
+        ("Please confirm the arrival date by Friday 27 November.", None),
+        ("Last time the arrival in HKG was by Monday 16 November, which worked well.", None),
+        ("The goods must arrive by 15 June.", None),  # this June, past: no limit; next June's would bind nothing
+        ("The goods must arrive in Hong Kong by Wednesday 25 November.", date(2026, 11, 25)),
+        ("Please make sure the cargo arrives no later than 2 December.", date(2026, 12, 2)),
+        ("Please quote 300 kg FRA-PVG that must arrive by 2 December.", date(2026, 12, 2)),
+        ("The arrival date must be no later than 2 December.", date(2026, 12, 2)),
+        ("We need the goods to arrive in Shanghai, China by 2 December.", date(2026, 12, 2)),
+        ("Wir benötigen ein Angebot für eine Sendung mit Ankunft bis 02.12.", date(2026, 12, 2)),
+        ("Arrival airport HKG and rates needed by 25 November.", None),
+    ],
+)
+def test_a_latest_arrival_is_only_one_set_for_this_shipment(text, arrive_by):
+    assert extract.schedule(text, date(2026, 11, 22))[1] == arrive_by
+
+
+def test_a_ready_date_this_autumn_stays_this_year():
+    assert extract.schedule("Cargo available from 15 October.", date(2026, 11, 22))[0] == date(2026, 10, 15)
+
+
+@pytest.mark.parametrize(
     ("text", "required", "excluded"),
     [
         ("Please quote Alpha Air only, no other airline.", ("Alpha Air",), ()),
