@@ -823,6 +823,8 @@ ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline)\s*[:=]?"
     rf"|(?:ankunft|eintreffen)\b{ARRIVAL_SPAN}(?:spätestens(?: am)?|bis(?: zum)?)\b"
+    # German puts the verb last: "die Sendung muss spätestens am 2026-12-01 am Zielflughafen eintreffen" (round 118)
+    r"|\b(?:muss|müssen|soll|sollte)[ \t]+(?:[\w-]+[ \t]+){0,2}?spätestens(?:[ \t]+am|[ \t]+bis(?:[ \t]+zum)?)?"
     rf"|arriv(?:ée|er)\b{ARRIVAL_SPAN}au plus tard(?: le)?\b)" + STATED_DATE,
     re.IGNORECASE,
 )
