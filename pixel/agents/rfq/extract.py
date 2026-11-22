@@ -1001,6 +1001,27 @@ def _known_sites(ctx: Context, rfq: Rfq) -> list[str]:
     return list(dict.fromkeys(r["postcode"] for r in rows))
 
 
+def _from_answer(read: Rfq, said: str, facts: list[str]) -> Rfq | None:
+    """The asked facts as the rules read them in the answer alone, when they cannot read the request with it. Round
+    104: "the same shipment as in my request ... for ATL", now to BOM; the model read only BOM, and the answer
+    ("pickup from our site in postcode 40043 ... 585 kg and a total volume of 5.01 m³") was dropped: no quote."""
+    update: dict[str, object] = {}
+    door, postcode = _pickup(said)
+    if {"origin", "pickup"} & set(facts) and door and postcode:
+        update |= {"door_pickup": True, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode)}
+    elif "origin" in facts and (lane := _lane(said)) and lane[1] == read.destination:
+        update["origin"] = lane[0]
+    lots = _lots(said)
+    pieces = lots[2] if lots else _pieces(said)
+    if "weight" in facts and (weight := lots[0] if lots else _weight(said, pieces)):
+        update |= {"weight_kg": weight} | ({"pieces": pieces} if pieces else {})
+    if "volume" in facts and (volume := lots[1] if lots else _volume(said, pieces)):
+        update["volume_cbm"] = volume
+    if not update:
+        return None
+    return read.model_copy(update=update | {"missing": tuple(m for m in read.missing if m not in update)})
+
+
 def _town_zone(ctx: Context, rfq: Rfq, text: str, guess: bool = True) -> Rfq:
     """A door-to-port pickup without a postcode ("pickup from our warehouse"): the town named where the pickup is
     described. Without it the place stays open to be asked; only with `guess` (no answer in time) the customer's
@@ -1631,6 +1652,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             code = codes.pop()
             again = read.model_copy(update={"pickup_postcode": code, "pickup_zone": zone_of(code),
                                             "missing": tuple(m for m in read.missing if m != "pickup_postcode")})  # fmt: skip
+        if again is None:
+            again = _from_answer(read, own_words(said), facts)
         return apply_pickup(again or read, guess=False)
 
     rfq, prose = rules(), None

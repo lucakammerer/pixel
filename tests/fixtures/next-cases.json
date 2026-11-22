@@ -400,6 +400,68 @@
    },
    "today": "Before accuracy/trucker-currency-fx: a USD price with no rate in the answer was no price (the model needs one too), so only Taunusfracht counted: 2562.62, 1.7% high. Now the rate comes from the newest priced source in USD (`bids.known_fx`). Offline the start kit has no USD source, so the replay still shows 2562.62.",
    "known_gap": "Priced only once some source of the night stated a rate for that currency (portal, desk or a carrier); a currency no source ever priced (CHF, PLN) stays unpriced. Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/trucker-all-silent.json",
+   "expected": {
+    "body_states": "the scorer prices the zone 60 trucker it balances in (R13, R16): Orion 2380.00 plus a pickup no answer told us; an airport-to-airport quote is too low by the whole pickup"
+   },
+   "today": "No trucker answers: Orion 2380.00 airport-to-airport with the pickup plainly excluded, sent at the hard deadline (315 s).",
+   "known_gap": "No pickup source besides the truckers. A learned zone price (a trucker's base charge plus rate per kg from its earlier offers, as the table and letter layouts state them) needs proof from the host database that one trucker prices one zone linearly in the weight. Owner: Accuracy (`pricing/pickup.py`, arithmetic in `calc.py`)."
+  },
+  {
+   "fixture": "next-cases/trucker-answers-late.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Bodenseefracht",
+    "total": "2520.12",
+    "currency": "EUR",
+    "note": "balanced: Bodenseefracht 1 + 1 = 2, Taunusfracht 182.62/140.12 + 20/6 = 4.64; Bodenseefracht answers 160 s after the request"
+   },
+   "today": "Quote at 100 s with Taunusfracht only: 2562.62, 1.7% high; Bodenseefracht's answer at 160 s is too late.",
+   "known_gap": "`bids.collect` waits for truckers until max(target, ask + 45 s). Waiting to 115 s keeps full time points (R29) but would not catch 160 s; how late truckers answer live (`bid.received` minus `bid.requested` with pickup) decides. Owner: Speed."
+  },
+  {
+   "fixture": "next-cases/trucker-standard-and-express.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Taunusfracht",
+    "total": "2590.00",
+    "currency": "EUR",
+    "note": "assumption: each offer of a trucker is a bid of its own. Taunusfracht express 210.00/4 h: 1.5 + 1 = 2.5; Bodenseefracht 175.00/12 h: 1.25 + 3 = 4.25; Taunusfracht standard 140.00/30 h: 1 + 7.5 = 8.5"
+   },
+   "today": "Rules refuse two prices; offline the model fails and Bodenseefracht alone gives 2555.00; live the model reads one of the two offers.",
+   "known_gap": "`bids.parse` reads one price per answer; two offers need one pickup option per line. Owner: Accuracy. Size S-M."
+  },
+  {
+   "fixture": "next-cases/trucker-base-plus-per-kg.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Taunusfracht",
+    "total": "2562.00",
+    "currency": "EUR",
+    "note": "Taunusfracht 65.00 + 0.13 x 900 kg = 182.00, 10 h: 1 + 1 = 2; Bodenseefracht 210.00/12 h: 1.154 + 1.2 = 2.354"
+   },
+   "today": "Rules refuse a base charge plus a rate per kg; offline the model fails and Bodenseefracht gives 2590.00; live the model copies both charges and code adds them up (one gateway call).",
+   "known_gap": "By rules: a base charge plus a rate per kg on one line is the sum (`calc.bid_total`); saves the call. Owner: Accuracy. Size S."
+  },
+  {
+   "fixture": "next-cases/trucker-asks-for-details.json",
+   "expected": {
+    "body_states": "Bodenseefracht 210.00 is the only price: 2590.00; the scorer may also hold Taunusfracht's price, which only an answer to its question would give"
+   },
+   "today": "Taunusfracht's question costs a model call and gives no price; quote 2590.00 with Bodenseefracht.",
+   "known_gap": "Answering a trucker's question (pallets, tail lift) from the request is not built; never seen live. Owner: Accuracy (`pricing/bids.py`)."
+  },
+  {
+   "fixture": "next-cases/trucker-condition-minimum-weight.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Bodenseefracht",
+    "total": "2520.12",
+    "currency": "EUR"
+   },
+   "today": "Pass: the condition is read as a side note, the stated total stands, balanced takes Bodenseefracht."
   }
  ],
   "axis_b_note": "Axis B (bench/NEXT_CASES.md): flows after the quote, run by the harness named per row, never by tools.kpi. today_before is what main did before #323, #328, #332, #336 and #339.",

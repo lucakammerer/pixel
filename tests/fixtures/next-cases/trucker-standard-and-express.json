@@ -1,0 +1,39 @@
+[
+  {
+    "id": 996321,
+    "from": "rhein-main-druck@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Quote request to SGN",
+    "body": "Hello,\n\nplease quote air freight to Ho Chi Minh City (SGN) for 12 cartons of printed manuals, 900 kg, 3.5 cbm. Please collect them from our warehouse at Hanauer Landstrasse 120, 60314 Frankfurt am Main.\n\nCheapest option, all-in in EUR.\n\nBest regards\nSabine Roth\nRhein-Main Druck GmbH",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T03:10:00+00:00",
+    "attachments": []
+  },
+  {
+    "id": 996322,
+    "from": "taunusfracht@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Pickup request 60314 to FRA",
+    "body": "Hello,\n\nThank you for your request. We can collect your shipment in Frankfurt and deliver it to FRA airport.\n\nStandard: 140.00 EUR, pickup within 30 hours\nExpress: 210.00 EUR, pickup within 4 hours\n\nQuote reference: TRK-322\n\nNo booking is required for pickup.\n\nBest regards,\nTaunusfracht",
+    "in_reply_to": null,
+    "references": [
+      996321
+    ],
+    "received_at": "2026-11-22T03:10:30+00:00",
+    "attachments": []
+  },
+  {
+    "id": 996323,
+    "from": "bodenseefracht@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Pickup request 60314 to FRA",
+    "body": "Hello,\n\nThank you for your request. We can collect your shipment in Frankfurt and deliver it to FRA airport for 175.00 EUR.\n\nPickup time: 12 hours\n\nQuote reference: TRK-323\n\nNo booking is required for pickup.\n\nBest regards,\nBodenseefracht",
+    "in_reply_to": null,
+    "references": [
+      996321
+    ],
+    "received_at": "2026-11-22T03:10:36+00:00",
+    "attachments": []
+  }
+]

@@ -287,6 +287,13 @@ What follows:
   model (166 of 528), "1.234 t" in a lot read as 1234 t; read by rules since #279. Wrong in every harness: 0.
   Open: which shipment the scorer prices in a multi-shipment mail (evidence: the board's verdict on the first
   round answered with the first shipment). Next: the live mail since mail 26279.
+- 22.11. 03:30, axis D (truckers and the pickup place), offline: 14 cases, 12 as next-case fixtures, the first with
+  carrier answers in the fixture (`replay.raws_of`). Fixed: a pickup time in days or minutes (#329; three truckers
+  writing days quoted the cheapest, not the balanced one), a phone number, another address or a postcode abroad
+  beside the pickup postcode (#334; "20121 Milano" flew from HAM), a trucker's price in USD without a rate (#337).
+  Open: all truckers silent (too low by the pickup, quoted at 315 s), a zone not listed (round 20), two pickup sites,
+  two offers in one answer, a zone list that drops a zone. Next: from the host database, trucker answer delays and
+  whether one trucker prices one zone linearly in the weight (that decides D5 and D6).
 - 22.11. 03:30, axis B cycle 1 (booking, tracking and the flow after the quote; offline, no live mail read). Tried
   every one-factor change to the booking path (`bench/NEXT_CASES.md` axis B, B1 to B15) against scripted portals
   and `tools.followup_matrix`. Wrong before: an acceptance after 15 minutes during the rate outage crashed in
