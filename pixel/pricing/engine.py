@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Awaitable
 from datetime import timedelta
 from decimal import Decimal
 
@@ -10,6 +11,7 @@ from pixel.core.orchestrator import Deadline
 from pixel.pricing import availability, bids, calc, pickup, portal_rates, selection, session, store
 
 PORTAL_HEAD_START_S = 1.0
+PORTAL_DOWN_WAIT_S = 4.0  # a read that has not failed yet gets this long to say so before the mails go out
 LATE_503_S = 10.0  # round 122: the 503 came after the head start and the desk was never asked
 
 
@@ -75,10 +77,13 @@ def expired_sheet_options(ctx: Context, rfq: Rfq) -> list[RateOption]:
 
 
 def _portal_down(ctx: Context, rfq: Rfq) -> bool:
+    """A portal read that failed for every airline, not for this one (404) or the quota (429): the API or its edge
+    is down, so the desk and the probes take over (rounds 120, 123)."""
     return (
         ctx.db.execute(
-            "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed' AND json_extract(payload,'$.source')='portal'"
-            " AND json_extract(payload,'$.error')='RatesUnavailable'",
+            "SELECT 1 FROM events WHERE session_id=? AND kind='option.failed'"
+            " AND json_extract(payload,'$.source')='portal'"
+            " AND COALESCE(json_extract(payload,'$.error'),'') NOT IN ('NotOnPortal','RateLimited')",
             (rfq.session_id,),
         ).fetchone()
         is not None
@@ -142,10 +147,10 @@ def combine(
             for o in airline]  # fmt: skip
 
 
-async def _reread(ctx: Context, rfq: Rfq, deadline: Deadline, now: asyncio.Event) -> None:
-    """`portal_rates.reread`; its failure must not cancel the other price sources of the TaskGroup."""
+async def _reread(ctx: Context, rfq: Rfq, read: Awaitable[object]) -> None:
+    """A rate read again; its failure must not cancel the other price sources of the TaskGroup."""
     try:
-        await portal_rates.reread(ctx, rfq, deadline, now)
+        await read
     except Exception as e:  # noqa: BLE001
         events.emit(ctx, "error", "pricing", session_id=rfq.session_id,
                     payload={"where": "portal_reread", "error": type(e).__name__})  # fmt: skip
@@ -173,44 +178,58 @@ async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption
     offers = []
     async with asyncio.TaskGroup() as group:
         pickup_task = group.create_task(pickup.options(ctx, rfq, deadline))
-        portal_task = group.create_task(portal_rates.options(ctx, rfq, deadline))
+        down_now = asyncio.Event()
+        portal_task = group.create_task(portal_rates.options(ctx, rfq, deadline, down=down_now))
+        probes_task = group.create_task(_reread(ctx, rfq, portal_rates.probes(ctx, rfq, deadline, down_now)))
+        down_wait = group.create_task(down_now.wait())
         # Fast portal prices save unnecessary mails. An outage or a slow rate read must still
         # leave mail-only airlines time to answer, including after a late restart.
         head_start = min(PORTAL_HEAD_START_S, max(0.0, (deadline.target_at - timing.now()).total_seconds()))
-        await asyncio.wait({portal_task}, timeout=head_start)
+        await asyncio.wait({portal_task, down_wait}, timeout=head_start, return_when=asyncio.FIRST_COMPLETED)
+        if not (down_now.is_set() or portal_task.done()):
+            # A hung read is an outage too: give the failure PORTAL_DOWN_WAIT_S to arrive, so the desk is asked in
+            # this round instead of after the quote.
+            await asyncio.wait(
+                {down_wait}, timeout=min(PORTAL_DOWN_WAIT_S, max(0.0, (deadline.target_at - timing.now()).total_seconds()))
+            )  # fmt: skip
+        down_wait.cancel()
         priced.update(priced_airlines())
         unpriced = [(name, email) for name, email in candidates if name.casefold() not in priced]
         if not (priced or unpriced):  # nothing to mail: the portal's own answer decides whether the desk is needed
             await asyncio.wait({portal_task}, timeout=max(0.0, (deadline.target_at - timing.now()).total_seconds()))
             priced.update(priced_airlines())
-        down = _portal_down(ctx, rfq)
+        down = down_now.is_set() or _portal_down(ctx, rfq)
         desk_id = _desk_enquiry(ctx, rfq)
-        # On a 503 the desk supplies portal rates. On a lane with no other source it may name off-portal airlines.
+        # On an outage the desk supplies portal rates. On a lane with no other source it may name off-portal airlines.
         if desk_id is None and (down or not (priced or unpriced)):
             unpriced.append(("Rate desk", RATEDESK))
         mailed = await bids.request(ctx, rfq, unpriced) if unpriced else []
         if desk_id is None and not down and not portal_task.done():
+            # Still no answer after the mails: a failure that arrives later (the page read takes its time) still
+            # asks the desk in this round.
             remaining = (deadline.target_at - timing.now()).total_seconds()
-            await asyncio.wait({portal_task}, timeout=max(0.0, min(LATE_503_S, remaining)))
-            down = _portal_down(ctx, rfq)
+            late = group.create_task(down_now.wait())
+            await asyncio.wait(
+                {portal_task, late}, timeout=max(0.0, min(LATE_503_S, remaining)), return_when=asyncio.FIRST_COMPLETED
+            )  # fmt: skip
+            late.cancel()
+            down = down_now.is_set() or _portal_down(ctx, rfq)
             if down and _desk_enquiry(ctx, rfq) is None:
                 mailed += await bids.request(ctx, rfq, [("Rate desk", RATEDESK)])
-        reread_now = asyncio.Event()
-        reread = group.create_task(_reread(ctx, rfq, deadline, reread_now)) if down else None
-        pending_desk = (
-            (desk_id or _desk_enquiry(ctx, rfq)) if down and selection.requested_options(rfq, sheets) else None
-        )
+        # An outage makes the desk reply worth the whole desk wait, also on a lane no sheet prices (round 123).
+        pending_desk = (desk_id or _desk_enquiry(ctx, rfq)) if down else None
         if pending_desk is not None:
             if pending_desk not in mailed:
                 mailed.append(pending_desk)
             offers = await bids.collect(ctx, rfq.session_id, deadline, mailed, pending_desk=pending_desk)
         elif mailed:
             offers = await bids.collect(ctx, rfq.session_id, deadline, mailed)
-        if reread is not None:
-            reread_now.set()
-            by = min(deadline.received_at + timedelta(seconds=bids.DESK_CUTOFF_S), deadline.hard_at)
-            await asyncio.wait({reread}, timeout=max(0.0, (by - timing.now()).total_seconds()))
-            reread.cancel()
+        # The bids are in: one last rate read before the quote, inside the desk wait.
+        probes_task.cancel()
+        by = min(deadline.received_at + timedelta(seconds=bids.DESK_CUTOFF_S), deadline.hard_at)
+        final = group.create_task(_reread(ctx, rfq, portal_rates.probe(ctx, rfq, deadline)))
+        await asyncio.wait({final}, timeout=max(0.0, (by - timing.now()).total_seconds()))
+        final.cancel()
         pickups = await pickup_task
         offers = [o for o in offers if o.source in (Source.BID, Source.RATEDESK)]
         published = [o for o in session.for_request(ctx, rfq) if o.source == Source.PORTAL]

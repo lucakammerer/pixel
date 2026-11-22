@@ -51,8 +51,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   when the postcode is missing, including when the quoted pickup price is for the zone pending address confirmation.
 - `pricing/bids.py` `parse` binds the amount to its label and unit. `pricing/calc.py` multiplies rates per kg by
   chargeable weight, preserves exchange-rate precision during conversion and rounds transit in hours up to whole
-  days. When the rate API answers 503, `api/portal.py` reads the same rate from the portal's browser page;
-  `pricing/engine.py` starts carrier sourcing when the portal is slow or unavailable.
+  days. When the rate API answers with an outage (a 5xx, Cloudflare's 403, a read past `READ_TIMEOUT_S`),
+  `api/portal.py` reads the same rate from the portal's browser page; `pricing/engine.py` starts carrier sourcing
+  when the portal is slow or unavailable, asks the desk on the first outage answer, and `pricing/portal_rates.py`
+  reads the airlines it could not price again at 15, 45, 75 and 105 seconds.
 
 - `extract.py` `by_rules`: lane (`AAA-BBB`, `AAA to BBB`, `City (AAA) to City (BBB)`, `Origin:`/`Destination:`),
   weight, volume (or dimensions × pieces), pieces, fastest wording, door pickup with a 5-digit postcode, an explicitly
