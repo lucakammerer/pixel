@@ -408,6 +408,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
   or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
+- A per-piece net weight with the gross one in its bracket ("each 142 kg net (160 kg gross)") makes the gross
+  per piece too (`NET_FIRST`); `check.py` reads the same, or it blocks the right weight. Lot lines may be
+  labelled "Posten 2:" or numbered ("2) 3 pallets"), gross and net written "G.W." and "N.W." (`LOT_LABEL`).
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
 - A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0

@@ -81,9 +81,11 @@ def _per_m(unit: str | None) -> Decimal:
     return PER_M.get(unit, PER_M["in"])
 
 
-LOT_LINE = r"(?im)^\s*(?:[-*•]\s*(?=\d)|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])"
+# A lot's label besides a bullet: "Lot 2:", "Posten 2:", or a numbered line ("2) 3 pallets", "2. 3 pallets").
+LOT_LABEL = r"(?:lot|position|pos\.?|item|los|posten)\s*\d+\s*[:.)-]|\d{1,2}[.)](?=\s*\d)"
+LOT_LINE = rf"(?im)^\s*(?:[-*•]\s*(?=\d)|{LOT_LABEL})"
 LOT = re.compile(
-    r"(?im)^\s*(?:[-*•]|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])\s*(\d+)\s+"
+    rf"(?im)^\s*(?:[-*•]|{LOT_LABEL})\s*(\d+)\s+"
     r"(?!(?:kgs?|kilos?|lbs?|cbm|cm|mm|m3|m)\b)[^\W\d](.+)$"
 )
 EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
@@ -91,13 +93,15 @@ ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
 MODE = rf"(?:\b(?P<each>{EACH}|à)|\b(?P<all>{ALL}))?\s*"
 AFTER = rf"(?:\s+(?P<after>{EACH})\b)?"  # "210 kg each"
 PER_PIECE = rf"(?:\b(?:{EACH})\b|(?<!\w)à)"
+# The gross figure in the bracket of a per-piece net one: "each 142 kg net (160 kg gross)".
+NET_FIRST = re.compile(rf"{PER_PIECE}\s*{NUM}\s*kgs?\s*(?:net|netto|n\.\s?w\.?)\s*\(\s*$", re.IGNORECASE)
 EACH_WEIGHT = re.compile(
     rf"{PER_PIECE}\s*(?:of\s+)?{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\b|{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\s+(?:gross\s+)?{PER_PIECE}",
     re.IGNORECASE,
 )
 EACH_VOLUME = re.compile(rf"{PER_PIECE}\s*{NUM}\s*(?:cbm|m3|m³)|{NUM}\s*(?:cbm|m3|m³)\s+{PER_PIECE}", re.IGNORECASE)
 LOT_WEIGHT = re.compile(
-    rf"{MODE}{NUM}\s*(?P<unit>kgs?|kilos?|kilograms?|lbs?|pounds?|tonnes?|tons?|tonnen|t(?![-\w]))\b(?:\s*(?P<kind>gross|brutto|net|netto))?{AFTER}",
+    rf"{MODE}{NUM}\s*(?P<unit>kgs?|kilos?|kilograms?|lbs?|pounds?|tonnes?|tons?|tonnen|t(?![-\w]))\b(?:\s*(?P<kind>gross|brutto|net|netto|g\.\s?w\.?|n\.\s?w\.?))?{AFTER}",
     re.IGNORECASE,
 )
 LOT_VOLUME = re.compile(
@@ -483,7 +487,7 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     weight, volume, pieces = Decimal(0), Decimal(0), 0
     for count, rest in lots:
         n = int(count)
-        weights = [m for m in LOT_WEIGHT.finditer(rest) if (m["kind"] or "").lower() not in ("net", "netto")]
+        weights = [m for m in LOT_WEIGHT.finditer(rest) if not (m["kind"] or "").lower().startswith("n")]
         stated, dims = LOT_VOLUME.search(rest), LOT_DIMS.search(rest)
         if len(weights) != 1 or not (stated or dims):
             return None
@@ -504,7 +508,8 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
                 cbm *= number(side, thousands=False) / per_m
         if kg is None or cbm is None:
             return None
-        weight += kg * (n if weights[0]["each"] or weights[0]["after"] else 1)
+        each = weights[0]["each"] or weights[0]["after"] or NET_FIRST.search(rest[: weights[0].start(3)])
+        weight += kg * (n if each else 1)
         volume += cbm
         pieces += n
     return (weight, volume, pieces) if len(lots) > 1 else None
