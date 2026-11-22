@@ -47,6 +47,24 @@ PRE_CARRIAGE = re.compile(
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
 )
+# Korean and Turkish name the airport first and the direction after it (rounds 131 to 171, read by the model before):
+# "DFW (Dallas, US)까지", "KUL행", "SGN (Ho Chi Minh City, VN) varışlı", "ATL’ye"; "도착 공항은 SCL" before it.
+PLACE = r"(?:\s*\([^()\n]{0,40}\))?"
+DEST_PARTICLE = re.compile(
+    rf"{CODE}{PLACE}\s*(?:까지(?!는)|행|(?i:var[ıi]şl[ıi]|var[ıi]ş)\b|[’'](?:y?[ae]|[dt][ae]ki)\b)"
+    rf"|도착\s*(?:공항|지)?\s*[은는:]?\s*{CODE}|(?i:var[ıi]ş\s+havaliman[ıi]\w*)\s*:?\s*{CODE}"
+)
+ORIGIN_PARTICLE = re.compile(rf"{CODE}{PLACE}\s*(?:에서\s*출발|발\b|[’'][dt][ae]n\b)|출발\s*(?:공항|지)\s*[은는:]?\s*{CODE}")
+# The customer's own delivery to the departure airport: "Cologne 공항(CGN)까지는 저희가 직접 반입", "Stuttgart Havalimanı’na
+# (STR) biz teslim edeceğiz".
+OWN_AIRPORT = re.compile(
+    rf"(?:공항|(?i:havaliman[ıi]\S*))\s*\(?\s*{CODE}\s*\)?(?=[^.。!?\n]{{0,30}}?(?:직접|저희가|(?i:biz\s+teslim|kendimiz)))"
+)
+
+
+def _codes(pattern: re.Pattern, text: str) -> set[str]:
+    """The airport codes a pattern with one code group per alternative names."""
+    return {c for m in pattern.finditer(text) if (c := next((g for g in m.groups() if g), None)) and _airport(c)}
 # The truck to the departure airport: "arrange the truck from our site to BBB airport. The goods go to Singapore" named
 # no destination code, and BBB was quoted as one. A code the trucking clause names as an airport, before any flight word.
 TRUCK_LEG = re.compile(
@@ -81,7 +99,7 @@ FT3 = Decimal("0.028316846592")
 # "3360 litres" is 3.36 cbm; a bare "l" is left alone: "5 l canisters" names the goods, not the shipment.
 LITRE = r"\s*(?i:lit(?:er|re)s?\b|ltrs?\b)"
 VOLUME = (
-    re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)\b|m3\b|m³)"),
+    re.compile(rf"{NUM}\s*(?:(?i:cbm|cubic met\w*|kubikmeter)(?![a-z])|m3(?![\w])|m³)"),  # "1.44 cbm입니다"
     re.compile(
         rf"(?i:\b(?:cbm|volume|volumen){TOTAL_WORD}(?:\s*\((?:cbm|m3|m³)\))?)[^\S\n]*:?[^\S\n]*{NUM}"
         rf"(?![\d.,']|{FEET3}|{LITRE})"
@@ -132,7 +150,8 @@ LOT_VOLUME = re.compile(
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
-    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse|volumes|caixas|stuks|dozen)\b",
+    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse|volumes|caixas|stuks|dozen)\b"
+    r"|(\d+)[^\S\n]*(?:개(?!월)|parça|parca)",  # Korean "4개", Turkish "7 parça", "2 parçadan"
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
@@ -144,12 +163,14 @@ NOT_URGENT = re.compile(
     re.IGNORECASE,
 )
 FASTEST = re.compile(
-    r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide|m(?:á|a|ai)s\s+r[aá]pid[ao]|più\s+(?:veloce|rapid[ao])|snelste)\b",
+    r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide|m(?:á|a|ai)s\s+r[aá]pid[ao]|più\s+(?:veloce|rapid[ao])|snelste"
+    r"|en\s+h[ıi]zl[ıi])\b|가장\s*빠른|최단|最快|最短|最も(?:早|速)い|一番(?:早|速)い",
     re.IGNORECASE,
 )
 CHEAPEST = re.compile(
     r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix"
-    r"|m(?:á|a|ai)s\s+(?:econ[oó]mic[ao]|barat[ao])|più\s+economic[ao]|goedkoopste)\b",
+    r"|m(?:á|a|ai)s\s+(?:econ[oó]mic[ao]|barat[ao])|più\s+economic[ao]|goedkoopste|en\s+ucuz)\b"
+    r"|가장\s*(?:저렴한|싼)|최저가|最便宜|最も安い|一番安い",
     re.IGNORECASE,
 )
 HURRY = re.compile(
@@ -174,6 +195,7 @@ DOOR = re.compile(
     r"|from our (?:[\w-]+\s+)?(?:site|warehouse|premises|plant|factory|shop|depot|facility|workshop|store)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
     r"|\b(?:recogida|recoger|ritiro|ritirare|ophalen|ophaling|recolha|recolher|coleta|enlèvement|ramassage)\b"
+    r"|픽업|집하|\b(?:teslim\s+al\w*|al[ıi]m[ae]?\s+haz[ıi]r\w*|al[ıi]nmas[ıi]\w*)"  # Korean, Turkish
     r"|\bcollect\w*\s+(?:them|it|the\s+(?:goods|cargo|shipment|freight|cartons|pallets|boxes|crates))\s+from\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.
@@ -399,9 +421,10 @@ def _lane(text: str) -> tuple[str, str] | None:
         return pairs.pop()
     if pairs:
         return None
-    before, after = set(PRE_CARRIAGE.findall(text)), set(ON_CARRIAGE.findall(text))
-    origins = {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - after | before
-    destinations = {c for c in DEST_LABEL.findall(text) if _airport(c)} - before | after
+    before = set(PRE_CARRIAGE.findall(text)) | _codes(OWN_AIRPORT, text)
+    after = set(ON_CARRIAGE.findall(text))
+    origins = ({c for c in ORIGIN_LABEL.findall(text) if _airport(c)} | _codes(ORIGIN_PARTICLE, text)) - after | before
+    destinations = ({c for c in DEST_LABEL.findall(text) if _airport(c)} | _codes(DEST_PARTICLE, text)) - before | after
     if len(origins) == 1 and len(destinations) == 1 and origins != destinations:
         return origins.pop(), destinations.pop()
     return None
@@ -455,6 +478,8 @@ def _destination_only(text: str, truck_leg: bool = True) -> str | None:
     "our truck goes to departure airport FRA" the origin. `truck_leg`: the airport a truck goes to is none; a later
     mail of a quoted lane leaves that to its origin instead ("deliver to JFK airport instead of ORD" is a change)."""
     to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
+    to |= dict.fromkeys(_codes(DEST_PARTICLE, text) - to.keys(), 0)
+    origin |= dict.fromkeys((_codes(ORIGIN_PARTICLE, text) | _codes(OWN_AIRPORT, text)) - origin.keys(), 0)
     trucked = set(TRUCK_LEG.findall(text)) if truck_leg else set()
     to = {code: reach for code, reach in to.items() if code not in trucked}
     found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
@@ -469,7 +494,7 @@ def _unique(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Dec
 
 
 def _pieces(text: str) -> int | None:
-    found = {int(m) for m in PIECES.findall(text)}
+    found = {int(a or b) for a, b in PIECES.findall(text)}
     return found.pop() if len(found) == 1 else None
 
 

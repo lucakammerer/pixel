@@ -1705,3 +1705,53 @@ def test_a_door_request_never_departs_from_an_airport_no_truck_serves(conn):
                        deadline_at=DEADLINE.expires_at, missing=("destination",))  # fmt: skip
     rfq = extract._zone_origin(ctx, read, "MIA (Miami, US)행 항공 운송, 41680 (Moenchengladbach) 픽업")
     assert (rfq.origin, rfq.destination, rfq.missing) == ("DUS", "MIA", ())
+
+
+@pytest.mark.parametrize(
+    ("body", "want"),
+    [
+        # Korean door to port: rounds 161, 149, 132 (the model read them)
+        ("안녕하세요. Germany Town 44780에 있는 저희 사업장에서 픽업하여 BBB (Town, US)까지 보내는 항공화물 견적을 "
+         "부탁드립니다. 화물은 스포츠 장비 4개이며, 총중량은 159 kg, 부피는 1.44 cbm입니다. 가장 저렴한 옵션으로 부탁드립니다.",
+         ("", "BBB", "159", "1.44", 4, "cheapest", "44780")),
+        ("2026-11-27에 독일 Town 36030에 있는 저희 사업장에서 픽업 가능합니다. 화물은 기계 부품 12개이며, 총중량은 "
+         "2802.08 lb, 부피는 150.45 cubic feet입니다. BBB(Town, MY)까지 가장 빠른 옵션으로 견적 부탁드립니다.",
+         ("", "BBB", "1271.00", "4.26", 12, "fastest", "36030")),
+        ("Town 41680에 있는 저희 사업장에서 픽업 가능합니다. BBB (Town, US)행 항공 운송, 화물은 총 3개이며, 총중량은 549 kg, "
+         "부피는 5.26 cbm입니다.", ("", "BBB", "549", "5.26", 3, "cheapest", "41680")),
+        # Korean port to port, the customer delivers to the airport: round 167's lane
+        ("화물은 2026-11-26에 출고 가능하고, Town 공항(AAA)까지는 저희가 직접 반입하겠습니다. 도착 공항은 BBB (Town, CL)"
+         "입니다. 가장 빠른 옵션으로 부탁드립니다. 화물은 4개, 총중량은 300 kg, 부피는 1.2 cbm입니다.",
+         ("AAA", "BBB", "300", "1.2", 4, "fastest", None)),
+        # Turkish door to port: rounds 171 and 54126's request
+        ("Merhaba, BBB (Town, VN) varışlı tekstil numuneleri için en hızlı seçeneği istiyoruz. Gönderi 7 parça, brüt 1951 "
+         "kg ve 13.67 cbm. Yük 2026-11-28 tarihinde 81843 (Town), Germany adresindeki tesisimizden alıma hazır.",
+         ("", "BBB", "1951", "13.67", 7, "fastest", "81843")),
+        ("Merhaba, BBB’deki alıcımız ithal ediyor. BBB’ye hava taşımayı biz organize ediyoruz. Gönderi 2 parçadan oluşuyor; "
+         "brüt ağırlığı 1241 kg, toplam hacmi 4.68 cbm. Yük 40073 Town, Germany adresindeki tesisimizden teslim alınmaya "
+         "hazır olacak. En ucuz seçeneği istiyoruz.", ("", "BBB", "1241", "4.68", 2, "cheapest", "40073")),
+        # Turkish port to port: round 126; "teslime hazır" (ready to hand over) is no pickup
+        ("Merhaba, Yükü Town Havalimanı’na (AAA) biz teslim edeceğiz. BBB (Town, US) varışlı gönderi için en ucuz seçeneği "
+         "istiyoruz. Hassas cihazlar: 1 parça, brüt 1986 kg, 9.51 cbm. Yük 2026-11-26 tarihinde teslime hazır olacak.",
+         ("AAA", "BBB", "1986", "9.51", 1, "cheapest", None)),
+        # one step on: the ablative names the origin
+        ("Merhaba, AAA’dan BBB’ye 3 parça, brüt 300 kg, 1.2 cbm için en ucuz teklifi rica ederim.",
+         ("AAA", "BBB", "300", "1.2", 3, "cheapest", None)),
+    ],
+)  # fmt: skip
+def test_a_korean_or_turkish_request_is_read_by_rules(body, want):
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert rfq is not None
+    got = (rfq.origin, rfq.destination, str(rfq.weight_kg), str(rfq.volume_cbm), rfq.pieces, rfq.preference.value,
+           rfq.pickup_postcode)  # fmt: skip
+    assert got == want
+    assert rfq.door_pickup == (want[6] is not None)
+
+
+@pytest.mark.parametrize(
+    ("text", "preference"),
+    [("가장 빠른 옵션으로", "fastest"), ("请报最快的方案", "fastest"), ("最も早い便で", "fastest"), ("en hızlı seçenek", "fastest"),
+     ("가장 저렴한 옵션", "cheapest"), ("请报最便宜的", "cheapest"), ("最も安い便", "cheapest"), ("en ucuz seçenek", "cheapest")],
+)  # fmt: skip
+def test_the_wish_is_read_in_korean_chinese_japanese_and_turkish(text, preference):
+    assert extract._preference(text).value == preference
