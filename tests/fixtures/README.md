@@ -7,6 +7,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   weight, freight after the minimum, both surcharges and the rounded total.
 - `tariffs/source_review.csv`: every start-kit source file with its lane count and format risks. What was compared:
   each file's lane count and `check()` findings, plus the sample lanes in `tariffs/expected.json`.
+- `tariffs/lifecycle/`: synthetic carrier mails and calculated spot prices before and after lane updates, withdrawals,
+  currency and unit changes, corrections and resends. Benchmark section 5 routes and ingests each mail, then reads
+  the rates directly or reuses the options a pending quote already holds.
 - `tariffs/variants/`: synthetic sheets in the kit's text layout with one change each (breaks, currency, decimal
   commas, dates, transit wording, column order, surcharge layout), written by `make_variants.py`, which computes the
   expected prices without `pixel/pricing/calc.py`. `variants.jsonl` says which outcomes are safe: parsed right, or
