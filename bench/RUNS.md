@@ -543,6 +543,15 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 10:15, generalize cycle 3 (live snapshot to mail 53010, round 174; cursor was 50649). Rounds 162 to 174
+  all accepted at 60. Replayed with `tools.capture`: 9 of 13 as live; 167 (Korean) and 171 (Turkish) were read by the
+  model, 168 and 174 (English) too. New live shape, closed for the class: "we deliver to Frankfurt airport (FRA)
+  ourselves", "we'll deliver it to Düsseldorf Airport (DUS) ourselves" read as a second destination; #463 reads the
+  place name, brackets and the verbs bring/take/drop off as the origin (6 variants, both rounds now by rules as the
+  model read them, nothing else of 175 live requests changes). #462: a rate read still 429 at the deadline prices from
+  the rate card, drill 4 to 29 of 60. Review: #450 and #431 closed with one finding each, fixed with the close notes'
+  sentences as tests and reopened. Open: Korean and Turkish requests without the model (167 guessed 1964.76 against
+  4745.69; Cost), E2 lanes the card never read (Accuracy), E3 (Accuracy).
 - 22.11. 09:30, generalize cycles 1 and 2 (live snapshot to mail 50649, round 167). `tools.capture` (#454): a
   stored session as a fixture with the state and portal answers it met; its replay reproduces 51 of the last 60
   scored rounds to the cent or within rounding, the rest read by the model (Korean, Turkish, a crosscheck, a requote).
