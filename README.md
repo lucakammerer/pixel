@@ -84,12 +84,6 @@ a round only then). Cost points the scorer adds only after the
 hour are estimated from our own gateway spend in that hour (R28), counted in the round's quote and total, and shown as a
 projected total.
 
-The Night shift page (`/night`, `pixel/ui/nightshift.py`) shows how the service repairs itself: every scored round as
-a strip, then per run of lost rounds the change merged for it, when the host's deploy job tested it and put it live,
-and the next accepted round, with the time to repair. A change belongs to a run when its commit message names one of
-the run's rounds, or its reason and no round. It reads the `feedback` events, `/opt/pixel/cd/cd.log` (world-readable)
-and `git log` of the live checkout; nothing else is needed on the host.
-
 ## Team
 
 Five people, five roles. Each role has one number it answers for and files it reviews
