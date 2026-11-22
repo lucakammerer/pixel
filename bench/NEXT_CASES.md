@@ -392,7 +392,7 @@ still require inspection.
 | Does a fulfilled PDF request still pass when the reply also asks the customer to send the PDF? | 161 and 167 passed. The next filing request combined with an actual document requirement would test the distinction |
 | Was 156's `wrong_language` for the question or for the no-price reply? | the next foreign-language round that ends without a price |
 
-## Axis S: scope (22.11.2026, cycle 2)
+## Axis S: scope (22.11.2026, through round 192)
 
 Does a mail get the kind of answer it should: a quote, or a plain answer without a price (or none for a mail that
 asks for nothing)? Round 177 priced a sea freight request as air (`out_of_scope_quoted`); rounds 96, 104 and 122 sent
@@ -410,7 +410,9 @@ router asks the model. A case is right only when every plausible answer leads to
 depends on the answer. `no_price late` means more than 60 seconds elapsed in the replay. The no-price reply may
 be the deadline fallback or a scope decline delayed by a question. A question for a missing fact is allowed
 before a quote. A request outside our scope should get the decline as its first reply. Cases marked `decline`
-require a reply. `no_price` also permits silence for a mail that asks for nothing.
+require a reply. `no_price` also permits silence for a mail that asks for nothing. Ten established freight and
+service requests now require a decline in the replay. This exposes the routing gap for the attached sea request
+as consistently wrong across the stubbed readings. It can quote, ask a question or stay silent.
 
 The causes, all owned by this thread unless the row says otherwise:
 
@@ -426,7 +428,7 @@ The causes, all owned by this thread unless the row says otherwise:
 - **G7**: router rule `new_thread` makes every new thread a request; a complaint, an invoice query, a newsletter, an
   out-of-office reply gets a question and a price.
 - **G8**: the mode rule reads subject and body, not an attachment.
-- **G9**: when a customer puts the full flight details in an attachment, the router can classify the message as
+- **G9**: when a customer puts the full freight details in an attachment, the router can classify the message as
   `other`. The customer then gets no reply even when extraction could read the attached lane.
 - **G10**: `orchestrator.NOT_AIR` matches a mode said in passing ("by ship" for the inbound leg, "rail freight" in
   the goods' name, "our sea freight team"); an in-scope request is declined.
@@ -436,14 +438,12 @@ stored customer request offline beside the scorer's verdict. It counts an explic
 question went out first. A missing rate and a missing reply are separate outcomes. Model answers replay only if
 recorded for the same prompt, and the database holds attachment metadata without the files. Every scope pull request
 reports the count of previously accepted quotes that now get a scope decline or lose their reply.
-On the snapshot through round 187, main replayed 113 of 129 previously accepted quotes as quotes. The remaining
-16 were unpriced in replay, with zero scope declines and zero missing replies. Round 159 was accepted as a scope
-decline live and still declines. Round 177, rejected for quoting sea freight, now declines.
-The review candidate (#513) gives the same live-snapshot outcomes. On these fixtures it declines both written
-imports, including the German request with imperial units, while the matched export still quotes. The attachment
-import declines when routed as an RFQ. The possible silence on that request belongs to G9.
-The two newly accepted requests in rounds 188 and 189 also replayed as quotes on main and #513. Across the 131
-previously accepted quotes checked, there were zero scope declines and zero missing replies on the candidate.
+On the snapshot through round 192, main and the simulated merge of #513 both replayed 119 of 133 previously
+accepted quotes as quotes. The remaining 14 were unpriced in replay, with zero scope declines and zero missing
+replies. Round 159 was accepted as a scope decline live and still declines. Round 177, rejected for quoting sea
+freight, now declines. On the fixtures #513 declines both written imports, including the German request with
+imperial units, while the matched export still quotes. The attachment import declines when routed as an RFQ.
+The possible silence on that request belongs to G9.
 
 The class fix (next pull requests, read path, for the review thread): decide scope before the question (G1), then
 one scope reading: a rule that only notices a mode, service or non-request word in any language (subject, body and
@@ -452,15 +452,15 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 
 | Case | Branch | Step from | Expected (how sure) | Today | Verdict | Known gap |
 | --- | --- | --- | --- | --- | --- | --- |
-| `sea-fcl-locode` | mode |  | no_price (live) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
-| `sea-lcl-german` | mode |  | no_price (text) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `sea-fcl-locode` | mode |  | decline (live) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `sea-lcl-german` | mode |  | decline (text) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
 | `sea-spanish` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
 | `sea-french` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
 | `sea-locodes-only` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (LOCODEs, 20'GP, CY/CY) |
 | `sea-vessel-cutoff` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it ('ocean rates', 'vessel') |
-| `rail-china` | mode |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out |
+| `rail-china` | mode |  | decline (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out |
 | `rail-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (Bahn, Schiene) |
-| `road-ftl` | mode |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (FTL, truck load) |
+| `road-ftl` | mode |  | decline (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (FTL, truck load) |
 | `road-groupage-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (per LKW) |
 | `courier-parcel` | mode |  | no_price (guess) | air: quote; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (courier parcel) |
 | `sea-air-dubai` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price late | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (sea-air) |
@@ -468,11 +468,11 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 | `sea-switch-from-air` | mode |  | no_price (guess) | quote | wrong | scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'by air' said of last month |
 | `import-explicit` | direction |  | no_price (live) | air: no_price; blank: question → no_price late | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
 | `import-implicit` | direction |  | no_price (text) | quote | wrong | scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it |
-| `cross-trade` | direction |  | no_price (text) | no_price late | late | scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at` |
+| `cross-trade` | direction |  | decline (text) | no_price late | late | scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at` |
 | `domestic` | direction |  | no_price (guess) | no_price late | late | scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at` |
-| `customs-only` | service |  | no_price (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
-| `warehousing-only` | service |  | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
-| `insurance-only` | service |  | no_price (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `customs-only` | service |  | decline (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `warehousing-only` | service |  | decline (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `insurance-only` | service |  | decline (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
 | `truck-to-airport-only` | service |  | no_price (guess) | air: question → quote; blank: question → no_price late | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
 | `packing-only` | service |  | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
 | `complaint-damage` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
@@ -521,13 +521,13 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 | `sea-dutch` | mode | language of sea-spanish | no_price (guess) | air: question → quote; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
 | `sea-chinese` | mode | script of sea-spanish | no_price (guess) | air: question → no_price late; blank: question → no_price late; routed other: none | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
 | `air-italian-not-by-sea` | lookalike | language of not-by-sea | quote (text) | quote | right |  |
-| `sea-in-attachment` | mode | channel of sea-fcl-locode | no_price (text) | air: quote; blank: question → no_price late; routed other: none | split | scope (G8): the mode rule reads subject and body, not the attachment |
+| `sea-in-attachment` | mode | channel of sea-fcl-locode | decline (text) | air: quote; blank: question → no_price late; routed other: none | wrong | scope (G8): the mode rule reads subject and body, not the attachment; scope (G9): the router can label the request other when the freight details are in an attachment |
 | `air-in-attachment-sea-team` | lookalike | channel of sea-dept-signature | quote (text) | air: no_price; blank: question → no_price late; routed other: none | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it (the request is in the attachment, the body names the sea team) |
 | `later-switch-to-sea` | moment | moment of sea-switch-from-air: after our quote | quote → no_price (guess) | quote → quote | wrong | after the quote: a later mail's change of mode is read as a requote for air (one line to that goal) |
 | `later-air-after-sea` | moment | moment of instead-of-sea-air: after our decline | no_price → quote (guess) | air: question → no_price late; blank: question → no_price late | wrong | after the quote: the session stays out of scope by its first mail, a later ask for air is declined (one line to that goal) |
 | `teu-unit` | mode | unit of sea-locodes-only | no_price (guess) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (TEU) |
 | `pmc-unit` | lookalike | unit of container-loosely | quote (text) | quote | right |  |
-| `sea-import` | direction | two at once: import and sea | no_price (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it; the lane is an import but the model's reading asks first (G1) |
+| `sea-import` | direction | two at once: import and sea | decline (text) | air: question → no_price late; blank: question → no_price late | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it; the lane is an import but the model's reading asks first (G1) |
 | `all-lookalikes-at-once` | lookalike | two at once: company, port words, FOB, container | quote (text) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 | `air-chinese` | lookalike | script of no-mode-german | quote (guess) | air: quote; blank: question → no_price late | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
 | `import-written-german-imperial` | direction | language and units of import-implicit | decline (text) | quote | wrong | scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it |
@@ -537,7 +537,7 @@ code declines on anything but air export (G3, G10), no second call. Until then t
 | `export-with-import-history` | direction | moment of import-implicit: older request quoted in a new RFQ | quote (text) | quote | right |  |
 | `import-lane-in-carrier-reply` | direction | party of import-implicit: airline | no_price (text) | none | right |  |
 
-84 cases: 30 right, 2 late, 17 split, 35 wrong.
+84 cases: 30 right, 2 late, 16 split, 36 wrong.
 
 
 ## Axis T: supply

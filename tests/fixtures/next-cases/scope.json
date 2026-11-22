@@ -1,7 +1,7 @@
 {
   "sea-fcl-locode": {
     "branch": "mode",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "live",
     "why": "round 177, the mail that started this axis",
     "air": {
@@ -14,7 +14,7 @@
   },
   "sea-lcl-german": {
     "branch": "mode",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "Seefracht said, no air word",
     "air": {
@@ -79,7 +79,7 @@
   },
   "rail-china": {
     "branch": "mode",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "rail freight said",
     "air": {
@@ -105,7 +105,7 @@
   },
   "road-ftl": {
     "branch": "mode",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "full truck load, no air word",
     "air": {
@@ -197,7 +197,7 @@
   },
   "cross-trade": {
     "branch": "direction",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "neither end is ours: cross-trade",
     "known_gap": "scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at`"
@@ -211,14 +211,14 @@
   },
   "customs-only": {
     "branch": "service",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "a fee for customs alone, the flight is someone else's",
     "known_gap": "scope (G6): no reading of what is asked; a service without the flight becomes an air request"
   },
   "warehousing-only": {
     "branch": "service",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "storage only",
     "air": {
@@ -231,7 +231,7 @@
   },
   "insurance-only": {
     "branch": "service",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "insurance only",
     "known_gap": "scope (G6): no reading of what is asked; a service without the flight becomes an air request"
@@ -642,7 +642,7 @@
   },
   "sea-in-attachment": {
     "branch": "mode",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "the sea request only in the attached file",
     "step": "channel of sea-fcl-locode",
@@ -652,7 +652,7 @@
       "weight_kg": "9617",
       "volume_cbm": "43.5"
     },
-    "known_gap": "scope (G8): the mode rule reads subject and body, not the attachment"
+    "known_gap": "scope (G8): the mode rule reads subject and body, not the attachment; scope (G9): the router can label the request other when the freight details are in an attachment"
   },
   "air-in-attachment-sea-team": {
     "branch": "lookalike",
@@ -713,7 +713,7 @@
   },
   "sea-import": {
     "branch": "direction",
-    "expected": "no_price",
+    "expected": "decline",
     "sure": "text",
     "why": "sea import into Hamburg",
     "step": "two at once: import and sea",
