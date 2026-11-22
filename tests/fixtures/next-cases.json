@@ -353,6 +353,41 @@
     "note": "FRA-SGN 900 kg: Orion 2380.00 (kit). Truckers 24 h / 72 h / 48 h; balanced (price/best + hours/best): Taunusfracht 182.62/95.40 + 24/24 = 2.914, Westfalenroute 3.468, Domblick 4.000"
    },
    "today": "Fixed by accuracy/pickup-time-units. Before: no pickup hours read, so fewer than two timed bids and the cheapest trucker (Domblick 95.40): 2475.40, 3.4% low."
+  },
+  {
+   "fixture": "next-cases/pickup-postcode-beside-phone-number.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Domblick Kurierdienst",
+    "total": "2548.40",
+    "currency": "EUR",
+    "note": "zone 63 -> FRA; Orion 2380.00 (kit); balanced: Domblick 168.40/121.90 + 8/8 = 2.381 against Westfalenroute 1 + 26/8 = 4.25"
+   },
+   "today": "Fixed by generalization/pickup-postcode-not-phone. Before: the phone and fax numbers in the signature were three more postcodes and \"collect them from our print shop\" no door pickup, so the rules gave up; offline unanswered, live one model call."
+  },
+  {
+   "fixture": "next-cases/pickup-postcode-abroad-matches-a-zone.json",
+   "expected": {
+    "body_states": "no Hamburg pickup; an airport serving Milan or the airport-to-airport price with the pickup plainly excluded (assumption: the scorer rule for a pickup abroad is unknown, as next case 22)"
+   },
+   "today": "Before generalization/pickup-postcode-not-phone: 20121 read as zone 20, HAM-SGN Yellowtail 2480.00 and Hamburg truckers asked. Now the postcode is rejected as abroad and no postcode question is sent; offline unanswered, live the model reads the origin.",
+   "known_gap": "Which airport and pickup the scorer prices for a pickup abroad is unknown; same fix as pickup-outside-zones (`pricing/pickup.py` zone fallback). Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/pickup-zone-not-listed.json",
+   "expected": {
+    "body_states": "a German postcode whose zone (90) is not in pickup_zones.csv: nearest zone airport by bid, or airport-to-airport with the pickup excluded (assumption). Live in round 20 (Nuremberg, flown from FRA): too_high"
+   },
+   "today": "Rules give up (no zone airport for origin); offline unanswered, live the model guesses an origin and no trucker serves zone 90.",
+   "known_gap": "No zone, no trucker: needs a zone fallback that the scorer accepts; evidence only from round 20. Owner: Accuracy (`pricing/pickup.py`)."
+  },
+  {
+   "fixture": "next-cases/pickup-two-sites.json",
+   "expected": {
+    "body_states": "both pickups priced (two trucker asks, one per postcode) on one FRA-SGN quote of 900 kg; assumption, never scored"
+   },
+   "today": "Rules give up (two weights, two postcodes); offline unanswered, live the model takes one postcode.",
+   "known_gap": "One pickup per Rfq; several pickups need a list of pickup legs in `Rfq` and `pricing/pickup.py`. Owner: Accuracy, contracts on main. Size L."
   }
  ]
 }

@@ -128,8 +128,10 @@ HURRY = re.compile(
     re.IGNORECASE,
 )
 DOOR = re.compile(
-    r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from|from our (?:site|warehouse|premises|plant|factory)"
+    r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from"
+    r"|from our (?:[\w-]+\s+)?(?:site|warehouse|premises|plant|factory|shop|depot|facility|workshop|store)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
+    r"|\bcollect\w*\s+(?:them|it|the\s+(?:goods|cargo|shipment|freight|cartons|pallets|boxes|crates))\s+from\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.
     r"|(?:please|kindly|could you|can you|would you)\s+(?:also\s+)?"
@@ -144,6 +146,24 @@ OWN_DELIVERY = re.compile(
 )
 POSTCODE = re.compile(
     r"(?<![\d.,])(?<!No\. )(?<!Nr\. )(?<!#)(?:D-)?(\d{5})(?![\d.,]?\d)(?!\s*(?:kg|kgs|cbm|m3|m³|pcs)\b)", re.IGNORECASE
+)
+# A phone or fax number: "+49 6181 12345", "Tel. 06181 12345", "06181/12345".
+PHONE = re.compile(
+    r"\+\d[\d \t/()-]{6,}\d|\b0\d{2,5}[ \t/-]+\d{3,}\b|\b(?:tel|phone|fon|fax|mobile?)\b\.?:?[ \t]*[\d \t/()-]+\d",
+    re.IGNORECASE,
+)
+# The address before the postcode on its line is not the pickup's.
+OTHER_ADDRESS = re.compile(
+    r"\b(?:invoice|invoicing|billing|bill\s+to|rechnung\w*|head\s+office|registered\s+office|firmensitz|sitz|"
+    r"consignee|empf(?:ä|ae)nger|deliver(?:y)?\s+(?:address|to)|ship\s+to|lieferadresse)\b",
+    re.IGNORECASE,
+)
+FOREIGN_PREFIX = re.compile(r"\b(?:I|F|E|A|CH|NL|B|L|PL|CZ|DK|S|FL|P|GR)-$")
+ABROAD = re.compile(
+    r"[^\n.;]{0,40}?\b(?:italy|italia|spain|espa(?:ñ|n)a|france|frankreich|austria|(?:ö|oe)sterreich|switzerland|"
+    r"schweiz|suisse|netherlands|niederlande|belgium|belgien|poland|polen|czechia|czech\s+republic|denmark|"
+    r"d(?:ä|ae)nemark|sweden|schweden|portugal|greece|turkey|t(?:ü|ue)rkei|usa|united\s+states|united\s+kingdom)\b",
+    re.IGNORECASE,
 )
 # "Dangerous goods: UN1133, Class 3" in a packing list, also when the mail itself says "non-dangerous".
 DANGEROUS = re.compile(
@@ -470,11 +490,46 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     return (weight, volume, pieces) if len(lots) > 1 else None
 
 
+def _abroad(text: str, start: int, end: int) -> bool:
+    """A postcode abroad: "I-20121 Milano" or "20121 Milano, Italy". The pickup zones are German (R16), and
+    20121 read as zone 20 sent a Milan pickup to Hamburg's truckers."""
+    return bool(FOREIGN_PREFIX.search(text[max(0, start - 4) : start]) or ABROAD.match(text[end:]))
+
+
+def pickup_postcodes(text: str) -> tuple[dict[str, bool], bool]:
+    """The five-digit figures that can be the pickup's postcode, each with whether its line speaks of the pickup, and
+    whether one of the mail's postcodes lies abroad. A phone or fax number ("Tel. 06181 12345") and an address
+    labelled as another one (invoice, head office, consignee) are no pickup postcode."""
+    phones = [m.span() for m in PHONE.finditer(text)]
+    codes: dict[str, bool] = {}
+    abroad = False
+    for m in POSTCODE.finditer(text):
+        start, end = m.span(1)
+        line_start = text.rfind("\n", 0, start) + 1
+        line_end = text.find("\n", end)
+        line = text[line_start : line_end if line_end >= 0 else len(text)]
+        if any(a <= start and end <= b for a, b in phones) or OTHER_ADDRESS.search(text[line_start:start]):
+            continue
+        if _abroad(text, start, end):
+            abroad = True
+            continue
+        codes[m[1]] = codes.get(m[1], False) or bool(DOOR.search(line))
+    return codes, abroad
+
+
+def not_a_pickup_postcode(text: str, code: str) -> bool:
+    """The text names this figure only as a phone number, another address or a postcode abroad."""
+    return code in POSTCODE.findall(text) and code not in pickup_postcodes(text)[0]
+
+
 def _pickup(text: str) -> tuple[bool, str | None]:
     if not DOOR.search(text) or OWN_DELIVERY.search(text):
         return False, None
-    codes = set(POSTCODE.findall(text))
-    return True, codes.pop() if len(codes) == 1 else None
+    codes, _ = pickup_postcodes(text)
+    if len(codes) == 1:
+        return True, next(iter(codes))
+    named = [code for code, on_pickup_line in codes.items() if on_pickup_line]
+    return True, named[0] if len(named) == 1 else None
 
 
 def _currency(text: str) -> str | None:
@@ -902,8 +957,9 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
         missing.append("weight_kg")
     door = bool(data.get("door_pickup"))
     postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
-    postcode = postcode if len(postcode) == 5 else None
-    if door and not postcode:
+    postcode = postcode if len(postcode) == 5 and not not_a_pickup_postcode(text, postcode) else None
+    # A pickup abroad has no zone to ask a postcode for: no question, the airport-to-airport price (next case 22).
+    if door and not postcode and not pickup_postcodes(text)[1]:
         missing.append("pickup_postcode")
     currency = (data.get("currency") or "").strip().upper() or None
     return Rfq(

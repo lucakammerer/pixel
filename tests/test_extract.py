@@ -1085,6 +1085,32 @@ def test_a_language_asked_for_wins_over_the_mails_own(text, language):
     assert extract._language(text) == language
 
 
+@pytest.mark.parametrize(
+    "text, postcode",
+    [
+        (
+            "Please collect them from our print shop in 63450 Hanau.\n\nBest regards\nTel. +49 6181 12345\nFax 06181 12346",
+            "63450",
+        ),
+        (
+            "Please collect them from our warehouse at Industriestrasse 12, 63450 Hanau, call 06181 12345 first.",
+            "63450",
+        ),
+        (
+            "Please collect from our warehouse in 63450 Hanau. Invoice address: Leopoldstrasse 1, 80331 Muenchen.",
+            "63450",
+        ),
+        ("Pickup from our warehouse in 63450 Hanau.\nHead office: Kaiserstrasse 5, 60311 Frankfurt am Main", "63450"),
+        ("Please collect from our warehouse in Via Roma 10, 20121 Milano, Italy.", None),
+        ("Pickup at I-20121 Milano please.", None),
+        ("Pickup from our warehouse at 22041 Hamburg, consignee in 10115 Berlin.", "22041"),
+    ],
+)
+def test_the_pickup_postcode_is_no_phone_number_other_address_or_postcode_abroad(text, postcode):
+    # 20121 Milano read as zone 20 asked Hamburg's truckers; a phone number beside the postcode lost it altogether.
+    assert extract._pickup(text) == (True, postcode)
+
+
 async def test_a_departure_airport_the_customer_asks_for_wins_over_the_pickup_zones(conn, monkeypatch, emitted):
     async def boom(ctx, **kw):
         raise AssertionError("no model call expected")
