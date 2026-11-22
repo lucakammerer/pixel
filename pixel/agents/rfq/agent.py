@@ -468,9 +468,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     extend = (lambda q: _with_shipments(ctx, q, others, pricing, deadline)) if others else None
     quote = await _settled(ctx, rfq, options, prose, fallback=False, translate_by=deadline.hard_at,
                            repair_by=repair_by, extend=extend)  # fmt: skip
-    quote = await unmet.settle(
-        ctx, quote, text, deadline, repair_by, lambda q: _findings(ctx, q.rfq, q, _premium(ctx, q))
-    )
+    await unmet.settle(ctx, quote, text, deadline, repair_by)
     sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent

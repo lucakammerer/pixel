@@ -16,7 +16,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   between options in `pixel/pricing/selection.py`: Decimal, tested. A model never computes, compares or writes a
   price.
 - **Rules first, model as fallback.** A model only reads what code cannot: an unusual request, an odd carrier
-  answer, an unknown tariff layout. One small gateway call per quote by default, and one that reads the finished reply beside the request (R28: an 18-minute window
+  answer, an unknown tariff layout. One small gateway call per quote by default (R28: an 18-minute window
   without any gateway spend earns no cost points, 0.10 USD per accepted quote earns none either).
 - **All model calls go through `pixel/llm.py`,** which calls the 5U gateway and logs tokens and cost. No other
   module imports an LLM client or `pixel/api/gateway.py`.

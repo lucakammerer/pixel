@@ -42,7 +42,7 @@ async def run() -> None:
         right += ok
         print(f"{'ok    ' if ok else 'WRONG '} {case['name']}: expected {wanted or 'nothing'}")
         for a in asks:
-            print(f"         {a['class']}: {a['sentence'][:110]!r}" + (f" -> add {a['add']!r}" if a["add"] else ""))
+            print(f"         {a['class']}: {a['sentence'][:110]!r}")
     calls = ctx.db.execute("SELECT COUNT(*), SUM(tokens_in), SUM(tokens_out) FROM events WHERE kind = 'llm.call'")
     count, tokens_in, tokens_out = calls.fetchone()
     usd = llm.spend_usd(ctx)

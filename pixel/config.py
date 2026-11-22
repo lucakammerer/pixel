@@ -25,7 +25,7 @@ class Settings:
     repair: str = "on"  # agents/rfq/repair.py: on (mend a BLOCK before sending), detect (check only) or off
     gaps: str = "on"  # agents/rfq/gaps.py: close known gaps before the quote (on), only record them (log) or off
     second_read: str = "on"  # the prose call reads the cargo too (agents/rfq/agent.py `_second_read`): on, log or off
-    unmet: str = "log"  # agents/rfq/unmet.py, the last reader of request and reply: on, log (record only) or off
+    unmet: str = "off"  # agents/rfq/unmet.py, the last reader of request and reply: on, log (record only) or off
     portal_page: str = ""  # the portal's browser page, read when the rate API answers 503 (`api/portal.py`)
 
 
@@ -52,6 +52,6 @@ def settings() -> Settings:
         repair=env.get("PIXEL_REPAIR", "on").strip().lower(),
         gaps=env.get("PIXEL_GAPS", "on").strip().lower(),
         second_read=env.get("PIXEL_SECOND_READ", "log").strip().lower(),  # on after a measured live hour
-        unmet=env.get("PIXEL_UNMET", "log").strip().lower(),  # on after `tools.bench_unmet` measured the prompt
+        unmet=env.get("PIXEL_UNMET", "off").strip().lower(),
         portal_page=env.get("PIXEL_PORTAL_PAGE", "https://start-hack.5u.ai/portal/ui"),
     )

@@ -309,21 +309,17 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the request as the session holds it (the mail's own words and what its documents gave, at most `MAX_CHARS`) and
   the exact subject and body about to leave, with the name of the offer PDF they carry, to `PIXEL_MODEL_CHECK`
   once (`quote.unmet`, at most `WAIT_S` = 8 s, 300 output tokens). `read` returns every ask the reply does not
-  meet with the customer's own sentence, a class and, for `wording`, the sentence to add; an ask whose sentence
-  does not stand in the request is dropped. `wording` (something to state, confirm, name, address or format):
-  `_mended` puts the sentence before the paragraph above the signature when it holds no figure that request and
-  reply do not hold (`_addable`), and keeps the new text only when `check.run` on it blocks on no rule the old
-  text passed (the total once and no other amount, the language, the PDF); else the original leaves. `price`,
-  `selection`, `scope` (`HELD`) are never guessed: the quote waits until `target_at` (`_hold`; a takeover or a
-  quote sent by a person ends it) and then leaves as it is. Reading and holding end by `repair_by`, before the
-  orchestrator takes the request over. Every ask left open goes to `PIXEL_ALERT_URL` at once
-  (`unmet_ask`: the classes and whether the quote is held, never text) and shows in `feedback.attention`. One
-  call per session (`_asked`), never in the fallback or a requote; a failed, late or malformed answer is an
-  `error` event and the quote leaves as it was. It runs on every request: 0.002 to 0.0025 USD, about 1 of the 40
-  cost points of a quote (about 820 tokens in on the stored rounds, estimated from the prompt's length, and up to
-  100 out; `tools.bench_unmet` prints the measured figure), and about 2 s of the 85 s a quote has left to full time points. `PIXEL_UNMET`: `on`, `log`
-  (read and record, no change, hold or alert; the default until `tools.bench_unmet` has scored the prompt on the
-  lost first rounds and accepted rounds of the same kinds in `tests/fixtures/unmet-asks.json`) or `off`.
+  meet with the customer's own sentence and a class (`wording`, `price`, `selection`, `scope`); an ask whose
+  sentence does not stand in the request is dropped. It never changes the reply's text: a model sentence in a
+  quote could claim a service we did not price. In `on` every open ask goes to `PIXEL_ALERT_URL` at once
+  (`unmet_ask`: the classes and whether the quote is held, never text) and shows in `feedback.attention`; a
+  `price`, `selection` or `scope` ask (`HELD`) also holds the quote until `target_at` (`_hold`; a takeover or a
+  quote sent by a person ends it), then it leaves as it is. Reading and holding end by `repair_by`, before the
+  orchestrator takes the request over. One call per session (`_asked`), never in the fallback or a requote;
+  `settle` never raises: a failed, late or malformed answer is an `error` event and the quote leaves. A call
+  costs 0.002 to 0.0025 USD, about 1 of the 40 cost points of a quote, and about 2 s. `PIXEL_UNMET`: `off` (the
+  default, no call), `log` (read and record, no hold or alert) or `on`; `tools.bench_unmet` scores the prompt on
+  `tests/fixtures/unmet-asks.json`.
 
 ## Pitfalls
 

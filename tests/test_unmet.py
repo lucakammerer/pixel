@@ -11,10 +11,11 @@ from test_check import PLAIN, airline, quote, rfq
 from test_outbox import make_ctx
 
 from pixel import llm
-from pixel.agents.rfq import check, unmet
+from pixel.agents.rfq import unmet
 from pixel.contracts import LlmResult
 from pixel.core import feedback, timing
 from pixel.core.orchestrator import Deadline
+from pixel.crm import quotes
 
 REFERENCE = "Please confirm that you will book it under our reference PO 4711."
 REQUEST = f"{PLAIN}\n{REFERENCE}"
@@ -23,8 +24,8 @@ OPTION = airline("1483.43")
 CASES = json.loads((Path(__file__).parent / "fixtures" / "unmet-asks.json").read_text(encoding="utf-8"))["cases"]
 
 
-def ask(kind: str, sentence: str, add: str = "") -> dict:
-    return {"class": kind, "sentence": sentence, "add": add}
+def ask(kind: str, sentence: str) -> dict:
+    return {"class": kind, "sentence": sentence}
 
 
 def model(monkeypatch, *asks: dict) -> tuple[list[dict], list[dict]]:
@@ -50,9 +51,9 @@ def deadline(target_s: float = 30) -> Deadline:
 async def settle(ctx, request: str = REQUEST, target_s: float = 30, by_s: float = 60):
     drafted = quote(rfq(), OPTION)
     by = timing.now() + timedelta(seconds=by_s)
-    sent = await unmet.settle(ctx, drafted, request, deadline(target_s), by, lambda q: check.run(q, request, [OPTION]))
+    await unmet.settle(ctx, drafted, request, deadline(target_s), by)
     await asyncio.gather(*ctx.tasks)
-    return drafted, sent
+    return drafted
 
 
 def recorded(conn) -> dict:
@@ -60,40 +61,26 @@ def recorded(conn) -> dict:
     return json.loads(row[0])
 
 
-async def test_a_wording_ask_gains_its_sentence_above_the_closing_and_the_quote_leaves_at_once(conn, monkeypatch):
-    add = "We will book the shipment under your reference PO 4711."
-    asked, posted = model(monkeypatch, ask("wording", REFERENCE, add))
-    drafted, sent = await settle(make_ctx(conn, unmet="on", alert_url="http://alert"))
-    assert REFERENCE in asked[0]["user"] and drafted.body in asked[0]["user"] and "offer-Q-1.pdf" in asked[0]["user"]
-    paragraphs = sent.body.split("\n\n")
-    assert paragraphs[-3] == add and sent.body.replace(f"{add}\n\n", "") == drafted.body
-    assert (recorded(conn)["open"], recorded(conn)["hold_until"], posted) == ([], None, [])
-
-
-@pytest.mark.parametrize(
-    "add",
-    [
-        "We will book it under our own reference 778899.",  # a figure neither the request nor the reply holds
-        "The price of 1483.43 EUR stays as quoted under PO 4711.",  # the total a second time: `check._text` blocks
-    ],
-)
-async def test_a_sentence_with_a_figure_of_its_own_or_a_second_total_is_not_added_and_a_person_hears_of_it(
-    conn, monkeypatch, add
-):
-    _, posted = model(monkeypatch, ask("wording", REFERENCE, add))
-    drafted, sent = await settle(make_ctx(conn, unmet="on", alert_url="http://alert"))
-    assert sent == drafted
+async def test_a_wording_ask_never_adds_text_to_the_quote_it_alerts_and_the_quote_leaves_at_once(conn, monkeypatch):
+    added = "Cargo insurance is included in the all-in price."  # a service we did not price
+    asked, posted = model(monkeypatch, ask("wording", INSURANCE) | {"add": added})
+    ctx = make_ctx(conn, unmet="on", alert_url="http://alert")
+    started = timing.now()
+    drafted = await settle(ctx, f"{PLAIN}\n{INSURANCE}", target_s=20)
+    assert INSURANCE in asked[0]["user"] and drafted.body in asked[0]["user"] and "offer-Q-1.pdf" in asked[0]["user"]
+    assert quotes.for_session(ctx, 1) is None and recorded(conn)["asks"] == [ask("wording", INSURANCE)]
     assert [(p["issue"], p["classes"], p["held"]) for p in posted] == [("unmet_ask", ["wording"], False)]
+    assert (timing.now() - started).total_seconds() < 5
 
 
 async def test_an_ask_that_moves_the_price_is_never_guessed_it_alerts_by_code_and_holds_until_the_target(
     conn, monkeypatch
 ):
-    _, posted = model(monkeypatch, ask("price", INSURANCE, "Cargo insurance is included."))
+    _, posted = model(monkeypatch, ask("price", INSURANCE))
     ctx = make_ctx(conn, unmet="on", alert_url="http://alert")
     started = timing.now()
-    drafted, sent = await settle(ctx, f"{PLAIN}\n{INSURANCE}", target_s=0.6)
-    assert sent == drafted and (timing.now() - started).total_seconds() >= 0.6
+    await settle(ctx, f"{PLAIN}\n{INSURANCE}", target_s=0.6)
+    assert (timing.now() - started).total_seconds() >= 0.6
     assert posted[0] | {"at": ""} == {"issue": "unmet_ask", "session": 1, "at": "", "classes": ["price"], "held": True}
     assert recorded(conn)["hold_until"] and recorded(conn)["asks"][0]["sentence"] == INSURANCE
     assert [i["issue"] for i in feedback.attention(conn, 5)] == ["unmet_ask"]
@@ -111,8 +98,8 @@ async def test_reading_and_holding_end_before_the_orchestrator_takes_the_request
     monkeypatch.setattr(llm, "ask_json", hangs)
     conn.execute("DELETE FROM events")
     started = timing.now()
-    drafted, sent = await settle(make_ctx(conn, unmet="on"), target_s=20, by_s=0.5)
-    assert sent == drafted and (timing.now() - started).total_seconds() < 2
+    await settle(make_ctx(conn, unmet="on"), target_s=20, by_s=0.5)
+    assert (timing.now() - started).total_seconds() < 2
 
 
 async def test_a_person_who_takes_the_session_over_ends_the_hold(conn, monkeypatch):
@@ -127,26 +114,25 @@ async def test_a_person_who_takes_the_session_over_ends_the_hold(conn, monkeypat
 async def test_a_sentence_the_request_does_not_hold_moves_nothing(conn, monkeypatch):
     _, posted = model(monkeypatch, ask("selection", "Please do not offer Ghost Air."))
     started = timing.now()
-    drafted, sent = await settle(make_ctx(conn, unmet="on", alert_url="http://alert"), target_s=20)
-    assert sent == drafted and posted == [] and recorded(conn)["asks"] == []
+    await settle(make_ctx(conn, unmet="on", alert_url="http://alert"), target_s=20)
+    assert posted == [] and recorded(conn)["asks"] == []
     assert (timing.now() - started).total_seconds() < 5
 
 
-async def test_a_malformed_answer_is_an_error_event_and_the_quote_leaves_as_it_was(conn, monkeypatch):
+async def test_a_malformed_answer_is_an_error_event_and_the_quote_leaves(conn, monkeypatch):
     model(monkeypatch, {"class": "price"})
-    drafted, sent = await settle(make_ctx(conn, unmet="on"), target_s=20)
-    assert sent == drafted
+    await settle(make_ctx(conn, unmet="on"), target_s=20)
     assert json.loads(conn.execute("SELECT payload FROM events WHERE kind = 'error'").fetchone()[0])["where"] == "unmet"
 
 
 @pytest.mark.parametrize(("mode", "calls"), [("log", 1), ("off", 0)])
-async def test_log_records_without_changing_holding_or_alerting_and_off_asks_nothing(conn, monkeypatch, mode, calls):
-    asked, posted = model(monkeypatch, ask("wording", REFERENCE, "We will book under PO 4711."), ask("price", PLAIN))
+async def test_log_records_without_holding_or_alerting_and_off_asks_nothing(conn, monkeypatch, mode, calls):
+    asked, posted = model(monkeypatch, ask("wording", REFERENCE), ask("price", PLAIN))
     ctx = make_ctx(conn, unmet=mode, alert_url="http://alert")
     started = timing.now()
-    drafted, sent = await settle(ctx, target_s=20)
+    await settle(ctx, target_s=20)
     await settle(ctx, target_s=20)  # a restart hands the request to its handler again: no second call
-    assert sent == drafted and posted == [] and len(asked) == calls
+    assert posted == [] and len(asked) == calls
     assert (timing.now() - started).total_seconds() < 5
     assert not calls or recorded(conn)["open"] == ["price", "wording"]
     assert feedback.attention(conn, 5) == []  # an unmeasured reader's finding is no issue for the repair run

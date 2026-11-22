@@ -28,8 +28,8 @@ flowchart TD
     SEL --> Q[quote text]
     Q --> CHK[check + repair<br/>on the text that leaves]
     CHK -.->|a BLOCK mended: build again| SEL
-    CHK --> UNM[last reader<br/>asks the reply leaves unmet]
-    UNM -.->|price, selection, scope: alert, hold to the target| UI
+    CHK --> UNM[last reader, off by default<br/>asks the reply leaves unmet]
+    UNM -.->|alert; price, selection, scope: hold to the target| UI
     UNM --> OUT[outbox<br/>first quote only]
     O -->|unanswered at 2m 30s or handler ends early| REC[quote recovery]
     REC -->|sheets, portal and missing pickup enquiries| ENG
