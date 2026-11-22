@@ -551,6 +551,50 @@
     "currency": "EUR"
    },
    "today": "Pass: the condition is read as a side note, the stated total stands, balanced takes Bodenseefracht."
+  },
+  {
+   "fixture": "next-cases/combo-de-two-options-pdf.json",
+   "expected": {
+    "options": [
+     {
+      "carrier": "Kestrel Airways",
+      "total": "1512.80",
+      "transit_days": 4
+     },
+     {
+      "carrier": "Helix Air Freight",
+      "total": "2132.80",
+      "transit_days": 2
+     }
+    ],
+    "currency": "EUR",
+    "language": "de",
+    "pdf": true
+   },
+   "today": "Helix 2132.80 only, German, the PDF with it (before #479).",
+   "known_gap": "two options, as `cheapest-and-fastest-both`: #479 open. Owner: Checklist."
+  },
+  {
+   "fixture": "next-cases/combo-arrive-by-pdf-reference.json",
+   "expected": {
+    "carrier": "Helix Air Freight",
+    "total": "2132.80",
+    "currency": "EUR",
+    "body_contains": [
+     "PO-2026-5512"
+    ],
+    "pdf": true
+   },
+   "today": "Helix 2132.80, the reference in mail and PDF."
+  },
+  {
+   "fixture": "next-cases/cheapest-and-fastest-one-option.json",
+   "expected": {
+    "currency": "EUR",
+    "amounts": 1,
+    "note": "one option asked for: one amount, whichever wish is read"
+   },
+   "today": "one amount."
   }
  ],
   "axis_b_note": "Axis B (bench/NEXT_CASES.md): flows after the quote, run by the harness named per row, never by tools.kpi. today_before is what main did before #323, #328, #332, #336 and #339.",
