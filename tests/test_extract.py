@@ -984,6 +984,23 @@ def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
         ("Ihr Angebot muss spätestens am 2026-12-20 bei uns sein.", None, None, None),  # a reply deadline
         ("Die Ware muss spätestens am 2026-12-20 abgeholt werden.", None, None, None),  # a pickup deadline
         ("Die Paletten müssen spätestens bis zum 2026-12-28 in Shanghai ankommen.", None, date(2026, 12, 28), None),
+        ("Cargo can be collected from 2026-12-20. Transit time: max 4 days.", date(2026, 12, 20), None, 4),
+        ("The goods have to be in Toronto no later than 2026-12-28.", None, date(2026, 12, 28), None),
+        ("ETA no later than 2026-12-28, no more than 5 days in transit.", None, date(2026, 12, 28), 5),
+        ("Required delivery date: 2026-12-28.", None, date(2026, 12, 28), None),
+        ("The shipment will be delivered to FRA by 2026-12-20.", None, None, None),  # our pickup side
+        ("The offer has to be in our system by 2026-12-20.", None, None, None),  # a reply deadline
+        ("Please quote FRA-ORD 300 kg. The cargo must be delivered to your warehouse at FRA by 2026-12-20.", None, None,
+         None),  # the drop-off at our side
+        ("The cargo must be delivered at ORD by 2026-12-28.", None, date(2026, 12, 28), None),
+        ("Cargo ready date: 2026-12-20, must arrive by 28th December.", date(2026, 12, 20), date(2026, 12, 28), None),
+        ("Available for collection as of 20.12.2026.", date(2026, 12, 20), None, None),
+        ("Pick-up possible from Dec 20th.", date(2026, 12, 20), None, None),
+        ("Earliest collection: 20.12.2026.", date(2026, 12, 20), None, None),
+        ("Ready to go on the 20th of December.", date(2026, 12, 20), None, None),
+        ("Die Ware ist ab dem 20.12. abholbereit.", date(2026, 12, 20), None, None),
+        ("Abholung frühestens am 21.12. möglich.", date(2026, 12, 21), None, None),
+        ("We are ready to ship as soon as you confirm.", None, None, None),
     ],
 )
 def test_schedule_reads_only_stated_readiness_and_limits(text, ready, arrive_by, max_days):
