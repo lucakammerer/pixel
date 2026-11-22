@@ -54,7 +54,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
-  `kpi_pr.sh`, `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -105,6 +105,7 @@ uv run python -m tools.board_me                 # our results from /v1/board/me 
 uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts
 uv run python -m tools.check_precision <database>   # per check rule: fired, the rounds accepted and not, by the scorer's reason
 uv run python -m tools.card_proof <database>    # the rate card against every portal rate in that database, offline
+uv run python -m tools.replay_gate <database>   # the last 20 accepted requests read and priced as quoted; exit 1 on a difference
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.bench_unmet              # the last reader's prompt on the lost first rounds (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
@@ -157,7 +158,11 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
    stays live until main holds it, at most 10 minutes. When every changed path is under `docs/`, `bench/`, `tests/`,
    `.github/`, is a top-level `.md` file or belongs to the deploy job itself, it moves the live checkout without a
    restart. Otherwise it tests the commit in the clone (`uv sync --locked`, `uv run pytest -q`, `uv run ruff check .`);
-   red is refused for good and sent to `PIXEL_ALERT_URL`. Green waits for `tools/window.py`, at most one restart per
+   red is refused for good and sent to `PIXEL_ALERT_URL`. Green then passes the replay gate (`tools/replay_gate.py` on
+   a backup copy of the live database): the last 20 requests the scorer accepted must be read and priced as they were
+   quoted, total to the cent, airline and trucker; a difference the live commit shows too does not count. Red is
+   refused with the differing round in the alert, `URGENT` included; `touch /opt/pixel/cd/SKIP_GATE` lets the newest
+   commit past it once, by hand. Green waits for `tools/window.py`, at most one restart per
    round and from a request's third minute on; a merge since the live commit with `URGENT` in its title lifts both
    (the answer to the current request must still be out). Then it moves the live checkout, `uv sync --locked --no-dev`,
    restarts and checks that the UI answers; if not, it goes back to the previous commit and alerts. Root runs only
