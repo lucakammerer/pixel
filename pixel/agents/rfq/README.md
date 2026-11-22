@@ -39,7 +39,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and codes known locally. Only an unserved guess triggers a time-limited portal check and, if still unresolved,
   one optional `rfq.airports` call. Quoted older correspondence is excluded.
 - `compose.py` `answers` echoes the customer's reference in the email using the same parser as the PDF.
-- `compose.py` `no_price` renders the deadline reply if no freight rate is available.
+- `compose.py` `no_price` renders the deadline reply if no freight rate is available; for a request out of scope
+  (`orchestrator.out_of_scope`) it says why instead: air export freight only (`OUT_OF_SCOPE`), never a figure.
   `pricing/engine.py` `options` asks the rate desk if the sheet, portal and carrier list yield no sourcing option.
 - `agent.py` `fallback` reads the RFQ and the stored options on its current lane. A late complete option can be
   sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30
@@ -74,6 +75,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   model's read, and with the gateway down no quote at all). `agent.py` `handle`
   quotes the first and prices the others beside it; `_with_shipments` adds each one's price and, when all have one,
   their sum in a paragraph of the same quote (R4). The quote's option, PDF details and booking stay the first's.
+- `agent.py` `_other_option`: "your cheapest and your fastest, each with its price" (`compose.both_options`: both
+  words joined by "and", and options asked for as such: "two options", "zwei Angebote", "both the cheapest and the
+  fastest", "each with its price", "jeweils mit", "chacune avec") quotes the wish read first and names the other
+  option after the offer with its own total (`compose.other_option`). "Two pallets", "for each shipment" and a bare
+  "the cheapest and fastest options" ask for one total. The quote's option, PDF details and booking stay the first's.
 - `extract.py` `excluded_airlines`, `_carrier_requirements`: an airline the customer rules out (a sentence with a negation that
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
@@ -200,7 +206,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   no-price message without alerting an operator.
   `tools/followup_matrix.py` runs every sender, phase and intent (`tests/fixtures/thread-followups.json`) and
   the change mail in six languages, three unit systems and five attachment formats.
-- `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (with none,
+- `agent.py` `requote` runs `engine.options` at the changed request, selects from options found for it (an airline's
+  rate for another chargeable weight is not one: under a rate API 429 the first request's reads land after the change
+  and the cheaper old-weight price was quoted, outage drill round 172) (with none,
   from the best the session holds, R1), and sends a quote with its PDF in reply to the change mail
   (`outbox.send_quote(reply_to=...)`, its own claim). While it prices, `outbox.quoted` is true and a quote of the
   older facts is held as `superseded`, also when the change came before our first quote. Round 86: the scorer scored
