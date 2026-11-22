@@ -186,6 +186,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
   The cap may also follow its amount ("400 EUR or less", "2000 euros tops") or be "match 400 EUR", "within a
   budget of 300 EUR"; "max." does not end the sentence, and a date after the word is no cap.
+
+
+- An acceptance or a decline in other words books or closes too: "let's go with this offer", "merci de réserver";
+  "found a cheaper option elsewhere", "decided against it", "c'est trop cher" (`booking.ACCEPT`, `DECLINE`).
 - `cancel` (the customer withdraws after the booking, round 88) cancels at the portal by the airline's reference.
   A booking by mail without that reference yet, or a portal that refuses or is down, is withdrawn by mail with the
   airline (`_cancel_by_mail`, the carrier list's address); the customer is told either way. Only without an address
