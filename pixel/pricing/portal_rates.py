@@ -7,12 +7,12 @@ from decimal import Decimal
 import httpx
 
 from pixel.api.client import ApiError
-from pixel.api.portal import Lane, NotOnPortal, RateLimited
+from pixel.api.portal import Lane, NotOnPortal, RateLimited, RatesUnavailable
 from pixel.contracts import RateOption, Rfq
 from pixel.core import events, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import calc, selection
+from pixel.pricing import calc, rate_card, selection
 
 LANES_TTL_S = 600
 # Rounds 120 and 121: a rate read that answered 503 is read once more before the quote, inside the desk wait (115 s):
@@ -66,7 +66,11 @@ async def _read(ctx: Context, rfq: Rfq, deadline: Deadline, code: str, name: str
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                     payload={"source": "portal", "carrier": name, "error": type(exc).__name__, "hint": str(exc)}
                     | ({"page": exc.page} if getattr(exc, "page", None) else {}))  # fmt: skip
-        return None
+        if not isinstance(exc, RatesUnavailable) or (card := rate_card.option(ctx, rfq, code)) is None:
+            return None
+        events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
+                    payload={"option": card.model_dump(mode="json"), "why": "rate card"})  # fmt: skip
+        return card
     events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
     return option
@@ -88,12 +92,14 @@ async def reread(ctx: Context, rfq: Rfq, deadline: Deadline, now: asyncio.Event)
         payload = json.loads(row["payload"])
         if payload.get("source") == "portal" and payload.get("error") == "RatesUnavailable":
             down.add(payload.get("carrier"))
-        elif (option := payload.get("option")) and option.get("source") == "portal":
+        elif (option := payload.get("option")) and option.get("source") == "portal" and option.get("rate_id"):
             down.discard(option.get("carrier"))
     lane = next((x for x in await lanes(ctx) if (x.origin, x.destination) == (rfq.origin, rfq.destination)), None)
     todo = [(c, n) for c, n in (lane.airlines if lane else ()) if n in down and selection.requested_carrier(rfq, n, c)]
     remaining = ctx.portal.rate_remaining
-    await asyncio.gather(*(_read(ctx, rfq, deadline, c, n) for c, n in todo[: None if remaining is None else remaining]))
+    await asyncio.gather(
+        *(_read(ctx, rfq, deadline, c, n) for c, n in todo[: None if remaining is None else remaining])
+    )
 
 
 async def options(ctx: Context, rfq: Rfq, deadline: Deadline) -> list[RateOption]:
