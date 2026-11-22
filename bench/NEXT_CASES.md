@@ -559,6 +559,16 @@ round-67 hourly-charge misread remains covered by `tests/fixtures/bid-plausibili
 | T11. One-hour bid, different weight, or one reply to two enquiries | Keep the stated expiry and weight tied to each enquiry. A fixed total for a different weight cannot price this request. | The air and truck samples lose validity. The rules build a bid option with the RFQ's weight. Multi-enquiry correlation remains untested. | Wrong for expiry; unknown for different weight or two enquiries. Owner: supply. |
 | T12. Airline changes name/address, an unknown airline or trucker replies, or a zone changes airport | Resolve the replying party to the actual enquiry and apply each effective carrier or zone change once | Current store keys carriers by name and zones by zone. Audit of rename, unknown sender and zone replacement is pending. | Unknown until carrier/zone updates are replayed. Owner: supply. |
 
+### Scored quote provenance
+
+Through round 188 (event 19609), the census links 187 scored rounds to a session and 177 to the specific
+archived quote whose send timestamp matches the board's answer timestamp. The eight added session links
+for rounds 1–7 and 188 have exact request-receipt matches. Rounds 152 and 172 each have two local quotes.
+The board's answer timestamp identifies the later one in both cases. Round 107 has no matching local
+session. The other ten rounds without a matching archived quote keep their session link and the board's
+verdict. This changes audit coverage only. Owner: supply for source provenance, speed for missing receipt
+or quote evidence.
+
 ### Rate desk row metadata
 
 The 22 captured control layouts still read correctly. The probes add five correct cases and ten owned gaps

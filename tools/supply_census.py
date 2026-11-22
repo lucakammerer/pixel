@@ -71,6 +71,27 @@ def _newer_bids(selected: list[int], request_for_mail: dict, mails: dict, sent_a
     return found
 
 
+def _scored_rounds(db: sqlite3.Connection, score: dict, feedback: dict, quotes: dict):
+    by_receipt = defaultdict(list)
+    for session_id, received_at in db.execute("SELECT id, received_at FROM sessions"):
+        by_receipt[_time(received_at)].append(session_id)
+    for number, result in sorted(score.items()):
+        session_id = feedback.get(number)
+        link = "feedback" if session_id is not None else None
+        if session_id is None and (received_at := result.get("sent_at")):
+            candidates = by_receipt.get(_time(received_at), [])
+            if len(candidates) == 1:
+                session_id, link = candidates[0], "exact_receipt"
+        sent = quotes.get(session_id, [])
+        answered_at = result.get("answered_at")
+        matches = [q["quote_id"] for q in sent if answered_at and _time(q["sent_at"]) == _time(answered_at)]
+        yield {
+            "record": "scored_round", "round": number, "verdict": result.get("verdict"),
+            "reason": result.get("reason"), "session_id": session_id, "session_link": link,
+            "quote_ids": [q["quote_id"] for q in sent], "scored_quote_id": matches[0] if len(matches) == 1 else None,
+        }  # fmt: skip
+
+
 def records(db: sqlite3.Connection):
     db.row_factory = sqlite3.Row
     by_mail = defaultdict(list)
@@ -214,11 +235,7 @@ def records(db: sqlite3.Connection):
             yield {"record": "quote", "session_id": session_id, **quote}
             for message_id in quote["pickup_bid_matches"]:
                 pickup_matches[message_id].add(quote["quote_id"])
-    for number, result in sorted(score.items()):
-        session_id = feedback.get(number)
-        yield {"record": "scored_round", "round": number, "verdict": result.get("verdict"),
-               "reason": result.get("reason"), "session_id": session_id,
-               "quote_ids": [q["quote_id"] for q in quotes.get(session_id, [])]}  # fmt: skip
+    yield from _scored_rounds(db, score, feedback, quotes)
 
     for mid, mail in mails.items():
         carrier_kind = carrier_kinds.get(mail["sender"])
