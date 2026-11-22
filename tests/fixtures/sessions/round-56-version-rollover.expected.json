@@ -1,0 +1,24 @@
+{
+  "scorer_best_eur": "6158.54",
+  "known_stale_quote_eur": "5442.11",
+  "recorded_new_version": [
+    {
+      "id": 5576,
+      "ts": "2026-11-21T20:34:57.390691+00:00",
+      "session_id": null,
+      "kind": "option.found",
+      "actor": "pricing",
+      "message_id": null,
+      "payload": "{\"option\": {\"source\": \"portal\", \"carrier\": \"Lumen Air Cargo\", \"carrier_code\": \"LM\", \"origin\": \"FRA\", \"destination\": \"LOS\", \"chargeable_kg\": \"1377.75\", \"billed_kg\": \"1377.75\", \"freight\": \"4450.14\", \"fuel\": \"0\", \"security\": \"0\", \"pickup\": \"0\", \"trucker\": null, \"pickup_hours\": null, \"total\": \"4450.14\", \"currency\": \"EUR\", \"fx_eur\": null, \"total_eur\": \"4450.14\", \"transit_days\": 5, \"rate_id\": \"R-7uXPmsmA0QmCCyy3\", \"valid_until\": \"2026-11-21T20:49:57.376056Z\", \"dataset_version\": \"v1+a19eb0\", \"evidence_message_id\": null}}"
+    },
+    {
+      "id": 5577,
+      "ts": "2026-11-21T20:34:57.393113+00:00",
+      "session_id": null,
+      "kind": "option.found",
+      "actor": "pricing",
+      "message_id": null,
+      "payload": "{\"option\": {\"source\": \"portal\", \"carrier\": \"Tamarind Airways\", \"carrier_code\": \"TM\", \"origin\": \"FRA\", \"destination\": \"LOS\", \"chargeable_kg\": \"1377.75\", \"billed_kg\": \"1377.75\", \"freight\": \"6158.54\", \"fuel\": \"0\", \"security\": \"0\", \"pickup\": \"0\", \"trucker\": null, \"pickup_hours\": null, \"total\": \"6158.54\", \"currency\": \"EUR\", \"fx_eur\": null, \"total_eur\": \"6158.54\", \"transit_days\": 3, \"rate_id\": \"R-xsPx5c0_qB3lvbql\", \"valid_until\": \"2026-11-21T20:49:57.379986Z\", \"dataset_version\": \"v1+a19eb0\", \"evidence_message_id\": null}}"
+    }
+  ]
+}

@@ -543,6 +543,14 @@ What follows:
   above the reply; replaces `cost/history-headers`), `cost/schedule-wording-v2` + 8fc2c4c (ready dates in 12 more
   wordings and ordinals; the ready date picks the sheet version, so a missed one can price an old tariff). Weight and
   volume: 26 of 27 one-factor wordings right on main, "785 kg net 760 kg" goes to the model. Wrong: 0.
+- 22.11. 10:26 UTC, generalize outage cycle (C16). Round 56 provides a recorded version change and a scorer
+  reference of 6158.54 EUR. With no new version read, either a portal outage or a 429 gave 5442.11 EUR in time.
+  With the first read of the new version for another airline, a forced outage gave 6167.74 EUR; with both
+  reads it gave 6158.54 EUR. The normal-portal replay also gave 6158.54 EUR. The known gap stays with Accuracy:
+  every new-version read can fail before the rate card sees that the prices have changed.
+  Live cursor 57813: all 18 subsequent mails routed as recorded and both tracking statuses matched. Round
+  190 reproduced its accepted quote. Session 57502 gave 2538.40 EUR offline against 3002.00 EUR sent; the
+  attachment payload is absent from the snapshot. The captured quote does not establish the missing figures.
 - 22.11. 10:08 UTC, generalize audit (live to mail 56740, round 187 scored; cursor was 54466). Replayed all 68
   incoming mails in 13 sessions with the recorded responses. Routing matched all 68 (8 RFQs, 32 bids, 18 replies,
   5 booking confirmations and 5 tracking questions); tracking matched all 5 statuses. All six accepted rounds

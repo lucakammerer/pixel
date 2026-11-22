@@ -121,7 +121,7 @@ Rank = likelihood × how badly we fail today × how cheap the fix is (each 1 to 
 | C15 | a non-quote mail the mailbox refuses (no fixture) | the Turkish booking notice came back with control characters ("Say\x013n"), POST answered 500 (session 51345) | live (22.11. 08:15) | **fixed**: a translation with control characters is refused, the English mail goes out (#457). A mail surely not sent (a 503, no connection; a 4xx only for a translation, then in English) is sent once more; a lost response or another 5xx may have been stored, so it is never sent twice: its row stays as the guard and is settled (`outbox.SETTLED`), its `error` says so once, no `delivery_unconfirmed` at every restart. 51345's notice (a 500) stays lost: it may have arrived. `tests/test_outbox.py`, seven kinds of mail | — | `outbox._deliver`, `outbox.repair_receipts` | — | — |
 | C16 | a model-written slot of the quote with a control character | `compose.prose` slots and the model-read greeting go into the quote unchecked | esc. of C15 | a 500 on the quote is sent again with the same text until `RESEND_S`, then the fallback | the slot refused like a translation (`compose.CONTROL`) | `compose.prose`; open, Cost | S | 2×3×3 |
 | C15 | `portal-all-down` | the lane list fails with the rates (live: rounds 46, 47), or a rate read drops its connection | live | **fixed**: before, neither asked the rate card; rounds 120 to 123 replayed on the live database priced the fastest airline from it either way | the airline priced from the card | `portal_rates.options`, `_read` | S | 2×3×3 |
-| C16 | `version-change-in-outage` | the dataset version changes while the rate API is down | esc. | the card prices the old version: 11.8 % off in the one rate it met (`tools.card_proof`, `new version`), a lost round | a factor for the new version without a portal read | `rate_card` | M | 1×3×1 |
+| C16 | `version-change-in-outage` | the new dataset version is hidden when the rate API or its page is unavailable | replay, round 56 | 5442.11 EUR in time against the scorer's 6158.54 (11.63% low); with one new read for another airline the fallback quotes 6167.74, with both new reads it quotes 6158.54 | quote within 5% and before the deadline; investigate an independent version signal | `rate_card`, Accuracy | M | 1×3×1 |
 | — | pushes stop | the webhook subscription is dropped | new | covered: the poll is the safety net (`test_poller`) | — | — | — | — |
 | — | push twice / out of order | same push repeated or an older one after a newer | new | covered: stored once by id (`test_webhook`) | — | — | — | — |
 | — | poll 429 with a slower minimum | "one poll per 5 seconds" | live (22.11. 01:23) | covered: interval learned from the 429 | — | — | — | — |
@@ -156,7 +156,10 @@ round 166.
 | `mail_twice`, `mail_late` (90 s) | 50 | 0 | — | — | — |
 | E3 `truckers_silent` | 49 | 1 | round 108: the pickup memory holds no answer of that zone within 24 h (D5's open part) | `pickup.estimates` | Accuracy |
 
-Not drilled yet: a tariff version changing within a round; booking and tracking down (no effect on the quote, axis B).
+Round 56 checks the rate version at the first request after a change (`tests/test_outage_drill.py`). Unavailable
+rates with no observation of the new version are the known gap C16. The normal portal and a 503 after one or
+two recorded reads of the new version are controls. The version's exact activation time is not in the snapshot.
+Not drilled here: booking and tracking outages (no effect on the quote, axis B).
 
 ## Axis B: booking, tracking and the flow after the quote (22.11.2026, 02:00 to 03:30)
 
