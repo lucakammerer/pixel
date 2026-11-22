@@ -133,13 +133,16 @@ async def _read(session: dict, case: dict, content: bytes = b"") -> dict:
         if "shipment_sessions" in case["expected"] and (
             kind is router.MailKind.TRACKING_QUESTION or got.get("action") == "track"
         ):
-            got["shipment_sessions"] = await _track(ctx, session, message)
+            matched, answer = await _track(ctx, session, message, case.get("shipment_status", "confirmed"))
+            got["shipment_sessions"] = matched
+            if "answer_includes" in case["expected"]:
+                got["answer_includes"] = [part for part in case["expected"]["answer_includes"] if part in answer]
         return got
     finally:
         ctx.db.close()
 
 
-async def _track(ctx: Context, session: dict, message: Message) -> list[int]:
+async def _track(ctx: Context, session: dict, message: Message, status: str) -> tuple[list[int], str]:
     """Run the real tracking handler against an own shipment and one belonging to another customer."""
     quote = quotes.for_session(ctx, 1)
     assert quote is not None
@@ -157,16 +160,17 @@ async def _track(ctx: Context, session: dict, message: Message) -> list[int]:
                 }
             ),
         )
-        shipments.save(ctx, shipment.model_copy(update={"booking_reference": reference, "status": "confirmed"}))
+        shipment_status = status if sid == 1 else "confirmed"
+        shipments.save(ctx, shipment.model_copy(update={"booking_reference": reference, "status": shipment_status}))
     with (
-        patch.object(tracking.outbox, "send", AsyncMock()),
-        patch.object(tracking.compose, "localize", side_effect=lambda _, __, body, *args, **kwargs: body),
+        patch.object(tracking.outbox, "send", AsyncMock()) as send,
+        patch.object(tracking.compose, "localize", side_effect=lambda _ctx, _lang, _sid, body, *args: body),
     ):
         await tracking.handle(ctx, message)
     row = ctx.db.execute(
         "SELECT payload FROM events WHERE kind = 'tracking.answered' AND message_id = ?", (message.id,)
     ).fetchone()
-    return json.loads(row["payload"])["shipment_sessions"]
+    return json.loads(row["payload"])["shipment_sessions"], send.await_args.kwargs["body"]
 
 
 def _same(want: dict, got: dict) -> bool:

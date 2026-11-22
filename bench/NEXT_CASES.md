@@ -799,24 +799,23 @@ not yet live: one trucker's answer unreadable (a scan, a failed transcription) w
 memory then prices only the others, as in 67. A fix (`pickup.estimates` for every trucker that answered without a
 price read) has one scored round behind it and waits behind the one-pull-request rule. Rounds 180 to 184 (cycle 2, fresh copy): all accepted, today's code quotes them as sent. Nothing in this axis is wrong today that has no owner.
 
-## Axis F: after the quote (22.11.2026, snapshot through round 191)
+## Axis F: after the quote (22.11.2026, snapshot through round 192)
 
-The snapshot ends at event 19893 (10:17:39 UTC). Inspect the recorded phase, sender, routing, decisions and
-linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 19589`
-for the 37 added mails since the previous snapshot. The fixture run of the same tool checks today's rules and
+The snapshot ends at event 19995 (10:28:26 UTC). Inspect the recorded phase, sender, routing, decisions and
+linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 19893`
+for the nine added mails since the previous snapshot. The fixture run of the same tool checks today's rules and
 selected tracking outcomes. `tests/test_booking.py` checks the booking actions with mocked services.
 
 ### What the scorer scores
 
-190 rounds were closed in this snapshot. Round 191 had a provisional accepted verdict and `booked: true`.
-Points were still pending.
+192 rounds were closed in this snapshot.
 
 | Evidence on the closed rounds | Observed verdicts and points | Interpretation |
 | --- | --- | --- |
-| Customer reply recorded in the RFQ session: 186 rounds vs 4 without | 140 accepted, 44 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
-| Airline confirmation linked to the RFQ: 117 rounds vs 73 without | 114 accepted and 3 rejected vs 26 accepted, 41 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
-| Tracking answer linked to the shipment: 111 rounds vs 79 without | 111 accepted, 106 with +10, vs 29 accepted and none with +10 | Every +10 coincided with `booked: true`. Seven `booked: true` rounds scored zero. Round 190 had no tracking points field or tracking question in the snapshot. |
-| Booking field on the board | `booked: true` in 114, false in 6 and null in 70. All 119 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
+| Customer reply recorded in the RFQ session: 188 rounds vs 4 without | 141 accepted, 45 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
+| Airline confirmation linked to the RFQ: 118 rounds vs 74 without | 115 accepted and 3 rejected vs 26 accepted, 42 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
+| Tracking answer linked to the shipment: 113 rounds vs 79 without | 113 accepted, 108 with +10, vs 28 accepted and none with +10 | Every +10 coincided with `booked: true`. Seven `booked: true` rounds scored zero. |
+| Booking field on the board | `booked: true` in 115, false in 6 and null in 71. All 121 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
 | Price-match requests in rounds 108, 132, 144, 157, 166 and 175 | 144 and 166 show `booked: false` and adjustment +10. Both were booked before the unconditional yes. The four without a reply had neither outcome. | Hold the quote and wait for the yes. The next clean hold can isolate what earns the adjustment. |
 | Withdrawal after booking (round 88) | Adjustment −20 when the cancellation was missed | Fixed in #336. |
 | Change after the quote (rounds 86, 152) | 86 counted the update as unanswered. 152 scored the quote sent in reply to the change. | A changed request can have a new scored quote. |
@@ -828,25 +827,25 @@ round 186 arrived after the quote had already selected the wrong service. Its re
 The first-quote loss belongs to the selection repair in #508.
 
 Round 188 closed with tracking 0.0. The answer matched its confirmed shipment after a Voice update to `at_origin`,
-printed the internal status code and omitted the airline booking reference and carrier. Round 189 matched a confirmed
-shipment and scored +10. The scorer's specific reason for 188 is open. The next question about an intermediate status
+printed the internal status code and omitted the airline booking reference and carrier. Rounds 189–191 matched confirmed
+shipments and scored +10 each. The scorer's specific reason for 188 is open. The next question about an intermediate status
 can help isolate which missing fact mattered.
 
 ### The census
 
-1,839 incoming replies inside sessions, plus 17 standalone airline confirmations and 112 standalone tracking desk
+1,846 incoming replies inside sessions, plus 17 standalone airline confirmations and 114 standalone tracking desk
 questions. The recorded phase is taken before `mail.in`. A later `followup.read` gives the phase when the handler ran.
 Standalone confirmations and tracking questions use the linked shipment session's phase, or unknown if the log
 has no link. Tracking is linked using `tracking.answered.shipment_sessions`.
 
 | Sender and kind | Count | Action recorded |
 | --- | --- | --- |
-| Airline or trucker, bid | 1,283 | 1,242 arrived while the session was still open, 41 after the quote or acceptance. 1,277 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
+| Airline or trucker, bid | 1,289 | 1,248 arrived while the session was still open, 41 after the quote or acceptance. 1,283 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
 | Airline, confirmation | 126 | 118 confirmed, six duplicates, two unmatched on historically stuck mail bookings (rounds 27 and 29, #323). The confirmation in round 171 hit a mailbox error when telling the customer (C15, Generalize). |
-| Customer, reply | 434 | 125 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
+| Customer, reply | 435 | 125 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
 | Customer, answer to our question | 12 | Routed as `other/thread:question`. Cases and first-quote outcomes are handled in Scope and the request-scoring axes. |
 | Trucker, attached pickup offer | 1 | Routed as a tariff and failed (round 69, T4, Supply). |
-| Tracking desk, question | 112 | Latest recorded answer matched 108 shipments at `confirmed`, one at `at_origin` (F23), and two stuck in `booking`. One question remains unmatched. Three were unmatched at some point, including two later matched. |
+| Tracking desk, question | 114 | Latest recorded answer matched 110 shipments at `confirmed`, one at `at_origin` (F23), and two stuck in `booking`. One question remains unmatched. Three were unmatched at some point, including two later matched. |
 
 The historical `reply_unhandled` cohort was 119 notes across 67 sessions before 22.11. The mail bodies show 107
 acknowledgments, six promises of dangerous-goods documents, two pickup answers, two corrections and two cancellation
@@ -865,7 +864,8 @@ another party (airline, trucker, rate desk, tracking desk), another moment (open
 booked, confirmed, cancelled), another channel (body, attachment, a new thread quoting ours), another language
 (en, de, fr, es, it), another unit (kg, lb, tonnes, litres), and combined cases (a yes and a match request, or a
 change and a yes). Tracking covers the customer and the desk, own and unknown references, and a foreign reference
-in the body or attached to a French question.
+in the body or attached to a French question. The milestone cases compare the recorded Voice statuses with
+a normal confirmation, including the English draft for a French attachment enquiry.
 
 | # | Case | Live | Right action | Today | Status, owner |
 | --- | --- | --- | --- | --- | --- |
@@ -892,7 +892,8 @@ in the body or attached to a French question.
 | F20 | customer tracking asks for another customer's reference, or names an unknown reference in their own thread | fixture | no shipment details; ask for a valid reference | returns the other shipment or falls back to the thread's shipment | **gap**, after the quote (`tracking.handle`) |
 | F21 | a refusal framed as "I'll have to pass" | round 186, mail 56284 | close quote as declined | `thanks`, quote stays open | **gap**, after the quote (`booking.DECLINE`) |
 | F22 | cargo correction in a CSV with pieces, weight and volume only | generated fixtures | read the corrected cargo from the attachment | figures unread | **gap**, Accuracy (`extract._table` expects dimensions) |
-| F23 | tracking after a Voice status update to `at_origin` | round 188 | use the recorded milestone in plain language and retain the booking references | internal status code and only the team reference, tracking 0.0 | **gap**, Hot Repair for the live loss; after the quote for milestone variants (`tracking._paragraph`) |
+| F23 | tracking after a Voice milestone update | round 188 plus the other Voice statuses as fixtures | state the milestone in plain language, with the carrier and both references | airline and airline reference omitted; round 188 scored tracking 0.0 | **gap**, Hot Repair for the live loss; after the quote for milestone variants (`tracking._paragraph`) |
+| F24 | objection to the quoted option without a new request or explicit refusal | round 192, mail 57922 | send to an operator | `thanks`, no action | **gap**, after the quote (`followup.read`); scorer rejected the first quote for `not_what_was_asked` |
 
 0 wrong outside these known gaps (`tools.followup_matrix`: every non-right case carries its `known_gap` and owner).
 Next in this lane, most frequent and cheapest first: F4 and F5 (one regex each), F6 and F7, F8, F17.
