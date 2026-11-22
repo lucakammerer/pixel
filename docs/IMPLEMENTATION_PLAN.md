@@ -92,7 +92,7 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                   pickup   mail truckers for a door-to-port request     option.found
                 selection.select → compose.render → outbox.send_quote  quote.sent
   recovery      unanswered after 150 s or handler exits                quote.recovery
-  fallback      watch stored options for a complete price              quote.waiting
+  fallback      watch stored options for a complete, compliant price              quote.waiting
                 hard deadline: send available scope or explain the miss  quote.fallback | quote.missed, mail.sent
 customer_reply      followup.read: phase, intent, changes                                  followup.read
                     change before the acceptance → requote in reply to the change mail   quote.sent
@@ -170,7 +170,8 @@ closes. That window runs until the later of `target_at` and `PIXEL_BID_WAIT_S` a
 
 If the live agent finishes without sending or reaches `recovery_at` (`hard_at` for a request first seen after
 `recovery_at`: recovery asks no airline), the orchestrator takes over and checks stored
-options for the current lane until a complete price arrives or `hard_at` is reached. It gives an in-flight quote time
+options for the current lane until a complete price meets explicit airline, arrival and transit requirements, or
+`hard_at` is reached. At `hard_at`, a quote can give an alternative and state the requirement it could not meet. It gives an in-flight quote time
 to finish. In the meantime, `core/quote_recovery.py` `source` has up to 20 seconds before `hard_at` to recheck sheets
 and the portal for missing air prices and request pickup bids from eligible truckers without an enquiry for the
 pickup. It uses the normal extraction path if no RFQ was stored and the rules can read the mail; otherwise the

@@ -8,8 +8,7 @@
     "total": "2132.80",
     "currency": "EUR"
    },
-   "today": "Kestrel Airways 1512.80 EUR: arrives Tue 1 Dec, after the customer's Mon 30 Nov.",
-   "known_gap": "`extract.read_request` keeps no arrival deadline and `selection.select` filters only by excluded airline Owner: Accuracy."
+   "today": "Helix Air Freight 2132.80 EUR, within the arrival deadline."
   },
   {
    "fixture": "next-cases/max-transit-days.json",
@@ -18,8 +17,7 @@
     "total": "1685.10",
     "currency": "EUR"
    },
-   "today": "Elbflug Air Freight 1430.90 EUR, 5 days.",
-   "known_gap": "No transit limit is read or applied; same fix as latest-arrival-date (ready date + transit against a limit in `selection.select`) Owner: Accuracy."
+   "today": "Vega Skyfreight 1685.10 EUR, 3 days."
   },
   {
    "fixture": "next-cases/preferred-airline-only.json",
