@@ -146,6 +146,7 @@ async def test_a_captured_door_request_without_an_origin_takes_the_pickup_zones_
         ("Please collect 405 kg from our site in 28321 Town and truck it to BBB airport for the flight to Singapore.", None),
         ("Door pickup in 28321 Town, delivered to the airport BBB by truck; the cargo flies to Changi, Singapore.", None),
         ("Please arrange pickup in 28321 Town, and let me know the earliest arrival to BBB.", "BBB"),
+        ("Please collect the goods in 60311 and deliver them to BBB, 300 kg, 1.2 cbm.", "BBB"),
     ],
 )  # fmt: skip
 def test_the_airport_the_truck_goes_to_is_no_destination(text, destination):

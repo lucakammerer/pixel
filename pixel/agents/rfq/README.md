@@ -464,8 +464,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).
 - A door request's truck leg is no destination either: "arrange the truck from our site to BBB airport. The goods
-  go to Singapore" named no destination code, and the rules took BBB (`TRUCK_LEG`, a code after "to" before any
-  flight or arrival word). Such a mail goes to the model; no live request read differently.
+  go to Singapore" named no destination code, and the rules took BBB (`TRUCK_LEG`: a code named as an airport,
+  before any flight or arrival word; a bare "deliver them to JFK" stays the destination). Such a mail goes to the
+  model; no live request read differently.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
   or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.

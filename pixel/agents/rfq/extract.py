@@ -45,11 +45,12 @@ ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
 )
 # The truck to the departure airport: "arrange the truck from our site to BBB airport. The goods go to Singapore" named
-# no destination code, and BBB was quoted as one. A code the trucking clause reaches before any flight word.
+# no destination code, and BBB was quoted as one. A code the trucking clause names as an airport, before any flight word.
 TRUCK_LEG = re.compile(
     r"(?i:\b(?:truck\w*|lorry|lkw|by\s+road|collect\w*|pick\w*[\s-]?up|deliver\w*|bring\w*|haul\w*|transport\w*))"
     r"(?:(?!(?i:\b(?:air(?!port)\w*|fl[iy]\w*|ship\w*|freight|luft\w*|arriv\w*|ankunft|destination|ziel\w*)\b))"
-    r"[^.;!?\n]){0,60}?(?i:\b(?:to|zum|zur)\s+(?:the\s+)?(?:(?:airport|flughafen)\s+)?)"
+    r"[^.;!?\n]){0,60}?(?i:\b(?:to|zum|zur)\s+(?:the\s+)?)"
+    r"(?:(?i:airport|flughafen)\s+(?=[A-Z]{3}\b)|(?=[A-Z]{3}\s+(?i:airport|flughafen)\b))"  # never a bare "to JFK"
     rf"{CODE}"
 )
 
