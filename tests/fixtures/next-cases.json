@@ -34,8 +34,7 @@
     "no_option_from": "sheets valid to 2026-11-30",
     "note": "price from the portal, a bid or a sheet valid on 2026-12-04"
    },
-   "today": "Elbflug Air Freight 864.00 EUR from the November sheet.",
-   "known_gap": "`pricing/store.py` `lookup` takes a sheet valid today, not on the ready date Owner: Accuracy."
+   "today": "November sheets are excluded because the shipment is ready in December."
   },
   {
    "fixture": "next-cases/customer-reference-in-quote.json",

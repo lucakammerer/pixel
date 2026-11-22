@@ -2,8 +2,9 @@
 
 import json
 
-from pixel.contracts import RateOption, Rfq
+from pixel.contracts import RateOption, Rfq, Source
 from pixel.core.context import Context
+from pixel.pricing import calc, store
 
 
 def _payloads(ctx: Context, session_id: int, kind: str) -> list[dict]:
@@ -32,5 +33,13 @@ def on_lane(option: RateOption, rfq: Rfq) -> bool:
 
 
 def for_request(ctx: Context, rfq: Rfq) -> list[RateOption]:
-    """A previous extraction in this session can have priced different airports."""
-    return [o for o in options(ctx, rfq.session_id) if on_lane(o, rfq)]
+    """Reuse stored prices for the current lane and exclude sheet versions outside a future ready date."""
+    found = [option for option in options(ctx, rfq.session_id) if on_lane(option, rfq)]
+    ready = calc.ready_day(rfq)
+    if ready <= rfq.received_at.date() or not any(option.source == Source.SHEET for option in found):
+        return found
+    versions = {(tariff.carrier, tariff.version) for tariff in store.lookup(ctx, rfq.origin, rfq.destination, ready)}
+    return [
+        option for option in found
+        if option.source != Source.SHEET or (option.carrier, option.dataset_version) in versions
+    ]  # fmt: skip
