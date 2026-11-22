@@ -962,6 +962,8 @@ def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
         ("Cargo ready 31.11.2026. Ready 02.12.2026 instead.", date(2026, 12, 2), None, None),
         ("Die Sendung muss spätestens am 2026-12-28 am Zielflughafen eintreffen.", None, date(2026, 12, 28), None),
         ("Ihr Angebot muss spätestens am 2026-12-20 bei uns sein.", None, None, None),  # a reply deadline
+        ("Die Ware muss spätestens am 2026-12-20 abgeholt werden.", None, None, None),  # a pickup deadline
+        ("Die Paletten müssen spätestens bis zum 2026-12-28 in Shanghai ankommen.", None, date(2026, 12, 28), None),
     ],
 )
 def test_schedule_reads_only_stated_readiness_and_limits(text, ready, arrive_by, max_days):
