@@ -522,6 +522,12 @@ def not_a_pickup_postcode(text: str, code: str) -> bool:
     return code in POSTCODE.findall(text) and code not in pickup_postcodes(text)[0]
 
 
+def _abroad_pickup(text: str) -> bool:
+    """The pickup lies abroad: a postcode the mail places abroad, or a country abroad on a pickup line ("collected
+    from our warehouse at Alpenstraße 48, 5020 Salzburg, Austria"). It has no zone, so no postcode is asked for."""
+    return pickup_postcodes(text)[1] or any(ABROAD.search(line) for line in text.splitlines() if DOOR.search(line))
+
+
 def _pickup(text: str) -> tuple[bool, str | None]:
     if not DOOR.search(text) or OWN_DELIVERY.search(text):
         return False, None
@@ -872,7 +878,7 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
         language=_language(text),
         received_at=deadline.received_at,
         deadline_at=deadline.expires_at,
-        missing=("pickup_postcode",) if door and not postcode else (),
+        missing=("pickup_postcode",) if door and not postcode and not _abroad_pickup(text) else (),
     )
 
 
@@ -956,10 +962,11 @@ def _from_model(data: dict, message: Message, deadline: Deadline) -> Rfq:
     if not weight:
         missing.append("weight_kg")
     door = bool(data.get("door_pickup"))
-    postcode = re.sub(r"\D", "", data.get("pickup_postcode") or "")
-    postcode = postcode if len(postcode) == 5 and not not_a_pickup_postcode(text, postcode) else None
+    given = re.sub(r"\D", "", data.get("pickup_postcode") or "")
+    postcode = given if len(given) == 5 and not not_a_pickup_postcode(text, given) else None
     # A pickup abroad has no zone to ask a postcode for: no question, the airport-to-airport price (next case 22).
-    if door and not postcode and not pickup_postcodes(text)[1]:
+    # A zone is a German postcode's first two digits, so a postcode of another length ("5020 Salzburg") is abroad.
+    if door and not postcode and not (_abroad_pickup(text) or (given and len(given) != 5)):
         missing.append("pickup_postcode")
     currency = (data.get("currency") or "").strip().upper() or None
     return Rfq(
@@ -1079,7 +1086,12 @@ def _stated(value: object) -> bool:
 
 def _unknown(rfq: Rfq) -> list[str]:
     """The facts a price still needs that the request did not give."""
-    facts = ["pickup"] if rfq.door_pickup and not rfq.pickup_zone else ["origin"] if not rfq.origin else []
+    # A pickup with no zone and no postcode missing lies abroad: the model names its airport (`_departures_abroad`).
+    placeless = rfq.door_pickup and not rfq.pickup_zone
+    if placeless:
+        facts = ["pickup"] if "pickup_postcode" in rfq.missing else []
+    else:
+        facts = [] if rfq.origin else ["origin"]
     # Without a volume the chargeable weight is the gross weight, too low for bulky goods.
     missing = ["destination"] * (not rfq.destination) + ["weight"] * (rfq.weight_kg <= 0)
     return facts + missing + ["volume"] * (rfq.volume_cbm <= 0)
@@ -1138,6 +1150,15 @@ def _asked_departure(ctx: Context, text: str) -> str | None:
             codes |= {m.group(0) for m in CODE.finditer(sentence)
                       if m.group(0) in served and not NOT_CODE.search(sentence[: m.start()])}  # fmt: skip
     return codes.pop() if len(codes) == 1 else None
+
+
+def _departures_abroad(ctx: Context | None, text: str) -> str:
+    """A pickup abroad has no zone and so no airport (next case 22, Salzburg): the model names the one of ours
+    nearest by road, in the extraction call it makes anyway. Nothing for any other request."""
+    if not (ctx and _abroad_pickup(text)) or not (airports := store.zone_airports(ctx)):
+        return ""
+    return ("\n\n(Note for origin: when the goods are collected abroad and the mail names no departure airport, "
+            f"give the one of these nearest to the pickup address by road: {', '.join(sorted(airports))}.)")
 
 
 def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
@@ -1667,7 +1688,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 ctx,
                 purpose="rfq.extract",
                 system=SYSTEM,
-                user=text,
+                user=text + _departures_abroad(ctx, text),
                 schema=SCHEMA,
                 session_id=message.session_id,
                 max_output_tokens=500,
