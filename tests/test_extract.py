@@ -460,10 +460,7 @@ def test_a_negated_superlative_or_a_quick_reply_is_no_wish_for_speed(text):
 @pytest.mark.parametrize(
     "body, kg",
     [
-        (
-            "AAA to BBB: 1 pallet, gross weight: 480 lbs, 120x80x100 cm.",
-            Decimal("217.72"),
-        ),  # not 480 kg; two decimals as the scorer
+        ("AAA to BBB: 1 pallet, gross weight: 480 lbs, 120x80x100 cm.", Decimal("217.72")),  # not 480 kg; two decimals as the scorer
         ("AAA to BBB, 3 pallets each 400 lbs, 120x80x110 cm", 3 * Decimal("181.44")),
         ("AAA-BBB 1.2t 6cbm asap", Decimal(1200)),
         ("AAA-BBB, 2,5 Tonnen, 10 cbm", Decimal(2500)),
