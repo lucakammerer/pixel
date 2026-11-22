@@ -1064,6 +1064,8 @@ async def test_an_attached_documents_schedule_is_read_and_stands_against_the_mai
         ("Beta Cargo is the only one we do not use.", (), ("Beta Cargo",)),
         ("Please quote Alpha Air, no other airline.", ("Alpha Air",), ()),
         ("Our frame contract requires Beta Cargo for this lane.", ("Beta Cargo",), ()),
+        ("We do not want Beta Cargo, it has to be Alpha Air.", (), ("Beta Cargo",)),  # the negation's own clause
+        ("We do not want Beta Cargo, Alpha Air or Gamma Wings.", (), ("Alpha Air", "Beta Cargo")),  # a list goes on
     ],
 )
 def test_airline_restrictions_apply_to_the_named_carriers(text, required, excluded):

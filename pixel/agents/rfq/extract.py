@@ -743,12 +743,12 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
     """The airlines a sentence with a negation names, from `airlines`, plus a two-letter code in brackets in it; and
     whether the customer means later requests too. A negation that names no known airline rules nothing out."""
     found, lasting = set(), False
-    for sentence in AIRLINE_SENTENCES.split(text):
-        negated = bool(RULED_OUT.search(NEGATED_POSITIVE.sub(" ", sentence)))
-        lowered = sentence.casefold()
+    aliases = sorted({a.casefold() for airline in airlines for a in (airline, *_calls(airline))}, key=len, reverse=True)
+    for sentence, clause, negated in _airline_clauses(text, aliases):
+        lowered = clause.casefold()
         if not negated and not re.search(r"\bno\s", lowered):
             continue
-        required = set(required_airlines(sentence, airlines))
+        required = set(required_airlines(clause, airlines))
         # "No X, please" rules X out; a "no" elsewhere in the sentence ("no pickup needed") does not.
         before = r"(?<!\w)" if negated else r"\bno\s+"
         names = {
@@ -759,9 +759,32 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
         if names:
             found.update(names)
             if not required:
-                found.update(CODE_IN_BRACKETS.findall(sentence))
+                found.update(CODE_IN_BRACKETS.findall(clause))
             lasting = lasting or bool(LASTING.search(sentence))
     return tuple(sorted(found)), lasting
+
+
+# "We do not want Beta Cargo, it has to be Alpha Air": the negation holds for its own clause, and for one that only
+# lists more airlines ("not Beta Cargo, Alpha Air or Gamma").
+AIRLINE_CLAUSES = re.compile(r"[;,]|\s(?:so|but|aber|sondern)\s", re.IGNORECASE)
+LIST_WORDS = re.compile(r"\b(?:and|or|nor|und|oder|noch|et|ou|either|neither|please|bitte)\b|\([a-z0-9]{2}\)|[\W_]+")
+
+
+def _airline_clauses(text: str, aliases: list[str]) -> list[tuple[str, str, bool]]:
+    """Each clause of each sentence with whether a negation rules out the airlines it names."""
+    out = []
+    for sentence in AIRLINE_SENTENCES.split(text):
+        negated = False
+        for clause in AIRLINE_CLAUSES.split(sentence):
+            rest = clause
+            for alias in aliases:
+                rest = re.sub(rf"(?<!\w){re.escape(alias)}(?!\w)", " ", rest, flags=re.IGNORECASE)
+            named = rest != clause
+            rest = re.sub(r"\b[A-Z][\w-]*", " ", rest)  # an airline we do not know is a name too
+            only_names = named and not LIST_WORDS.sub("", rest.casefold())
+            negated = bool(RULED_OUT.search(NEGATED_POSITIVE.sub(" ", clause))) or (negated and only_names)
+            out.append((sentence, clause, negated))
+    return out
 
 
 def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
