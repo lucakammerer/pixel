@@ -1,0 +1,49 @@
+{
+ "_": "C2 and C4. POST /v1/mailbox/messages answers 503 for about 10 s at the moment our quote leaves; the same for the plain no-price reply of a lane no source prices (axis A's 'lane without any source'). On main before #327 two 503s in a row (agent's send, fallback's send) ended the request as quote.missed send_failed. Reproduced by tests/test_outbox.py::test_a_mailbox_5xx_on_the_quote_is_sent_again_not_lost.",
+ "send_responses": [
+  {
+   "status": 503,
+   "body": {
+    "detail": "mailbox temporarily unavailable"
+   }
+  },
+  {
+   "status": 503,
+   "body": {
+    "detail": "mailbox temporarily unavailable"
+   }
+  },
+  {
+   "status": 503,
+   "body": {
+    "detail": "mailbox temporarily unavailable"
+   }
+  },
+  {
+   "status": 503,
+   "body": {
+    "detail": "mailbox temporarily unavailable"
+   }
+  },
+  {
+   "status": 503,
+   "body": {
+    "detail": "mailbox temporarily unavailable"
+   }
+  },
+  {
+   "status": 503,
+   "body": {
+    "detail": "mailbox temporarily unavailable"
+   }
+  },
+  {
+   "status": 201
+  }
+ ],
+ "expected": {
+  "quote_sent": 1,
+  "mail.resend": 6,
+  "quote.missed": 0
+ }
+}

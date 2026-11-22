@@ -1,0 +1,13 @@
+{
+ "_": "C5. Gateway 503, 429 too_many_in_flight or a timeout for the whole of a request. The offline replay is exactly this case: its gateway mock answers 503 to every call. Requests the rules read are quoted as usual (prose and crosscheck errors are swallowed). Requests only the model reads get no Rfq, hence only the no-price reply: zero points, but R1 holds. Reproduce: uv run python -m tools.replay tests/fixtures/mails/<fixture>.json and look for error where=rfq and quote.missed no_price.",
+ "fixtures": [
+  "mails/rfq-chinese-door.json",
+  "mails/rfq-voice-unread.json",
+  "mails/synthetic-rfq-unclear.json"
+ ],
+ "today": "no Rfq; quote.missed no_price; error where=rfq (rules(guess=True) None, then raise in extract.read_request)",
+ "expected": {
+  "retry": "one retry of a 429/5xx/timeout inside the call's own wait (llm.ask_json)",
+  "else": "the no-price reply as today; a full outage cannot be quoted for these"
+ }
+}

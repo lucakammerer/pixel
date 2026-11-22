@@ -1,0 +1,15 @@
+{
+ "_": "C8. The push's X-Webhook-Timestamp in milliseconds or as ISO 8601. In ms the age check fails (401); as ISO float() raises (500). The mailbox tries 3 times, then the push is dropped; the 1 s poll still takes the mail, so this costs latency only, unless polling is throttled too (R2). By code reading of core/webhook.py hook.",
+ "headers": {
+  "ms": {
+   "X-Webhook-Timestamp": "1795309200000"
+  },
+  "iso": {
+   "X-Webhook-Timestamp": "2026-11-22T01:00:00Z"
+  }
+ },
+ "expected": {
+  "status": 204,
+  "note": "timestamp read as api/mailbox.py _time reads a stored time"
+ }
+}

@@ -1,0 +1,19 @@
+{
+ "_": "C6. The gateway stops serving PIXEL_MODEL_CHECK (gpt-4.1) and answers 404 or 400 for it while gpt-4.1-mini still works. Crosscheck and prose errors are swallowed, but the model-only extraction (extract.read_request, model=model_check) fails like C5, though another model was there. Not reproduced by a test; by code reading of llm.ask_json, which has no model fallback.",
+ "gateway_responses": {
+  "gpt-4.1": {
+   "status": 404,
+   "body": {
+    "error": {
+     "code": "model_not_found"
+    }
+   }
+  },
+  "gpt-4.1-mini": {
+   "status": 200
+  }
+ },
+ "expected": {
+  "retry_with": "ctx.settings.model once, logged as llm.call with the model used"
+ }
+}
