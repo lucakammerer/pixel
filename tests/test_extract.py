@@ -1213,3 +1213,28 @@ async def test_a_pickup_abroad_asks_nothing_and_the_model_names_the_nearest_of_o
             "Alpenstrasse 48, 5020 Salzburg, Austria.\n\nBest regards\nAnna")  # fmt: skip
     rfq = await extract.extract(ctx, mail(body), DEADLINE)
     assert (rfq.origin, rfq.door_pickup, rfq.pickup_zone, rfq.missing) == ("BBB", True, None, ())
+
+
+async def test_a_mail_with_one_line_per_shipment_asks_no_destination(conn, monkeypatch):
+    """Round 113: each numbered line names its airport; the model read no one destination and the question went out
+    before the quote (rejected one_of_two)."""
+    monkeypatch.setattr(llm, "ask_json", lambda ctx, **kw: _model({"origin": "", "destination": "", "weight_kg": "1988",
+                        "volume_cbm": "10.07", "pieces": 14, "door_pickup": True, "pickup_postcode": "80602"}))  # fmt: skip
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": "80", "area": "Munich", "airport": "CCC"}])
+
+    sent = []
+
+    async def send(ctx, **kw):
+        sent.append(kw["purpose"])
+        raise outbox.NotSent("held")
+
+    monkeypatch.setattr(outbox, "send", send)
+    request = poller.ingest(ctx, captured("rfq-door-two-shipments.json"))
+    rfq = await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert sent == []
+    assert (rfq.origin, rfq.destination, rfq.weight_kg, rfq.pickup_zone) == ("CCC", "RUH", Decimal(749), "80")
+
+
+async def _model(data: dict) -> LlmResult:
+    return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
