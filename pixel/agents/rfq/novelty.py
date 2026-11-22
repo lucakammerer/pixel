@@ -12,7 +12,7 @@ from datetime import date
 from pixel import llm
 from pixel.agents.rfq import compose, extract
 from pixel.agents.rfq.compose import COMPANY
-from pixel.contracts import Rfq
+from pixel.contracts import Preference, Rfq
 from pixel.core import events, feedback, pdf, poller, timing
 from pixel.core.context import Context
 from pixel.pricing import store
@@ -57,8 +57,9 @@ FRAME = (
 )
 FRAME_WORDS = set(FRAME.split())
 SYSTEM = (
-    "An air freight customer's request. Code read the lane, cargo, pickup and the cheapest or fastest wish; these "
-    "sentences are what it could not place. Map each requirement they set for this quote: airlines ruled out or "
+    "An air freight customer's request. Code read the lane, cargo and pickup; these sentences are what it could "
+    "not place. Say whether they ask for the cheapest or the fastest option (wish: cheapest, fastest, or none when "
+    "they do not say). Map each requirement they set for this quote: airlines ruled out or "
     "the only airlines allowed (as written), the latest arrival date and the date the goods are ready or can be "
     "collected (YYYY-MM-DD, only as written in the sentences), documents the quote must name, and any other "
     "condition in a short phrase in the customer's language. Nothing about prices. Empty lists and null when the "
@@ -74,8 +75,9 @@ SCHEMA = {
         "ready_on": {"type": ["string", "null"]},
         "documents": STRINGS,
         "conditions": STRINGS,
+        "wish": {"type": "string", "enum": ["cheapest", "fastest", "none"]},
     },
-    "required": ["exclude_airlines", "only_airlines", "arrive_by", "ready_on", "documents", "conditions"],
+    "required": ["exclude_airlines", "only_airlines", "arrive_by", "ready_on", "documents", "conditions", "wish"],
     "additionalProperties": False,
 }
 NOTE = {
@@ -219,14 +221,24 @@ async def check(ctx: Context, rfq: Rfq, text: str, subject: str = "", mail: str 
             "documents": _phrases(data["documents"], 4),
             "conditions": _phrases(data["conditions"], 3),
         }
+        wish = data.get("wish") if data.get("wish") in ("cheapest", "fastest") else None
     except Exception as exc:  # noqa: BLE001  unread: the quote goes out as the rules read it, a person hears of it
-        mapped = {"error": type(exc).__name__}
-    events.emit(ctx, "rfq.novelty", "rfq", session_id=rfq.session_id, payload={"leftover": left, "mapped": mapped})
+        mapped, wish = {"error": type(exc).__name__}, None
+    # The model reads the cheapest or fastest wish in any language; it decides only where no rule read one (round
+    # 186: "en hızlı seçenek" became a note, and the cheapest airline was quoted). Rules that read one win.
+    stated = extract.stated_preference(f"{subject}\n{text}") if rfq.extracted_by == "rules" else rfq.preference
+    preference = Preference(wish) if wish and stated is None else None
+    payload = {"leftover": left, "mapped": mapped}
+    if wish:
+        payload["wish"] = wish
+        if stated is not None and stated.value != wish:
+            payload["wish_conflict"] = stated.value
+    events.emit(ctx, "rfq.novelty", "rfq", session_id=rfq.session_id, payload=payload)
     if any(mapped.values()) and ctx.settings.alert_url:
         poller.spawn(ctx, feedback.post(ctx, [{"issue": "novel_requirement", "session": rfq.session_id,
                                                "at": timing.now().isoformat()[:19], "leftover": said,
                                                "mapped": mapped}]))  # fmt: skip
-    update = {}
+    update = {"preference": preference} if preference and preference != rfq.preference else {}
     if mapped.get("exclude_airlines"):
         update["excluded_carriers"] = tuple(sorted({*rfq.excluded_carriers, *mapped["exclude_airlines"]}))
     ready = date.fromisoformat(mapped["ready_on"]) if mapped.get("ready_on") else None

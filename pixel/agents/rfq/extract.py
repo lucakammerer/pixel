@@ -689,12 +689,17 @@ def _language(text: str, said: object = None, attached: str = "") -> str:
 
 def _preference(text: str) -> Preference:
     """A superlative the customer wrote decides; without one, a hurry they describe means fastest."""
+    return stated_preference(text) or Preference.CHEAPEST
+
+
+def stated_preference(text: str) -> Preference | None:
+    """The wish the rules read; None when no wording of theirs says it (the default, cheapest, then applies)."""
     text = NOT_URGENT.sub("", text)
     if FASTEST.search(text):
         return Preference.FASTEST
-    if CHEAPEST.search(text) or PRICE_FIRST.search(text) or not HURRY.search(text):
+    if CHEAPEST.search(text) or PRICE_FIRST.search(text):
         return Preference.CHEAPEST
-    return Preference.FASTEST
+    return Preference.FASTEST if HURRY.search(text) else None
 
 
 # A customer ruling an airline out (round 42: "Please do not offer <airline> (<code>) for this shipment or for any of
@@ -969,6 +974,8 @@ def _clause_of(text: str, match: re.Match) -> str:
     start = max((m.end() for m in CLAUSE_END.finditer(text, 0, match.start())), default=0)
     end = next((m.start() for m in CLAUSE_END.finditer(text, match.end())), len(text))
     return text[start:end]
+
+
 ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline|(?:required|requested) delivery date|delivery date required)\s*[:=]?"
@@ -1032,7 +1039,9 @@ def _stated_date(value: str, on: date) -> date | None:
 
 
 # The customer's drop-off at our side, not the arrival at the destination.
-OUR_SIDE = re.compile(r"\b(?:your\s+(?:warehouse|site|depot|office|facility|hub)|the\s+airport|to\s+you)\b", re.IGNORECASE)
+OUR_SIDE = re.compile(
+    r"\b(?:your\s+(?:warehouse|site|depot|office|facility|hub)|the\s+airport|to\s+you)\b", re.IGNORECASE
+)
 
 
 def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]:
@@ -2067,7 +2076,9 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     rfq, prose = _earlier(ctx, mail, deadline) or rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
-    if rfq is not None and rfq.destination == rfq.origin:  # the truck's airport read as the destination: the model reads
+    if (
+        rfq is not None and rfq.destination == rfq.origin
+    ):  # the truck's airport read as the destination: the model reads
         rfq = None
     if rfq is not None and files and ctx.settings.model_check:
         documented = frozenset(f for f, names in evidence.items() if names and "mail" not in names)
@@ -2088,7 +2099,9 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 ctx,
                 purpose="rfq.extract",
                 system=SYSTEM,
-                user=text + _departures_abroad(ctx, text) + ("\n\nThe request stands in the attached image." if scans else ""),
+                user=text
+                + _departures_abroad(ctx, text)
+                + ("\n\nThe request stands in the attached image." if scans else ""),
                 schema=SCHEMA,
                 session_id=message.session_id,
                 images=scans,
@@ -2100,7 +2113,11 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = rules(guess=True)
-            if guessed is None or not (guessed := apply_pickup(guessed)).origin or guessed.destination == guessed.origin:
+            if (
+                guessed is None
+                or not (guessed := apply_pickup(guessed)).origin
+                or guessed.destination == guessed.origin
+            ):
                 raise
             events.emit(
                 ctx,
