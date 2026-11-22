@@ -42,8 +42,15 @@ ZIP_FILES, ZIP_BYTES = 20, 20_000_000
 FORWARDED = "Forwarded mail:"
 SPEECH_MODEL = "base"  # multilingual: a German voice message too; about 1 s per minute of speech on four cores
 # Spoken prices for the bid and request rules: "340 euros and 60 cents" is 340.60 EUR.
-SPOKEN_CENTS = re.compile(r"(\d[\d,.]*)\s*euros?,?\s+(?:and|und)\s+(\d{1,2})\s*cents?\b", re.IGNORECASE)
-SPOKEN_EUR = re.compile(r"(\d[\d,.]*)\s*euros?\b", re.IGNORECASE)
+# Also "1231 dollars and 92 cents", "45 francs", "88 pounds and 10 pence"; "480 pounds" alone is a weight.
+SPOKEN_CENTS = re.compile(
+    r"(\d[\d,.]*)\s*(euros?|dollars?|francs?|pounds?),?\s+(?:and|und)\s+(\d{1,2})\s*(?:cents?|pence|rappen|centimes?)\b",
+    re.IGNORECASE,
+)
+SPOKEN_EUR = re.compile(r"(\d[\d,.]*)\s*(euros?|dollars?|francs?)\b", re.IGNORECASE)
+SPOKEN_CODE = {"euro": "EUR", "dollar": "USD", "franc": "CHF", "pound": "GBP"}
+# A pound in an exchange rate is sterling: "0.7178 euros per pound", "1 pound = 1.17 euros".
+SPOKEN_GBP_RATE = re.compile(r"(?<=EUR)\s+per\s+pounds?\b|\b1\s+pounds?(?=\s*=)", re.IGNORECASE)
 # Whisper writes small numbers as words: "four hours", "twelve pieces", "vier Stunden" become digits for the rules.
 ONES = [
     "one",
@@ -449,9 +456,15 @@ def _number(m: re.Match) -> str:
 
 def _spoken(lines: list[str]) -> list[str]:
     lines = [SPOKEN_NUMBER.sub(_number, line) for line in lines]
-    return [
-        SPOKEN_EUR.sub(r"\1 EUR", SPOKEN_CENTS.sub(lambda m: f"{m[1]}.{int(m[2]):02d} EUR", line)) for line in lines
+    code = lambda word: SPOKEN_CODE[word.lower().rstrip("s")]
+    lines = [
+        SPOKEN_EUR.sub(
+            lambda m: f"{m[1]} {code(m[2])}", SPOKEN_CENTS.sub(lambda m: f"{m[1]}.{int(m[3]):02d} {code(m[2])}", line)
+        )
+        for line in lines
     ]
+    return [SPOKEN_GBP_RATE.sub(lambda m: " per GBP" if m[0].strip().lower().startswith("per") else "1 GBP", line)
+            for line in lines]  # fmt: skip
 
 
 def _codes(text: str, currency: str | None) -> list[str]:
