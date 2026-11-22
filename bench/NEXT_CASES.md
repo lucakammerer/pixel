@@ -873,7 +873,7 @@ after confirmation, and a supplier replying to a bid request.
 | --- | --- | --- | --- | --- | --- |
 | F1 | price-match request after the quote, en/de/fr, after a decline | 6 rounds | `hold`: one reply keeping the price, quote open, the yes books | decline, person, or booked before the yes | **gap**, after the quote: #480 closed (`MATCH` held seven yeses); a new pull request follows |
 | F2 | price-match request that declines in its own sentence | never | decline | decline | right |
-| F1b | an acceptance conditioned on a stated lower price ("we accept the quote provided you match 2,900 EUR") | fixture on local branch | book when our total meets the cap; otherwise keep the quote open | an acceptance can book without the cap check | **gap**, after the quote (`followup.conditional`) |
+| F1b | an acceptance conditioned on a stated lower price ("we accept the quote provided you match 2,900 EUR") | offline probe | book when our total meets the cap; otherwise keep the quote open | an acceptance can book without the cap check | **gap**, after the quote (`followup.conditional`) |
 | F3 | price-match request after the booking | never | person | person | right |
 | F4 | acceptance in Spanish or Italian | never | book | nothing | **gap**, after the quote (`booking.ACCEPT`) |
 | F5 | decline "nous ne donnerons pas suite" | never | decline | nothing (quote stays open) | **gap**, after the quote (`booking.DECLINE`) |
