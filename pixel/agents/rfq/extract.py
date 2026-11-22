@@ -284,13 +284,18 @@ def _label_reach(pattern: re.Pattern, text: str) -> dict[str, int]:
     return reach
 
 
-SHIPMENT_LINE = re.compile(r"^\s*\d+[.):]\s+(?:[A-Za-z ]{0,30}?\s)?([A-Z]{3})\b(.*)$", re.MULTILINE)
+SHIPMENT_LINE = re.compile(r"^\s*(?:\d+[.):]|[-•*])\s+(.*)$", re.MULTILINE)
+CODE = re.compile(r"\b[A-Z]{3}\b")
 
 
 def first_shipment(rfq: Rfq, text: str) -> Rfq | None:
     """Session 25795: one mail, two shipments to two airports ("1. GRU ... 1281 kg, 3.76 cbm / 2. TLV ..."), so no
     one destination. Rather than no answer, the first shipment is quoted with its own airport and cargo."""
-    lines = [(code, rest) for code, rest in SHIPMENT_LINE.findall(text) if _airport(code)]
+    lines = [
+        (code, line)
+        for line in SHIPMENT_LINE.findall(text)
+        if (code := next((c for c in CODE.findall(line) if _airport(c)), None))
+    ]
     if len({code for code, _ in lines}) < 2:
         return None
     code, rest = lines[0]
