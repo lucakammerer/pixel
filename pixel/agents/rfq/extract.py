@@ -87,7 +87,7 @@ LOT = re.compile(
 )
 EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
 ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
-MODE = rf"(?:\b(?P<each>{EACH})|\b(?P<all>{ALL}))?\s*"
+MODE = rf"(?:\b(?P<each>{EACH}|à)|\b(?P<all>{ALL}))?\s*"
 AFTER = rf"(?:\s+(?P<after>{EACH})\b)?"  # "210 kg each"
 PER_PIECE = rf"(?:\b(?:{EACH})\b|(?<!\w)à)"
 EACH_WEIGHT = re.compile(

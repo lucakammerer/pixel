@@ -272,7 +272,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
-  or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg). A lot line
+  or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
