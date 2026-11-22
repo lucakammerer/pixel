@@ -656,8 +656,8 @@ es, it), two at once (a yes and a match request; a change and a yes).
 | F1 | price-match request after the quote, en/de/fr, after a decline | 6 rounds | `hold`: one reply keeping the price, quote open, the yes books | `hold` | fixed #480 (review) |
 | F2 | price-match request that declines in its own sentence | never | decline | decline | right |
 | F3 | price-match request after the booking | never | person | person | right |
-| F4 | acceptance in Spanish or Italian | never | book | nothing | **gap**, after the quote (`booking.ACCEPT`) |
-| F5 | decline "nous ne donnerons pas suite" | never | decline | nothing (quote stays open) | **gap**, after the quote (`booking.DECLINE`) |
+| F4 | acceptance in Spanish, Italian, Dutch, Portuguese | never | book | book | fixed (this pull request), the opposite ("no aceptamos", "non procederemo") declines |
+| F5 | decline "nous ne donnerons pas suite", Spanish, Italian, Dutch | never | decline | decline | fixed (this pull request) |
 | F6 | weight corrected "1,952 kg, not 753 kg, please correct the offer" | once after the booking (21.11.) | requote at 1,952 kg | person, no requote | **gap**, after the quote (`followup.changes`, `UPDATE`) |
 | F7 | the same correction after the confirmation | 21.11. 15:51 | person with the change | person, change unread | **gap**, after the quote |
 | F8 | ready date moved after the booking | never | person | nothing | **gap**, after the quote (`followup.changes`) |
@@ -674,4 +674,4 @@ es, it), two at once (a yes and a match request; a change and a yes).
 | F19 | booking failed, customer silent | never | a notice or a person within the round | nothing to the customer (B9) | open, Shared |
 
 0 wrong outside these known gaps (`tools.followup_matrix`: every non-right case carries its `known_gap` and owner).
-Next in this lane, most frequent and cheapest first: F4 and F5 (one regex each), F6 and F7, F8, F17.
+Next in this lane, most frequent and cheapest first: F6 and F7, F8, F17.

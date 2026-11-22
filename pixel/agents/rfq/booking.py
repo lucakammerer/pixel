@@ -34,7 +34,10 @@ ACCEPT = re.compile(
     r"|(?:let['’]s|we['’]ll|we\s+will)\s+go\s+with\s+(?:(?:it|this|that|your)\b|the\b[^.\n]{0,40}?\byou\s+(?:quoted|offered|proposed)\b)"
     # ... unless the clause puts it off or names someone else: "instead", "not now", "next month", "from DHL"
     r"(?![^.!?;\n]*\b(?:instead|not\s+now|later|next\s+(?:week|month|time)|from\s+\w))"
-    r"|merci\s+de\s+r[ée]server|veuillez\s+r[ée]server|nous\s+acceptons|r[ée]servez)",
+    r"|merci\s+de\s+r[ée]server|veuillez\s+r[ée]server|nous\s+acceptons|r[ée]servez"
+    r"|aceptamos|por\s+favor\s+reserve\w*|reserven\b|proced\w*\s+con\s+la\s+reserva"
+    r"|accettiamo|procedete|prenotate\b|procedere\s+con\s+la\s+prenotazione"
+    r"|wij\s+accepteren|graag\s+boeken|aceitamos|pode(?:m)?\s+reservar)",
     re.IGNORECASE,
 )
 DECLINE = re.compile(
@@ -44,7 +47,10 @@ DECLINE = re.compile(
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:yet\s+)?(?:go ahead|accept(?:ed)?|book(?:ed)?|proceed|confirm(?:ed)?|take it|move forward|be moving forward)|"
     r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse|"
-    r"decided against|cheaper (?:option|offer|rate|quote) elsewhere|found a cheaper|trop cher|pas donner suite)\b",
+    r"decided against|cheaper (?:option|offer|rate|quote) elsewhere|found a cheaper|trop cher|pas donner suite"
+    r"|ne\s+(?:\w+\s+){0,2}pas\s+suite|ne\s+(?:pouvons|souhaitons)\s+pas\s+(?:accepter|réserver|poursuivre)"
+    r"|no\s+(?:vamos\s+a\s+)?(?:acept\w*|seguir\s+adelante|continuar)|demasiado\s+caro|rechazamos"
+    r"|non\s+(?:procederemo|accettiamo|possiamo\s+accettare)|troppo\s+caro|rifiutiamo|te\s+duur)\b",
     re.IGNORECASE,
 )
 # In the clause of the accept phrase: "we have decided not to go ahead", "Bitte buchen Sie nicht", "go ahead with a
