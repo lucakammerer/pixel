@@ -1,0 +1,402 @@
+{
+ "note": "Every trucker answer of two pickup zones on the live host, 21.11.2026 15:07 to 22.11.2026 06:12 UTC, in the order asked: the request's gross weight and volume as our pickup request stated them, and each answer as (trucker, EUR, pickup hours). Zone 61 was asked in dataset versions v1, v1 again after the two price rises, and v3; zone 73 holds one request of v1+a19eb0 (`level`), when every price stood about 30 % higher. bench/NEXT_CASES.md D5.",
+ "zones": [
+  {
+   "zone": "61",
+   "airport": "FRA",
+   "requests": [
+    {
+     "asked": "2026-11-21T15:07Z",
+     "weight_kg": "1233",
+     "volume_cbm": "10.78",
+     "answers": [
+      [
+       "Bodenseefracht",
+       "119.01",
+       30
+      ],
+      [
+       "Hansekogge Trucking",
+       "245.02",
+       23
+      ],
+      [
+       "Nordlicht Haulage",
+       "152.01",
+       30
+      ],
+      [
+       "Spessart Spedition",
+       "299.03",
+       25
+      ],
+      [
+       "Westfalenroute",
+       "266.03",
+       23
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-21T15:59Z",
+     "weight_kg": "715",
+     "volume_cbm": "2.65",
+     "answers": [
+      [
+       "Bodenseefracht",
+       "75.60",
+       30
+      ],
+      [
+       "Hansekogge Trucking",
+       "147.35",
+       23
+      ],
+      [
+       "Nordlicht Haulage",
+       "97.75",
+       30
+      ],
+      [
+       "Spessart Spedition",
+       "168.80",
+       25
+      ],
+      [
+       "Westfalenroute",
+       "157.50",
+       23
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-21T16:56Z",
+     "weight_kg": "970",
+     "volume_cbm": "9.06",
+     "answers": [
+      [
+       "Bodenseefracht",
+       "107.52",
+       30
+      ],
+      [
+       "Hansekogge Trucking",
+       "219.17",
+       23
+      ],
+      [
+       "Nordlicht Haulage",
+       "137.65",
+       30
+      ],
+      [
+       "Spessart Spedition",
+       "264.56",
+       25
+      ],
+      [
+       "Westfalenroute",
+       "237.30",
+       23
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-21T21:05Z",
+     "weight_kg": "454",
+     "volume_cbm": "3.26",
+     "answers": [
+      [
+       "Bodenseefracht",
+       "68.78",
+       30
+      ],
+      [
+       "Hansekogge Trucking",
+       "132.00",
+       23
+      ],
+      [
+       "Nordlicht Haulage",
+       "89.22",
+       30
+      ],
+      [
+       "Spessart Spedition",
+       "148.33",
+       25
+      ],
+      [
+       "Westfalenroute",
+       "140.44",
+       23
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-22T02:02Z",
+     "weight_kg": "179",
+     "volume_cbm": "0.76",
+     "answers": [
+      [
+       "Bodenseefracht",
+       "54.16",
+       30
+      ],
+      [
+       "Hansekogge Trucking",
+       "99.11",
+       23
+      ],
+      [
+       "Nordlicht Haulage",
+       "70.95",
+       30
+      ],
+      [
+       "Spessart Spedition",
+       "104.48",
+       25
+      ],
+      [
+       "Westfalenroute",
+       "103.90",
+       23
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-22T06:12Z",
+     "weight_kg": "1972",
+     "volume_cbm": "15.00",
+     "answers": [
+      [
+       "Bodenseefracht",
+       "147.20",
+       30
+      ],
+      [
+       "Hansekogge Trucking",
+       "308.45",
+       23
+      ],
+      [
+       "Nordlicht Haulage",
+       "187.25",
+       30
+      ],
+      [
+       "Spessart Spedition",
+       "383.60",
+       25
+      ],
+      [
+       "Westfalenroute",
+       "336.50",
+       23
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-22T06:12Z",
+     "weight_kg": "690",
+     "volume_cbm": "4.63",
+     "answers": [
+      [
+       "Bodenseefracht",
+       "77.93",
+       30
+      ],
+      [
+       "Hansekogge Trucking",
+       "152.59",
+       23
+      ],
+      [
+       "Nordlicht Haulage",
+       "100.66",
+       30
+      ],
+      [
+       "Spessart Spedition",
+       "175.79",
+       25
+      ],
+      [
+       "Westfalenroute",
+       "163.32",
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "zone": "73",
+   "airport": "STR",
+   "requests": [
+    {
+     "asked": "2026-11-21T18:09Z",
+     "weight_kg": "352",
+     "volume_cbm": "1.64",
+     "answers": [
+      [
+       "Domblick Kurierdienst",
+       "118.20",
+       27
+      ],
+      [
+       "Hansekogge Trucking",
+       "131.76",
+       22
+      ],
+      [
+       "Neckarstrom Kurier",
+       "131.24",
+       20
+      ],
+      [
+       "Rheinufer Spedition",
+       "125.72",
+       17
+      ],
+      [
+       "Spessart Spedition",
+       "186.80",
+       8
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-21T18:39Z",
+     "weight_kg": "1615",
+     "volume_cbm": "7.93",
+     "answers": [
+      [
+       "Domblick Kurierdienst",
+       "244.50",
+       27
+      ],
+      [
+       "Hansekogge Trucking",
+       "295.95",
+       22
+      ],
+      [
+       "Neckarstrom Kurier",
+       "282.80",
+       20
+      ],
+      [
+       "Rheinufer Spedition",
+       "264.65",
+       17
+      ],
+      [
+       "Spessart Spedition",
+       "376.25",
+       8
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-21T20:41Z",
+     "weight_kg": "1729",
+     "volume_cbm": "8.47",
+     "answers": [
+      [
+       "Domblick Kurierdienst",
+       "332.67",
+       27
+      ],
+      [
+       "Hansekogge Trucking",
+       "405.73",
+       22
+      ],
+      [
+       "Neckarstrom Kurier",
+       "392.34",
+       20
+      ],
+      [
+       "Rheinufer Spedition",
+       "355.16",
+       17
+      ],
+      [
+       "Spessart Spedition",
+       "520.00",
+       8
+      ]
+     ],
+     "level": "v1+a19eb0"
+    },
+    {
+     "asked": "2026-11-21T20:59Z",
+     "weight_kg": "1674",
+     "volume_cbm": "4.36",
+     "answers": [
+      [
+       "Domblick Kurierdienst",
+       "250.40",
+       27
+      ],
+      [
+       "Hansekogge Trucking",
+       "303.62",
+       22
+      ],
+      [
+       "Neckarstrom Kurier",
+       "289.88",
+       20
+      ],
+      [
+       "Rheinufer Spedition",
+       "271.14",
+       17
+      ],
+      [
+       "Spessart Spedition",
+       "385.10",
+       8
+      ]
+     ]
+    },
+    {
+     "asked": "2026-11-22T04:59Z",
+     "weight_kg": "1911",
+     "volume_cbm": "6.96",
+     "answers": [
+      [
+       "Domblick Kurierdienst",
+       "274.10",
+       27
+      ],
+      [
+       "Hansekogge Trucking",
+       "334.43",
+       22
+      ],
+      [
+       "Neckarstrom Kurier",
+       "318.32",
+       20
+      ],
+      [
+       "Rheinufer Spedition",
+       "297.21",
+       17
+      ],
+      [
+       "Spessart Spedition",
+       "420.65",
+       8
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}

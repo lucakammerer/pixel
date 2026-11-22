@@ -2,6 +2,8 @@
 
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from itertools import combinations
+from statistics import median
 from zoneinfo import ZoneInfo
 
 from pixel.contracts import LaneTariff, RateOption, Rfq, Source
@@ -74,6 +76,34 @@ def version_factor(pairs: list[tuple[Decimal, Decimal, Decimal, Decimal]]) -> De
     ratios = sorted((now / now_kg) / (then / then_kg) for now, now_kg, then, then_kg in pairs)
     middle = len(ratios) // 2
     return ratios[middle] if len(ratios) % 2 else (ratios[middle - 1] + ratios[middle]) / 2
+
+
+def pickup_line(points: list[tuple[Decimal, Decimal]]) -> tuple[Decimal, Decimal] | None:
+    """A trucker's answers in one zone, (chargeable kg, price), as (base, rate per chargeable kg): the median rate
+    between every two answers and the median base it leaves, so one answer at another price level does not move the
+    line. None from one weight, or when the answers contradict a price that grows with the weight."""
+    rates = [(p2 - p1) / (k2 - k1) for (k1, p1), (k2, p2) in combinations(points, 2) if k1 != k2]
+    if not rates or (rate := median(rates)) <= 0:
+        return None
+    return median(price - rate * kg for kg, price in points), rate
+
+
+def pickup_fixed_kg(lines: list[tuple[Decimal, Decimal]]) -> Decimal | None:
+    """The fixed charge of the lines known as the kg it is worth (base / rate), median over all of them."""
+    return median(base / rate for base, rate in lines) if lines else None
+
+
+def pickup_estimate(
+    kg: Decimal, line: tuple[Decimal, Decimal] | None, last: tuple[Decimal, Decimal], fixed_kg: Decimal | None
+) -> Decimal:
+    """A trucker's pickup price for `kg`: on its line; with one answer `last` (kg, price), that price moved along the
+    shape of the lines known (`pickup_fixed_kg`); without any line, the price as it was."""
+    if line:
+        return money(line[0] + line[1] * kg)
+    last_kg, price = last
+    if fixed_kg is not None and fixed_kg > 0:
+        return money(price * (fixed_kg + kg) / (fixed_kg + last_kg))
+    return money(price)
 
 
 def _priced(tariff: LaneTariff, billed: Decimal) -> tuple[Decimal, Decimal, Decimal]:
