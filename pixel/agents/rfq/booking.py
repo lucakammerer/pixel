@@ -345,7 +345,7 @@ async def confirmed_references(ctx: Context, message: Message) -> tuple[str | No
 async def handle_confirmation(ctx: Context, message: Message) -> None:
     """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told. An
     answer that refuses ("could not be confirmed", in the mail or its attachment) fails the booking for a person."""
-    from pixel.agents.router.agent import REFUSED  # router imports crm, which this module imports too
+    from pixel.agents.router.agent import BOOKED, REFUSED  # router imports crm, which this module imports too
 
     reference, ours = await confirmed_references(ctx, message)
     booking = (
@@ -361,11 +361,20 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
         return
     if booking.status == BookingStatus.CANCELLED:  # the airline's late confirmation of a booking the customer withdrew
         return
-    if booking.status != BookingStatus.CONFIRMED and REFUSED.search(await _confirmation_text(ctx, message)):
+    text = await _confirmation_text(ctx, message)
+    if booking.status != BookingStatus.CONFIRMED and REFUSED.search(text):
         _failed(ctx, booking, "the airline refused the booking")
         events.emit(
             ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
             payload={"note": "The airline refused our booking: book another option", "shipment": booking.team_reference},
+        )  # fmt: skip
+        return
+    # Only what says so confirms: an answer in our booking thread with a form, terms or "request received" attached
+    # reaches this handler too and confirms nothing.
+    if not (CONFIRMED.search(message.subject) or BOOKED.search(text) or AIRLINE_REFERENCE.search(text)):
+        events.emit(
+            ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
+            payload={"note": "The airline answered our booking without confirming it", "shipment": booking.team_reference},
         )  # fmt: skip
         return
     if booking.status != BookingStatus.CONFIRMED:
