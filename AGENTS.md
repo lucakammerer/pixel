@@ -144,16 +144,18 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
    model). Green means: push and open the pull request. Then:
    - **It changes how a request is read, priced, selected or answered** (`pixel/pricing/`, `pixel/agents/rfq/`
      except `compose.py`, `pixel/agents/router/`, `pixel/core/`, `pixel/api/`, `pixel/contracts.py`): leave it open.
-     The review thread checks it against the current `main` with a repro and merges it, or fixes it on the branch
-     itself; it closes only what is superseded or has no evidence. Never merge these yourself. On 22.11. two such
+     One of the two review threads claims it, checks it against the current `main` with a repro and merges it, or
+     fixes it on the branch itself; it closes only what is superseded or has no evidence. The two merge one at a
+     time, under one merge lock, and gate again when `main` moved in the same package since their check. Never
+     merge these yourself. On 22.11. two such
      pull requests, each green alone, turned `main` red together (#304, #305), and a reply-by date read as a
      latest arrival priced 41 % too high (#306): no CI or deploy check catches that, only a repro does.
    - **Everything else** (`docs/`, `bench/`, `tests/`, fixtures, `pixel/ui/`, `compose.py` wording, `tools/`): merge it
      at once (`gh pr merge --merge`); the review follows after the merge.
    - **`URGENT`** means one thing: the cause can hit the next round too (a running series), and the pull request holds
-     the lost session as a replay test that failed before the fix. Then merge at once whatever it touches; the review
-     thread checks it within the round. Only one thread merges into the read and price path, the review thread:
-     `URGENT` does not lift that for a second thread at the same time.
+     the lost session as a replay test that failed before the fix. Then merge at once whatever it touches; a review
+     thread checks it within the round. Apart from that, only the two review threads merge into the read and price
+     path, one at a time: `URGENT` does not lift that for a second thread at the same time.
 2. **CI runs on `main`** (`.github/workflows/ci.yml`). Whoever merged watches that run and fixes forward or reverts
    within the same round if it fails.
 3. Update with `main` once, right before the local run. No second rebase unless GitHub reports a conflict.

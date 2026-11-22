@@ -39,7 +39,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and codes known locally. Only an unserved guess triggers a time-limited portal check and, if still unresolved,
   one optional `rfq.airports` call. Quoted older correspondence is excluded.
 - `compose.py` `answers` echoes the customer's reference in the email using the same parser as the PDF.
-- `compose.py` `no_price` renders the deadline reply if no freight rate is available.
+- `compose.py` `no_price` renders the deadline reply if no freight rate is available; for a request out of scope
+  (`orchestrator.out_of_scope`) it says why instead: air export freight only (`OUT_OF_SCOPE`), never a figure.
   `pricing/engine.py` `options` asks the rate desk if the sheet, portal and carrier list yield no sourcing option.
 - `agent.py` `fallback` reads the RFQ and the stored options on its current lane. A late complete option can be
   sent while the session is automatic. The orchestrator hands off when `handle` ends without a quote or at 2:30

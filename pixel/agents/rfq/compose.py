@@ -677,13 +677,26 @@ NO_PRICE = {
 }
 
 
+# A request we do not serve (`orchestrator.out_of_scope`: another mode, an import) is told why, not that a rate was late.
+OUT_OF_SCOPE = {
+    "en": "Thank you for your request. We offer air export freight only, so we cannot quote this shipment.",
+    "de": "Vielen Dank für Ihre Anfrage. Wir bieten ausschließlich Luftfracht im Export an und können diese Sendung "
+    "daher nicht anbieten.",
+    "fr": "Merci pour votre demande. Nous proposons uniquement le fret aérien à l’export et ne pouvons donc pas coter "
+    "cet envoi.",
+}
+
+
 def no_price(ctx: Context, message: Message, rfq: Rfq | None) -> tuple[str, str]:
     """Compose a last-resort reply without using the send window for a model call."""
+    from pixel.core.orchestrator import out_of_scope
+
     lang = language_of(rfq) if rfq else "en"
+    text = (OUT_OF_SCOPE if out_of_scope(ctx, message.session_id) else NO_PRICE)[lang]
     request = own_words(message.body)
     name = signed_name(request, ctx.settings.signer)
     bye = sign_off(request, lang, name)[1]
-    body = "\n\n".join([greeting(lang, name, request), NO_PRICE[lang], signature(bye, ctx.settings.signer)])
+    body = "\n\n".join([greeting(lang, name, request), text, signature(bye, ctx.settings.signer)])
     return reply_subject(message.subject) or "Re: Freight inquiry", body
 
 
