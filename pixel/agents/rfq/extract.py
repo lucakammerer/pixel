@@ -813,6 +813,12 @@ NOT_ARRIVAL = (
 )
 # Between "arrival" and "by" only the place may stand ("arrive in Hong Kong by"): no other clause, no other verb.
 ARRIVAL_SPAN = rf"(?:(?!\b(?:{NOT_ARRIVAL})\b)(?:[^.!?;,:\n]|,(?=[ \t]*(?-i:[A-Z])))){{0,40}}?"
+# Round 117: "Die Ware steht am 2026-11-26 zur Abholung bereit": German puts the date before "bereit".
+READY_DATE_FIRST = re.compile(
+    r"\b(?:steht|stehen|ist|sind)\b[^.!?;\n]{0,40}?\b(?:am|ab)[ \t]+" + STATED_DATE
+    + r"(?=[ \t]+(?:zur Abholung[ \t]+|zum Versand[ \t]+)?(?:bereit|abholbereit|versandbereit|verfügbar)\b)",
+    re.IGNORECASE,
+)
 ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline)\s*[:=]?"
@@ -873,7 +879,7 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
         return None
 
     transit = MAX_TRANSIT.search(text)
-    return first_date(READY_ON), arrive_by(), int(transit["days"]) if transit else None
+    return first_date(READY_ON) or first_date(READY_DATE_FIRST), arrive_by(), int(transit["days"]) if transit else None
 
 
 def _largest(patterns: tuple[re.Pattern, ...], text: str, thousands: bool) -> Decimal | None:
