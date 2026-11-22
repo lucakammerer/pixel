@@ -133,22 +133,25 @@ one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window 
 Open and unverified: C5, C6, C8, C11, C14 and C16 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
 merged and the organisers turn that lever.
-## Axis E: outage drills (22.11.2026 09:30, live snapshot to round 167)
+## Axis E: outage drills (22.11.2026 10:30, live snapshot to round 174)
 
 `uv run python -m tools.outage_drill <database> --last 60`: each accepted round replayed offline on the state and
-portal answers it met (`tools/capture.py`), the rate card as it is today without the session's own reads, one
-dependency failing per drill. Right: a quote within 5 % of the scorer's best (`feedback.best`, else our accepted
-total) within 6 minutes of storage. Offline every model call fails, so each drill includes the gateway down. An
-airline or the rate desk asked by mail only because of the outage answers nothing (no such answer was recorded): the
-portal cells are the worst case of rounds 93 to 99. `tests/test_outage_drill.py` runs every drill on round 166.
+portal answers it met (`tools/capture.py`), every mail of its session at its own time (a change after our quote is
+answered by a requote, the quote the scorer scores), the rate card as it is today, one dependency failing per drill.
+The card's job reads every bracket of every portal lane (by 10:00 all 1341 of 206 lane and airline pairs), so the
+session's own portal reads count as card rates. Right: a quote within 5 % of the scorer's best (`feedback.best`, else
+our accepted total) within 6 minutes of storage. Offline every model call fails, so each drill includes the gateway
+down. An airline or the rate desk asked by mail only because of the outage answers nothing (no such answer was
+recorded): the portal cells are the worst case of rounds 93 to 99. `tests/test_outage_drill.py` runs every drill on
+round 166.
 
 | Drill | Right of 60 | Beyond the baseline | Cause | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- | --- |
-| `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 54 | baseline | 161, 149, 132 (Korean) and 131 (Turkish): no quote, the rules read no lane or weight in them; 152: the change mail of a requote is read by the model; 139: the request stands in an attachment whose bytes the database does not hold (not measurable offline); 167 (Korean lots with "each", live by the model): the guess path quotes 1964.76 against 4745.69, a wrong price where none would be no worse; 171 (Turkish): no quote | `extract.by_rules` for Korean and Turkish requests | Cost (`extract.py`), generalize |
-| `portal_429` (every rate read 429, `Retry-After: 60`) | 29 | 25, as `portal_down` | was 4 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it now; the rest is E2 | — | — |
-| E2 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page) | 29 | 25 | the card never read the lane (round 141 HAM-RUH: no read before or since), so a fastest request gets a sheet airline (861.28 against 1182.28) or the cheapest a dearer one; the card reads only lanes requests asked for | `rate_card.run`: every lane of `/v1/portal/ports`, not only the requested ones | Accuracy |
-| `mail_twice`, `mail_late` (90 s), `airlines_silent` (airlines and desk) | 54 | 0 | — | — | — |
-| E3 `truckers_silent` | 52 | 2 | rounds 108 and 100: the pickup memory holds no answer of that zone within 24 h (D5's open part), the pickup goes out excluded or estimated low | `pickup.estimates` | Accuracy |
+| `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 50 | baseline | 161, 149, 132 (Korean) and 171, 131 (Turkish): no quote, the rules read no destination or door pickup in them ("DFW (Dallas, US)까지", "ATL’ye", a postcode in a Turkish clause); 167 (Korean lots with "each"): the guess quotes 1964.76 against 4745.69; 168, 174: "we deliver to Düsseldorf Airport (DUS) ourselves", #463 open; 143, 139: a crosscheck against an attachment whose bytes the database does not hold (not measurable offline) | `extract.by_rules`, the guess path of `read_request` | Cost (`extract.py`), generalize |
+| `portal_429` (every rate read 429, `Retry-After: 60`) | 48 | 2, as `portal_down` (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
+| E4 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page), `airlines_silent` | 48 | 2 | 172 and 152: the change after our quote gets no requote; the quote before it was right | the requote path (`agents/rfq/agent.py`), cause not yet read | Accuracy |
+| `mail_twice`, `mail_late` (90 s) | 50 | 0 | — | — | — |
+| E3 `truckers_silent` | 49 | 1 | round 108: the pickup memory holds no answer of that zone within 24 h (D5's open part) | `pickup.estimates` | Accuracy |
 
 Not drilled yet: a tariff version changing within a round; booking and tracking down (no effect on the quote, axis B).
 
