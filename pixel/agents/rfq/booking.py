@@ -50,12 +50,6 @@ ASKS_TO_BOOK = re.compile(
     r"\b(?:can|could|would|will|können|könnten)\s+(?:you|sie)\s+(?:please\s+|bitte\s+)?(?:book|proceed|buchen)",
     re.IGNORECASE,
 )
-# Withdraws the booking itself, not a side request ("cancel our pickup slot request" is no cancellation).
-CANCELS = re.compile(
-    r"\bcancel\w*\s+(?:\w+\s+){0,2}(?:booking|shipment|order|it|BK-\w+)\b|(?:don['’]t|do not)\s+book\b"
-    r"|\b(?:storn\w*|annul\w*)\b|nicht\s+buchen",
-    re.IGNORECASE,
-)
 CONFIRMED = re.compile(r"booking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
 AIRLINE_REFERENCE = re.compile(r"\bbooking reference:?\s*(\S+)", re.IGNORECASE)
 OURS = re.compile(r"\byour reference:?\s*(\S+?)[.,;]?\s*$", re.IGNORECASE | re.MULTILINE)
@@ -90,65 +84,61 @@ async def reply_intent(ctx: Context, message: Message) -> str:
 
 
 async def handle_reply(ctx: Context, message: Message) -> None:
-    """The customer wrote in their thread, before or after our quote (`followup.read`): a change of the request
-    before the acceptance is priced again and answered (R4 lets the answer to the change mail count, round 86); an
-    acceptance books; a decline closes; a tracking question after the acceptance is answered from the CRM; a
-    thank-you needs nobody; anything else a person answers."""
+    """The customer wrote in their thread, before or after our quote: `followup.read` reads what it says and
+    `followup.action` decides. A change before the acceptance is priced again and answered (the answer to the change
+    mail counts, round 86); an acceptance books; a cancellation after the booking cancels it; a decline closes; a
+    tracking question after the acceptance is answered from the CRM; a thank-you needs nobody; the rest a person
+    answers."""
     quote = quotes.for_session(ctx, message.session_id)
     said = await reply_intent(ctx, message)
     sent = quote if quote is not None and quote.sent_at is not None else None
     rfq = await _request(ctx, message.session_id, quote)
     read = await followup.read(ctx, message, sent, rfq, said)
-    if read.intent == "change" and read.phase in followup.PRICED_AGAIN and rfq is not None:
+    act = followup.action(read)
+    if act == "requote" and rfq is not None:
         from pixel.agents.rfq import agent  # agent imports core.poller, which imports this module
 
         await agent.requote(ctx, message, rfq.model_copy(update=read.changes))
         return
-    if read.intent == "tracking":
+    if act == "track":
         from pixel.agents.tracking import agent as tracking
 
         await tracking.handle(ctx, message)
         return
-    if read.intent == "thanks" and sent is not None:
+    if act == "nothing":
         return
-    if quote is not None and quote.sent_at is None and quote.status == QuoteStatus.DRAFT:
+    if act == "cancel":
+        await cancel(ctx, sent, message)
+        return
+    if quote is not None and sent is None:
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
             payload={"note": "Customer replied to an unsent draft", "intent": said, "quote_id": quote.id},
         )  # fmt: skip
         return
-    if quote is None or said == "other" or read.intent == "change":
+    if sent is None or act in ("person", "requote"):
         events.emit(
             ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
             payload={"note": "Customer reply needs a person", "intent": read.intent, "phase": read.phase,
                      "changes": {k: str(v) for k, v in read.changes.items()}, "has_quote": quote is not None},
         )  # fmt: skip
         return
-    if said == "decline" and quote.status == QuoteStatus.ACCEPTED:
-        if CANCELS.search(followup.own_words(message)):
-            await cancel(ctx, quote, message)
-        else:
-            events.emit(
-                ctx, "human.note", "crm", session_id=message.session_id, message_id=message.id,
-                payload={"note": "Customer reply after the booking reads as a decline", "intent": said},
-            )  # fmt: skip
+    if act == "decline":
+        quotes.set_status(ctx, sent.id, QuoteStatus.DECLINED)
+        events.emit(ctx, "customer.declined", "crm", session_id=sent.session_id, message_id=message.id)
         return
-    if said == "decline":
-        quotes.set_status(ctx, quote.id, QuoteStatus.DECLINED)
-        events.emit(ctx, "customer.declined", "crm", session_id=quote.session_id, message_id=message.id)
-        return
-    if quote.status == QuoteStatus.ACCEPTED:
+    if act == "rebook":
         original = ctx.db.execute(
             "SELECT message_id FROM events WHERE session_id = ? AND kind = 'customer.accepted' ORDER BY id LIMIT 1",
-            (quote.session_id,),
+            (sent.session_id,),
         ).fetchone()
         if original and original[0] == message.id:
-            await book(ctx, quote.id, reply_to=message.id, resume=True)
+            await book(ctx, sent.id, reply_to=message.id, resume=True)
         return
     with db.atomic(ctx.db):
-        quotes.set_status(ctx, quote.id, QuoteStatus.ACCEPTED)
-        events.emit(ctx, "customer.accepted", "crm", session_id=quote.session_id, message_id=message.id)
-    await book(ctx, quote.id, reply_to=message.id)
+        quotes.set_status(ctx, sent.id, QuoteStatus.ACCEPTED)
+        events.emit(ctx, "customer.accepted", "crm", session_id=sent.session_id, message_id=message.id)
+    await book(ctx, sent.id, reply_to=message.id)
 
 
 async def _request(ctx: Context, session_id: int, quote: Quote | None) -> Rfq | None:
