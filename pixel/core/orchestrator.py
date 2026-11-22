@@ -1,6 +1,7 @@
 """Routes each mail to its handler and holds every request to its own deadline."""
 
 import asyncio
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -37,9 +38,18 @@ def deadline_for(received_at: datetime, settings: Settings) -> Deadline:
     )
 
 
+def _describe(e: BaseException) -> str:
+    """A TaskGroup's error names only how many failed: each leaf with the line it was raised in."""
+    if isinstance(e, BaseExceptionGroup):
+        return "; ".join(_describe(leaf) for leaf in e.exceptions)
+    frame = traceback.extract_tb(e.__traceback__)[-1:] if e.__traceback__ else []
+    where = f" at {frame[0].filename.rsplit('/', 1)[-1]}:{frame[0].lineno}" if frame else ""
+    return f"{type(e).__name__}: {e}{where}"
+
+
 def _error(ctx: Context, where: str, e: BaseException, message: Message) -> None:
     emit(ctx, "error", "orchestrator", session_id=message.session_id, message_id=message.id,
-         payload={"where": where, "error": f"{type(e).__name__}: {e}"})  # fmt: skip
+         payload={"where": where, "error": _describe(e)})  # fmt: skip
 
 
 async def dispatch(ctx: Context, message: Message) -> None:
