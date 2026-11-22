@@ -4,6 +4,7 @@ from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.contracts import MailKind, Message
 from pixel.core.context import Context
 from pixel.core.events import emit
+from pixel.crm import bookings
 
 TARIFF_FILES = ("pdf", "xlsx", "xls", "csv", "txt", "png", "jpg", "jpeg", "docx")
 TARIFF_NAME = re.compile(r"tariff|tarif|rate|preis|price")
@@ -14,6 +15,7 @@ REFUSED = re.compile(
     r"|\bno (?:space|capacity)\b|\b(?:declined|rejected|cancell?ed)\b",
     re.IGNORECASE,
 )
+CONFIRMED_SUBJECT = re.compile(r"\bbooking\s+(\S+)\s+(?:is\s+)?confirmed", re.IGNORECASE)
 TEAM_REFERENCE = re.compile(r"\bPX-[0-9A-F]{6}\b")  # crm/shipments.py, sent with every booking
 WEIGHT = re.compile(r"\d\s*(kg|kgs|kilo|cbm|m3|m³|lbs?|pounds?|t|tons?|tonnes?|tonnen)\b", re.IGNORECASE)
 LANE = re.compile(r"\b[A-Z]{3}\b.{0,40}\b[A-Z]{3}\b")
@@ -64,18 +66,27 @@ def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
             return MailKind.OTHER, "thread:question"
         return MailKind.CUSTOMER_REPLY, "thread:customer"
     # A customer may write "booking" and "confirmed" too; a confirmation comes from an airline or names our reference.
-    confirms = _carrier_kind(ctx, sender) or TEAM_REFERENCE.search(message.body)
+    # An airline's operations desk may confirm from an address the carrier list does not hold: a booking reference
+    # we hold in the subject is enough ("Booking BK-… confirmed"), else a new thread with a lane reads as a request.
+    held = CONFIRMED_SUBJECT.search(message.subject)
+    confirms = (
+        _carrier_kind(ctx, sender)
+        or TEAM_REFERENCE.search(message.body)
+        or (held and bookings.by_reference(ctx, held.group(1).strip(".,:;")))
+    )
     if sender != customer and BOOKING_CONFIRMED.search(message.subject) and confirms:
         return MailKind.BOOKING_CONFIRMATION, "subject:booking_confirmed"
     purposes = _answers(ctx, message)
     if any(p.startswith("bid") for p in purposes):
         return MailKind.CARRIER_BID, "thread:bid_request"
     # Round 27: the airline's answer to our booking by mail ("Booking reference: BK-…, Status: booked") read as a bid.
+    # Its confirmation may stand only in an attachment (read as a tariff before). A refusal, in the mail or the
+    # attachment, goes the same way: `booking.handle_confirmation` then fails the booking for a person instead of
+    # leaving it requested.
     if (
         purposes[:1] == ["booking"]
         and sender != customer
-        and BOOKED.search(message.body)
-        and not REFUSED.search(message.body)
+        and (BOOKED.search(message.body) or message.attachments or REFUSED.search(message.body))
     ):
         return MailKind.BOOKING_CONFIRMATION, "thread:booking_request"
     carrier = _carrier_kind(ctx, sender)

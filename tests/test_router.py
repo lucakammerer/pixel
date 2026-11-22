@@ -1,16 +1,20 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from test_crm import quote
 
 from pixel import llm
+from pixel.agents.rfq import booking
 from pixel.agents.router.agent import classify
 from pixel.api.mailbox import RATEDESK, to_message
 from pixel.config import settings
-from pixel.contracts import MailKind
+from pixel.contracts import Booking, BookingStatus, MailKind
 from pixel.core import poller
 from pixel.core.context import Context
 from pixel.core.outbox import _store
+from pixel.crm import bookings, quotes
 
 MAILS = Path(__file__).parent / "fixtures" / "mails"
 RFQ = "rfq-door-no-origin.json"
@@ -81,13 +85,24 @@ async def test_a_booking_confirmation_comes_from_an_airline_never_from_a_custome
     ["Unfortunately the booking could not be confirmed: no space on this flight.",
      "Booking reference: -\nStatus: rejected, the flight is full."],
 )  # fmt: skip
-async def test_an_airline_refusing_our_booking_by_mail_is_no_confirmation(ctx, body):
+async def test_an_airline_refusing_our_booking_by_mail_confirms_nothing(ctx, body):
+    # Routed to the booking's own handler, which reads the refusal: the booking fails for a person instead of
+    # staying requested as a carrier bid, and is never confirmed.
     rfq, airline = mail(RFQ), mail("bid-airline-priced.json").sender
     _store(ctx, rfq.model_copy(update={"id": 4800, "direction": "out", "to": airline}), "booking")
+    quotes.save(ctx, quote(rfq.session_id))
+    bookings.save(ctx, Booking(id="B-PX-E5F36E", quote_id=f"Q-{rfq.session_id}", session_id=rfq.session_id,
+                               team_reference="PX-E5F36E", via="email", carrier="Kestrel Airways",
+                               created_at=datetime(2026, 11, 21, 17, 39, tzinfo=UTC)))  # fmt: skip
     raw = {"id": 4801, "from": airline, "to": "pixel@hackloop.mail", "subject": "Re: Booking request PX-E5F36E",
            "body": body, "in_reply_to": 4800, "references": [4800], "received_at": "2026-11-21T17:40:00+00:00",
            "attachments": []}  # fmt: skip
-    assert await classify(ctx, poller.ingest(ctx, to_message(raw, "in"))) != MailKind.BOOKING_CONFIRMATION
+    message = poller.ingest(ctx, to_message(raw, "in"))
+    assert await classify(ctx, message) == MailKind.BOOKING_CONFIRMATION
+    await booking.handle_confirmation(ctx, message)
+    assert bookings.get(ctx, "B-PX-E5F36E").status == BookingStatus.FAILED
+    assert [r["kind"] for r in ctx.db.execute("SELECT kind FROM events ORDER BY id")][-2:] == [
+        "booking.failed", "human.note"]  # fmt: skip
 
 
 async def test_carrier_answer_joins_the_rfq_session(ctx):

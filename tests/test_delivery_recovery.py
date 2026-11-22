@@ -39,8 +39,10 @@ async def test_restart_before_a_slot_keeps_the_rfq_eligible(conn, monkeypatch):
 
 
 @pytest.mark.parametrize("error", [ApiError(0, "ReadTimeout"), ApiError(503, "unavailable")])
-async def test_a_quote_whose_send_failed_never_blocks_the_next_quote(conn, error):
-    """A lost or refused quote must leave the fallback free to answer (R1); a second quote is harmless (R4)."""
+async def test_a_quote_whose_send_failed_never_blocks_the_next_quote(conn, monkeypatch, error):
+    """A lost or refused quote must leave the fallback free to answer (R1); a second quote is harmless (R4). The
+    outbox's own resend is switched off here: this is what is left once its time is up."""
+    monkeypatch.setattr(outbox, "RESEND_S", 0.0)
 
     class Failing(FakeMailbox):
         failed = False

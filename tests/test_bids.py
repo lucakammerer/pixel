@@ -681,3 +681,18 @@ def test_euro_pallets_are_no_price(body, total):
 def test_pickup_time_in_days_or_minutes_is_counted_in_hours(text, hours):
     # A trucker without hours drops out of the balanced choice and moves the scorer's trucker (R15).
     assert bids._pickup_hours(text) == hours
+
+
+async def test_a_pickup_in_another_currency_without_its_rate_takes_the_rate_a_priced_source_stated(ctx):
+    # A trucker's "198.40 USD" with no rate was no price: the quote went out without the pickup (too low).
+    ctx.settings = replace(ctx.settings, model_check="")
+    request = rfq(door_pickup=True, pickup_postcode="12345", pickup_zone="12")
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    await bids.record(ctx, mail("a@truck", "We collect for 198.40 USD.\nPickup time: 6 hours"))
+    assert not [o for o in kinds(ctx, "option.found") if o["option"].get("trucker")]
+    portal = {"source": "portal", "carrier": "X", "currency": "USD", "fx_eur": "0.92"}
+    events.emit(ctx, "option.found", "pricing", session_id=2, payload={"option": portal})
+    await bids.record(ctx, mail("b@truck", "We collect for 198.40 USD.\nPickup time: 6 hours"))
+    [found] = [o["option"] for o in kinds(ctx, "option.found") if o["option"].get("trucker")]
+    assert (found["trucker"], found["currency"], found["total_eur"], found["pickup_hours"]) == (
+        "Truck B", "USD", "182.53", 6)  # fmt: skip

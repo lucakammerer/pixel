@@ -299,10 +299,14 @@ async def _notify_booked(ctx: Context, quote: Quote, booking: Booking, reply_to:
                          reference=booking.team_reference, airline_reference=booking.booking_reference or "-")  # fmt: skip
 
 
+async def _confirmation_text(ctx: Context, message: Message) -> str:
+    attached = await extract._attachments(ctx, message) if message.attachments else []
+    return "\n".join([message.body, *(line for _, lines in attached for line in lines)])
+
+
 async def confirmed_references(ctx: Context, message: Message) -> tuple[str | None, str | None]:
     """The airline's booking reference and ours, from the subject, the body or an attached confirmation."""
-    attached = await extract._attachments(ctx, message) if message.attachments else []
-    text = "\n".join([message.body, *(line for _, lines in attached for line in lines)])
+    text = await _confirmation_text(ctx, message)
     match = CONFIRMED.search(message.subject) or CONFIRMED.search(text) or AIRLINE_REFERENCE.search(text)
     # A booking by mail has no airline reference yet; its confirmation names ours (round 27: "Your reference: PX-…").
     ours = OURS.search(text)
@@ -310,7 +314,10 @@ async def confirmed_references(ctx: Context, message: Message) -> tuple[str | No
 
 
 async def handle_confirmation(ctx: Context, message: Message) -> None:
-    """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told."""
+    """ "Booking <reference> confirmed" from the airline -> booking confirmed, shipment updated, customer told. An
+    answer that refuses ("could not be confirmed", in the mail or its attachment) fails the booking for a person."""
+    from pixel.agents.router.agent import REFUSED  # router imports crm, which this module imports too
+
     reference, ours = await confirmed_references(ctx, message)
     booking = (
         (reference and bookings.by_reference(ctx, reference))
@@ -324,6 +331,13 @@ async def handle_confirmation(ctx: Context, message: Message) -> None:
         )  # fmt: skip
         return
     if booking.status == BookingStatus.CANCELLED:  # the airline's late confirmation of a booking the customer withdrew
+        return
+    if booking.status != BookingStatus.CONFIRMED and REFUSED.search(await _confirmation_text(ctx, message)):
+        _failed(ctx, booking, "the airline refused the booking")
+        events.emit(
+            ctx, "human.note", "crm", session_id=booking.session_id, message_id=message.id,
+            payload={"note": "The airline refused our booking: book another option", "shipment": booking.team_reference},
+        )  # fmt: skip
         return
     if booking.status != BookingStatus.CONFIRMED:
         booking = booking.model_copy(

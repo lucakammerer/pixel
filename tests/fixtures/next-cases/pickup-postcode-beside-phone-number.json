@@ -1,0 +1,39 @@
+[
+  {
+    "id": 996101,
+    "from": "rhein-main-druck@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Quote request to SGN",
+    "body": "Hello,\n\nplease quote air freight to Ho Chi Minh City (SGN) for 12 cartons of printed manuals, 900 kg, 3.5 cbm. Please collect them from our print shop in 63450 Hanau.\n\nCheapest option, all-in in EUR.\n\nBest regards\nSabine Roth\nRhein-Main Druck GmbH\nTel. +49 6181 12345\nFax 06181 12346",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T03:10:00+00:00",
+    "attachments": []
+  },
+  {
+    "id": 996102,
+    "from": "domblick-kurierdienst@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Pickup request 63450 to FRA",
+    "body": "Hello,\n\nThank you for your request. We can collect your shipment in Hanau and deliver it to FRA airport for 168.40 EUR.\n\nPickup time: 8 hours\n\nQuote reference: TRK-102\n\nNo booking is required for pickup.\n\nBest regards,\nDomblick Kurierdienst",
+    "in_reply_to": null,
+    "references": [
+      996101
+    ],
+    "received_at": "2026-11-22T03:10:22+00:00",
+    "attachments": []
+  },
+  {
+    "id": 996103,
+    "from": "westfalenroute@hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Pickup request 63450 to FRA",
+    "body": "Hello,\n\nThank you for your request. We can collect your shipment in Hanau and deliver it to FRA airport for 121.90 EUR.\n\nPickup time: 26 hours\n\nQuote reference: TRK-103\n\nNo booking is required for pickup.\n\nBest regards,\nWestfalenroute",
+    "in_reply_to": null,
+    "references": [
+      996101
+    ],
+    "received_at": "2026-11-22T03:10:34+00:00",
+    "attachments": []
+  }
+]

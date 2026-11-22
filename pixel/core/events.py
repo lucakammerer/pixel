@@ -13,6 +13,7 @@ from pixel.core.context import Context
 
 KINDS = (
     "mail.in", "mail.out", "mail.held",  # held: dry run, or a session a person took over
+    "mail.resend",  # core/outbox.py: a quote or no-price reply sent again after a 5xx or a lost answer
     "mail.clock",  # core/poller.py: a stored time later than now or earlier than its evidence, and the time used
     "route",
     "rfq.extracted", "rfq.evidence", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received", "bid.skipped",
@@ -24,6 +25,7 @@ KINDS = (
     "customer.accepted", "customer.declined", "customer.excludes",
     "followup.read",  # agents/rfq/followup.py: a customer's later mail in their thread, its phase, intent and changes
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",
+    "booking.cancelled",  # agents/rfq/booking.py `cancel`: the customer withdrew after the booking (round 88)
     "tracking.answered",
     "tariff.ingested", "tariff.failed",
     "carrier.lanes",  # pricing/bids.py: the lanes an airline says it flies when it declines ours
