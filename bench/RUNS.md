@@ -287,6 +287,87 @@ What follows:
   model (166 of 528), "1.234 t" in a lot read as 1234 t; read by rules since #279. Wrong in every harness: 0.
   Open: which shipment the scorer prices in a multi-shipment mail (evidence: the board's verdict on the first
   round answered with the first shipment). Next: the live mail since mail 26279.
+- 22.11., unseen-shape cycle 11 (live snapshot through incoming mail 27374, board through round 93).
+  Offline session replay covered all 19 incoming mails: four RFQs, eight bids, five customer replies, one
+  booking confirmation and one tracking question. Round 91 was rejected too low; on main its replay adds the
+  requested insurance (96.80 EUR, #289) and drafts a complete 700.71 EUR quote. Round 92 was accepted live;
+  replay routes all nine mails but has no usable price offline, so price parity is unverified. Round 93 was
+  rejected too low; replay still falls back at 364.26 EUR without requested pickup. Owner: Accuracy for the
+  pickup pricing evidence; #298 changes mailbox polling limits, and a later scored round with the same
+  pickup path is needed to verify the live effect. The standalone tracking question produced an answer.
+  The latest RFQ drafted an offline quote and had no final verdict in the snapshot.
+  Generated: the expanded per-piece grid on the local lot branch moved from 792 to 816 correct of 816,
+  all 24 errors in the “à” weight form; other axes and the generalization benchmark were unchanged.
+  PR #296 overlaps the extractor and simulation files, so the lot change stays on its existing local branch.
+  Next: refresh verdicts for the pending RFQ and check pickup prices on the next relevant round.
+  All seven pickup bids in rounds 92 and 93 were priced by rules both live and offline. The remaining
+  discrepancy is between bid parsing and quote selection or timing. Main's local gate passed
+  (938 tests passed, 6 skipped, 9 xfailed); the benchmark and simulator found zero unexpected failures.
+- 22.11., unseen-shape cycle 12 (live snapshot through mail 27557, board through round 94).
+  One new incoming mail, a decline matching the existing `customer-declines-too-low.json` fixture,
+  replayed with its RFQ. Round 94 rejected 2248.49 EUR as too low; the offline quote matches the sent
+  amount and the request reads as fastest, airport-to-airport, with no missing fields. The quote had
+  one sheet option after three portal rate failures and no usable airline bid before send.
+  Round 93 revisited: preserve the original arrival offsets with `tools.replay.run(as_live=True)`
+  when checking whether bids arrived before quote selection. The sequential replay in cycle 11 fed
+  the bids after dispatch finished. With original offsets, replay reproduces the live 488.30 EUR
+  quote including the 124.04 EUR pickup, with all three pickup bids priced by rules. The checker
+  compared that quote to the 463.95 EUR cheapest available combination, not a scorer reference.
+  Two portal rate reads failed live. Round 92 still lacks a usable offline rate.
+  Open, Owner: Accuracy. What reference prices did the scorer use for rounds 93 and 94?
+  The next cheaply available evidence is a scored comparable round with a visible accuracy score,
+  stored rate and bid options, and the portal failure status. The current too-low verdicts do not
+  establish a parser or selection defect. No new fixture or gap entry for the repeated decline.
+  Generated: the decline plus five single changes (case, line break, contraction, punctuation and a
+  quoted acceptance) all remain declines. Local gate: 939 passed, 6 skipped, 9 xfailed. Ruff, offline
+  KPI, generalization benchmark and simulation passed, with zero wrong outside the known gaps.
+- 22.11., unseen-shape cycle 13 (live cursor 27557, board through round 94).
+  No new incoming mail or final verdict in the snapshot. Generated a reference-label probe after #302.
+  An en or em dash between the label and identifier dropped the reference from both quote artifacts;
+  the shared reader now handles both separators. Two rendered-mail regression variants cover them.
+  Remaining probe results, Owner: Speed: bare “Order #”, a parenthesized identifier, and an empty
+  reference label followed by a weight on the next line need separate reference-format work.
+  No change to the known-gap registry or live cursor. #296 merged while this cycle ran.
+  Gate against the cycle base (1cae987): 944 tests passed, 6 skipped, 9 xfailed; Ruff passed.
+  All 38 offline KPI cases matched apart from timing. Benchmark and simulation output matched,
+  with zero unexpected failures. Price selection and gateway calls were unchanged in the replay.
+- 22.11., unseen-shape cycle 14 (live snapshot through mail 27848 and round 95).
+  Replayed six new incoming mails: the RFQ, four carrier replies and the customer's decline.
+  Timed replay priced all three pickup bids by rules and reproduced the complete live quote of
+  4919.98 EUR; the fourth carrier declined the lane and the customer decline matched the existing
+  too-low fixture. The portal rate read failed live. Both sheet options showed four days;
+  the selected sheet cost 4649.81 EUR and its pickup 270.17 EUR. The other sheet cost 5102.45 EUR.
+  The scorer rejected the quote as too low. Owner: Accuracy. A scored comparator with visible
+  accuracy points and matching rate sources is still needed to identify the scorer reference.
+  Generated: changing the existing “Order no.” label to “Order #” dropped the reference.
+  The shared mail/PDF reader now passes that variant with the same identifier and offer price.
+  No new live shape or known-gap entry.
+  Gate against ae4c5a6: 943 tests passed, 6 skipped, 9 xfailed; Ruff passed. All 38 offline KPI
+  cases matched apart from timing; benchmark and simulation output matched with zero unexpected failures.
+- 22.11., unseen-shape cycle 15 (live cursor 27848, board through round 95).
+  No new incoming mails or final verdict. The scorer reference for the last portal-outage rounds
+  remains open, Owner: Accuracy. The next comparable scored round with accuracy points and stored
+  portal and bid options can distinguish selection from pricing availability.
+  Generated, LEVERS n28: substitute a renamed key or a null break in a successful portal response.
+  Both variants aborted the options call after it had a valid actual-weight rate on main. The
+  adapter now rejects the response without caching it, the optional next-break lookup records the
+  failure and returns the actual-weight option. Three controls still select the cheaper break or
+  retain the actual-weight rate as appropriate. No new known-gap entry.
+  Gate against ae4c5a6: 944 tests passed, 6 skipped, 9 xfailed; Ruff passed. All 38 offline KPI
+  cases matched apart from timing. Benchmark and simulation output matched, with zero wrong outside
+  the known gaps. This preserves quote coverage under malformed bracket responses without an additional read.
+- 22.11., unseen-shape cycle 16 (live snapshot through mail 28085, board through round 95).
+  Replayed six new incoming mails in one session. All five pickup bids priced by rules; no usable
+  air rate in offline replay. Live reported two rate API outages and had no air option, sent quote,
+  or final scorer verdict when the snapshot was taken. The request was still within its deadline.
+  Follow up on this session's later mail and verdict. No new mail shape confirmed.
+  Generated, LEVERS e5: field missing, nonnumeric total, and null expiry in otherwise successful
+  portal rate responses. Each aborted the concurrent read batch on main. The adapter now reports
+  the malformed response as an API error; the healthy airline's rate remains in selection.
+  The response body is excluded from the error detail. No new model call or known-gap entry.
+  Gate against ae4c5a6: 945 tests passed, 6 skipped, 9 xfailed; Ruff passed. All 38 offline KPI
+  cases matched apart from timing. Benchmark and simulation matched with zero unexpected failures.
+  A healthy rate stays available for a quote when a peer response cannot be parsed.
 - 22.11. 01:50, unseen-shape cycle 17 (live to round 97, mail 28462). Live: 93 to 95 and 97 rejected too low, 96
   "declined_in_scope". Both new requests (96 door FRA-GRU, 97 FRA-ORD own delivery, both fastest) read by rules as by
   hand; no new mail shape. The losses are the rate API outage: in 96 the portal answered 503, the rate desk and four
