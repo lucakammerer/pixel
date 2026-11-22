@@ -10,7 +10,6 @@ commit, or a later merge that touches the same function or rule, puts it back in
 | #445 | lucakammerer | dc27f4f | ok, fixed on the branch | a second gateway call per quote by default (kpi 69 to 79) and model text claiming an unpriced insurance in the quote; now off by default, reads and alerts only |
 | #449 | lucakammerer | 4532f5b | closed, superseded by #452 | an old version priced unscaled, 3000.00 for 3900.00; drift check and read order left for a new PR |
 | #452 | lucakammerer | 3abc6a8 | ok, fixed on the branch | the card priced an airline the current version found off the portal (404) from a scaled v1 rate, on `main` too; a card failure ended the TaskGroup; replay gate 19 of 20, round 159 (recovery) differs on `main` too |
-| #452 | lucakammerer | 3abc6a8 | ok, fixed on the branch | the card priced an airline the current version found off the portal (404) from a scaled v1 rate, 3900.00 for none, on `main` too; a card failure ended the TaskGroup; replay gate 19 of 20, round 159 (recovery) differs on `main` too |
 | #157 | lucakammerer | ffcd8f8 | ok (mine) | live old request and reply subject moved from tools/ to `rfqs/live-mutations.json` |
 | #156 | lucakammerer | aa6886a | ok (mine) | a truck's load, a pallet rating or an earlier shipment no longer blocks a correct weight |
 | #153 | Konstantin-mody | 6a6bc04 | fixed (#157) | 21 hand labels match their mails, independent of code output (round 9: 1952, not the 1750 priced live); offline run reproducible; live lanes and weights written into tools/ |
