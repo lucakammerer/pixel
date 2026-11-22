@@ -582,3 +582,29 @@ async def test_a_conditional_acceptance_books_only_when_our_total_meets_its_cap(
     assert bool(pipe.ctx.portal.calls) is books
     if not books:
         assert kinds(pipe.ctx)[-1] == "human.note" and pipe.sent == []
+
+
+class Attached:
+    def __init__(self, text):
+        self.text = text
+
+    async def attachment(self, message_id, attachment_id):
+        return self.text.encode()
+
+
+@pytest.mark.parametrize(
+    ("attached", "status", "told"),
+    [("Booking reference: BK-43VLF40X\nStatus: booked", BookingStatus.CONFIRMED, 1),
+     ("Booking request PX: could not be confirmed, no space this week.", BookingStatus.FAILED, 0)],
+)  # fmt: skip
+async def test_the_airlines_answer_only_in_an_attachment_confirms_or_fails(pipe, accepted, attached, status, told):
+    pipe.ctx.portal = Portal(BookingUnavailable("Booking is down. Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    pipe.sent.clear()
+    pipe.ctx.mailbox = Attached(attached.replace("PX", b.team_reference))
+    reply = mail(31, 1, sender="bookings@kestrel.example", subject=f"Re: Booking request {b.team_reference}",
+                 body="Hello,\n\nplease find our answer attached.\n\nKind regards")  # fmt: skip
+    reply = reply.model_copy(update={"attachments": (Attachment(id=1, filename="answer.txt",
+                                                                content_type="text/plain", size=60),)})  # fmt: skip
+    await booking.handle_confirmation(pipe.ctx, reply)
+    assert bookings.get(pipe.ctx, b.id).status == status and len(pipe.sent) == told
