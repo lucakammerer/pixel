@@ -416,6 +416,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
   code after "not" or "instead of" is ruled out).
+- The rules read no lane in a script they have no words for, so the model reads those requests alone (round 156,
+  Korean: "MIA (Miami, US)행" came back as origin MIA with no destination; we asked and sent no quote). Before a
+  destination is asked for, `extract.py` `_named_destination` takes the one airport only arrivals of ours use
+  (`store.airports`) that the customer's words name (`BARE_CODE`, also glued to a Hangul particle); a door request's
+  origin is then its pickup zone's (`_zone_origin`).
 - A departure the customer refuses is never the one asked for: "please do not route via FRA", "avoid FRA",
   "routing via FRA is not possible; please use MUC". `_asked_departure` reads each clause: one with a negation
   refuses its codes, the asked airport is the one served code left; "fly out of MUC" and "ex MUC" ask too.
