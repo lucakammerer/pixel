@@ -65,7 +65,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   airport of the pickup zone as its origin (R16), and so does a door-to-port request whose origin is an airport no
   pickup zone trucks to; when the zone has none, the model reads the mail. Emits `rfq.extracted` with the whole `Rfq`.
 - `extract.py` `shipments`: a mail with numbered or bulleted shipment lines to different airports (rounds 89 and
-  90, "Shipment 1: FRA to SGN ...") gives one `Rfq` per line with its own airport, lane and cargo. `agent.py` `handle`
+  90, "Shipment 1: FRA to SGN ...") gives one `Rfq` per line with its own airport, lane and cargo; a line that names
+  its own pickup or says the customer delivers it to the airport sets that shipment's pickup alone. `by_rules` reads
+  such a mail as its first shipment when the mail names one origin or a pickup (rounds 89 to 151 each cost the
+  model's read, and with the gateway down no quote at all). `agent.py` `handle`
   quotes the first and prices the others beside it; `_with_shipments` adds each one's price and, when all have one,
   their sum in a paragraph of the same quote (R4). The quote's option, PDF details and booking stay the first's.
 - `extract.py` `excluded_airlines`, `_carrier_requirements`: an airline the customer rules out (a sentence with a negation that

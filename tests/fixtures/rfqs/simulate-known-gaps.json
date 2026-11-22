@@ -17,16 +17,9 @@
   {
     "family": "shipments",
     "axes": {
-      "lanes": "door_and_port"
-    },
-    "note": "Several shipments: one collected at the door, one delivered to the airport by the customer. `extract.shipments` gives every shipment the mail's pickup, so the second is priced with a truck. Owner: Cost (`extract.py`)."
-  },
-  {
-    "family": "shipments",
-    "axes": {
       "lanes": "two_postcodes"
     },
-    "note": "Several shipments, each collected at its own postcode: `extract.shipments` gives every shipment the first pickup and its airport; a further shipment's own zone airport would also need `store.airport_of` in `agent.handle`. Owner: Cost (`extract.py`)."
+    "note": "Several shipments, each collected at its own postcode: `extract.shipments` reads each line's postcode, but a further shipment keeps the first one's airport; its own zone airport needs `store.airport_of` (`agent.handle`). Owner: Cost (`extract.py`)."
   },
   {
     "family": "shipments",

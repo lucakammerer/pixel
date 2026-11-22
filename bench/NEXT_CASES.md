@@ -170,10 +170,8 @@ matrix in `uv run python -m tools.simulate --family shipments` (cells and their 
 
 | Cell | Today | Required | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- |
-| every cell with a door pickup, as all five live door mails | rules give up, the model reads the first shipment; with the gateway down, no quote | rules read the first shipment and split | `extract.by_rules` | Cost |
 | `lanes=same_lane` | second shipment not quoted | both | `extract.shipments` | Cost |
-| `lanes=door_and_port` | the airport delivery priced with a truck | that one port to port | `extract.shipments` | Cost |
-| `lanes=two_postcodes` (D12) | every shipment from the first pickup | each from its own zone airport | `extract.shipments`, `agent.handle` | Cost |
+| `lanes=two_postcodes` (D12) | each line's postcode read, every shipment from the first one's airport | each from its own zone airport | `agent.handle` (`store.airport_of`) | Cost |
 | `layout=paragraphs`, `table`, `also` | one shipment quoted | all | `extract.shipments` | Cost |
 | `layout=subject` | one shipment quoted | all | `extract.shipments` | Cost |
 | `layout=attachment_each`, `attachment_sections` | one shipment quoted | all | `extract.shipments`, `_shipment_sources` | Cost |
@@ -182,7 +180,9 @@ matrix in `uv run python -m tools.simulate --family shipments` (cells and their 
 | one lane's rate API 503, its truckers silent | not measured | each priced from the sheet, rate card or zone | `engine.options` | Accuracy |
 | accept both, accept "the second one", accept one and decline the other | one booking per session, always of the first shipment's option (`booking.book`, `quotes.for_session`) | a booking per accepted shipment | `booking.py`, `crm/quotes.py` | Shared |
 | a change of one shipment's weight | `agent.requote` prices one request | that shipment again, the others kept | `agent.requote` | Shared |
+| a trucker's answer outside its thread (no `in_reply_to`) | `bids.record` takes the carrier's latest request: every answer lands on the last shipment, the first has no trucker and its door quote falls back without pickup | matched by weight to its own shipment | `bids.record` | Accuracy |
+| `tools/replay.py --session` of a door mail for several shipments | the carriers' answers point at the live ids of our requests, so they land as above; offline neither quote is reproduced | the replay maps a stored answer's thread to its own new request | `tools/replay.py` | Speed |
 
-Measured right: two, three and four shipments; another origin per line; bullets; German and French; a currency for
-all (all via the model's read of the first shipment). Bids per lane, a lane still pricing at the target and every
+Measured right: two, three and four shipments, a door pickup for all, bullets, German, a currency for all, by rules;
+another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.
