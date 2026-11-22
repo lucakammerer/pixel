@@ -13,8 +13,10 @@ CENT = Decimal("0.01")
 # The customer's own reference: a word for it, then a code with a digit. "Your reference" is ours, not theirs.
 REFERENCE = re.compile(
     r"(?i)(?<!your )(?<!ihre )(?<!votre )\b(?:ref(?:erence|erenz)?|réf(?:érence)?|po(?: number| no)?|order (?:no|number)"
-    r"|bestellnummer|auftragsnummer)\b\.?\s*[:#]?\s*(?P<ref>(?=[\w/-]*\d)[A-Z0-9][\w/-]{2,24})"
+    r"|bestellnummer|auftragsnummer|bestellung|commande)\b\.?\s*(?:[:#]|n[°o]\.?)?\s*(?P<ref>(?=[\w/-]*\d)[A-Z0-9][\w/-]{2,24})"
 )
+# "our purchase order PO-2026-5512": the code names itself; "PO Box 12" is none.
+PO_CODE = re.compile(r"\b(?P<ref>PO[-#]?\d[\w/-]{2,24})")
 LABELS = {
     "en": ("Offer", "Your reference", "Routing", "{days} days in transit", "Chargeable weight", "billed on",
            "Air freight", "Fuel surcharge", "Security surcharge", "Pickup", "All-in total"),
@@ -26,7 +28,7 @@ LABELS = {
 
 
 def reference(text: str) -> str | None:
-    match = REFERENCE.search(text or "")
+    match = REFERENCE.search(text or "") or PO_CODE.search(text or "")
     return match["ref"] if match else None
 
 

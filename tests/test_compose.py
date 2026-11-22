@@ -11,6 +11,7 @@ from pixel import llm
 from pixel.agents.rfq import compose, dangerous, extract, novelty
 from pixel.config import settings
 from pixel.contracts import LlmResult, Message, Preference, RateOption, Rfq, Source
+from pixel.core import pdf
 from pixel.core.context import Context
 
 NOW = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
@@ -239,12 +240,22 @@ def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
         ("en", "Please quote our purchase order reference PO-2026-4471 in your offer.", "PO-2026-4471"),
         ("en", "Kindly show our order no. 88123/B on the quotation.", "88123/B"),
         ("de", "Bitte geben Sie unsere Bestellnummer 4500123456 im Angebot an.", "4500123456"),
+        ("en", "Please quote our purchase order PO-2026-5512 and attach the offer as a PDF.", "PO-2026-5512"),
+        ("de", "Bitte nennen Sie unsere Bestellung 4500012345 im Angebot.", "4500012345"),
+        ("fr", "Merci d'indiquer notre commande n° CMD-2231 sur l'offre.", "CMD-2231"),
     ],
 )
 def test_the_customers_own_reference_stands_in_the_mail(language, request_, ref):
     _, body = compose.render(rfq(language), OPTION, request=request_)
     assert ref in body and body.count("1234.57 EUR") == 1
     assert not novelty.leftover(request_)
+
+
+@pytest.mark.parametrize(
+    "text", ["PO Box 1234, Hamburg", "in order to ship 450 kg", "Die Bestellung wird am 27.11. abgeholt"]
+)
+def test_no_reference_where_none_is_given(text):
+    assert pdf.reference(text) is None
 
 
 def test_a_date_the_request_does_not_call_ready_gives_no_arrival():
