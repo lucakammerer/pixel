@@ -1,0 +1,61 @@
+{
+  "request": {"origin": "FRA", "destination": "JFK", "weight_kg": "340", "volume_cbm": "1.20"},
+  "cases": [
+    {
+      "id": "hours-in-heading",
+      "formats": ["body", "docx", "xlsx"],
+      "lines": [
+        ["Carrier", "IATA", "Price (EUR)", "Transit (hours)", "Rate id", "Valid until (UTC)"],
+        ["Example Airline", "XA", "330.00", "36", "R-EXAMPLE", "21 Nov 2026 17:00"]
+      ],
+      "expected": [["XA", "330.00", "EUR", "330.00", 2, "R-EXAMPLE", "2026-11-21T17:00:00+00:00"]],
+      "known_gap": "Bare transit values in a table are treated as days even when their header says hours. Owner: supply."
+    },
+    {
+      "id": "hours-in-cell",
+      "formats": ["body", "docx"],
+      "lines": [
+        ["Carrier", "IATA", "Price (EUR)", "Transit", "Rate id", "Valid until (UTC)"],
+        ["Example Airline", "XA", "330.00", "36 hours", "R-EXAMPLE", "21 Nov 2026 17:00"]
+      ],
+      "expected": [["XA", "330.00", "EUR", "330.00", 2, "R-EXAMPLE", "2026-11-21T17:00:00+00:00"]],
+      "known_gap": "Transit expressed in hours in a table cell is lost when the row is rewritten. Owner: supply."
+    },
+    {
+      "id": "hours-labelled-in-list",
+      "formats": ["body", "docx"],
+      "lines": [["- Example Airline (XA): 330.00 EUR, transit: 36 hours, rate_id R-EXAMPLE, valid until 21 Nov 2026 17:00 UTC"]],
+      "expected": [["XA", "330.00", "EUR", "330.00", 2, "R-EXAMPLE", "2026-11-21T17:00:00+00:00"]]
+    },
+    {
+      "id": "days-in-heading",
+      "formats": ["body", "docx", "xlsx"],
+      "lines": [
+        ["Carrier", "IATA", "Price (EUR)", "Transit (days)", "Rate id", "Valid until (UTC)"],
+        ["Example Airline", "XA", "330.00", "3", "R-EXAMPLE", "21 Nov 2026 17:00"]
+      ],
+      "expected": [["XA", "330.00", "EUR", "330.00", 3, "R-EXAMPLE", "2026-11-21T17:00:00+00:00"]]
+    },
+    {
+      "id": "absolute-date-invalid-on-one-row",
+      "formats": ["body", "docx"],
+      "lines": [
+        ["- First Airline (XA): 300.00 EUR, 2 days, rate_id R-BAD, valid until 40 Nov 2026 17:00 UTC"],
+        ["- Second Airline (XB): 360.00 EUR, 3 days, rate_id R-GOOD, valid until 21 Nov 2026 17:00 UTC"]
+      ],
+      "expected": [["XB", "360.00", "EUR", "360.00", 3, "R-GOOD", "2026-11-21T17:00:00+00:00"]],
+      "known_gap": "A bad explicit expiry throws before another, valid airline row can be read. Owner: supply."
+    },
+    {
+      "id": "usd-with-shared-fx",
+      "formats": ["body", "docx", "xlsx"],
+      "lines": [
+        ["Exchange rate: 1 USD = 0.80 EUR"],
+        ["Carrier", "IATA", "Price (USD)", "Transit (days)", "Rate id", "Valid until (UTC)"],
+        ["Example Airline", "XA", "330.00", "3", "R-EXAMPLE", "21 Nov 2026 17:00"]
+      ],
+      "expected": [["XA", "330.00", "USD", "264.00", 3, "R-EXAMPLE", "2026-11-21T17:00:00+00:00"]],
+      "known_gap": "A shared conversion rate above the table is dropped from each row, leaving the USD offer unpriced. Owner: supply."
+    }
+  ]
+}

@@ -24,6 +24,9 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   header or the cell, German), with each priced airline read by hand; benchmark section 16 writes its own lines and
   each table into every attachment format behind a mail that only points to the file. It compares currency and
   expiry as well as total, transit and rate ID.
+- `ratedesk-probes.json`: synthetic desk replies in body, DOCX and XLSX with transit hours in a heading or a cell,
+  shared FX and a malformed date beside a valid airline row. The benchmark compares the hand-read rows and reports
+  known gaps with their owner.
 - `rfqs/bid-validity.json`: carrier offers with expiry in the body or an attachment, measured from the simulator's
   16:00 UTC receipt time, with expected timestamps written by hand. The departure date and quoted old offer are
   controls. `tools.simulate` runs each through `bids.record` offline.
