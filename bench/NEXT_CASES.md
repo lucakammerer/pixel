@@ -758,6 +758,11 @@ Round 187 also promised paperwork. The quote was accepted by the scorer in both 
 round 186 arrived after the quote had already selected the wrong service. Its reading error affects the CRM state.
 The first-quote loss belongs to the selection repair in #508.
 
+A later read at event 19799 closed round 188 with tracking 0.0. The answer matched its booked shipment after a Voice
+update to `at_origin`, printed the internal status code and omitted the airline booking reference. The scorer's
+specific reason is unknown. Round 189 was accepted and booked with tracking points still absent. The next question
+about a shipment with an intermediate status can distinguish this from an ordinary booking or matching failure.
+
 ### The census
 
 1,804 incoming replies inside sessions, plus 17 standalone airline confirmations and 110 standalone tracking desk
@@ -781,6 +786,10 @@ acknowledgments. An existing signature-reading gap accounts for one of the no-pr
 
 ### The table: every case, right action, today
 
+Final-window priority is F1 (six scored rounds). The #480 fix shown in F1 was reviewed and closed without a
+merge. Its replacement is on local branch `after-quote/price-match-2`. #498 covers F6–7 and #505 covers F4–5.
+F20 was reproduced offline. The snapshot has no observed customer request for a different customer's shipment.
+
 Steps taken from each live case: the opposite (a competitor mentioned in a decline; a cap in "match 4,000 EUR"),
 another party (airline, trucker, rate desk, tracking desk), another moment (open, quoted, declined, accepted,
 booked, confirmed, cancelled), another channel (body, attachment, a new thread quoting ours), another language
@@ -790,14 +799,14 @@ in the body or attached to a French question.
 
 | # | Case | Live | Right action | Today | Status, owner |
 | --- | --- | --- | --- | --- | --- |
-| F1 | price-match request after the quote | rounds 108, 132, 144, 157, 166, 175 | respond once at the same price; a later yes books | declined three times, sent to a person once and booked twice in the snapshot | **gap**, after the quote. #480 closed; replacement on local branch `after-quote/price-match-2` |
-| F1b | an acceptance conditioned on a stated lower price ("we accept the quote provided you match 2,900 EUR") | fixture on local branch | book when our total meets the cap; otherwise keep the quote open | an acceptance can book without the cap check | **gap**, after the quote (`followup.conditional`) |
+| F1 | price-match request after the quote, en/de/fr, after a decline | 6 rounds | `hold`: one reply keeping the price, quote open, the yes books | `hold` | fixed #480 (review) |
 | F2 | price-match request that declines in its own sentence | never | decline | decline | right |
+| F1b | an acceptance conditioned on a stated lower price ("we accept the quote provided you match 2,900 EUR") | fixture on local branch | book when our total meets the cap; otherwise keep the quote open | an acceptance can book without the cap check | **gap**, after the quote (`followup.conditional`) |
 | F3 | price-match request after the booking | never | person | person | right |
-| F4 | acceptance in Spanish, Italian, Dutch or Portuguese | fixture | book a clear yes | thanks or a person | **gap**, after the quote (#505 in review) |
-| F5 | decline "nous ne donnerons pas suite" | fixture | decline | nothing, quote stays open | **gap**, after the quote (#505 in review) |
-| F6 | corrected weight after a quote ("1,952 kg, not 753 kg") | fixture | requote using the corrected figure | person, no requote | **gap**, after the quote (#498 in review) |
-| F7 | corrected weight after booking confirmation | 21.11., session 1974 | person with the correction | person, change unread | **gap**, after the quote (#498 in review) |
+| F4 | acceptance in Spanish or Italian | never | book | nothing | **gap**, after the quote (`booking.ACCEPT`) |
+| F5 | decline "nous ne donnerons pas suite" | never | decline | nothing (quote stays open) | **gap**, after the quote (`booking.DECLINE`) |
+| F6 | weight corrected "1,952 kg, not 753 kg, please correct the offer" | once after the booking (21.11.) | requote at 1,952 kg | person, no requote | **gap**, after the quote (`followup.changes`, `UPDATE`) |
+| F7 | the same correction after the confirmation | 21.11. 15:51 | person with the change | person, change unread | **gap**, after the quote |
 | F8 | ready date moved after the booking | never | person | nothing | **gap**, after the quote (`followup.changes`) |
 | F9 | acceptance in a new thread quoting our quote | never | the old session books | new request, quoted again | **gap**, Speed (`router.rules`) |
 | F10 | booking confirmation for an unknown reference from an unlisted address | never | confirmation, unmatched | new request | gap, Speed (B13) |
@@ -813,7 +822,7 @@ in the body or attached to a French question.
 | F20 | customer tracking asks for another customer's reference, or names an unknown reference in their own thread | fixture | no shipment details; ask for a valid reference | returns the other shipment or falls back to the thread's shipment | **gap**, after the quote (`tracking.handle`) |
 | F21 | a refusal framed as "I'll have to pass" | round 186, mail 56284 | close quote as declined | `thanks`, quote stays open | **gap**, after the quote (`booking.DECLINE`) |
 | F22 | cargo correction in a CSV with pieces, weight and volume only | generated fixtures | read the corrected cargo from the attachment | figures unread | **gap**, Accuracy (`extract._table` expects dimensions) |
+| F23 | tracking after a Voice status update to `at_origin` | round 188 | use the recorded milestone in plain language and retain the booking references | internal status code and only the team reference, tracking 0.0 | **gap**, Hot Repair for the live loss; after the quote for milestone variants (`tracking._paragraph`) |
 
 0 wrong outside these known gaps (`tools.followup_matrix`: every non-right case carries its `known_gap` and owner).
-The most frequent scored gap is F1 (six rounds). F20 has a proven incorrect disclosure in an offline fixture.
-The snapshot contains no observed customer request for another customer's shipment.
+Next in this lane, most frequent and cheapest first: F4 and F5 (one regex each), F6 and F7, F8, F17.
