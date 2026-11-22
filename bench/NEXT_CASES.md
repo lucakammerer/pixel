@@ -558,6 +558,29 @@ round-67 hourly-charge misread remains covered by `tests/fixtures/bid-plausibili
 | T11. One-hour bid, different weight, or one reply to two enquiries | Keep the stated expiry and weight tied to each enquiry. A fixed total for a different weight cannot price this request. | The air and truck samples lose validity. The rules build a bid option with the RFQ's weight. Multi-enquiry correlation remains untested. | Wrong for expiry; unknown for different weight or two enquiries. Owner: supply. |
 | T12. Airline changes name/address, an unknown airline or trucker replies, or a zone changes airport | Resolve the replying party to the actual enquiry and apply each effective carrier or zone change once | Current store keys carriers by name and zones by zone. Audit of rename, unknown sender and zone replacement is pending. | Unknown until carrier/zone updates are replayed. Owner: supply. |
 
+### Tariff lifecycle variants
+
+The offline sequences in `tests/fixtures/tariffs/lifecycle/` go through the router, tariff handler, store and
+pricing, then compare amounts worked out from the supplied tables. Nine of 17 sequences are right. The eight
+wrong sequences below each have a supply owner in the fixture. The snapshot through round 184 had 205 tariff
+rows, just as in the two earlier snapshots. It adds no evidence of a real quote affected by these variants.
+
+| Variant | Expected from the tariff | Observed offline | Status |
+| --- | --- | --- | --- |
+| T8a. One lane changes, old period arrives late, future period | 330.00 EUR on the amended lane, 430.00 EUR on its untouched neighbor. An expired document changes nothing. The future rate starts on its date. | Fresh lookup does all three. | Right. |
+| T9a. Amendment arrives while the quote is pending | Replace 230.00 EUR with 330.00 EUR for a same-day shipment. A future-ready shipment uses its 430.00 EUR replacement. | Reuse keeps 230.00 EUR for same-day and returns no option for future-ready. | Wrong, `session.for_request`. Owner: supply. |
+| T9b. Two validity periods in one mail | 230.00 EUR today, then 430.00 EUR on the new period's first day | Correct in two attachments. In one text document only the later period survives. | Wrong for one document, `tariffs.agent.parse`. Owner: supply. |
+| T9c. Correct again, then an older copy arrives | The second correction's 380.00 EUR applies. Re-sending an identical original after a correction keeps the correction's 330.00 EUR. | The DOCX correction applies. In the resend case the original 230.00 EUR regains precedence. | Wrong for resend, `store.upsert`. Owner: supply. |
+| T10a. Currency or price unit changes | 330.00 USD at 0.80 yields 264.00 EUR. A 300.00 EUR rate per 100 kg still gives 330.00 EUR all-in at 100 kg. | Both amendments are priced correctly. | Right. |
+| T10b. German headings in a DOCX amendment | Keep the stated dates and use 330.00 EUR | On a later mail with German date and currency headings the previous 230.00 EUR stays active. | Wrong, `tariffs.agent.parse`. Owner: supply. |
+| T10c. Flat security fee of 10 or 2 EUR | At 100 kg, 330.00 or 322.00 EUR. At 200 kg, 650.00 or 642.00 EUR. | The 10 EUR sheet is rejected. The 2 EUR sheet prices 520.00 or 1,040.00 EUR because the fee is multiplied by weight. | Wrong, `tariffs.agent.parse` and surcharge basis. Owner: supply. |
+| T8b. Withdraw one lane | Remove only the named lane when the withdrawal starts, and restore it on an explicit reopening | Dated withdrawal and reopening work in the supported booking notice. A differently worded immediate rate withdrawal leaves 230.00 EUR available. | Wrong for immediate rate withdrawal, `router.rules` and tariff availability. Owner: supply. |
+
+The fixture changes timing, the old versus new source, language, document format, currency and units. It exercises
+reuse while a quote is pending. Amendments received after the quote or booking, another script, and the same
+freshness rule across the rate desk and direct carrier offers remain open. Owner: supply. This audit has no direct
+effect on the accepted quote rate.
+
 ### Bid validity variants
 
 The next snapshot, through event 19080 and round 181, adds four inbound census rows, three portal events and two
@@ -586,7 +609,7 @@ it or after booking, body and file and later correction, another language and sc
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
 
-## Axis P: price against the scorer's best (22.11.2026 12:10, live database to round 184)
+## Axis P: price against the scorer's best (22.11.2026 12:40, live database to round 186)
 
 `uv run python -m tools.price_ledger <database>` prints the rows below from a copy of the live database: every
 round lost on price or on accuracy points, and every accepted round today's code would quote otherwise (none today:
@@ -673,6 +696,14 @@ Steps sideways from round 179 (arrival from ready + transit): a weekend in trans
 pickup longer than a day, the portal's transit against the sheet's, "by Friday". Only 170, 118 and 179 carry an
 arrival limit, so none of these is tested by a scored round. Cheapest live evidence: the next round with an arrival
 limit and a door pickup whose ready day is a Friday, read with `tools.price_ledger`.
+
+Every scored round, cycle 3 (the ledger's last line): 186 scored, 136 accepted. Of these, today's code quotes 124
+exactly as sent, 1 a cent apart (46), and the 3 that lost accuracy points at the scorer's best (13, 27, 136); 8 have
+no session in this database (1 to 7, 107). 28 lost on price, above. The other 22 rejections were judged on something
+else than the price (Axis R); 186 (`not_what_was_asked`, 22.11. 09:45) is new: a Turkish "en hızlı seçeneği
+istiyoruz" (fastest) read as cheapest, so Aurelia 3 d at 844.49 went out instead of Fjordline 2 d at 1194.71. The
+scorer now names a wrong kind of option by its own reason rather than as too low; hot repair A holds it (claim
+56183, `extract.py`).
 
 Open, none of them a price or selection rule: 67 and 130 need the attachment (supply, generalize), 15 and 16 the
 place the customer would name. Rounds 180 to 184 (cycle 2, fresh copy): all accepted, today's code quotes them as sent. Nothing in this axis is wrong today that has no owner.
