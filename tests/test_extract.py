@@ -153,6 +153,31 @@ def test_the_airport_the_truck_goes_to_is_no_destination(text, destination):
     assert extract._destination_only(text) == destination
 
 
+async def test_a_german_door_request_names_its_destination_zum_flughafen(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("28321"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, captured("rfq-german-door-zum-flughafen.json"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.extracted_by) == ("AAA", "SGN", "rules")
+
+
+@pytest.mark.parametrize(
+    ("body", "lane"),
+    [
+        ("Abholung in 60311 Town, Lkw zum Flughafen AAA. Die Ware geht nach Chicago. 300 kg, 1,2 cbm.", None),
+        ("Abholung in 60311, Transport zum Flughafen AAA, Luftfracht nach BBB, 300 kg, 1,2 cbm.", ("", "BBB")),
+        ("Bitte holen Sie die Ware in 60311 Town ab und bringen Sie sie zum Flughafen AAA. Ziel ist Chicago (BBB). 300 kg.", None),
+        ("Abholung in 60311 Town, Lkw zum Abflughafen. Luftfracht zum Flughafen BBB, 300 kg, 1,2 cbm.", ("", "BBB")),
+    ],
+)  # fmt: skip
+def test_the_truck_leg_zum_flughafen_is_no_destination(body, lane):
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert (rfq and (rfq.origin, rfq.destination)) == lane
+
+
 async def test_a_door_request_whose_zone_has_no_airport_is_left_to_the_model(conn, monkeypatch, emitted):
     async def as_the_model_read_it(ctx, **kw):
         data = {"origin": "FRA", "destination": "ORD", "weight_kg": "676", "volume_cbm": "5.79", "pieces": 12,

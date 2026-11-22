@@ -356,6 +356,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "bultos", "colli", "volumes", "stuks"; "más/mais rápida", "più veloce", "snelste" fastest and "más económica",
   "più economica", "goedkoopste", "mais barata" cheapest. Read by rules without the wish words, a fastest request
   would have been quoted cheapest. Portuguese is still answered in English (`_language`).
+- A German request names its destination "zum Flughafen SGN" too (round 74, read by the model before);
+  "Lkw/Transport/Abholung … zum Flughafen FRA" is the truck leg and no destination (`TRUCK_LEG`).
 - A request can point to the customer's earlier one: "the same shipment as in my earlier request, "Air freight
   quote request: STR to MEL" ... the new destination is LAX" (round 103, accepted on the earlier cargo; round 104,
   "the same shipment as in my request", lost when the model read no weight). `_earlier` takes the earlier request of
@@ -465,8 +467,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   fallback has nothing to send (`quote.missed`, `no_price`).
 - A door request's truck leg is no destination either: "arrange the truck from our site to BBB airport. The goods
   go to Singapore" named no destination code, and the rules took BBB (`TRUCK_LEG`: a code named as an airport,
-  before any flight or arrival word; a bare "deliver them to JFK" stays the destination). Such a mail goes to the
-  model; no live request read differently.
+  before any flight or arrival word, also "Lkw zum Flughafen FRA"; a bare "deliver them to JFK" stays the
+  destination). The truck's code leaves the destinations: one other labelled code is the destination, none
+  sends the mail to the model. Of 155 live requests only round 74 reads differently.
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
   or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.

@@ -31,6 +31,7 @@ ORIGIN_LABEL = re.compile(
 # "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
 DEST_LABEL = re.compile(
     rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)à(?!\w)"
+    rf"|\bzu[mr](?=\s+(?:ziel)?flughafen\b)"  # "Luftfracht zum Flughafen SGN" (round 74); the truck's: `TRUCK_LEG`
     # Spanish, Italian, Portuguese "a GRU", only right before a code that ends the clause: never the English article
     rf"|(?<!\w)a(?=\s+(?-i:[A-Z]{{3}})\s*(?:[.,;:!?(\n]|$))"
     rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
@@ -47,7 +48,8 @@ ON_CARRIAGE = re.compile(
 # The truck to the departure airport: "arrange the truck from our site to BBB airport. The goods go to Singapore" named
 # no destination code, and BBB was quoted as one. A code the trucking clause names as an airport, before any flight word.
 TRUCK_LEG = re.compile(
-    r"(?i:\b(?:truck\w*|lorry|lkw|by\s+road|collect\w*|pick\w*[\s-]?up|deliver\w*|bring\w*|haul\w*|transport\w*))"
+    r"(?i:\b(?:truck\w*|lorry|lkw|by\s+road|collect\w*|pick\w*[\s-]?up|deliver\w*|bring\w*|haul\w*|transport\w*"
+    r"|abhol\w*|anliefer\w*|zustell\w*))"
     r"(?:(?!(?i:\b(?:air(?!port)\w*|fl[iy]\w*|ship\w*|freight|luft\w*|arriv\w*|ankunft|destination|ziel\w*)\b))"
     r"[^.;!?\n]){0,60}?(?i:\b(?:to|zum|zur)\s+(?:the\s+)?)"
     r"(?:(?i:airport|flughafen)\s+(?=[A-Z]{3}\b)|(?=[A-Z]{3}\s+(?i:airport|flughafen)\b))"  # never a bare "to JFK"
@@ -444,7 +446,8 @@ def _destination_only(text: str) -> str | None:
     the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
     "our truck goes to departure airport FRA" the origin."""
     to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
-    origin |= {code: 0 for code in TRUCK_LEG.findall(text) if _airport(code)}
+    trucked = set(TRUCK_LEG.findall(text))
+    to = {code: reach for code, reach in to.items() if code not in trucked}
     found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
     if set(origin) - found:
         return None
