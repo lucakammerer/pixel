@@ -28,7 +28,9 @@ ACCEPT = re.compile(
     r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|(?<!as )agreed"
     r"|(?:would|['’]d)\s+like\s+to\s+(?:book|proceed)|arrange\s+the\s+booking"
     r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag\b|einverstanden"
-    r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen)",
+    r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen"
+    r"|(?:let['’]s|we['’]ll|we\s+will)\s+go\s+with\s+(?:it|this|that|your|the)\b"
+    r"|merci\s+de\s+r[ée]server|veuillez\s+r[ée]server|nous\s+acceptons|r[ée]servez)",
     re.IGNORECASE,
 )
 DECLINE = re.compile(
@@ -37,7 +39,8 @@ DECLINE = re.compile(
     r"another (?:offer|forwarder)|"
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:yet\s+)?(?:go ahead|accept(?:ed)?|book(?:ed)?|proceed|confirm(?:ed)?|take it|move forward|be moving forward)|"
-    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
+    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse|"
+    r"decided against|cheaper (?:option|offer|rate|quote) elsewhere|found a cheaper|trop cher|pas donner suite)\b",
     re.IGNORECASE,
 )
 # In the clause of the accept phrase: "we have decided not to go ahead", "Bitte buchen Sie nicht", "go ahead with a

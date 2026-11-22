@@ -206,6 +206,12 @@ async def test_the_airlines_reply_to_our_booking_by_mail_stores_its_reference(pi
     ("text", "said"),
     [
         ("Yes, please go ahead and book.", "accept"),
+        ("Let's go with this offer.", "accept"),
+        ("D'accord, merci de réserver.", "accept"),
+        ("We found a cheaper option elsewhere, thanks.", "decline"),
+        ("Thank you, but we have decided against it.", "decline"),
+        ("Merci, mais c'est trop cher.", "decline"),
+        ("If we decide to go with this offer, we will let you know.", "other"),
         ("Bitte buchen Sie die Sendung.", "accept"),
         ("Thanks, but too expensive for us.", "decline"),
         ("We cannot accept this price.", "decline"),
