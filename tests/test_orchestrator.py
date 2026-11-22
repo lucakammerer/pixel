@@ -300,7 +300,6 @@ async def test_a_sea_freight_request_gets_no_price_and_its_answer_at_once(conn, 
         events.emit(ctx, "rfq.extracted", "rfq", session_id=message.id, payload=quote.rfq.model_dump(mode="json"))
         events.emit(ctx, "option.found", "pricing", session_id=message.id,
                     payload={"option": quote.option.model_dump(mode="json")})  # fmt: skip
-        return None
 
     monkeypatch.setattr(rfq_agent, "handle", handle)
     assert orchestrator.out_of_scope(ctx, message.id)
