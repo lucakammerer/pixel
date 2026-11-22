@@ -28,7 +28,12 @@ AIRPORT_WORD = r"(?:\s+(?:airport|flughafen))?"
 ORIGIN_LABEL = re.compile(
     rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
 )
-DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
+# "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
+DEST_LABEL = re.compile(
+    rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)[aà](?!\w)"
+    rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
+    rf"{AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
+)
 # The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
 # the door" the destination.
 PRE_CARRIAGE = re.compile(
@@ -51,11 +56,10 @@ WEIGHT = (
         rf"(?![\d.,']|{OTHER_UNIT}\b)"
     ),
 )
-# A unit may end without a space before a Korean or Japanese particle ("lb입니다", session 39219): no \b there.
-POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)(?![A-Za-z])"),)
+POUNDS = (re.compile(rf"{NUM}\s*(?i:lbs?|pounds?)\b"),)
 TONNES = (re.compile(rf"{NUM}\s*(?i:t(?![-\w])|tons?|tonnes?|tonnen)"),)
 # Round 79: "a total volume of 95.00 cubic feet" (2.69 cbm) was read by the model as 95 cbm.
-FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t(?![A-Za-z])|cu\.?\s*ft(?![A-Za-z])|ft3(?![A-Za-z\d])|ft³)"
+FEET3 = r"\s*(?i:cubic\s+f(?:ee|oo)t\b|cu\.?\s*ft\b|ft3\b|ft³)"
 FT3 = Decimal("0.028316846592")
 # "3360 litres" is 3.36 cbm; a bare "l" is left alone: "5 l canisters" names the goods, not the shipment.
 LITRE = r"\s*(?i:lit(?:er|re)s?\b|ltrs?\b)"
@@ -107,42 +111,37 @@ LOT_VOLUME = re.compile(
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
-    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse)\b",
+    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse|volumes|caixas|stuks|dozen)\b",
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
-    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-](?:critical|sensitive))|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
+    r"\b(?:not\s+(?:urgent|in\s+a\s+hurry|time[\s-]critical)|no\s+(?:rush|hurry)|nicht\s+(?:eilig|dringend)|keine\s+eile"
     r"|price\s+(?:matters|counts|is)\s+more\s+than\s+(?:speed|time)|preis\s+ist\s+wichtiger"
     r"|pas\s+(?:urgent|press[ée]\w*)"
-    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*|shortest"
+    r"|(?:not|nicht|pas)\s+(?:\w+\s+){0,4}?(?:the\s+|das\s+|die\s+|la\s+|le\s+)?(?:fastest|quickest|schnellst\w*"
     r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide)\b", re.IGNORECASE)
+FASTEST = re.compile(
+    r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide|m(?:á|a|ai)s\s+r[aá]pid[ao]|più\s+(?:veloce|rapid[ao])|snelste)\b",
+    re.IGNORECASE,
+)
 CHEAPEST = re.compile(
-    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix)\b", re.IGNORECASE
+    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix"
+    r"|m(?:á|a|ai)s\s+(?:econ[oó]mic[ao]|barat[ao])|più\s+economic[ao]|goedkoopste)\b",
+    re.IGNORECASE,
 )
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
     r"as possible|time[\s-]critical|speed\s+(?:matters|counts|is)\s+more|so schnell wie möglich|eilig\w*"
-    r"|dringend\w*"
-    # The transit as the wish: "shortest transit time", "kürzeste Laufzeit", "transit time is key", "price is secondary"
-    r"|shortest\s+(?:transit|lead|delivery|travel)(?:\s+times?)?|kürzeste\w*\s+(?:laufzeit|transitzeit|transportzeit|lieferzeit)"
-    r"|(?:transit(?:\s+time)?|speed|time)\s+is\s+(?:key|crucial|critical|essential|what\s+matters|the\s+priority)"
-    r"|(?:price|cost|rate)\s+is\s+(?:secondary|not\s+(?:an\s+issue|important|the\s+priority))"
-    r"|(?:go\s+for|prefer|need|want|choose|book)\s+(?:the\s+|an\s+)?express|express[,!]?\s+(?:please|pls)"
-    r"|next\s+flight\s+out|(?:next|first)\s+available\s+flight|time[\s-]sensitive|(?-i:AOG))\b",
-    re.IGNORECASE,
-)
-# The price named as what counts beats a transit the mail also mentions: "price is what counts now".
-PRICE_FIRST = re.compile(
-    r"\b(?:price|cost|rate)\s+is\s+(?:key|crucial|what\s+(?:counts|matters)|the\s+priority|most\s+important)\b",
+    r"|dringend\w*)\b",
     re.IGNORECASE,
 )
 DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from"
     r"|from our (?:[\w-]+\s+)?(?:site|warehouse|premises|plant|factory|shop|depot|facility|workshop|store)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
+    r"|\b(?:recogida|recoger|ritiro|ritirare|ophalen|ophaling|recolha|recolher|coleta|enlèvement|ramassage)\b"
     r"|\bcollect\w*\s+(?:them|it|the\s+(?:goods|cargo|shipment|freight|cartons|pallets|boxes|crates))\s+from\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.
@@ -639,7 +638,7 @@ def _preference(text: str) -> Preference:
     text = NOT_URGENT.sub("", text)
     if FASTEST.search(text):
         return Preference.FASTEST
-    if CHEAPEST.search(text) or PRICE_FIRST.search(text) or not HURRY.search(text):
+    if CHEAPEST.search(text) or not HURRY.search(text):
         return Preference.CHEAPEST
     return Preference.FASTEST
 
@@ -648,13 +647,7 @@ def _preference(text: str) -> Preference:
 # our future inquiries", quoted anyway and rejected as excluded_airline).
 RULED_OUT = re.compile(
     r"\b(?:not(?!\s+only\b)|never|exclud\w*|avoid\w*|without|except|other than"
-    r"|nicht(?!\s+nur\b)|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)(?!lich\b)\w*)\b|n['’]t\b",
-    re.IGNORECASE,
-)
-# A negation of something good is no exclusion: "we don't mind X", "never had issues with X", "does not require X".
-NEGATED_POSITIVE = re.compile(
-    r"(?:\b(?:not|never|no|nicht|kein\w*)\b|n['’]t\b)(?:\s+\w+){0,3}?\s+(?:mind|objection|object|problems?|issues?"
-    r"|complain\w*|require\w*|matter|preference|prefer\w*|have\s+to\s+be|has\s+to\s+be|need\s+to\s+be)\b",
+    r"|nicht(?!\s+nur\b)|kein\w*|ohne|au(?:ß|ss)er|vermeid\w*|ausschlie(?:ß|ss)(?!lich\b)\w*)\b",
     re.IGNORECASE,
 )
 LASTING = re.compile(
@@ -715,17 +708,14 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
     whether the customer means later requests too. A negation that names no known airline rules nothing out."""
     found, lasting = set(), False
     for sentence in AIRLINE_SENTENCES.split(text):
-        negated = bool(RULED_OUT.search(NEGATED_POSITIVE.sub(" ", sentence)))
-        lowered = sentence.casefold()
-        if not negated and not re.search(r"\bno\s", lowered):
+        if not RULED_OUT.search(sentence):
             continue
+        lowered = sentence.casefold()
         required = set(required_airlines(sentence, airlines))
-        # "No X, please" rules X out; a "no" elsewhere in the sentence ("no pickup needed") does not.
-        before = r"(?<!\w)" if negated else r"\bno\s+"
         names = {
             airline
             for airline in airlines - required
-            if any(re.search(rf"{before}{re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
+            if any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered) for alias in _calls(airline))
         }
         if names:
             found.update(names)

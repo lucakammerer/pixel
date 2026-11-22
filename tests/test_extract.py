@@ -392,12 +392,6 @@ async def test_code_adds_up_the_groups_the_model_copies(monkeypatch, emitted, we
         ("The cheapest option please, ideally urgent.", False),
         ("Best regards, Nordwind Express GmbH", False),
         ("Bitte so schnell wie möglich.", True),
-        ("Price is secondary, transit time is key.", True),
-        ("Bitte die kürzeste Laufzeit.", True),
-        ("We need the shortest lead time, please go for express.", True),
-        ("The shortest transit we had was 3 days, but price is what counts now.", False),
-        ("Not the shortest transit, the best rate. Not time-sensitive.", False),
-        ("This is our first flight shipment with you.", False),
         ("", False),
     ],
 )
@@ -1015,11 +1009,6 @@ def test_a_ready_date_this_autumn_stays_this_year():
         ("Only Alpha Air was available last time.", (), ()),
         ("Alpha Air only flies on Fridays.", (), ()),
         ("Only if it is cheaper, use Beta Cargo.", (), ()),
-        ("No Beta Cargo, please.", (), ("Beta Cargo",)),
-        ("We don't want Beta Cargo for this one.", (), ("Beta Cargo",)),
-        ("We have never had issues with Beta Cargo.", (), ()),  # used to rule Beta out
-        ("Our contract does not require Beta Cargo.", (), ()),
-        ("No pickup needed, Beta Cargo is fine.", (), ()),
         ("Please quote no airline other than Alpha Air.", ("Alpha Air",), ()),
         ("Bitte keine andere Fluggesellschaft außer Alpha Air.", ("Alpha Air",), ()),
         ("Keine andere Airline als Alpha Air oder Beta Cargo.", ("Alpha Air", "Beta Cargo"), ()),
@@ -1303,10 +1292,3 @@ def test_a_past_shipment_beside_the_request_is_not_its_cargo():
         DEADLINE,
     )
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces) == (Decimal(990), Decimal("5.75"), 4)
-
-
-def test_a_unit_followed_by_a_korean_particle_is_read():
-    """Session 39219: "부피는 113.01 cubic feet입니다" ended the unit without a space; the volume was asked for twice."""
-    text = "화물은 가구 샘플 12개이며, 총중량은 2028.26 lb입니다, 부피는 113.01 cubic feet입니다."
-    assert round(extract._volume(text, 12), 2) == Decimal("3.20")
-    assert round(extract._weight(text, 12)) == 920

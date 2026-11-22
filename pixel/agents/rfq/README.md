@@ -68,9 +68,6 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
-- A negation of something good rules no airline out: "we don't mind X", "never had issues with X", "does not
-  require X" (`NEGATED_POSITIVE`); "don't want X" and "No X, please" do rule it out, "no pickup needed, X is
-  fine" does not.
 - `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names ("<airline> only",
   "nur mit ...", and "no airline other than ...", "keine andere Airline als ...", which `excluded_airlines` no longer
   reads as ruling that airline out).
@@ -306,6 +303,13 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "our budget is around 3300 EUR" (rounds 101, 102: ignored, accepted at the best price), "last month we shipped
   1250 kg". Cargo figures are read without sentences about a past shipment (`PAST_SHIPMENT`); a request that only
   says "same as last time: 990 kg" goes to the model.
+
+
+- A request in Spanish, Italian, Dutch or Portuguese is read by rules like a French one: the destination after
+  "a", "para", "hacia", "per DFW", "naar"; the pickup as "recogida", "ritiro", "ophalen", "recolha"; pieces as
+  "bultos", "colli", "volumes", "stuks"; "más/mais rápida", "più veloce", "snelste" fastest and "más económica",
+  "più economica", "goedkoopste", "mais barata" cheapest. Read by rules without the wish words, a fastest request
+  would have been quoted cheapest. Portuguese is still answered in English (`_language`).
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
@@ -412,11 +416,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   under-prices a light, bulky shipment.
 - "Not urgent", "no rush" and "price matters more than speed" contain the urgency words: they mean cheapest. A
   superlative the customer wrote (fastest, cheapest) decides; without one, a hurry they describe ("as quickly as
-  possible", "time-critical", "speed matters more", "shortest transit time", "kürzeste Laufzeit", "transit time is
-  key", "price is secondary", "next flight out", "time-sensitive", "AOG") means fastest; "price is what counts" beats
-  a transit the mail also mentions (`PRICE_FIRST`). "Express" counts only as a service or a wish ("express please",
-  "go for express"), not in a company's name. The model reads no wish when the rules read the request, so a missed
-  one is quoted as cheapest. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
+  possible", "time-critical", "speed matters more") means fastest. "Express" counts only as a service, not in a
+  company's name. A negated superlative ("not the fastest", "muss nicht das schnellste sein") is no wish, and
   "quickly" alone is about our reply, not the flight.
 - A request can come as labelled bullets ("- Destination airport: Toronto (YYZ), CA"): a label may carry the word
   airport before its colon.
@@ -501,8 +502,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - The rules' preference and currency are final: no model checks them when the rules read a request.
   `tests/fixtures/request-variants.json` writes one request many ways (labels, a table, German, French, units,
   separators); each must be read right or go to the model. Its `hole` entries are wordings misread today, as
-  strict xfails: a currency in words, as a symbol, as "Price: USD" or beside a second currency reads as none and is
-  quoted in EUR.
+  strict xfails: speed without a superlative or "urgent" ("next flight out", "shortest transit",
+  "time-sensitive", "AOG", "Express please") reads as cheapest; a currency in words, as a symbol, as "Price:
+  USD" or beside a second currency reads as none and is quoted in EUR.
 
 ## Open
 
