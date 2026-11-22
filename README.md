@@ -4,7 +4,7 @@
 
 [Open PIXEL](https://pixel.46.224.176.105.sslip.io)
 
-Sign in with the username `pixel`. Ask the PIXEL team for the password.
+Sign in with the username `pixel`. password: 'UDP2rmc7wvr-xpe8nvy'
 
 A digital air forwarder for the 5U AI challenge at START Hack Munich 2026, "Who answers at 2 a.m.?". It reads one
 mailbox, prices every air export request from tariff sheets, the rate portal and carrier bids, quotes within
