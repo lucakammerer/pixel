@@ -60,6 +60,9 @@ accepted only within 5% of the best price, and only as our first reply within 6 
 request, our answer to the change mail is the one scored (round 86). Code calculates the price.
 A request normally uses one small gateway call.
 
+During a portal outage, a request with a sheet price can wait until 115 seconds after receipt for a pending rate
+desk reply. If the desk stays silent, PIXEL quotes the best price it has.
+
 If the normal handler ends without a quote, or the request is still unanswered 2 minutes 30 seconds after receipt,
 the orchestrator takes over. It checks stored prices and runs a short second sourcing pass if needed. PIXEL can wait
 for a price that meets an explicit airline, arrival or transit requirement. It labels any alternative at the deadline. A door-to-port

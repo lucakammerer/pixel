@@ -3,6 +3,7 @@ portal is mocked at HTTP level, carriers and the rate desk answer through `bids.
 
 import asyncio
 from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal as D
 
 import httpx
@@ -12,9 +13,9 @@ import respx
 from pixel import llm
 from pixel.api.mailbox import RATEDESK
 from pixel.api.portal import Portal
-from pixel.contracts import Preference, Source
-from pixel.core import events
-from pixel.pricing import bids, engine, selection
+from pixel.contracts import LaneTariff, Preference, Source
+from pixel.core import events, timing
+from pixel.pricing import bids, engine, selection, store
 from tests.test_bids import ctx, deadline, kinds, mail, rfq  # noqa: F401  ctx is the fixture
 
 BASE = "https://portal.test"
@@ -143,6 +144,37 @@ async def test_a_desk_answer_without_rates_is_not_read_by_the_model(ctx):  # noq
     events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=rfq().model_dump(mode="json"))
     await bids.record(ctx, mail(RATEDESK, "Hello,\n\nrates for AAA-BBB are currently unavailable.\n\nRate Desk"))
     assert kinds(ctx, "bid.received")[-1]["priced"] is False and not kinds(ctx, "error")
+
+
+@pytest.mark.parametrize("desk_replies", [True, False])
+async def test_sheet_quote_gives_pending_desk_a_short_extra_window(ctx, offline, monkeypatch, desk_replies):  # noqa: F811
+    answer_rates(offline, "503")
+    monkeypatch.setattr(bids, "DESK_CUTOFF_S", 0.6)
+    monkeypatch.setattr(bids, "POLL_S", 0.01)
+    ctx.settings = replace(ctx.settings, bid_wait_s=0)
+    request = rfq(preference=Preference.FASTEST)
+    today = request.received_at.date()
+    store.upsert(ctx, [LaneTariff(
+        carrier="Air One", origin=request.origin, destination=request.destination, currency="EUR",
+        valid_from=today, valid_to=today, version="test", transit_days=5, minimum=D(400),
+        breaks=((D(0), D(4)),), fuel_per_kg=D(0), security_per_kg=D(0), source="test",
+    )])  # fmt: skip
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    started = timing.now()
+    window = replace(deadline(2), received_at=started, target_at=started + timedelta(seconds=0.15))
+
+    async def answer():
+        await wait_for(ctx, 2)
+        await asyncio.sleep(max(0, (window.target_at - timing.now()).total_seconds()) + 0.04)
+        if desk_replies:
+            await bids.record(ctx, mail(RATEDESK, DESK))
+
+    found, _ = await asyncio.gather(engine.options(ctx, request, window), answer())
+    best = selection.select(request, found)
+    assert best.source == (Source.RATEDESK if desk_replies else Source.SHEET)
+    assert best.total == (D("690.00") if desk_replies else D("400.00"))
+    if not desk_replies:
+        assert timing.now() >= started + timedelta(seconds=0.6)
 
 
 async def test_a_lane_nothing_else_prices_asks_the_desk_and_mails_the_airlines_it_names(ctx, offline):  # noqa: F811
