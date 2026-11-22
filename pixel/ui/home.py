@@ -23,9 +23,9 @@ CSS = """<style>
 /* a soft light behind the top of the page, a faint dot grid fading out */
 .glow{position:absolute;left:0;right:0;top:0;height:720px;pointer-events:none;z-index:-1;overflow:hidden}
 .glow::before{content:"";position:absolute;inset:0;background:
-radial-gradient(560px 340px at 18% 12%,rgba(42,91,215,.13),transparent 70%),
-radial-gradient(520px 320px at 82% 18%,rgba(109,74,224,.10),transparent 70%),
-radial-gradient(700px 300px at 50% 100%,rgba(42,91,215,.05),transparent 70%)}
+radial-gradient(560px 340px at 18% 12%,rgba(217,95,59,.12),transparent 70%),
+radial-gradient(520px 320px at 82% 18%,rgba(232,121,90,.09),transparent 70%),
+radial-gradient(700px 300px at 50% 100%,rgba(217,95,59,.04),transparent 70%)}
 .glow::after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(20,22,28,.09) 1px,transparent 1px);
 background-size:22px 22px;-webkit-mask-image:linear-gradient(180deg,#000,transparent 80%);
 mask-image:linear-gradient(180deg,#000,transparent 80%)}
@@ -36,21 +36,18 @@ h2.big{font-size:28px;font-weight:500;letter-spacing:-.025em;line-height:1.15;ma
 background-clip:text;color:transparent}
 .hero2 p.lead{font-size:16px;color:var(--ink-2);max-width:540px;margin:0 0 28px;text-wrap:pretty}
 .cta{display:flex;gap:10px;flex-wrap:wrap}.cta .btn{height:40px;padding:0 18px;font-size:15px}
-.clockcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px;
-box-shadow:var(--shadow-lg)}
+.clockcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
 .clockcard .k{font-size:12px;color:var(--muted)}
 .clockcard .big{font-size:28px;font-weight:500;letter-spacing:-.025em;margin-bottom:6px;font-variant-numeric:tabular-nums;line-height:1.1}
 .clockcard .row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
 .clockcard .row:first-of-type{border-top:0}.clockcard .row b{font-variant-numeric:tabular-nums}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:48px}
-.kpis>div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
-box-shadow:var(--shadow-sm);transition:transform .2s,box-shadow .2s}
-.kpis>div:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.kpis>div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
 .kpis .k{font-size:12px;color:var(--muted)}.kpis .v{font-size:28px;font-weight:500;letter-spacing:-.025em;line-height:1.2;
 font-variant-numeric:tabular-nums;margin-top:2px}.kpis .note{font-size:12px;color:var(--muted)}
 .photos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:80px}
 .photo{position:relative;min-height:340px;border-radius:24px;overflow:hidden;display:flex;flex-direction:column;
-justify-content:flex-end;padding:28px;color:#fff;box-shadow:var(--shadow)}
+justify-content:flex-end;padding:28px;color:#fff}
 .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .8s ease}
 .photo:hover img{transform:scale(1.03)}
 .photo::before{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(90deg,rgba(15,20,40,.72),
@@ -183,8 +180,7 @@ async def home(request: Request, q: str = "", state: str = ""):
         "<p class=lead>Send an air export request at any hour. PIXEL reads it, prices it across rate sheets, "
         "the rate portal and live carrier bids, and answers with one all-in price within minutes. "
         "It books when you accept and tells you where your shipment is.</p>"
-        "<div class=cta><a class='btn primary' href='/dashboard'>Open the live dashboard</a>"
-        "</div></div>"
+        "</div>"
         "<div class=clockcard><div class=k>Last answer sent</div>"
         f"<div class=big>{clock(last)[:5] if last else '—'}</div>"
         f"<div class=row><span>Requests answered</span><b>{n['answered']} / {n['requests']}</b></div>"
