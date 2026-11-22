@@ -641,7 +641,7 @@ it or after booking, body and file and later correction, another language and sc
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
 
-## Axis P: price against the scorer's best (22.11.2026 13:10, live database to round 186)
+## Axis P: price against the scorer's best (22.11.2026 13:20, live database to round 190)
 
 `uv run python -m tools.price_ledger <database>` prints the rows below from a copy of the live database: every
 round lost on price or on accuracy points, and every accepted round today's code would quote otherwise (none today:
@@ -654,7 +654,7 @@ so it is within 5 % of the scorer's best for every best up to the range shown; i
 **Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted `feedback` events:
 round 93 was written 40 times, once per 10 s poll from 00:21 to 00:28 UTC, round 94 three times). **Today 26 of the 28 move past the verdict's
 bound with the source, rule or reading that was missing then. 15 and 16 pass once the customer names the pickup place,
-which today's code asks for (proven on 17, 18, 20 and 131); the place they would name is not in the database.**
+which today's code asks for (proven on 17, 18, 20, 131 and 189: asked, Nordlicht named Cologne, quoted CGN zone 50, 45 of 45); the place they would name is not in the database.**
 Cycle 4 added 130 (the document's 1144 kg, proven by the cross-check's own record) and 67 (Domblick's voice message,
 read since 21:59, priced from its other answers). Cycle 2 added
 17, 18 and 20 (priced at the place the customer named when asked) and 33 to 35 (priced at the figure today's rules
@@ -721,7 +721,7 @@ A contradiction is a lost round the rule alone explains and no other cause does.
 | The insurance premium on the customer's terms in the all-in | 3 (92, 109, 164) | 0 | 91 lost without it |
 | Arrival = ready day + transit, no day added for the trucker (hot repair A; before: a day more with a trucker) | 2 (170; 179 today) | 0 | before the repair 179 contradicted the extra day |
 | A figure the attached document states over the mail's (weight, volume) | 3 accepted since (`test_extract`) and 33, 34, 35 at the document's figure | 0 | 130 too, by hand at 1144 kg |
-| A pickup without a place is priced at the place the customer names when asked | 1 (131: Augsburg, 45 of 45) and 17, 18, 20 at the named place | 0 | 15 and 16: never asked |
+| A pickup without a place is priced at the place the customer names when asked | 2 (131: Augsburg; 189: Cologne; 45 of 45 each) and 17, 18, 20 at the named place | 0 | 15 and 16: never asked |
 | A converted unit rounded to 0.01 before pricing | 1 (136, by the points) | 0 | — |
 | An airline bid or the rate desk as the price | 4 (29, 45, 46, 47) | 0 | — |
 | Minimum on the freight, surcharges on billed weight, a quote in another currency | no scored round tests them | — | every sheet quoted above its minimum; no sheet quoted at a higher break with surcharges; every request asked EUR |
@@ -731,13 +731,13 @@ pickup longer than a day, the portal's transit against the sheet's, "by Friday".
 arrival limit, so none of these is tested by a scored round. Cheapest live evidence: the next round with an arrival
 limit and a door pickup whose ready day is a Friday, read with `tools.price_ledger`.
 
-Every scored round, cycle 4 (the ledger's last line): 186 scored, 136 accepted. Of these, today's code quotes 124
-exactly as sent and 1 a cent apart (46); all 128 with a session, the 3 that lost accuracy points included (13, 27,
-136), are within 5 % of the best their points give (at 45 points: the quote itself); 8 have no session in this
-database (1 to 7, 107). 28 lost on price, above. The other 22 rejections were judged on something else than the
-price (Axis R); 186 (`not_what_was_asked`, 22.11. 09:45) is new: a Turkish "en hızlı seçeneği istiyoruz" (fastest)
-read as cheapest, so Aurelia 3 d at 844.49 went out instead of Fjordline 2 d at 1194.71. The scorer now names a
-wrong kind of option by its own reason rather than as too low; hot repair A holds it (claim 56183, `extract.py`).
+Every scored round, cycle 5 (the ledger's last line, live database to round 190): 190 scored, 140 accepted. Of
+these, today's code quotes 127 exactly as sent and 1 a cent apart (46); all 131 with a session, the 3 that lost
+accuracy points included (13, 27, 136), are within 5 % of the best their points give (at 45 points: the quote
+itself); 9 have no session in this database (1 to 7, 107, and one not yet matched). 28 lost on price, above. The
+other rejections were judged on something else than the price (Axis R). 186 (`not_what_was_asked`, 22.11. 09:45:
+a Turkish "en hızlı seçeneği istiyoruz", fastest, read as cheapest) passes on today's `main`: hot repair A's reading
+gives fastest, so Fjordline 2 d at 1194.71 instead of Aurelia 3 d at 844.49.
 
 Open, none of them a price or selection rule: 15 and 16, the place the customer would name (generalize). Predicted,
 not yet live: one trucker's answer unreadable (a scan, a failed transcription) while the others priced; the pickup

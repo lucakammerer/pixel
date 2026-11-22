@@ -90,6 +90,8 @@ async def _reading(ctx: Context, session_id: int) -> Rfq | str:
     raw = json.loads(row["data"])["raw"]
     if raw.get("attachments"):
         return "its attachments are not stored"
+    if ctx.db.execute("SELECT 1 FROM messages WHERE session_id = ? AND purpose = 'question'", (session_id,)).fetchone():
+        return "we asked the customer: offline there is no answer"
     message = to_message(raw, "in")
     token = timing.clock.set(lambda: message.sent_at)
     try:
