@@ -236,6 +236,20 @@ async def test_bid_wait_counts_only_the_current_enquiries(conn, monkeypatch):
         await asyncio.gather(task, return_exceptions=True)
 
 
+async def test_a_further_shipments_bids_end_its_wait_on_its_own_lane(conn, monkeypatch):
+    # Rounds 113, 127, 150 and 151: the bids were matched on the first shipment's lane and the quote waited until 100 s.
+    ctx = make_ctx(conn)
+    rfq = make_quote(mail("Freight")).rfq
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, payload=rfq.model_dump(mode="json"))
+    other = rfq.model_copy(update={"destination": "CCC"})
+    events.emit(ctx, "bid.received", "pricing", session_id=rfq.session_id,
+                payload={"request_id": 12, "origin": other.origin, "destination": "CCC", "pickup": False,
+                         "carrier": "Test Air"})  # fmt: skip
+    monkeypatch.setattr(bids, "POLL_S", 0.001)
+    deadline = deadline_for(datetime.now(UTC), ctx.settings)
+    assert await asyncio.wait_for(bids.collect(ctx, rfq.session_id, deadline, [12], rfq=other), timeout=1) == []
+
+
 async def test_late_carrier_offer_is_quoted_once_and_the_acceptance_books_once(conn, monkeypatch):
     ctx = make_ctx(conn, quote_target_s=0, quote_hard_s=5, bid_wait_s=0)
     msg = mail("Please quote AAA to BBB, 100 kg, 0.3 cbm.").model_copy(update={"sent_at": datetime.now(UTC)})
