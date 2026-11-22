@@ -268,7 +268,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
   to the model.
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
-  the pickup zone's airport unless the mail names the origin code itself.
+  the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
+  for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
+  code after "not" or "instead of" is ruled out).
 - A mail can supply the weight while a packing list supplies volume, dimensions or piece count. `read_request`
   excludes attachments that name a different origin or destination airport (another shipment, #164). For weight
   and volume, an explicit email correction takes precedence, and "use the weight in this email" keeps the mail's.

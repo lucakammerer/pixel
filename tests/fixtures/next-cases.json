@@ -342,6 +342,17 @@
    },
    "today": "Helix 1635.00 EUR, the wish ignored.",
    "known_gap": "No routing data in sheets or portal yet Owner: Accuracy."
+  },
+  {
+   "fixture": "next-cases/trucker-pickup-time-in-days.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Taunusfracht",
+    "total": "2562.62",
+    "currency": "EUR",
+    "note": "FRA-SGN 900 kg: Orion 2380.00 (kit). Truckers 24 h / 72 h / 48 h; balanced (price/best + hours/best): Taunusfracht 182.62/95.40 + 24/24 = 2.914, Westfalenroute 3.468, Domblick 4.000"
+   },
+   "today": "Fixed by accuracy/pickup-time-units. Before: no pickup hours read, so fewer than two timed bids and the cheapest trucker (Domblick 95.40): 2475.40, 3.4% low."
   }
  ]
 }
