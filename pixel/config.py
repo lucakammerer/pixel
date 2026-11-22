@@ -48,6 +48,6 @@ def settings() -> Settings:
         signer=env.get("PIXEL_SIGNER", "Lena Berger"),
         precheck=env.get("PIXEL_PRECHECK", "on").strip().lower(),
         repair=env.get("PIXEL_REPAIR", "on").strip().lower(),
-        second_read=env.get("PIXEL_SECOND_READ", "on").strip().lower(),
+        second_read=env.get("PIXEL_SECOND_READ", "log").strip().lower(),  # on after a measured live hour
         portal_page=env.get("PIXEL_PORTAL_PAGE", "https://start-hack.5u.ai/portal/ui"),
     )

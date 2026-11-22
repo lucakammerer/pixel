@@ -133,8 +133,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   again (`_repriced`: the sheets, the portal for at most `REPRICE_PORTAL_S`, the pickups found; airline bids were
   given for the old weight) and the airline prices of the old chargeable weight are left out (`option.vetoed`,
   `kind: chargeable`); with no price for it, the rules' reading stands. Not on a mail of several shipments.
-  `PIXEL_SECOND_READ`: `on`, `log` (the dissent is an event, no gpt-4.1 call) or `off` (the prose call reads the name
-  alone, as before).
+  `PIXEL_SECOND_READ`: `on`, `log` (the dissent is an event, no gpt-4.1 call; the default until a live hour shows how
+  often the larger model was right) or `off` (the prose call reads the name alone, as before). Known weakness for
+  `on`: `check.weight_readings` and `volume_readings` also yield partial or other figures of the mail ("Last shipment
+  was 800 kg", a per-piece weight times a count), so a model dissent that matches one of them would be priced.
 - `agent.py` `_followup_wait`: a newer mail of the customer in the thread that no handler has finished
   (`mail_work`; the answer to our question excluded) holds the quote at most `FOLLOWUP_WAIT_S`, so a change is read
   and priced again by `booking.handle_reply` (`outbox.quoted` then holds this quote back); still unread, the quote

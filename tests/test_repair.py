@@ -454,7 +454,7 @@ async def _second(conn, monkeypatch, figures, crosscheck=None, **settings):
     from pixel.contracts import LlmResult
     from pixel.core.orchestrator import Deadline
 
-    ctx = make_ctx(conn, **({"model_check": "gpt-4.1"} | settings))
+    ctx = make_ctx(conn, **({"model_check": "gpt-4.1", "second_read": "on"} | settings))
     request = _request(ctx, weight="900", volume="6")  # the rules took group A alone
     _body(conn, request.message_id, TWO_GROUPS)
     events.emit(ctx, "rfq.second_read", "rfq", session_id=request.session_id, payload={"figures": figures})
