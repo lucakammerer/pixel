@@ -13,6 +13,7 @@ from pixel.core.context import Context
 
 KINDS = (
     "mail.in", "mail.out", "mail.held",  # held: dry run, or a session a person took over
+    "mail.clock",  # core/poller.py: a stored time later than now or earlier than its evidence, and the time used
     "route",
     "rfq.extracted", "rfq.evidence", "rfq.dangerous_goods", "option.found", "option.failed", "bid.requested", "bid.received", "bid.skipped",
     "bid.desk_wait",  # pricing/bids.py: a pending desk reply extends bid collection

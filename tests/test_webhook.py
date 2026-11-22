@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -45,3 +46,19 @@ def test_a_signed_push_is_dispatched_once_and_a_forged_or_old_one_never(conn, mo
         assert push(client, b'{"event": "ping", "team": "t"}').status_code == 204
     assert seen == [raw["id"]]
     assert conn.execute("SELECT count(*) FROM events WHERE kind = 'mail.in'").fetchone()[0] == 1
+
+
+def test_a_pushed_request_stamped_long_before_its_push_is_not_dropped_as_expired(conn, monkeypatch):
+    async def dispatch(ctx, message):
+        return None
+
+    monkeypatch.setattr(orchestrator, "dispatch", dispatch)
+    app = FastAPI()
+    app.include_router(webhook.router)
+    app.state.ctx = Context(dataclasses.replace(settings(), webhook_secret=SECRET), conn, None, None, None, None)
+    raw = {**json.loads(MAIL.read_text()), "received_at": "2026-11-21T08:00:00+00:00"}  # a day before the push
+    with TestClient(app) as client:
+        assert push(client, json.dumps({"event": "mail.received", "message": raw}).encode()).status_code == 204
+    stored = conn.execute("SELECT sent_at FROM messages WHERE id = ?", (raw["id"],)).fetchone()["sent_at"]
+    assert abs(time.time() - webhook.PUSH_SLACK.total_seconds() - datetime.fromisoformat(stored).timestamp()) < 5
+    assert conn.execute("SELECT count(*) FROM events WHERE kind = 'mail.clock'").fetchone()[0] == 1

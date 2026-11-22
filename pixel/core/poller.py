@@ -3,13 +3,14 @@
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta
 from math import isfinite
 
 from pixel.agents.rfq.booking import CONFIRMED
 from pixel.api.client import ApiError
 from pixel.api.mailbox import RATEDESK, mapping_gaps
 from pixel.contracts import Message
-from pixel.core import db
+from pixel.core import db, timing
 from pixel.core.context import Context
 from pixel.core.events import emit
 from pixel.crm import bookings
@@ -17,6 +18,10 @@ from pixel.crm import bookings
 SINCE_KEY = "poller.since_id"
 NAMES_OUR_MAIL = re.compile(r'your mail "(.+?)"')
 POLL_LIMIT = re.compile(r"\bone poll per (\d+(?:\.\d+)?) seconds?\b", re.IGNORECASE)
+POLL_PAGE = 200
+# How far a stored time may lie past the evidence before it is corrected: clocks and the API's own lag.
+AHEAD_SLACK = timedelta(seconds=5)
+POLL_SLACK = timedelta(seconds=10)
 
 
 def session_of(ctx: Context, message: Message) -> int:
@@ -56,9 +61,31 @@ def store(ctx: Context, message: Message) -> bool:
     return cursor.rowcount == 1
 
 
-def ingest(ctx: Context, message: Message) -> Message | None:
-    """Session, store, `mail.in`. None for a mail we already hold."""
+def bounded(ctx: Context, message: Message, stored_after: datetime | None = None) -> Message:
+    """The deadline runs from the mail's stored time (R1), so it is kept unless it is impossible: later than now, or
+    already expired when we see it although `stored_after`, the evidence that the mail was stored after it (a signed
+    push's time, a complete earlier poll without it), is later. A naive local time read as UTC puts a request an
+    hour ahead and no timer fires before it expired; an hour behind, it is dropped as expired unanswered. A stored
+    time that leaves the request any time is never moved: the evidence can be late too (a queued push). Each
+    correction is a `mail.clock` event."""
+    from pixel.core.orchestrator import EXPIRES_AFTER
+
+    at, low, high = message.sent_at, stored_after, timing.now()
+    expired = at <= high - EXPIRES_AFTER
+    used = high if at > high + AHEAD_SLACK else low if expired and low is not None and at < low else at
+    if used == at:
+        return message
+    emit(ctx, "mail.clock", "poller", session_id=message.session_id, message_id=message.id,
+         payload={"stored_at": at.isoformat(), "used": used.isoformat(), "ahead": at > used})  # fmt: skip
+    return message.model_copy(update={"sent_at": used})
+
+
+def ingest(ctx: Context, message: Message, stored_after: datetime | None = None) -> Message | None:
+    """Session, stored time within its evidence (`bounded`), store, `mail.in`. None for a mail we already hold."""
     message = message.model_copy(update={"session_id": session_of(ctx, message)})
+    if ctx.db.execute("SELECT 1 FROM messages WHERE id = ?", (message.id,)).fetchone():
+        return None
+    message = bounded(ctx, message, stored_after)
     with db.atomic(ctx.db):
         if not store(ctx, message):
             return None
@@ -91,10 +118,15 @@ def spawn(ctx: Context, coro: Awaitable[None]) -> asyncio.Task:
     return task
 
 
-def accept(ctx: Context, message: Message, on_message: Callable[[Message], Awaitable[None]]) -> bool:
+def accept(
+    ctx: Context,
+    message: Message,
+    on_message: Callable[[Message], Awaitable[None]],
+    stored_after: datetime | None = None,
+) -> bool:
     """One mail from a poll or a push: ingest, then dispatch without blocking the caller."""
     try:
-        stored = ingest(ctx, message)
+        stored = ingest(ctx, message, stored_after)
     except Exception as e:  # noqa: BLE001  one bad mail must not stop the mailbox
         emit(ctx, "error", "poller", message_id=message.id, payload={"where": "ingest", "error": repr(e)})
         return False
@@ -109,9 +141,11 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
     since_id = int(db.get(ctx.db, SINCE_KEY) or 0)
     interval = ctx.settings.poll_seconds
     failing = False
+    complete_at = None  # when the last complete poll started: a mail it did not hold was stored after it
     while True:
+        started = timing.now()
         try:
-            messages, next_since_id = await ctx.mailbox.poll(since_id)
+            messages, next_since_id = await ctx.mailbox.poll(since_id, POLL_PAGE)
             failing = False
         except Exception as e:  # noqa: BLE001
             if not failing:  # one event per outage, not one per second
@@ -126,8 +160,10 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
                     delay = max(delay, e.retry_after)
             await asyncio.sleep(delay)
             continue
+        stored_after = complete_at - POLL_SLACK if complete_at else None
+        complete_at = started if len(messages) < POLL_PAGE else None
         for message in messages:
-            if not accept(ctx, message, on_message):
+            if not accept(ctx, message, on_message, stored_after):
                 # Preserve the last durable cursor so a transient storage failure cannot lose this mail.
                 break
             since_id = message.id
@@ -136,6 +172,6 @@ async def run(ctx: Context, on_message: Callable[[Message], Awaitable[None]]) ->
             if next_since_id > since_id:
                 since_id = next_since_id
                 db.put(ctx.db, SINCE_KEY, str(since_id))
-            if len(messages) >= 200 and interval == ctx.settings.poll_seconds:
+            if len(messages) >= POLL_PAGE and interval == ctx.settings.poll_seconds:
                 continue
         await asyncio.sleep(interval)

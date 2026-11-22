@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import dataclasses
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -85,3 +86,53 @@ def test_standalone_confirmation_session(conn, subject, body, known):
     expected = booking.session_id if known else message.id
     assert poller.ingest(ctx, message).session_id == expected
     assert conn.execute("SELECT session_id FROM events WHERE kind = 'mail.in'").fetchone()[0] == expected
+
+
+def _rfq_at(stored_at):
+    raw = json.loads((MAILS / "rfq-door-no-origin.json").read_text())
+    return to_message({**raw, "received_at": stored_at.isoformat()}, "in")
+
+
+@pytest.mark.parametrize(
+    ("offset", "evidence", "used"),
+    [
+        (timedelta(hours=1), None, timedelta(0)),  # a naive CET time read as UTC: now, never an hour ahead
+        (timedelta(seconds=3), None, timedelta(seconds=3)),  # within the slack: kept
+        (timedelta(hours=-1), None, timedelta(hours=-1)),  # no evidence (a backlog after a restart): kept, expired
+        (timedelta(hours=-1), timedelta(seconds=-20), timedelta(seconds=-20)),  # stored after a complete poll
+        (timedelta(minutes=-4), timedelta(seconds=-20), timedelta(minutes=-4)),  # time left: the stamp stands
+    ],
+)
+def test_a_stored_time_is_moved_only_when_it_is_impossible(conn, monkeypatch, offset, evidence, used):
+    now = datetime(2026, 11, 22, 1, 0, tzinfo=UTC)
+    monkeypatch.setattr(poller.timing, "now", lambda: now)
+    ctx = Context(settings(), conn, None, None, None, None)
+    stored = poller.ingest(ctx, _rfq_at(now + offset), now + evidence if evidence is not None else None)
+    assert stored.sent_at == now + used
+    moved = conn.execute("SELECT count(*) FROM events WHERE kind = 'mail.clock'").fetchone()[0]
+    assert moved == (used != offset)
+
+
+async def test_a_request_stamped_an_hour_early_still_gets_its_quote(conn, monkeypatch):
+    """The second poll proves the mail was stored after the first one started: answered, not dropped as expired."""
+    from pixel.core import orchestrator
+
+    config = dataclasses.replace(settings(), poll_seconds=0.001)
+    mailbox = FakeMailbox([])
+    ctx = Context(config, conn, mailbox, None, None, None)
+    late = _rfq_at(datetime.now(UTC) - timedelta(hours=1))
+    real_poll = mailbox.poll
+
+    async def poll(since_id, limit=200):
+        if len(mailbox.since) == 2:
+            mailbox.mails = [late]
+        return await real_poll(since_id, limit)
+
+    mailbox.poll = poll
+    seen = []
+    await run_briefly(ctx, seen)
+    assert seen == [late.id]
+    row = conn.execute("SELECT sent_at FROM messages WHERE id = ?", (late.id,)).fetchone()
+    stored_at = datetime.fromisoformat(row["sent_at"])
+    deadline = orchestrator.deadline_for(stored_at, config)
+    assert deadline.expires_at > datetime.now(UTC) + timedelta(minutes=5)
