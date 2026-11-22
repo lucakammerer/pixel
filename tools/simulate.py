@@ -354,10 +354,16 @@ def _tariff_sheet() -> tuple[list[list[str]], dict[str, str]]:
     return [c for c in cells if c], want
 
 
+def _spoken_file(lines: list[list[str]]) -> bytes:
+    """A voice message as its transcript: `run` reads it back for `tariffs._transcribe`, the speech model offline."""
+    return "\n".join(" ".join(cells) for cells in lines).encode()
+
+
 def other_kind_cases() -> list[Case]:
-    """Each other kind's decisive fact only in the attachment, in every format the RFQ documents come in."""
+    """Each other kind's decisive fact only in the attachment, in every format the RFQ documents come in, and said in
+    a voice message (rounds 65 and 67 brought requests and offers as mp3)."""
     cases, (sheet, prices) = [], _tariff_sheet()
-    for fmt, write in WRITERS.items():
+    for fmt, write in {**WRITERS, "mp3": _spoken_file}.items():
         for (says, lang), text in REPLIES.items():
             lines = [["Re: your quotation"], ["Date:", "2026-11-21"], [text], ["Mira Petersen, Nordlicht Audio"]]
             cases.append(Case("document", {"kind": "customer_reply", "format": fmt, "says": says, "lang": lang},
@@ -373,6 +379,8 @@ def other_kind_cases() -> list[Case]:
                           "Hello,\n\nplease find the confirmation of your booking attached.\n\nKestrel Airways",
                           [(f"confirmation.{fmt}", write(lines))], {k: r for k, (_, r) in REFERENCES.items()},
                           "booking_confirmation"))  # fmt: skip
+        if fmt == "mp3":  # a tariff is no voice message
+            continue
         cases.append(Case("document", {"kind": "tariff", "format": fmt}, "Tariff update",
                           "Hello,\n\nplease find our new air export tariff attached.\n\nTestline Cargo",
                           [(f"testline-cargo-tariff-2026-11.{fmt}", write(sheet))], prices, "tariff"))  # fmt: skip
@@ -827,13 +835,14 @@ async def run(cases: list[Case]) -> list[Outcome]:
     # The rules are measured: the model's cross-check of a request they read (`extract._crosscheck`) would count
     # every case as left to the model.
     ctx = Context(replace(settings(), model_check=""), conn, None, None, None, None)
-    ask_json, gaps = llm.ask_json, known_gaps()
+    ask_json, transcribe, gaps = llm.ask_json, tariffs._transcribe, known_gaps()
+    tariffs._transcribe = lambda content: content.decode().splitlines()  # `_spoken_file`: the transcript itself
     if any(c.family == "bid" for c in cases):
         store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
     try:
         outcomes = [await (read_bid(c, ctx, i) if c.family == "bid" else read(c, ctx)) for i, c in enumerate(cases, 1)]
     finally:
-        llm.ask_json = ask_json
+        llm.ask_json, tariffs._transcribe = ask_json, transcribe
     for o in outcomes:  # a bid the rules leave to the model costs spend: its class is named too
         if o.verdict == "wrong" or (o.verdict == "model" and o.case.family == "bid"):
             o.gap = gap_of(o.case, gaps)

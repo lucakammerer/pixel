@@ -1,7 +1,6 @@
 {
   "customer_rfq scan": "A scan or photo outside a tariff mail: `tariffs.agent.attachment_lines` records it as `attachment.unreadable` and the mail is read as if it held nothing (#216). No case of this kind holds one yet, so what a right reading is stays unmeasured. Owner: Accuracy.",
   "customer_reply scan": "A scan or photo outside a tariff mail: `tariffs.agent.attachment_lines` records it as `attachment.unreadable` and the mail is read as if it held nothing (#216). No case of this kind holds one yet, so what a right reading is stays unmeasured. Owner: Accuracy.",
-  "customer_reply audio": "A voice message: `_lines` transcribes it locally (round 65), but no case of this kind runs a transcript yet; requests and pickup offers have theirs. Owner: Accuracy.",
   "customer_reply conflict": "No shape seen or generated where the mail and its attachment disagree on this kind's decisive fact; the mail's own words decide today. Owner: Generalization.",
   "airline_bid scan": "A scan or photo outside a tariff mail: `tariffs.agent.attachment_lines` records it as `attachment.unreadable` and the mail is read as if it held nothing (#216). No case of this kind holds one yet, so what a right reading is stays unmeasured. Owner: Accuracy.",
   "airline_bid audio": "No airline has answered by voice yet; the `bid` family of `tools/simulate.py` writes no audio. A trucker's voice offer is transcribed locally (round 67), an airline's would take the same path, unmeasured. Owner: Generalization.",
@@ -12,12 +11,10 @@
   "ratedesk_reply audio": "A voice message: `_lines` transcribes it locally (round 65), but no case of this kind runs a transcript yet; requests and pickup offers have theirs. Owner: Accuracy.",
   "ratedesk_reply conflict": "The rate desk has answered in its body only; `bids.record` reads an attachment through the same `_with_attachments` as a bid, untested. The `bid` family can carry the desk's layout. Owner: Generalization.",
   "booking_confirmation scan": "A scan or photo outside a tariff mail: `tariffs.agent.attachment_lines` records it as `attachment.unreadable` and the mail is read as if it held nothing (#216). No case of this kind holds one yet, so what a right reading is stays unmeasured. Owner: Accuracy.",
-  "booking_confirmation audio": "A voice message: `_lines` transcribes it locally (round 65), but no case of this kind runs a transcript yet; requests and pickup offers have theirs. Owner: Accuracy.",
   "booking_confirmation conflict": "No shape seen or generated where the mail and its attachment disagree on this kind's decisive fact; the mail's own words decide today. Owner: Generalization.",
   "tariff body": "A tariff written in the mail itself is never read: `tariffs.agent.handle` ingests attachments only. Owner: Accuracy.",
   "tariff audio": "A voice message: `_lines` transcribes it locally (round 65), but no case of this kind runs a transcript yet; requests and pickup offers have theirs. Owner: Accuracy.",
   "tariff conflict": "A tariff mail whose text changes its sheet (another validity, currency or lane): only the sheet is read, of the mail only a stated exchange rate (`_stated_fx`). Owner: Accuracy.",
   "tracking_question scan": "A scan or photo outside a tariff mail: `tariffs.agent.attachment_lines` records it as `attachment.unreadable` and the mail is read as if it held nothing (#216). No case of this kind holds one yet, so what a right reading is stays unmeasured. Owner: Accuracy.",
-  "tracking_question audio": "A voice message: `_lines` transcribes it locally (round 65), but no case of this kind runs a transcript yet; requests and pickup offers have theirs. Owner: Accuracy.",
   "tracking_question conflict": "No shape seen or generated where the mail and its attachment disagree on this kind's decisive fact; the mail's own words decide today. Owner: Generalization."
 }
