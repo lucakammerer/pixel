@@ -348,3 +348,42 @@ async def test_every_shipment_of_one_mail_is_priced_in_the_one_quote(conn, monke
     [quote] = sent
     assert (quote.option.destination, quote.total) == ("BBB", Decimal(200))
     assert "600.00 EUR" in quote.body and "800.00 EUR" in quote.body
+
+
+async def test_a_further_shipment_still_pricing_at_the_target_is_quoted_from_its_stored_prices(conn, monkeypatch):
+    """Round 150: every TLV price was stored 30 s after the mail, but its pricing task still ran at the target (a
+    rate read for the next break), so TLV was left out and the quote rejected as one_of_two."""
+    ctx = make_ctx(conn)
+    store.upsert(ctx, [LaneTariff(
+        carrier=f"Carrier {code}", origin="AAA", destination=code, currency="EUR", valid_from=date(2000, 1, 1),
+        valid_to=date(2100, 1, 1), version="example", transit_days=2, minimum=Decimal(5),
+        breaks=((Decimal(0), rate),), fuel_per_kg=Decimal(0), security_per_kg=Decimal(0), source="fixture",
+    ) for code, rate in (("BBB", Decimal(2)), ("CCC", Decimal(3)))])  # fmt: skip
+
+    async def no_lanes(ctx, **kwargs):
+        return []
+
+    options = engine.options
+
+    async def slow_for_ccc(ctx, rfq, deadline):
+        found = await options(ctx, rfq, deadline)  # the sheet's price is stored as option.found
+        if rfq.destination == "CCC":
+            await asyncio.sleep(60)
+        return found
+
+    monkeypatch.setattr(portal_rates, "lanes", no_lanes)
+    monkeypatch.setattr(engine, "options", slow_for_ccc)
+    answers(monkeypatch, {"origin": "AAA", "destination": "BBB", "weight_kg": "300", "preference": "fastest"})
+    sent = []
+
+    async def send_quote(ctx, quote, reply_to=None):
+        sent.append(quote)
+        return quote
+
+    monkeypatch.setattr(agent.outbox, "send_quote", send_quote)
+    body = "Please quote the fastest option from AAA for each of these shipments:\n1. BBB, 100 kg\n2. CCC, 200 kg"
+    msg = poller.ingest(ctx, mail(body))
+    received = datetime.now(UTC) - timedelta(seconds=ctx.settings.quote_target_s - 1)
+    await asyncio.wait_for(agent.handle(ctx, msg, deadline_for(received, ctx.settings)), 10)
+    [quote] = sent
+    assert "600.00 EUR" in quote.body and "800.00 EUR" in quote.body
