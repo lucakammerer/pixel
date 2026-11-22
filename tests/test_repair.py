@@ -323,12 +323,12 @@ async def _settle(ctx, request, options, repriced):
     return settled, seen
 
 
-def test_volume_accounting_blocks_cubic_feet_priced_as_cbm():
+def test_volume_accounting_warns_on_cubic_feet_priced_as_cbm():
     """Round 79: "95.00 cubic feet" (2.69 cbm) priced as 95 cbm."""
     text = "Please quote FRA to ORD, 300 kg, a total volume of 95.00 cubic feet. Thanks"
     wrong = rfq(weight="300", volume="95")
     option = _at(airline("9000.00"), "15865", "9000.00")
-    assert "volume_unexplained" in rules(check.run(quote(wrong, option), text, [option]), check.BLOCK)
+    assert "volume_unexplained" in rules(check.run(quote(wrong, option), text, [option]), check.WARN)
     right = rfq(weight="300", volume="2.69")
     ok = _at(airline("900.00"), "449.23", "900.00")
     assert "volume_unexplained" not in rules(check.run(quote(right, ok), text, [ok]))
@@ -340,102 +340,42 @@ def test_a_volume_that_does_not_decide_the_chargeable_weight_is_not_doubted():
     assert "volume_unexplained" not in rules(check.run(quote(rfq(weight="3000", volume="3"), option), text, [option]))
 
 
-async def test_cubic_feet_priced_as_cbm_are_priced_again_at_the_one_reading(conn):
+async def test_a_doubted_volume_only_warns_and_leaves_as_priced(conn):
+    """Rounds 152 and 153: the check doubted a right volume; a doubt it cannot prove changes nothing."""
     ctx = make_ctx(conn)
     text = "Please quote FRA to ORD, 300 kg, a total volume of 95.00 cubic feet. Thanks"
     request = _request(ctx, weight="300", volume="95")
     _body(conn, request.message_id, text)
     wrong = _at(airline("9000.00"), "15865", "9000.00")
     _session(ctx, request, [wrong])
-    right = _at(airline("900.00"), "449.25", "900.00")
-    settled, seen = await _settle(ctx, request, [wrong], [right])
-    assert seen[0].volume_cbm.quantize(Decimal("0.01")) == Decimal("2.69") and "llm.call" not in kinds(ctx)
-    assert settled.total == Decimal("900.00")
-    assert session.rfq(ctx, request.session_id).volume_cbm == seen[0].volume_cbm  # the fallback reads it too
-    assert {"kind": "chargeable", "kg": "15865", "rule": "volume_unexplained"} in _payloads(conn, "option.vetoed")
-    assert wrong not in session.options(ctx, request.session_id)
+    settled, seen = await _settle(ctx, request, [wrong], [_at(airline("900.00"), "449.25", "900.00")])
+    assert seen == [] and settled.total == Decimal("9000.00")
+
+
+LOTS = (
+    "Please quote FRA to ORD:\nLot 1: 4 cartons, each 48 kg\nLot 2: 2 pallets, 800 kg\nLot 3: 1 crate, 960 kg\nThanks"
+)
 
 
 async def test_lots_added_up_wrong_are_priced_again_at_their_sum(conn):
     """Round 9: three lots, priced on 1750 kg instead of their 1952 kg."""
     ctx = make_ctx(conn)
-    text = (
-        "Please quote FRA to ORD:\nLot 1: 4 cartons, each 48 kg\nLot 2: 2 pallets, 800 kg\nLot 3: 1 crate, 960 kg\n"
-        "Thanks"
-    )
     request = _request(ctx, weight="1750", volume="0")
-    _body(conn, request.message_id, text)
+    _body(conn, request.message_id, LOTS)
     wrong, right = _at(airline("4000.00"), "1750", "4000.00"), _at(airline("4400.00"), "1952", "4400.00")
     _session(ctx, request, [wrong])
     settled, seen = await _settle(ctx, request, [wrong], [right])
     assert seen[0].weight_kg == Decimal(1952) and settled.total == Decimal("4400.00")
 
 
-AMBIGUOUS = "Please quote FRA to ORD: 2 pallets of 300 kg each, total 600 kg. Thanks"
-
-
-def _critic(monkeypatch, data=None, error=None):
-    from pixel import llm
-    from pixel.contracts import LlmResult
-
-    calls = []
-
-    async def ask_json(ctx, **kw):
-        calls.append(kw)
-        if error:
-            raise error
-        return LlmResult(data=data, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
-
-    monkeypatch.setattr(llm, "ask_json", ask_json)
-    return calls
-
-
-async def _ambiguous(conn, monkeypatch, data=None, error=None):
-    ctx = make_ctx(conn)
-    request = _request(ctx, weight="300", volume="0")
-    _body(conn, request.message_id, AMBIGUOUS)
-    wrong, right = _at(airline("900.00"), "300", "900.00"), _at(airline("1500.00"), "600", "1500.00")
-    _session(ctx, request, [wrong])
-    calls = _critic(monkeypatch, data, error)
-    settled, seen = await _settle(ctx, request, [wrong], [right])
-    return settled, seen, calls
-
-
-async def test_the_critic_picks_among_code_readings_and_its_grounded_pick_is_priced(conn, monkeypatch):
-    settled, seen, calls = await _ambiguous(conn, monkeypatch, {"value": 600, "quote": "total 600 kg"})
-    assert len(calls) == 1 and calls[0]["purpose"] == "rfq.critic" and "Readings: 600 kg, 1200 kg" in calls[0]["user"]
-    assert seen[0].weight_kg == Decimal(600) and settled.total == Decimal("1500.00")
-    assert _payloads(conn, "rfq.critic")[0]["taken"] is True
-
-
-@pytest.mark.parametrize(
-    "data",
-    [
-        {"value": 600, "quote": "the total is 600 kg"},  # words the mail does not hold
-        {"value": 450, "quote": "total 600 kg"},  # a figure of its own
-        {"value": 1200, "quote": "total 600 kg"},  # a reading its words do not give
-        {"value": None, "quote": ""},
-    ],
-)
-async def test_an_ungrounded_critic_changes_nothing(conn, monkeypatch, data):
-    settled, seen, _ = await _ambiguous(conn, monkeypatch, data)
-    assert seen == [] and settled.total == Decimal("900.00")
-
-
-async def test_a_failing_critic_changes_nothing(conn, monkeypatch):
-    settled, seen, _ = await _ambiguous(conn, monkeypatch, error=TimeoutError())
-    assert seen == [] and settled.total == Decimal("900.00") and "error" in kinds(make_ctx(conn))
-
-
 async def test_no_reading_repair_without_a_price_for_it(conn):
     ctx = make_ctx(conn)
-    text = "Please quote FRA to ORD, 300 kg, a total volume of 95.00 cubic feet. Thanks"
-    request = _request(ctx, weight="300", volume="95")
-    _body(conn, request.message_id, text)
-    wrong = _at(airline("9000.00"), "15865", "9000.00")
+    request = _request(ctx, weight="1750", volume="0")
+    _body(conn, request.message_id, LOTS)
+    wrong = _at(airline("4000.00"), "1750", "4000.00")
     _session(ctx, request, [wrong])
     settled, seen = await _settle(ctx, request, [wrong], [])
-    assert len(seen) == 1 and settled.total == Decimal("9000.00") and _payloads(conn, "option.vetoed") == []
+    assert len(seen) == 1 and settled.total == Decimal("4000.00") and _payloads(conn, "option.vetoed") == []
 
 
 # --- step 5: the prose call as a second reader -----------------------------------------------------------------------
@@ -541,7 +481,7 @@ async def test_a_quote_waits_briefly_for_a_newer_customer_mail_to_be_read(conn):
 async def _later_case(conn, monkeypatch, *, later=False, answered=False):
     ctx = make_ctx(conn)
     request = _request(ctx, weight="1317", volume="0")  # the change mail's (round 86) or the answer's (round 104)
-    _body(conn, request.message_id, "Please quote FRA to ORD, 1200 kg. Thanks")
+    _body(conn, request.message_id, LOTS)
     if answered:
         for id_, direction, purpose, reply in ((900001, "out", "question", None), (900002, "in", None, 900001)):
             conn.execute(
@@ -553,7 +493,7 @@ async def _later_case(conn, monkeypatch, *, later=False, answered=False):
 
     async def repriced(ctx, rfq, deadline, by):
         priced.append(rfq)
-        return [_at(airline("2600.00"), "1200", "2600.00")]
+        return [_at(airline("2600.00"), "1952", "2600.00")]
 
     monkeypatch.setattr(agent, "_repriced", repriced)
     option = _at(airline("2800.00"), "1317", "2800.00")
@@ -577,25 +517,21 @@ async def test_a_weight_from_the_answer_to_our_question_is_kept(conn, monkeypatc
 
 async def test_without_a_later_mail_the_same_doubt_is_read_again(conn, monkeypatch):
     _, sent, priced = await _later_case(conn, monkeypatch)
-    assert priced[0].weight_kg == Decimal(1200) and sent.total == Decimal("2600.00")
+    assert priced[0].weight_kg == Decimal(1952) and sent.total == Decimal("2600.00")
 
 
 async def test_a_rejected_reading_leaves_its_prices_out_of_the_fallback(conn):
     ctx = make_ctx(conn)
-    text = "Please quote FRA to ORD, 300 kg, a total volume of 95.00 cubic feet. Thanks"
-    request = _request(ctx, weight="300", volume="95")
-    _body(conn, request.message_id, text)
-    wrong = _at(airline("9000.00"), "15865", "9000.00")
+    request = _request(ctx, weight="1750", volume="0")
+    _body(conn, request.message_id, LOTS)
+    wrong = _at(airline("4000.00"), "1750", "4000.00")
     _session(ctx, request, [wrong])
-    from pixel.pricing import calc
-
-    kg = calc.chargeable_kg(Decimal(300), Decimal("95.00") * check.FT3)
-    short = _at(airline("700.00"), str(kg), "700.00").model_copy(update={"billed_kg": Decimal(300)})  # still blocks
+    short = _at(airline("700.00"), "1952", "700.00").model_copy(update={"billed_kg": Decimal(300)})  # still blocks
     events.emit(ctx, "option.found", "pricing", session_id=request.session_id,
                 payload={"option": short.model_dump(mode="json")})  # fmt: skip
     settled, _ = await _settle(ctx, request, [wrong], [short])
-    assert settled.total == Decimal("9000.00")  # the guard turned the reading down
-    assert [p["rule"] for p in _payloads(conn, "option.vetoed")] == ["volume_unexplained:rejected"]
+    assert settled.total == Decimal("4000.00")  # the guard turned the reading down
+    assert [p["rule"] for p in _payloads(conn, "option.vetoed")] == ["weight:rejected"]
     assert short not in session.options(ctx, request.session_id) and wrong in session.options(ctx, request.session_id)
 
 

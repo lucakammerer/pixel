@@ -195,15 +195,15 @@ def test_round_16_a_dear_trucker_more_than_5_percent_above_warns():
 # --- the text the scorer reads --------------------------------------------------------------------------------------
 
 
-def test_a_second_amount_in_the_mail_blocks():
+def test_a_second_amount_in_the_mail_warns():
     option = airline("1599.41")
     q = quote(rfq(), option)
     q = q.model_copy(update={"body": q.body + "\n\nThe airline alone charges EUR 1483.43."})
-    assert "text_amounts" in rules(check.run(q, PLAIN, [option]), check.BLOCK)
+    assert "text_amounts" in rules(check.run(q, PLAIN, [option]), check.WARN)
 
 
 def test_each_further_shipment_and_their_sum_are_no_second_amount():
-    """Round 125: two shipments in one mail, each quoted with the sum of both; only another amount still blocks."""
+    """Round 125: two shipments in one mail, each quoted with the sum of both; only another amount still warns."""
     request = "Fastest from MUC, each quoted:\n1. To SGN, 6 pieces, 1592 kg, 6.77 cbm.\n2. To ICN, 7 pieces, 813 kg, 6.04 cbm."
     option = airline("5810.80")
     q = quote(rfq(), option)
@@ -211,7 +211,7 @@ def test_each_further_shipment_and_their_sum_are_no_second_amount():
     sent = q.model_copy(update={"body": q.body + f"\n\n{shipments} All shipments together: 9250.40 EUR all-in."})
     assert "text_amounts" not in rules(check.run(sent, request, [option]))
     wrong = q.model_copy(update={"body": q.body + f"\n\n{shipments} All shipments together: 9999.00 EUR all-in."})
-    assert "text_amounts" in rules(check.run(wrong, request, [option]), check.BLOCK)
+    assert "text_amounts" in rules(check.run(wrong, request, [option]), check.WARN)
 
 
 def test_lots_with_a_stated_volume_and_lots_with_dimensions_add_up_together():
@@ -373,8 +373,8 @@ def accounting(text: str, weight: str, files: tuple[str, ...] = ()) -> list[str]
         ("FRA to ORD, 715 kg gross (680 kg net), 3 cbm", "680", "715"),  # the net weight priced
     ],
 )
-def test_a_weight_the_mails_figures_do_not_give_blocks(text, misread, right):
-    assert accounting(text, misread) == [check.BLOCK]
+def test_a_weight_the_mails_figures_do_not_give_warns(text, misread, right):
+    assert accounting(text, misread) == [check.WARN]
     assert accounting(text, right) == []
 
 
@@ -390,10 +390,10 @@ def test_a_heavier_figure_that_is_not_this_shipment_does_not_block(text):
     assert accounting(text, "450") == []
 
 
-def test_round_9_a_lot_left_out_or_one_lot_alone_blocks():
+def test_round_9_a_lot_left_out_or_one_lot_alone_warns():
     mail = json.loads((MAILS / "rfq-door-three-lots.json").read_text())["body"]
     for wrong in ("1750", "1030", "730"):
-        assert accounting(mail, wrong) == [check.BLOCK], wrong
+        assert accounting(mail, wrong) == [check.WARN], wrong
     assert accounting(mail, "1952") == []
 
 
