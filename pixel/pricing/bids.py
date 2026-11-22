@@ -846,9 +846,11 @@ async def collect(
     *,
     pickup: bool = False,
     pending_desk: int | None = None,
+    rfq: Rfq | None = None,
 ) -> list[RateOption]:
-    """Wait for the lane's enquiries, with extra time for a pending desk reply during a portal outage."""
-    rfq = session.rfq(ctx, session_id)
+    """Wait for the lane's enquiries, with extra time for a pending desk reply during a portal outage. `rfq` is the
+    shipment asked for: a mail's further shipment has its own lane, never the session's first (round 150)."""
+    rfq = rfq or session.rfq(ctx, session_id)
     if rfq is None:
         return []
     after_ask = timing.now() + timedelta(seconds=ctx.settings.bid_wait_s)

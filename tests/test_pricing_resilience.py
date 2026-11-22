@@ -99,7 +99,7 @@ async def test_carriers_can_still_price_an_unavailable_portal(ctx, monkeypatch, 
         asked.set()
         return [11, 12]
 
-    async def collect(*args):
+    async def collect(*args, **kwargs):
         return [bids.parse(mail("air@x", "All-in EUR 500. Transit 3 days."), rfq())]
 
     monkeypatch.setattr(ctx.portal, "lanes", lanes)
