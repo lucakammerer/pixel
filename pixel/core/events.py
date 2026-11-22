@@ -27,6 +27,7 @@ KINDS = (
     "tracking.answered",
     "tariff.ingested", "tariff.failed",
     "carrier.lanes",  # pricing/bids.py: the lanes an airline says it flies when it declines ours
+    "carrier.availability",  # dated suspension or resumption of new bookings on one lane
     "attachment.unreadable",  # a file code cannot read (audio, video, an image, a scan): treated as holding nothing
     "llm.call",
     "score",  # one row of /v1/board/me

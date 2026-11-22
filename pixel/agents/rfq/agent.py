@@ -211,7 +211,7 @@ async def requote(ctx: Context, message: Message, rfq: Rfq) -> Quote | None:
         ).fetchall()
         fresh = [RateOption.model_validate(json.loads(r["payload"])["option"]) for r in rows]
         rule = feedback.pickup_rule(ctx)
-        options = engine.combine(rfq, fresh, rule, ctx) or engine.combine(rfq, session.for_request(ctx, rfq), rule)
+        options = engine.combine(rfq, fresh, rule, ctx) or engine.combine(rfq, session.for_request(ctx, rfq), rule, ctx)
         if rfq.door_pickup:
             options = [o for o in options if o.trucker] or options
         if not options:
