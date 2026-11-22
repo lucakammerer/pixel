@@ -206,7 +206,7 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, ts, session_id, kind, payload FROM events WHERE ts > ? AND kind IN"
         " ('quote.missed', 'quote.stuck', 'feedback', 'tracking.answered', 'error', 'human.note', 'quote.checked', 'option.failed',"
-        " 'rfq.novelty')"
+        " 'rfq.novelty', 'quote.unmet')"
         " ORDER BY id DESC",
         (since,)
     ).fetchall()  # fmt: skip
@@ -233,6 +233,8 @@ def attention(conn: sqlite3.Connection, minutes: int) -> list[dict[str, Any]]:
             issue = "bid_distrusted"
         elif row["kind"] == "rfq.novelty" and any((p.get("mapped") or {}).values()):
             issue = "novel_requirement"  # already posted by `novelty.check` the moment it was read
+        elif row["kind"] == "quote.unmet" and p.get("open") and p.get("mode") == "on":
+            issue = "unmet_ask"  # already posted by `unmet.settle` the moment it was read
         if issue:
             issues.append({"issue": issue, "event": row["id"], "at": row["ts"][:19], "session": row["session_id"],
                            "detail": p})  # fmt: skip

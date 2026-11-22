@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
-from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, repair
+from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, repair, unmet
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
@@ -468,6 +468,7 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
     extend = (lambda q: _with_shipments(ctx, q, others, pricing, deadline)) if others else None
     quote = await _settled(ctx, rfq, options, prose, fallback=False, translate_by=deadline.hard_at,
                            repair_by=repair_by, extend=extend)  # fmt: skip
+    await unmet.settle(ctx, quote, text, deadline, repair_by)
     sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent
