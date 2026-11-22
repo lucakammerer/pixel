@@ -1,0 +1,26 @@
+[
+  {
+    "id": 995074,
+    "from": "einkauf@stade-kunststoff.hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Sea freight Hamburg - Dubai",
+    "body": "Hello,\n\nplease quote sea freight LCL Hamburg to Jebel Ali, 2 pallets, 640 kg, 2.4 cbm.\n\nRegards\nLea Martens\nStade Kunststoff GmbH",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T10:00:00+00:00",
+    "attachments": []
+  },
+  {
+    "id": 995075,
+    "from": "einkauf@stade-kunststoff.hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Sea freight Hamburg - Dubai",
+    "body": "Understood. Then please quote it by air, HAM to DXB, same cargo, ready 27.11., delivered by us.\n\nLea Martens",
+    "in_reply_to": 995074,
+    "references": [
+      995074
+    ],
+    "received_at": "2026-11-22T10:01:00+00:00",
+    "attachments": []
+  }
+]
