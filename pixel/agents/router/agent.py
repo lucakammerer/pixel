@@ -65,13 +65,22 @@ def _customer_of(ctx: Context, session_id: int) -> str | None:
     return row["customer"] if row else None
 
 
+MIMIC_MIN = 8  # a short name ("info") sits inside too many real addresses
+
+
 def _lookalike(ctx: Context, sender: str, before: int) -> bool:
     """Round 105: "our mailbox is down, send the price to this address" from nordlicht.audio@ beside the customer
-    nordlicht-audio@. An address that differs from a known customer's only by its dots, dashes or underscores is not
-    that customer: it gets no mail from us, neither a question nor a price."""
-    def plain(address: str) -> str:
+    nordlicht-audio@. An address that holds a known customer's name with only dots, dashes or underscores changed or
+    a word added (round 112: kessler-feinmechanik.mail@ beside kessler-feinmechanik@) is not that customer: it gets
+    no mail from us, neither a question nor a price."""
+
+    def plain(address: str) -> tuple[str, str]:
         local, _, domain = address.lower().partition("@")
-        return re.sub(r"[.\-_+]", "", local) + "@" + domain
+        return re.sub(r"[.\-_+]", "", local), domain
+
+    def mimics(original: str) -> bool:
+        (name, domain), (own, own_domain) = plain(original), plain(sender)
+        return domain == own_domain and (own == name or (len(name) >= MIMIC_MIN and name in own))
 
     # Only an address that wrote to us before this sender's first mail is the original: round 107's real customer
     # was taken for a lookalike of the impostor who had written in between.
@@ -80,7 +89,7 @@ def _lookalike(ctx: Context, sender: str, before: int) -> bool:
         "SELECT sender FROM messages WHERE kind = ? AND sender <> ? GROUP BY sender HAVING MIN(id) < ?",
         (MailKind.CUSTOMER_RFQ.value, sender, min(first, before)),
     ).fetchall()
-    return any(plain(row[0]) == plain(sender) for row in known)
+    return any(mimics(row[0]) for row in known)
 
 
 def rules(ctx: Context, message: Message) -> tuple[MailKind | None, str]:
