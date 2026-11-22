@@ -914,6 +914,15 @@ READY_DATE_FIRST = re.compile(
     + r"(?=[ \t]+(?:zur Abholung[ \t]+|zum Versand[ \t]+)?(?:bereit|abholbereit|versandbereit|verfügbar)\b)",
     re.IGNORECASE,
 )
+# Korean and Chinese write an ISO date beside the pickup ("2026-11-24부터 픽업 가능합니다", "픽업은 2026-11-24부터 가능",
+# "2026-11-23 可以提货"; rounds 72, 149, 161): without it a sheet valid only after the ready day was never chosen.
+CJK_PICKUP = r"(?:픽업|집하|출고|提货|取货|备妥|备好|集荷|出荷)"
+CJK_ARRIVAL = r"(?:도착|到达|抵达|到港|到着|送达)"
+CJK_DATE = r"(?P<value>\d{4}-\d{2}-\d{2})(?![\d-])"
+READY_CJK = (
+    re.compile(rf"{CJK_DATE}(?:(?!{CJK_ARRIVAL})[^.。!?！？\n]){{0,60}}?{CJK_PICKUP}"),
+    re.compile(rf"{CJK_PICKUP}[^\d.。!?！？\n]{{0,8}}?{CJK_DATE}(?![^.。!?！？\n]{{0,6}}?{CJK_ARRIVAL})"),
+)
 ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline|(?:required|requested) delivery date|delivery date required)\s*[:=]?"
@@ -1001,7 +1010,7 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
 
     transit = MAX_TRANSIT.search(text)
     return (
-        first_date(READY_ON) or first_date(READY_DATE_FIRST),
+        first_date(READY_ON) or first_date(READY_DATE_FIRST) or next(filter(None, map(first_date, READY_CJK)), None),
         arrive_by(),
         int(transit["days"] or transit["most"]) if transit else None,
     )

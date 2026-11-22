@@ -1029,6 +1029,22 @@ def test_a_latest_arrival_is_only_one_set_for_this_shipment(text, arrive_by):
     assert extract.schedule(text, date(2026, 11, 22))[1] == arrive_by
 
 
+@pytest.mark.parametrize(
+    ("text", "ready"),
+    [
+        ("2026-11-24부터 픽업 가능합니다.", date(2026, 11, 24)),  # rounds 149, 156, 161
+        ("픽업은 2026-11-24부터 가능하며, 공항까지의 픽업 트럭도 배차해 주세요.", date(2026, 11, 24)),
+        ("货物是汽车传感器。2026-11-23 可以提货，提货地点是我们的场地。", date(2026, 11, 23)),  # round 72
+        ("2026-11-25に集荷可能です。", date(2026, 11, 25)),
+        ("2026-12-01까지 도착해야 합니다. 픽업 가능합니다.", None),  # an arrival, not the pickup
+        ("픽업 후 2026-12-01까지 도착해야 합니다.", None),
+        ("货物需在2026-12-01前到达，2026-11-25可以提货。", date(2026, 11, 25)),
+    ],
+)  # fmt: skip
+def test_a_korean_chinese_or_japanese_pickup_date_is_the_ready_date(text, ready):
+    assert extract.schedule(text, date(2026, 11, 22))[0] == ready
+
+
 def test_a_ready_date_this_autumn_stays_this_year():
     assert extract.schedule("Cargo available from 15 October.", date(2026, 11, 22))[0] == date(2026, 10, 15)
 
