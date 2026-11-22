@@ -976,6 +976,10 @@ def _stated_date(value: str, on: date) -> date | None:
         return None
 
 
+# The customer's drop-off at our side, not the arrival at the destination.
+OUR_SIDE = re.compile(r"\b(?:your\s+(?:warehouse|site|depot|office|facility|hub)|the\s+airport|to\s+you)\b", re.IGNORECASE)
+
+
 def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]:
     """Read cargo readiness, latest arrival, and a maximum transit from explicit statements."""
 
@@ -983,10 +987,14 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
         return next((value for match in pattern.finditer(text) if (value := _stated_date(match["value"], on))), None)
 
     def arrive_by() -> date | None:
-        """A latest arrival is a coming date the customer sets for this shipment, never an earlier one."""
+        """A latest arrival is a coming date the customer sets for this shipment, never an earlier one, and never the
+        drop-off at our side ("delivered to your warehouse at FRA by")."""
         matches = sorted([*ARRIVE_BY.finditer(text), *ARRIVE_BY_LAST.finditer(text)], key=lambda m: m.start())
+        origin = (_lane(text) or ("",))[0]
         for match in matches:
             clause = re.split(r"[.!?;,:\n]", text[: match.start()])[-1]
+            if OUR_SIDE.search(match[0]) or (origin and re.search(rf"\b{origin}\b", match[0])):
+                continue
             if not ARRIVAL_CONTEXT.search(clause) and (value := _stated_date(match["value"], on)) and value >= on:
                 return value
         return None

@@ -990,6 +990,9 @@ def test_excluded_airlines_need_a_negation_and_a_known_name(text, excluded):
         ("Required delivery date: 2026-12-28.", None, date(2026, 12, 28), None),
         ("The shipment will be delivered to FRA by 2026-12-20.", None, None, None),  # our pickup side
         ("The offer has to be in our system by 2026-12-20.", None, None, None),  # a reply deadline
+        ("Please quote FRA-ORD 300 kg. The cargo must be delivered to your warehouse at FRA by 2026-12-20.", None, None,
+         None),  # the drop-off at our side
+        ("The cargo must be delivered at ORD by 2026-12-28.", None, date(2026, 12, 28), None),
         ("Cargo ready date: 2026-12-20, must arrive by 28th December.", date(2026, 12, 20), date(2026, 12, 28), None),
         ("Available for collection as of 20.12.2026.", date(2026, 12, 20), None, None),
         ("Pick-up possible from Dec 20th.", date(2026, 12, 20), None, None),
