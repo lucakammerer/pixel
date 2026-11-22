@@ -831,32 +831,36 @@ not yet live: one trucker's answer unreadable (a scan, a failed transcription) w
 memory then prices only the others, as in 67. A fix (`pickup.estimates` for every trucker that answered without a
 price read) has one scored round behind it and waits behind the one-pull-request rule. Rounds 180 to 184 (cycle 2, fresh copy): all accepted, today's code quotes them as sent. Nothing in this axis is wrong today that has no owner.
 
-## Axis F: after the quote (22.11.2026, snapshot through round 195)
+## Axis F: after the quote (22.11.2026, snapshot through round 197)
 
-The snapshot ends at event 20129 (10:40:43 UTC). Inspect the recorded phase, sender, routing, decisions and
-linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 20083`
-for the three added mails since the previous snapshot. The fixture run of the same tool checks today's rules and
+The snapshot ends at event 20376 (10:54:36 UTC). Inspect the recorded phase, sender, routing, decisions and
+linked outgoing replies with `uv run python -m tools.followup_matrix --db <copy>`. Use `--after-event 20129`
+for the 29 added mails since the previous snapshot. The fixture run of the same tool checks today's rules and
 selected tracking outcomes. `tests/test_booking.py` checks the booking actions with mocked services.
 
 ### What the scorer scores
 
-194 rounds were closed in this snapshot. Round 195 was provisionally accepted and the customer promised dangerous-goods documents.
+196 rounds were closed in this snapshot. The scorer had provisionally accepted the revised offer in round 197
+and recorded its booking.
 
 | Evidence on the closed rounds | Observed verdicts and points | Interpretation |
 | --- | --- | --- |
-| Customer reply recorded in the RFQ session: 190 rounds vs 4 without | 143 accepted, 45 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
-| Airline confirmation linked to the RFQ: 120 rounds vs 74 without | 117 accepted and 3 rejected vs 26 accepted, 42 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
-| Tracking answer linked to the shipment: 114 rounds vs 80 without | 114 accepted, 109 with +10, vs 29 accepted and none with +10 | Every +10 coincided with `booked: true`. Seven `booked: true` rounds scored zero. |
-| Booking field on the board | `booked: true` in 117, false in 6 and null in 71. All 122 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
+| Customer reply recorded in the RFQ session: 192 rounds vs 4 without | 145 accepted, 45 rejected and 2 no answer vs 4 no answer | Descriptive. A reply often follows the verdict-driving quote. |
+| Airline confirmation linked to the RFQ: 121 rounds vs 75 without | 118 accepted and 3 rejected vs 27 accepted, 42 rejected and 6 no answer | The confirmation event and the scorer's `booked` are different observations. |
+| Tracking answer linked to the shipment: 115 rounds vs 81 without | 115 accepted, 110 with +10, vs 30 accepted and none with +10 | Every +10 coincided with `booked: true`. Seven `booked: true` rounds scored zero. |
+| Booking field on the board | `booked: true` in 118, false in 6 and null in 72. All 123 `points.booking` entries are 0. | What earns a separate booking bonus remains open. Check the next scored booking. |
 | Price-match requests in rounds 108, 132, 144, 157, 166 and 175 | 144 and 166 show `booked: false` and adjustment +10. Both were booked before the unconditional yes. The four without a reply had neither outcome. | Hold the quote and wait for the yes. The next clean hold can isolate what earns the adjustment. |
 | Withdrawal after booking (round 88) | Adjustment −20 when the cancellation was missed | Fixed in #336. |
-| Change after the quote (rounds 86, 152) | 86 counted the update as unanswered. 152 scored the quote sent in reply to the change. | A changed request can have a new scored quote. |
+| Change after the quote (rounds 86, 152, 197) | 86 counted the update as unanswered. 152 scored the reply to the change. 197 provisionally accepted the reply and recorded its booking. | A changed request can have a new scored quote. |
 | Questions about transit, inclusions or validity, or a second RFQ in the thread | No scored example found | Check the first live example of each. |
 
 Rounds 180–185 add five bookings, each with tracking +10, and one message promising dangerous-goods paperwork.
 Round 187 also promised paperwork. The quote was accepted by the scorer in both paperwork rounds. The decline in
 round 186 arrived after the quote had already selected the wrong service. Its reading error affects the CRM state.
 The first-quote loss belongs to the selection repair in #508.
+
+Round 197's packing list changed the request to one piece, 904 kg and 3.20 cbm. The service sent EUR 2,261.20
+in reply to the change mail (first offer EUR 2,914.24), then booked after the customer's yes.
 
 Round 188 closed with tracking 0.0. The answer matched its confirmed shipment after a Voice update to `at_origin`,
 printed the internal status code and omitted the airline booking reference and carrier. Rounds 189–191 matched confirmed
@@ -865,19 +869,19 @@ can help isolate which missing fact mattered.
 
 ### The census
 
-1,858 incoming replies inside sessions, plus 17 standalone airline confirmations and 115 standalone tracking desk
+1,886 incoming replies inside sessions, plus 17 standalone airline confirmations and 116 standalone tracking desk
 questions. The recorded phase is taken before `mail.in`. A later `followup.read` gives the phase when the handler ran.
 Standalone confirmations and tracking questions use the linked shipment session's phase, or unknown if the log
 has no link. Tracking is linked using `tracking.answered.shipment_sessions`.
 
 | Sender and kind | Count | Action recorded |
 | --- | --- | --- |
-| Airline or trucker, bid | 1,292 | 1,251 arrived while the session was still open, 41 after the quote or acceptance. 1,286 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
-| Airline, confirmation | 128 | 120 confirmed, six duplicates, two unmatched on historically stuck mail bookings (rounds 27 and 29, #323). The confirmation in round 171 hit a mailbox error when telling the customer (C15, Generalize). |
-| Customer, reply | 442 | 127 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
+| Airline or trucker, bid | 1,311 | 1,267 arrived while the session was still open, 44 after the quote or acceptance. 1,305 have `bid.received`. Six earliest or manual-session replies have processing errors, owner Supply. |
+| Airline, confirmation | 130 | 122 confirmed, six duplicates, two unmatched on historically stuck mail bookings (rounds 27 and 29, #323). The confirmation in round 171 hit a mailbox error when telling the customer (C15, Generalize). |
+| Customer, reply | 449 | 129 acceptance and 38 decline events, plus corrections, cancellation, paperwork and acknowledgments. This includes three price-match requests logged as declines and two as acceptances. |
 | Customer, answer to our question | 12 | Routed as `other/thread:question`. Cases and first-quote outcomes are handled in Scope and the request-scoring axes. |
 | Trucker, attached pickup offer | 1 | Routed as a tariff and failed (round 69, T4, Supply). |
-| Tracking desk, question | 115 | Latest recorded answer matched 111 shipments at `confirmed`, one at `at_origin` (F23), and two stuck in `booking`. One question remains unmatched. Three were unmatched at some point, including two later matched. |
+| Tracking desk, question | 116 | Latest recorded answer matched 112 shipments at `confirmed`, one at `at_origin` (F23), and two stuck in `booking`. One question remains unmatched. Three were unmatched at some point, including two later matched. |
 
 The historical `reply_unhandled` cohort was 119 notes across 67 sessions before 22.11. The mail bodies show 107
 acknowledgments, six promises of dangerous-goods documents, two pickup answers, two corrections and two cancellation
