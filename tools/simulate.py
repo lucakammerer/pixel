@@ -52,7 +52,7 @@ from pixel.agents.rfq import booking, extract
 from pixel.agents.tariffs import agent as tariffs
 from pixel.agents.tracking import agent as tracking
 from pixel.config import settings
-from pixel.contracts import Attachment, Message, Rfq
+from pixel.contracts import Attachment, LlmResult, Message, Rfq
 from pixel.core import db, events
 from pixel.core.context import Context
 from pixel.core.orchestrator import deadline_for
@@ -354,10 +354,16 @@ def _tariff_sheet() -> tuple[list[list[str]], dict[str, str]]:
     return [c for c in cells if c], want
 
 
+def _spoken_file(lines: list[list[str]]) -> bytes:
+    """A voice message as its transcript: `run` reads it back for `tariffs._transcribe`, the speech model offline."""
+    return "\n".join(" ".join(cells) for cells in lines).encode()
+
+
 def other_kind_cases() -> list[Case]:
-    """Each other kind's decisive fact only in the attachment, in every format the RFQ documents come in."""
+    """Each other kind's decisive fact only in the attachment, in every format the RFQ documents come in, and said in
+    a voice message (rounds 65 and 67 brought requests and offers as mp3)."""
     cases, (sheet, prices) = [], _tariff_sheet()
-    for fmt, write in WRITERS.items():
+    for fmt, write in {**WRITERS, "mp3": _spoken_file}.items():
         for (says, lang), text in REPLIES.items():
             lines = [["Re: your quotation"], ["Date:", "2026-11-21"], [text], ["Mira Petersen, Nordlicht Audio"]]
             cases.append(Case("document", {"kind": "customer_reply", "format": fmt, "says": says, "lang": lang},
@@ -373,6 +379,8 @@ def other_kind_cases() -> list[Case]:
                           "Hello,\n\nplease find the confirmation of your booking attached.\n\nKestrel Airways",
                           [(f"confirmation.{fmt}", write(lines))], {k: r for k, (_, r) in REFERENCES.items()},
                           "booking_confirmation"))  # fmt: skip
+        if fmt == "mp3":  # a tariff is no voice message
+            continue
         cases.append(Case("document", {"kind": "tariff", "format": fmt}, "Tariff update",
                           "Hello,\n\nplease find our new air export tariff attached.\n\nTestline Cargo",
                           [(f"testline-cargo-tariff-2026-11.{fmt}", write(sheet))], prices, "tariff"))  # fmt: skip
@@ -426,7 +434,7 @@ def _weight_text(kg: D, pieces: int, form: str) -> tuple[str, D]:
     """The weight as written, and the kg it means."""
     if form in ("lbs", "lb", "pounds"):
         lbs = (kg / LB).quantize(D(1))
-        return f"{lbs} {form}", lbs * LB
+        return f"{lbs} {form}", (lbs * LB).quantize(D("0.01"))
     if form == "tonnes":
         t = (kg / 1000).quantize(D("0.001"))
         return f"{t} t", t * 1000
@@ -771,6 +779,54 @@ async def read_bid(case: Case, ctx: Context, i: int) -> Outcome:
     return Outcome(case, "wrong" if wrong else "right", wrong)
 
 
+def swayed_bids(step: int = 13) -> list[str]:
+    """Rounds 82 and 130 lost to a model's figure the cross-check took. Every generated carrier answer with an
+    attachment, read again while the cross-check model (`bids._crosscheck`) answers each other amount of its text as
+    the total: a lead time, a postcode, an offer number, a side price, one charge. Returns each reading that quotes
+    another figure than the offer's; none is right."""
+
+    async def go() -> list[str]:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        db.init(conn)
+        ctx = Context(settings(), conn, None, None, None, None)
+        store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
+        ask_json, wrong, i = llm.ask_json, [], 0
+        try:
+            for case in (c for c in bid_cases(step=step) if c.files):
+                text = "\n".join([case.body, *(line for n, c in case.files for line in tariffs._lines(n, c))])
+                want = case.want["total"]
+                for other in sorted({bids._amount(m.group()) for m in re.finditer(bids.AMOUNT, text)} - {want})[:4]:
+                    i += 1
+                    rfq = Rfq(session_id=i, message_id=i, customer="buyer@example.com", received_at=RECEIVED,
+                              deadline_at=RECEIVED, **case.request)  # fmt: skip
+                    events.emit(ctx, "rfq.extracted", "rfq", session_id=i, payload=rfq.model_dump(mode="json"))
+                    files = [
+                        Attachment(id=j, filename=n, content_type="", size=len(c))
+                        for j, (n, c) in enumerate(case.files)
+                    ]
+                    message = Message(id=i, session_id=i, direction="in", sender=CARRIERS[case.axes["carrier"]][1],
+                                      to="us@example.com", subject=case.subject, body=case.body, sent_at=RECEIVED,
+                                      attachments=files)  # fmt: skip
+                    ctx.mailbox = Mailbox(case.files)
+                    said = {"offer": True, "total": str(other), "components": [], "currency": case.want["currency"],
+                            "transit_days": case.want.get("transit_days"), "eur_per_unit": None}  # fmt: skip
+
+                    async def model(ctx, said=said, **kw):
+                        return LlmResult(data=said, model="swayed", tokens_in=1, tokens_out=1, cost_usd=D(0))
+
+                    llm.ask_json = model
+                    await bids.record(ctx, message)
+                    found = session.options(ctx, i)
+                    if len(found) == 1 and found[0].total != want:
+                        wrong.append(f"{case.axes}: {found[0].total} for {want} ({other} said)")
+        finally:
+            llm.ask_json = ask_json
+        return wrong
+
+    return asyncio.run(go())
+
+
 async def run(cases: list[Case]) -> list[Outcome]:
     """Each case on one in-memory database, with every model call refused and counted; mail stays dry."""
     conn = sqlite3.connect(":memory:")
@@ -779,13 +835,14 @@ async def run(cases: list[Case]) -> list[Outcome]:
     # The rules are measured: the model's cross-check of a request they read (`extract._crosscheck`) would count
     # every case as left to the model.
     ctx = Context(replace(settings(), model_check=""), conn, None, None, None, None)
-    ask_json, gaps = llm.ask_json, known_gaps()
+    ask_json, transcribe, gaps = llm.ask_json, tariffs._transcribe, known_gaps()
+    tariffs._transcribe = lambda content: content.decode().splitlines()  # `_spoken_file`: the transcript itself
     if any(c.family == "bid" for c in cases):
         store.save_carriers(ctx, [{"name": n, "kind": k, "email": e, "serves": ""} for k, (n, e) in CARRIERS.items()])
     try:
         outcomes = [await (read_bid(c, ctx, i) if c.family == "bid" else read(c, ctx)) for i, c in enumerate(cases, 1)]
     finally:
-        llm.ask_json = ask_json
+        llm.ask_json, tariffs._transcribe = ask_json, transcribe
     for o in outcomes:  # a bid the rules leave to the model costs spend: its class is named too
         if o.verdict == "wrong" or (o.verdict == "model" and o.case.family == "bid"):
             o.gap = gap_of(o.case, gaps)

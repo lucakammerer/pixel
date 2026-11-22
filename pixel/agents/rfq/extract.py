@@ -4,7 +4,7 @@ import re
 import unicodedata
 from collections import Counter
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from pixel import llm
 from pixel.contracts import Message, Preference, Rfq
@@ -28,7 +28,14 @@ AIRPORT_WORD = r"(?:\s+(?:airport|flughafen))?"
 ORIGIN_LABEL = re.compile(
     rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
 )
-DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
+# "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
+DEST_LABEL = re.compile(
+    rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)à(?!\w)"
+    # Spanish, Italian, Portuguese "a GRU", only right before a code that ends the clause: never the English article
+    rf"|(?<!\w)a(?=\s+(?-i:[A-Z]{{3}})\s*(?:[.,;:!?(\n]|$))"
+    rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
+    rf"{AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
+)
 # The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
 # the door" the destination.
 PRE_CARRIAGE = re.compile(
@@ -81,9 +88,11 @@ def _per_m(unit: str | None) -> Decimal:
     return PER_M.get(unit, PER_M["in"])
 
 
-LOT_LINE = r"(?im)^\s*(?:[-*•]\s*(?=\d)|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])"
+# A lot's label besides a bullet: "Lot 2:", "Posten 2:", or a numbered line ("2) 3 pallets", "2. 3 pallets").
+LOT_LABEL = r"(?:lot|position|pos\.?|item|los|posten)\s*\d+\s*[:.)-]|\d{1,2}[.)](?=\s*\d)"
+LOT_LINE = rf"(?im)^\s*(?:[-*•]\s*(?=\d)|{LOT_LABEL})"
 LOT = re.compile(
-    r"(?im)^\s*(?:[-*•]|(?:lot|position|pos\.?|item|los)\s*\d+\s*[:.)-])\s*(\d+)\s+"
+    rf"(?im)^\s*(?:[-*•]|{LOT_LABEL})\s*(\d+)\s+"
     r"(?!(?:kgs?|kilos?|lbs?|cbm|cm|mm|m3|m)\b)[^\W\d](.+)$"
 )
 EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
@@ -91,13 +100,15 @@ ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
 MODE = rf"(?:\b(?P<each>{EACH}|à)|\b(?P<all>{ALL}))?\s*"
 AFTER = rf"(?:\s+(?P<after>{EACH})\b)?"  # "210 kg each"
 PER_PIECE = rf"(?:\b(?:{EACH})\b|(?<!\w)à)"
+# The gross figure in the bracket of a per-piece net one: "each 142 kg net (160 kg gross)".
+NET_FIRST = re.compile(rf"{PER_PIECE}\s*{NUM}\s*kgs?\s*(?:net|netto|n\.\s?w\.?)\s*\(\s*$", re.IGNORECASE)
 EACH_WEIGHT = re.compile(
     rf"{PER_PIECE}\s*(?:of\s+)?{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\b|{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\s+(?:gross\s+)?{PER_PIECE}",
     re.IGNORECASE,
 )
 EACH_VOLUME = re.compile(rf"{PER_PIECE}\s*{NUM}\s*(?:cbm|m3|m³)|{NUM}\s*(?:cbm|m3|m³)\s+{PER_PIECE}", re.IGNORECASE)
 LOT_WEIGHT = re.compile(
-    rf"{MODE}{NUM}\s*(?P<unit>kgs?|kilos?|kilograms?|lbs?|pounds?|tonnes?|tons?|tonnen|t(?![-\w]))\b(?:\s*(?P<kind>gross|brutto|net|netto))?{AFTER}",
+    rf"{MODE}{NUM}\s*(?P<unit>kgs?|kilos?|kilograms?|lbs?|pounds?|tonnes?|tons?|tonnen|t(?![-\w]))\b(?:\s*(?P<kind>gross|brutto|net|netto|g\.\s?w\.?|n\.\s?w\.?))?{AFTER}",
     re.IGNORECASE,
 )
 LOT_VOLUME = re.compile(
@@ -107,7 +118,7 @@ LOT_VOLUME = re.compile(
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
     r"(\d+)[^\S\n]*(?:pcs|pieces?|pallets?|skids?|crates?|cases|drums?|colli|packages|cartons|boxes|stück|stk|packstücke"
-    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse)\b",
+    r"|paletten|kartons|kisten|colis|palettes|caisses|bultos|piezas|cajas|pezzi|casse|volumes|caixas|stuks|dozen)\b",
     re.IGNORECASE,
 )
 NOT_URGENT = re.compile(
@@ -118,9 +129,14 @@ NOT_URGENT = re.compile(
     r"|plus\s+rapide))\b",
     re.IGNORECASE,
 )
-FASTEST = re.compile(r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide)\b", re.IGNORECASE)
+FASTEST = re.compile(
+    r"\b(?:fastest|quickest|schnellst\w*|plus\s+rapide|m(?:á|a|ai)s\s+r[aá]pid[ao]|più\s+(?:veloce|rapid[ao])|snelste)\b",
+    re.IGNORECASE,
+)
 CHEAPEST = re.compile(
-    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix)\b", re.IGNORECASE
+    r"\b(?:cheapest|lowest|most economical|günstigst\w*|billigst\w*|moins\s+ch[eè]re?|meilleur\s+prix"
+    r"|m(?:á|a|ai)s\s+(?:econ[oó]mic[ao]|barat[ao])|più\s+economic[ao]|goedkoopste)\b",
+    re.IGNORECASE,
 )
 HURRY = re.compile(
     r"\b(?:urgent\w*|asap|express\s+(?:service|freight|delivery|option|shipment)|service\s*:\s*(?:express|priority)|as soon as possible|as (?:quickly|fast) "
@@ -143,6 +159,7 @@ DOOR = re.compile(
     r"door[\s-]*to[\s-]*(?:port|airport)|pick[\s-]?up|truck\w* from"
     r"|from our (?:[\w-]+\s+)?(?:site|warehouse|premises|plant|factory|shop|depot|facility|workshop|store)"
     r"|collection from|collect from|abhol\w*|ab werk|ab haus|\bex[\s-]?works\b|\bEXW\b"
+    r"|\b(?:recogida|recoger|ritiro|ritirare|ophalen|ophaling|recolha|recolher|coleta|enlèvement|ramassage)\b"
     r"|\bcollect\w*\s+(?:them|it|the\s+(?:goods|cargo|shipment|freight|cartons|pallets|boxes|crates))\s+from\b"
     # A voice message's own words, asked of us: "the airline will collect the cargo" or "we will arrange the truck
     # ourselves" is no door pickup.
@@ -264,6 +281,9 @@ LOT_SCHEMA = {
     "required": ["pieces", "weight", "weight_unit", "weight_per_piece", "volume_cbm", "volume_per_piece", "dimensions"],
 }
 LB = Decimal("0.45359237")
+# A figure converted from pounds or cubic feet is the scorer's own to two decimals: 16.25 cubic feet is 0.46 cbm, 121.26 lb
+# is 55.00 kg (rounds 116, 133, 136 fit only so; 136 lost 0.1 points on 0.46014876 cbm).
+CONVERTED = Decimal("0.01")
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -437,7 +457,7 @@ def _weight(text: str, pieces: int | None) -> Decimal | None:
     if weight is None and not any(p.search(text) for p in WEIGHT):  # in pounds or tonnes only: code converts
         pounds, tonnes = _unique(POUNDS, text, thousands=True), _unique(TONNES, text, thousands=False)
         if (pounds is None) != (tonnes is None):
-            weight = pounds * LB if pounds is not None else tonnes * 1000
+            weight = (pounds * LB).quantize(CONVERTED, ROUND_HALF_UP) if pounds is not None else tonnes * 1000
     if weight is None or not EACH_WEIGHT.search(text):
         return weight
     return weight * pieces if pieces else None
@@ -450,7 +470,7 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
     if stated is not None:
         return stated
     if not any(p.search(text) for p in VOLUME) and (feet := _unique(CUBIC_FEET, text, thousands=False)):
-        return feet * FT3
+        return (feet * FT3).quantize(CONVERTED, ROUND_HALF_UP)
     if not any(p.search(text) for p in VOLUME) and (litres := _unique(LITRES, text, thousands=True)):
         return litres / 1000
     dims = DIMS.findall(text)
@@ -483,7 +503,7 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     weight, volume, pieces = Decimal(0), Decimal(0), 0
     for count, rest in lots:
         n = int(count)
-        weights = [m for m in LOT_WEIGHT.finditer(rest) if (m["kind"] or "").lower() not in ("net", "netto")]
+        weights = [m for m in LOT_WEIGHT.finditer(rest) if not (m["kind"] or "").lower().startswith("n")]
         stated, dims = LOT_VOLUME.search(rest), LOT_DIMS.search(rest)
         if len(weights) != 1 or not (stated or dims):
             return None
@@ -504,7 +524,8 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
                 cbm *= number(side, thousands=False) / per_m
         if kg is None or cbm is None:
             return None
-        weight += kg * (n if weights[0]["each"] or weights[0]["after"] else 1)
+        each = weights[0]["each"] or weights[0]["after"] or NET_FIRST.search(rest[: weights[0].start(3)])
+        weight += kg * (n if each else 1)
         volume += cbm
         pieces += n
     return (weight, volume, pieces) if len(lots) > 1 else None
@@ -658,7 +679,7 @@ RULED_OUT = re.compile(
 # A negation of something good is no exclusion: "we don't mind X", "never had issues with X", "does not require X".
 NEGATED_POSITIVE = re.compile(
     r"(?:\b(?:not|never|no|nicht|kein\w*)\b|n['’]t\b)(?:\s+\w+){0,3}?\s+(?:mind|objection|object|problems?|issues?"
-    r"|complain\w*|require\w*|matter|preference|prefer\w*|have\s+to\s+be|has\s+to\s+be|need\s+to\s+be)\b",
+    r"|complain\w*|require\w*|matter|preference|prefer\w*|(?:have|has|need)\s+to(?:\s+be)?|must)\b",
     re.IGNORECASE,
 )
 LASTING = re.compile(
@@ -684,6 +705,9 @@ def _calls(name: str) -> set[str]:
     return {name.casefold()} | ({short.casefold()} if len(short) >= 4 else set())
 
 
+CLAUSE_NEGATION = re.compile(r"\b(?:not|no|never|nicht|kein\w*)\b|n['’]t\b")
+
+
 def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
     """Read an exclusive instruction directly attached to known carrier names: "only", "exclusively", "nur" next to
     the names, or "no airline other than" before them."""
@@ -698,18 +722,32 @@ def required_airlines(text: str, airlines: set[str]) -> tuple[str, ...]:
     item = rf"{mention}(?:\s*\([a-z0-9]{{2}}\))?"
     listed = rf"{item}(?:{AIRLINE_CONNECTOR}{item})*"
     instruction = re.compile(
-        rf"\b{AIRLINE_ONLY}\s+(?:(?:quote|offer|use|fly)\s+)?"
+        rf"\b{AIRLINE_ONLY}\s+(?:(?:quote|offer|use|fly|accept|book|ship|work)\s+)?"
         rf"(?:(?:with|via|on|mit|von|über|avec|par|angebote von)\s+)?"
         rf"(?P<after>{listed})(?:\s+(?:fliegen|anbieten))?{AIRLINE_END}"
         rf"|(?P<before>{listed})\s+{AIRLINE_ONLY}\b{AIRLINE_END}"
         rf"|\b{AIRLINE_NO_OTHER}\s+(?P<other>{listed})"
+        # "must fly with X", "requires X", "X is our only approved carrier", "X, no other airline"
+        rf"|\b(?:must|has to|have to|needs? to|muss|müssen)\s+(?:be\s+)?(?:fl(?:y|own)|go|ship(?:ped)?|booked)\s+"
+        rf"(?:with|via|on|by|mit)\s+(?P<must>{listed}){AIRLINE_END}"
+        rf"|\b(?:muss|müssen)\s+(?:mit|über)\s+(?P<muss>{listed})\s+(?:fliegen|geflogen|gehen|versendet)\b"
+        rf"|\brequires?\s+(?P<requires>{listed})"
+        rf"|(?P<sole>{listed})\s+is\s+(?:our|the)\s+only\b"
+        rf"|(?P<other_after>{listed}),?\s+(?:and\s+)?no other (?:airlines?|carriers?)\b"
     )
     required = set()
     for sentence in AIRLINE_SENTENCES.split(text.casefold()):
         for match in instruction.finditer(sentence):
             if re.search(r"\b(?:not|nicht)\s+$", sentence[: match.start()]):
                 continue
-            group = match["before"] or match["after"] or match["other"]
+            # "doesn't have to fly with X" frees the choice, "X is the only one we do not use" rules X out.
+            before = re.split(r"[,;:]", sentence[: match.start()])[-1]
+            after = re.split(r"[,;:]", sentence[match.end() :])[0] if match["sole"] else ""
+            if not (match["after"] or match["before"] or match["other"]) and CLAUSE_NEGATION.search(
+                before + " " + after
+            ):
+                continue
+            group = next(g for g in match.groups() if g)
             required.update(aliases[name] for name in re.findall(mention, group))
     return tuple(sorted(required))
 
@@ -718,12 +756,12 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
     """The airlines a sentence with a negation names, from `airlines`, plus a two-letter code in brackets in it; and
     whether the customer means later requests too. A negation that names no known airline rules nothing out."""
     found, lasting = set(), False
-    for sentence in AIRLINE_SENTENCES.split(text):
-        negated = bool(RULED_OUT.search(NEGATED_POSITIVE.sub(" ", sentence)))
-        lowered = sentence.casefold()
+    aliases = sorted({a.casefold() for airline in airlines for a in (airline, *_calls(airline))}, key=len, reverse=True)
+    for sentence, clause, negated in _airline_clauses(text, aliases):
+        lowered = clause.casefold()
         if not negated and not re.search(r"\bno\s", lowered):
             continue
-        required = set(required_airlines(sentence, airlines))
+        required = set(required_airlines(clause, airlines))
         # "No X, please" rules X out; a "no" elsewhere in the sentence ("no pickup needed") does not.
         before = r"(?<!\w)" if negated else r"\bno\s+"
         names = {
@@ -734,9 +772,32 @@ def excluded_airlines(text: str, airlines: set[str]) -> tuple[tuple[str, ...], b
         if names:
             found.update(names)
             if not required:
-                found.update(CODE_IN_BRACKETS.findall(sentence))
+                found.update(CODE_IN_BRACKETS.findall(clause))
             lasting = lasting or bool(LASTING.search(sentence))
     return tuple(sorted(found)), lasting
+
+
+# "We do not want Beta Cargo, it has to be Alpha Air": the negation holds for its own clause, and for one that only
+# lists more airlines ("not Beta Cargo, Alpha Air or Gamma").
+AIRLINE_CLAUSES = re.compile(r"[;,]|\s(?:so|but|aber|sondern)\s", re.IGNORECASE)
+LIST_WORDS = re.compile(r"\b(?:and|or|nor|und|oder|noch|et|ou|either|neither|please|bitte)\b|\([a-z0-9]{2}\)|[\W_]+")
+
+
+def _airline_clauses(text: str, aliases: list[str]) -> list[tuple[str, str, bool]]:
+    """Each clause of each sentence with whether a negation rules out the airlines it names."""
+    out = []
+    for sentence in AIRLINE_SENTENCES.split(text):
+        negated = False
+        for clause in AIRLINE_CLAUSES.split(sentence):
+            rest = clause
+            for alias in aliases:
+                rest = re.sub(rf"(?<!\w){re.escape(alias)}(?!\w)", " ", rest, flags=re.IGNORECASE)
+            named = rest != clause
+            rest = re.sub(r"\b[A-Z][\w-]*", " ", rest)  # an airline we do not know is a name too
+            only_names = named and not LIST_WORDS.sub("", rest.casefold())
+            negated = bool(RULED_OUT.search(NEGATED_POSITIVE.sub(" ", clause))) or (negated and only_names)
+            out.append((sentence, clause, negated))
+    return out
 
 
 def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
@@ -760,7 +821,7 @@ def _carrier_requirements(ctx: Context, rfq: Rfq, text: str) -> Rfq:
 # Where an older mail starts below the request: "-----Original Message-----", "On ... wrote:", a quoted line.
 # Outlook's header without an address counts only by its dated "Sent:", next to "From:" or under a rule: a request
 # laid out as "From: FRA / To: ORD" or "Von: FRA / Datum: ab 25.11." stays the customer's.
-SENT = r"(?:sent|gesendet)[ \t]*:[^\n]*(?:\b(?:19|20)\d\d\b|\b\d{1,2}:\d\d)"
+SENT = r"\*?(?:sent|gesendet)\*?[ \t]*:\*?[^\n]*(?:\b(?:19|20)\d\d\b|\b\d{1,2}:\d\d)"
 HISTORY = re.compile(
     r"^\s*(?:-{2,}\s*(?:original message|forwarded message|ursprüngliche nachricht|weitergeleitete nachricht"
     r"|mensaje original|mensaje reenviado|message d'origine|message transféré|messaggio originale"
@@ -769,18 +830,23 @@ HISTORY = re.compile(
     r"|(?:from|von|de|da|van|od|från|от|kimden|发件人|寄件者|差出人|보낸 사람)\s*[:：].*@"
     r"|on .{0,80} wrote:\s*$|am .{0,80} schrieb"
     r"|.{0,120}\b(?:escribió|a écrit|ha scritto|escreveu|schreef|skrev|napisał\w*|написал\w*|yazdı)\s*:\s*$"
-    r"|.{0,120}(?:写道|寫道)[:：]\s*$|>"
-    rf"|(?:from|von)[ \t]*:[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*{SENT}"
-    rf"|{SENT}[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*(?:from|von)[ \t]*:"
+    r"|.{0,120}(?:写道|寫道)[:：]\s*$|>|begin forwarded message:|anfang der weitergeleiteten nachricht:"
+    rf"|\*?(?:from|von)\*?[ \t]*:[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*{SENT}"
+    rf"|{SENT}[^\n]*\n(?:[^\n]*\n){{0,3}}?[ \t]*\*?(?:from|von)\*?[ \t]*:"
     rf"|[-_]{{3,}}[ \t]*\n[ \t]*{SENT})",
     re.IGNORECASE | re.MULTILINE,
+)
+# Lines quoted with ">" and the "On ... wrote:" above them, wherever they stand: a reply written below them too.
+QUOTED = re.compile(
+    r"^(?:[ \t]*(?:on .{0,80} wrote|am .{0,80} schrieb):?[ \t]*\n)?(?:[ \t]*>.*(?:\n|$))+", re.IGNORECASE | re.MULTILINE
 )
 REPLY_SUBJECT = re.compile(r"^\s*(?:(?:re|fw|fwd|aw|wg)\s*:\s*)+", re.IGNORECASE)
 
 
 def own_words(body: str) -> str:
-    """The mail without the older mails quoted below it: round 14 quoted an old request with its own lane, weight,
+    """The mail without the older mails quoted in it: round 14 quoted an old request with its own lane, weight,
     greeting and name under the new one. Pricing and the reply both read only this."""
+    body = unquoted if (unquoted := QUOTED.sub("", body)).strip() else body
     cut = HISTORY.search(body)
     return body[: cut.start()] if cut and body[: cut.start()].strip() else body
 
@@ -973,6 +1039,76 @@ def by_rules(message: Message, deadline: Deadline, guess: bool = False, *, cargo
         deadline_at=deadline.expires_at,
         missing=("pickup_postcode",) if door and not postcode and not _abroad_pickup(text) else (),
     )
+
+
+# Round 114 split it in two: "the same shipment again? My earlier request, "...", was for YYZ".
+SAME_AS_EARLIER = re.compile(
+    r"\b(?:same|identical)\s+(?:shipment|cargo|goods|consignment)\b|\b(?:gleiche|selbe|dieselbe)\s+(?:sendung|ware)\b",
+    re.IGNORECASE,
+)
+EARLIER_REQUEST = re.compile(
+    r"\b(?:earlier|previous|last|former|prior|my|our)\s+(?:request|inquiry|enquiry)|\b(?:früher|vorherig|letzt)\w*\s+anfrage",
+    re.IGNORECASE,
+)
+
+
+# A code the mail names anew is the destination only right after a destination label.
+NEW_DESTINATION = re.compile(
+    r"(?:\bdestination\b(?:\s+(?:airport|is|now|will\s+be|becomes|should\s+be))*|\bziel(?:flughafen)?\b(?:\s+ist)?"
+    r"|\b(?:ship(?:ped)?|fly|flown|go(?:es)?|deliver(?:ed|y)?|send|sent)?\s*\b(?:to|nach)\b)\s*[:=]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _earlier(ctx: Context, message: Message, deadline: Deadline) -> Rfq | None:
+    """Round 103: "the same shipment as in my earlier request, "Air freight quote request: STR to MEL" ... the new
+    destination is LAX". The customer's earlier request of that subject (else their latest), as it was read, with
+    what this mail states anew: a destination it names besides the earlier lane, a weight, volume or piece count, the
+    wish, the currency. It comes before the rules, which would read the earlier lane from the quoted subject."""
+    text = own_words(_body(message))
+    if not SAME_AS_EARLIER.search(text):
+        return None
+    rows = ctx.db.execute(
+        "SELECT s.id, m.subject FROM sessions s JOIN messages m ON m.id = s.id"
+        " WHERE LOWER(s.customer) = LOWER(?) AND s.id < ? ORDER BY s.id DESC",
+        (message.sender, message.session_id),
+    ).fetchall()
+    named = {q.strip().casefold() for q in QUOTED_SUBJECT.findall(text)}
+    if named:
+        rows = [r for r in rows if r["subject"].strip().casefold() in named]
+    else:  # without its subject only a request that says it points to the latest one
+        rows = rows[:1] if EARLIER_REQUEST.search(text) else []
+    read = (
+        rows
+        and ctx.db.execute(
+            "SELECT payload FROM events WHERE session_id = ? AND kind = 'rfq.extracted' ORDER BY id DESC LIMIT 1",
+            (rows[0]["id"],),
+        ).fetchone()
+    )
+    if not read:
+        return None
+    before = Rfq.model_validate_json(read["payload"])
+    said = QUOTED_SUBJECT.sub("", text)  # the earlier subject names the earlier lane
+    new = set()
+    for m in re.finditer(r"\b[A-Z]{3}\b", said):
+        if m.group() in {before.origin, before.destination} or not _airport(m.group()):
+            continue
+        clause = re.split(r"[.;,!?\n]", said[: m.start()])[-1]
+        if not NEW_DESTINATION.search(clause):  # "from FRA", "origin is now FRA", "via FRA": not the destination
+            return None
+        new.add(m.group())
+    if len(new) > 1:
+        return None
+    pieces = _pieces(said)
+    stated = {"pieces": pieces, "weight_kg": _weight(said, pieces), "volume_cbm": _volume(said, pieces)}
+    if (pickup := _pickup(said))[1]:  # a pickup moved: its zone's airport is the origin (`extract`)
+        stated |= {"door_pickup": True, "pickup_postcode": pickup[1], "pickup_zone": zone_of(pickup[1]), "origin": ""}
+    return before.model_copy(update={k: v for k, v in stated.items() if v is not None} | {
+        "session_id": message.session_id, "message_id": message.id, "customer": message.sender,
+        "destination": new.pop() if new else before.destination, "preference": _preference(text),
+        "currency": _currency(text) or before.currency, "language": _language(text),
+        "received_at": deadline.received_at, "deadline_at": deadline.expires_at, "excluded_carriers": (),
+    })  # fmt: skip
 
 
 def _dims_volume(text: str) -> Decimal | None:
@@ -1672,7 +1808,13 @@ def _gross(sources: list[tuple[str, str]], patterns: tuple[re.Pattern, ...], tho
 
 
 async def _crosscheck(
-    ctx: Context, rfq: Rfq, message: Message, text: str, sources: list[tuple[str, str]], deadline: Deadline
+    ctx: Context,
+    rfq: Rfq,
+    message: Message,
+    text: str,
+    sources: list[tuple[str, str]],
+    deadline: Deadline,
+    from_documents: frozenset[str] = frozenset(),
 ) -> tuple[Rfq, dict | None]:
     """The rules' reading of a request with attachments checked by a larger model reading the same text
     (`PIXEL_MODEL_CHECK`): at first sight the rules took the mail's figures over the attached packing list's (rounds
@@ -1714,8 +1856,11 @@ async def _crosscheck(
         return in_documents if getattr(rfq, field) in in_documents else _gross(sources, patterns, thousands)
 
     gross = {"weight_kg": stated("weight_kg", WEIGHT, True), "volume_cbm": stated("volume_cbm", VOLUME, False)}
+    # A figure the rules took from the attached documents stands, stated as a total or added up from their rows.
     taken = {
-        f: getattr(read, f) for f in differs if f in ("pieces", "preference") or getattr(read, f) in gross.get(f, ())
+        f: getattr(read, f)
+        for f in differs
+        if f not in from_documents and (f in ("pieces", "preference") or getattr(read, f) in gross.get(f, ()))
     }
     events.emit(ctx, "rfq.crosscheck", "rfq", session_id=message.session_id, message_id=message.id,
                 payload={"model": result.model, "differs": differs, "taken": sorted(taken)})  # fmt: skip
@@ -1798,11 +1943,12 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             again = _from_answer(read, own_words(said), facts)
         return apply_pickup(again or read, guess=False)
 
-    rfq, prose = rules(), None
+    rfq, prose = _earlier(ctx, mail, deadline) or rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
     if rfq is not None and files and ctx.settings.model_check:
-        rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline)
+        documented = frozenset(f for f, names in evidence.items() if names and "mail" not in names)
+        rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline, documented)
     if rfq is None:
         try:
             result = await llm.ask_json(
@@ -1843,6 +1989,15 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
             rfq = apply_pickup(await ask(rfq))
             prose = {"first_name": result.data.get("first_name")}
+    subject = "" if REPLY_SUBJECT.match(mail.subject) else mail.subject
+    on = rfq.received_at.date()
+    stated = schedule(f"{_body(mail)}\n{subject}", on)
+    # An attached document's date stands against the mail's, as its cargo does: the scorer prices the document (rounds
+    # 33 to 35, 130).
+    documented = schedule("\n".join(c for n, c in sources if n != "mail"), on) if files else (None, None, None)
+    ready_on, arrive_by, max_transit_days = (d if d is not None else m for m, d in zip(stated, documented, strict=True))
+    rfq = rfq.model_copy(update={"ready_on": ready_on, "arrive_by": arrive_by,
+                                 "max_transit_days": max_transit_days})  # fmt: skip
     if files:
         attached = "\n".join(content for _, content in documents)
         rfq = rfq.model_copy(update={"language": _language(_text(mail), rfq.language, attached)})
@@ -1851,14 +2006,13 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
                 evidence[key] = named
         excluded = [name for name, content in documents if (name, content) not in sources]
         proof = {"document_weight_kg": document_weight} if document_weight == rfq.weight_kg else {}
+        dates = dict(zip(("ready_on", "arrive_by", "max_transit_days"), documented, strict=True))
+        if said := {k: str(v) for k, v in dates.items() if v is not None}:
+            proof["document_schedule"] = said
         events.emit(ctx, "rfq.evidence", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                     payload={"sources": evidence, "attachment_route_conflicts": excluded, **proof})  # fmt: skip
     request_text = _text(mail)
     rfq = _carrier_requirements(ctx, rfq, request_text)
-    subject = "" if REPLY_SUBJECT.match(mail.subject) else mail.subject
-    ready_on, arrive_by, max_transit_days = schedule(f"{_body(mail)}\n{subject}", rfq.received_at.date())
-    rfq = rfq.model_copy(update={"ready_on": ready_on, "arrive_by": arrive_by,
-                                 "max_transit_days": max_transit_days})  # fmt: skip
     if dg := await dangerous_goods(ctx, mail, files):  # the mail as written: the note says where it stood
         # The quote names the goods and asks for the shipper's declaration (DGD) and the safety data sheet (MSDS).
         rfq = rfq.model_copy(update={"missing": (*rfq.missing, DG_DOCUMENTS)})

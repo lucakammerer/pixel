@@ -14,8 +14,8 @@ from pixel import llm
 from pixel.api.mailbox import RATEDESK
 from pixel.api.portal import Portal
 from pixel.contracts import LaneTariff, Preference, Source
-from pixel.core import events, timing
-from pixel.pricing import bids, engine, portal_rates, selection, store
+from pixel.core import db, events, timing
+from pixel.pricing import bids, engine, portal_rates, rate_card, selection, store
 from tests.test_bids import ctx, deadline, kinds, mail, rfq  # noqa: F401  ctx is the fixture
 
 BASE = "https://portal.test"
@@ -272,3 +272,42 @@ def test_a_price_without_a_rate_id_keeps_the_airline_probed(ctx):  # noqa: F811
     assert portal_rates._unpriced(ctx, rfq()) == ({"Air One"}, False)
     events.emit(ctx, "option.found", "pricing", session_id=1, payload={"option": card | {"rate_id": "R-1"}})
     assert portal_rates._unpriced(ctx, rfq()) == (set(), False)
+
+
+async def test_a_503_prices_the_airline_from_the_rate_card_at_the_current_versions_factor(ctx, offline):  # noqa: F811
+    """Round 94: the API, its page and the desk were silent; Xenon's 3399.00 for 1133 kg, read in v1, prices 1135.6 kg.
+    A later version raised every rate by 15 % (v1+ef9a74): one bracket read in both gives the factor for all."""
+    answer_rates(offline, "503")
+    db.put(ctx.db, "rate_card.breaks.A1", '["0", "1000"]')
+
+    def read(version: str, kg: str, total: str) -> None:
+        events.emit(ctx, rate_card.KIND, "pricing", payload={
+            "origin": "AAA", "destination": "BBB", "code": "A1", "carrier": "Air One", "kg": kg, "total": total,
+            "currency": "EUR", "fx_eur": None, "transit_days": 2, "version": version})  # fmt: skip
+
+    read("v1", "1133", "3399.00")
+    read("v1", "500", "2000.00")
+    read("v1+ef9a74", "500", "2300.00")
+    found = await portal_rates.options(ctx, rfq().model_copy(update={"weight_kg": D("1135.6")}), deadline())
+    assert [(o.carrier, o.source, o.total_eur, o.rate_id) for o in found] == [
+        ("Air One", Source.PORTAL, D("3917.82"), None)
+    ]
+
+
+async def test_the_rate_card_reads_the_bracket_requests_need_once_the_request_is_answered(ctx, offline, monkeypatch):  # noqa: F811
+    answer_rates(offline, "healthy")
+    offline.get("/v1/portal/brackets").respond(200, json={"breaks_kg": [0, 1000]})
+    monkeypatch.setattr(rate_card, "PACE_S", 0)
+    received = timing.now() - timedelta(seconds=30)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=7, payload={"received_at": received.isoformat(),
+                                                                    "weight_kg": "1200", "volume_cbm": "1"})  # fmt: skip
+
+    async def fill() -> list[httpx.Request]:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(rate_card.run(ctx), 0.2)
+        return [call.request for call in offline.calls if call.request.url.path == "/v1/portal/rates"]
+
+    assert await fill() == []
+    events.emit(ctx, "quote.sent", "outbox", session_id=7, payload={})
+    reads = await fill()  # one a minute while no read has named the limit
+    assert [(r.url.params["airline"], r.url.params["weight_kg"]) for r in reads] == [("A1", "1000")]

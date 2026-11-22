@@ -196,6 +196,12 @@ def test_a_mail_that_contradicts_its_attached_document_is_read_by_the_document()
     assert [f"{r.name}: {r.wrong_fields}" for r in results if r.right is False and not r.known_gap] == []
 
 
+def test_a_cross_check_that_reads_the_mails_figures_never_beats_the_document():
+    """Rounds 82 and 130: gpt-4.1 read the mail's figure and the cross-check took it over the document's."""
+    results = bench.document_conflicts.audit(adversarial=True)
+    assert [f"{r.name}: {r.wrong_fields}" for r in results if r.right is False and not r.known_gap] == []
+
+
 def test_generated_requests_read_no_field_wrong_outside_the_known_gaps():
     """Every seventh document case, every mail case and every eleventh carrier answer of `tools/simulate.py`: read
     right or left to the model, unless `rfqs/simulate-known-gaps.json` names the class; a gap that reads right now
@@ -221,3 +227,9 @@ def test_every_later_mail_in_a_session_is_read_and_acted_on_right():
     assert len(reads) > 150
     assert [(r.case_id, r.got) for r in reads if not r.ok and not r.known_gap] == []
     assert [r.case_id for r in reads if r.ok and r.known_gap] == []  # a closed gap leaves the fixture
+
+
+def test_a_cross_check_that_reads_another_amount_never_moves_a_bid():
+    """Rounds 82 and 130: the model's figure won over a right reading. A lead time, a postcode, an offer number, a side
+    price or one charge the model takes for the total is never quoted."""
+    assert simulate.swayed_bids(step=13) == []

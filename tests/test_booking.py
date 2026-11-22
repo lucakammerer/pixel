@@ -91,12 +91,23 @@ async def test_portal_down_books_by_mail_to_the_address_given(pipe, accepted):
     assert sent["to"] == "bookings@kestrel.example" and b.team_reference in sent["body"]
 
 
-async def test_no_rate_id_books_by_mail_with_the_carrier_list(pipe):
-    pipe.ctx.db.execute("INSERT INTO carriers VALUES ('Kestrel Airways', 'airline', 'kestrel@air.example', 'JFK')")
+async def test_no_rate_id_books_a_fresh_rate_or_by_mail_with_the_carrier_list(pipe):
+    """A rate card price (`pricing/rate_card.py`) has no rate id: a fresh rate books it once the API is back."""
     quotes.save(pipe.ctx, quote(1, rate_id=None))
-    pipe.ctx.portal = Portal()
+    pipe.ctx.portal = Portal(None)
     b = await booking.book(pipe.ctx, "Q-1")
-    assert b.via == "email" and pipe.sent[0]["to"] == "kestrel@air.example" and pipe.ctx.portal.calls == []
+    assert b.via == "portal" and pipe.ctx.portal.calls == [("R-fresh000001", b.team_reference)]
+
+    pipe.ctx.db.execute("INSERT INTO carriers VALUES ('Kestrel Airways', 'airline', 'kestrel@air.example', 'JFK')")
+    quotes.save(pipe.ctx, quote(2, rate_id=None))
+    pipe.ctx.portal = Portal()
+
+    async def down(*args, **kw):
+        raise RatesUnavailable("The rate API is unavailable.")
+
+    pipe.ctx.portal.rate = down
+    b = await booking.book(pipe.ctx, "Q-2")
+    assert b.via == "email" and pipe.sent[-1]["to"] == "kestrel@air.example" and pipe.ctx.portal.calls == []
 
 
 @pytest.mark.parametrize("status", ["Status: QU. Space pending.", "Confirmed for 3 of 5 pcs. Balance pending."])
@@ -206,6 +217,12 @@ async def test_the_airlines_reply_to_our_booking_by_mail_stores_its_reference(pi
     ("text", "said"),
     [
         ("Yes, please go ahead and book.", "accept"),
+        ("Let's go with this offer.", "accept"),
+        ("D'accord, merci de réserver.", "accept"),
+        ("We found a cheaper option elsewhere, thanks.", "decline"),
+        ("Thank you, but we have decided against it.", "decline"),
+        ("Merci, mais c'est trop cher.", "decline"),
+        ("If we decide to go with this offer, we will let you know.", "other"),
         ("Bitte buchen Sie die Sendung.", "accept"),
         ("Thanks, but too expensive for us.", "decline"),
         ("We cannot accept this price.", "decline"),
@@ -461,6 +478,11 @@ def test_a_plain_acceptance_books(text):
         "Bitte buchen Sie erst nach Freigabe.",
         "Auftragsnummer: 4500123",  # a packing list's order number
         "We accept no liability for delays.",  # an attached document's terms
+        "We'll go with the airline we used last time.",  # "go with" someone else's offer
+        "We will go with the slower option from our usual forwarder.",
+        "We'll go with the cheaper carrier this time, thanks anyway.",
+        "We'll go with this one from DHL instead.",
+        "We will go with it next month, not now.",
     ],
 )
 def test_a_negated_or_held_acceptance_never_books(text):

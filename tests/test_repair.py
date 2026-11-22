@@ -477,7 +477,7 @@ async def _second(conn, monkeypatch, figures, crosscheck=None, **settings):
     )
     old = [_at(airline("1900.00"), "1002", "1900.00")]
     deadline = Deadline(NOW, NOW, NOW, NOW)
-    read, options = await agent._read_again(ctx, request, old, message, TWO_GROUPS, deadline)
+    read, options = await agent._read_again(ctx, request, old, message, TWO_GROUPS, deadline, NOW)
     return ctx, request, read, options, calls, priced
 
 

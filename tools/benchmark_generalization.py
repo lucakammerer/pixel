@@ -23,7 +23,7 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    read right or left to the model.
 11. Mail against its attached document (rounds 33 to 35): every figure the document states, changed in the mail,
    in every column order, file format and document layout (`tools/document_conflicts.py`); the document's figure
-   is the right reading.
+   is the right reading, also when the model's cross-check reads every figure as the mail states it.
 12. Channel matrix: every mail kind the router knows (a carrier's bid split into airline and trucker) against where
    its information sits (body; pdf, scan, docx, xlsx, txt or csv, audio attachment; body and attachment
    disagreeing). A cell counts the captured mails, kit sheets, pickup offers and `tools/simulate.py` cases that put
@@ -446,10 +446,12 @@ def desk_files() -> list[tuple[str, str, str, bytes]]:
     # A pdf table as pdfplumber gives it: one text line per row, its cells one space apart. simulate's own pdf puts
     # each cell at a fixed x, too narrow for six columns: its text overlaps, which no real pdf does, so only the
     # desk's own lines (one cell per line) are written that way.
-    writers = simulate.WRITERS | {"pdf, rows as lines": lambda rows: simulate._pdf([[" ".join(r)] for r in rows])}
+    writers = simulate.WRITERS | {"pdf, rows as lines": lambda rows: simulate._pdf([[" ".join(r)] for r in rows]),
+                                  "mp3, spoken": simulate._spoken_file}  # fmt: skip
+    own = ("pdf", "mp3, spoken")  # one line per cell, and a voice message says its lines, never a table
     return [(layout, fmt, f"portal-rates.{fmt.split(',')[0]}", write(rows))
             for layout, rows in layouts.items() for fmt, write in writers.items()
-            if fmt != "pdf" or layout == "its own lines"]  # fmt: skip
+            if fmt not in own or layout == "its own lines"]  # fmt: skip
 
 
 def audit_desk_attachments() -> list[DeskRead]:
@@ -465,7 +467,8 @@ def audit_desk_attachments() -> list[DeskRead]:
         body = (
             f"Hello,\n\nthe portal rates for your request are in the attached file ({name}).\n\nBest regards\nRate Desk"
         )
-        text = "\n".join([bids._own_text(body), *(_readable(name, content) or [])])
+        with patch.object(agent, "_transcribe", lambda c: c.decode().splitlines()):  # the speech model offline
+            text = "\n".join([bids._own_text(body), *(_readable(name, content) or [])])
         found = bids.parse_desk(to_message(raw | {"body": text}, "in"), rfq)
         got = [(o.carrier_code, str(o.total), o.transit_days, o.rate_id) for o in found]
         outcome = "right" if got == want else "none" if not got else "wrong"
@@ -644,7 +647,7 @@ def _mutations(raw: dict, exp: dict) -> dict[str, tuple[dict, dict]]:
     if figure and len(figure.findall(raw["body"])) == 1:
         lbs = (D(weight) / LB).quantize(D(1))
         body = figure.sub(f"{lbs} lbs", raw["body"], count=1)
-        found["pounds"] = (raw | {"body": body}, exp | {"weight_kg": str(lbs * LB)})
+        found["pounds"] = (raw | {"body": body}, exp | {"weight_kg": str((lbs * LB).quantize(D("0.01")))})
     return found
 
 
@@ -1387,6 +1390,13 @@ def main() -> int:
         print(f"    ok   {key}: now right, narrow or remove its known_gap")
     for r in conflicts_wrong[:20]:
         print(f"    FAIL {r.name}: {'; '.join(r.wrong_fields)}")
+    # Rounds 82 and 130: the model's cross-check took the mail's figure over the right one. Here it always does.
+    swayed = document_conflicts.audit(adversarial=True)
+    swayed_wrong = [r for r in swayed if r.right is False and not r.known_gap]
+    print(f"    with a cross-check that reads the mail's figures: {sum(bool(r.right) for r in swayed)}/{len(swayed)} keep "
+          f"the document's")  # fmt: skip
+    for r in swayed_wrong[:20]:
+        print(f"    FAIL cross-check {r.name}: {'; '.join(r.wrong_fields)}")
 
     print("\n[12] Channel matrix: cases per kind and where the information sits (gap: a known gap, --gaps)")
     empty = print_matrix(channel_coverage(), channel_gaps())
@@ -1463,6 +1473,7 @@ def main() -> int:
         or live_wrong
         or mutated_wrong
         or conflicts_wrong
+        or swayed_wrong
         or empty
         or containers_wrong
         or tracked_wrong

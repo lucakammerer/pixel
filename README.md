@@ -24,6 +24,7 @@ flowchart TD
     PORTAL[rate portal] --> ENG
     BID --> ENG
     ENG --> SEL[calc + selection<br/>code, Decimal]
+    ENG -.->|a known gap: read again, wait| ENG
     SEL --> Q[quote text]
     Q --> CHK[check + repair<br/>on the text that leaves]
     CHK -.->|a BLOCK mended: build again| SEL

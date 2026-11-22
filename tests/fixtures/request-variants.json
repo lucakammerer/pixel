@@ -15,7 +15,7 @@
      "body": "Fastest possible from DUS to JFK please: one crate, 1.54 t, 5.9 cbm. Quote in EUR, we deliver to DUS ourselves."},
     {"name": "pounds",
      "body": "Need the fastest option DUS to JFK. 1 skid, 3395 lbs, 5.9 cbm. Please quote in EUR. We deliver ourselves.",
-     "expect": {"weight_kg": "1539.94609615"}},
+     "expect": {"weight_kg": "1539.95"}},
     {"name": "dimensions-in-cm",
      "body": "Fastest please, DUS → JFK. 1 crate 250 x 200 x 118 cm, 1540 kg. Price in EUR, we deliver to the airport ourselves."},
     {"name": "dimensions-in-mm",

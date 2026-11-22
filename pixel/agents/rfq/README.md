@@ -22,7 +22,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   too (`extract._crosscheck`, `PIXEL_MODEL_CHECK`, at most 6 s), as an `rfq.crosscheck` event. Pieces and the wish win as
   the model reads them; its weight or volume only when code reads that figure as a gross total with its unit in the
   customer's own words or documents (`_gross`: never net, tare, per piece, superseded, forwarded or in pounds); a
-  destination never, it is only reported. On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
+  destination never, it is only reported. A figure the rules took from the attached documents (`evidence`: no
+  "mail") is never replaced, stated as a total or added up from the rows (benchmark section 11 runs once more with a
+  cross-check that reads every figure as the mail states it). On any failure the rules' reading stands. That call, or the model's own reading when the rules read nothing, drafts
   the prose (`prose.raw`) and `compose.adopt` checks it; only without either, `compose.prose` runs in parallel. The prose may hold the quote at most 10 s after it started (`PROSE_WAIT_S`) and never past `target_at`; a late or
   failing call only drops the slots, the quote goes out with fixed phrases; `pricing/engine.py` `options` (no bid
   to an airline whose decline within the hour listed lanes without ours, `bids.worth_asking`; bids by
@@ -70,16 +72,22 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   names an airline of the carrier list or the sheets, with or without its trailing "Air" or "Cargo", plus a
   two-letter code in brackets) goes into `Rfq.excluded_carriers`; `pricing/selection.py` `select` never quotes it.
   When the sentence speaks of future requests, a `customer.excludes` event keeps it for that customer's later ones.
+  The negation holds for its own clause (`_airline_clauses`: comma, semicolon, "but", "sondern") and for one that
+  only lists more names: "We do not want Beta Cargo, it has to be Alpha Air" rules out Beta Cargo alone.
 - A negation of something good rules no airline out: "we don't mind X", "never had issues with X", "does not
   require X" (`NEGATED_POSITIVE`); "don't want X" and "No X, please" do rule it out, "no pickup needed, X is
   fine" does not.
 - `extract.py` `required_airlines` reads exclusive instructions attached to known carrier names ("<airline> only",
-  "nur mit ...", and "no airline other than ...", "keine andere Airline als ...", which `excluded_airlines` no longer
-  reads as ruling that airline out).
+  "nur mit ...", "only accept / work with ...", "must fly with ...", "muss mit ... fliegen", "requires ...",
+  "<airline> is our only approved carrier", "<airline>, no other airline", and "no airline other than ...", "keine
+  andere Airline als ...", which `excluded_airlines` no longer reads as ruling that airline out). A negation before
+  it ("does not require ...") makes it no requirement.
   `pricing/selection.py` `select` prefers compliant prices and `pricing/bids.py` `request` limits airline enquiries to
   the requested carriers. If recovery reaches the deadline with only another airline's price, `novelty.py`
   `with_note` identifies that price as an alternative.
-- `extract.py` `schedule` reads explicit ready and latest arrival dates and a maximum air transit in days. A latest
+- `extract.py` `schedule` reads explicit ready and latest arrival dates and a maximum air transit in days, in the
+  mail and in its attached documents (`read_request`); a document's date stands against the mail's, as its cargo does
+  (rounds 33 to 35, 130: the scorer prices the document), and is in `rfq.evidence` as `document_schedule`. A latest
   arrival is only "arrive … by / no later than <date>" with nothing but the place between (`ARRIVE_BY`; "Shanghai,
   China" allowed, "arrival airport" a label), never a reply-by or a details-by date, never a past shipment
   (`ARRIVAL_CONTEXT`, the last words before "arrival") and never a date before the request; a date without a year is
@@ -184,6 +192,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
   The cap may also follow its amount ("400 EUR or less", "2000 euros tops") or be "match 400 EUR", "within a
   budget of 300 EUR"; "max." does not end the sentence, and a date after the word is no cap.
+
+
+- An acceptance or a decline in other words books or closes too: "let's go with this offer", "merci de réserver";
+  "found a cheaper option elsewhere", "decided against it", "c'est trop cher" (`booking.ACCEPT`, `DECLINE`).
 - `cancel` (the customer withdraws after the booking, round 88) cancels at the portal by the airline's reference.
   A booking by mail without that reference yet, or a portal that refuses or is down, is withdrawn by mail with the
   airline (`_cancel_by_mail`, the carrier list's address); the customer is told either way. Only without an address
@@ -226,6 +238,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   implausible price per kg, the language, an expired rate. The check itself never changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
+- `gaps.py`: known gaps, closed before the quote while they can change it (rounds 120 to 123: the rate API answered
+  503, the sheet airline was quoted and the scorer's best was a portal rate we never read; nothing in that quote was
+  wrong, so no check could block it). `find` reads the session's log: an airline of the lane whose portal read failed
+  and that no source priced since (`source_down`; "not on the portal" is no gap; an airline the customer ruled out
+  cannot change the quote), an airline, the desk or a trucker asked by mail that has not answered (`answer_pending`:
+  can change the quote when fewer than `THIN` airlines or truckers are priced), sentences whose novelty mapping failed
+  (`unread_sentences`), a fact the request left open (`fact_missing`, only reported). `agent._close_gaps` calls
+  `close` after the bids and before the second reader, only when there is a price at all (else the fallback waits):
+  a failed portal read is read again up to `REREADS` times `REREAD_GAP_S` apart, a pending answer that can change the
+  quote is waited for, the novelty mapping is tried once more; then the request is priced again from every option
+  the session holds. Without a failed source it stops at `by_for` (110 s, inside the full time points of R29); with
+  one, at `agent._repair_by` (15 s before the orchestrator takes over): an outage round is one few teams win.
+  `quote.gaps` names what was found, closed and left open. `PIXEL_GAPS`: `on`, `log` (record only) or `off`.
 - `repair.py`: verify, repair, check again, inside the round. `agent._settled` drafts, translates and hands the
   quote to `settle`, which runs the check on the text that leaves (`quote.checked`, `stage: "sent"`). For a BLOCK
   with an entry in `REPAIRS` it builds the quote again with one thing changed: the distrusted bid or the ruled-out
@@ -277,6 +302,11 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "rates from", "ab", "minimum charge", "our previous offer was", "optional insurance", "... extra". `bids._price`
   takes "we can offer" or "our offer is" as the label and skips such a price (`SIDE_BEFORE`, `SIDE_AFTER`);
   `tools/simulate.py` writes every bid layout beside each of them.
+- An answer can list only its charges, without a total ("Air freight 1,234.56 EUR", "Fuel surcharge ..."; "Base
+  charge", "Weight charge"). `bids._price` adds them up in code (`CHARGE_LINE`, `calc.bid_total`) when every price of the
+  answer is such a line, in one currency, each kind once beside a freight, base or weight charge; a label with
+  more than its own words ("Option A air freight", "Freight to ORD", "via DXB", "Last time:") or a pickup line is
+  never added (`CHARGE_KINDS`); a rate per hour or pallet beside them is no charge.
   "The fuel (security, waiting) rate is" never labels the offer's price (`PRICE_IS`), and an amount at a line's end
   joins the next line's currency only when that line holds the currency alone (`UNWRAP`).
   `pricing/selection.py` `implausible` leaves a bid below a quarter of the cheapest other of its kind out of the
@@ -310,6 +340,22 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "our budget is around 3300 EUR" (rounds 101, 102: ignored, accepted at the best price), "last month we shipped
   1250 kg". Cargo figures are read without sentences about a past shipment (`PAST_SHIPMENT`); a request that only
   says "same as last time: 990 kg" goes to the model.
+
+
+- A request in Spanish, Italian, Dutch or Portuguese is read by rules like a French one: the destination after
+  "a", "para", "hacia", "per DFW", "naar"; the pickup as "recogida", "ritiro", "ophalen", "recolha"; pieces as
+  "bultos", "colli", "volumes", "stuks"; "más/mais rápida", "più veloce", "snelste" fastest and "más económica",
+  "più economica", "goedkoopste", "mais barata" cheapest. Read by rules without the wish words, a fastest request
+  would have been quoted cheapest. Portuguese is still answered in English (`_language`).
+- A request can point to the customer's earlier one: "the same shipment as in my earlier request, "Air freight
+  quote request: STR to MEL" ... the new destination is LAX" (round 103, accepted on the earlier cargo; round 104,
+  "the same shipment as in my request", lost when the model read no weight). `_earlier` takes the earlier request of
+  that subject (else the latest) as it was read, with what this mail states anew: another destination, a weight,
+  volume or piece count, a moved pickup (its zone's airport), the wish, the currency. It runs before the rules, which
+  would read the old lane from the quoted subject. A code the mail names anew is the destination only right after a
+  destination label (`NEW_DESTINATION`); "ship it from FRA", "origin is now FRA", "via FRA", two new airports or an
+  unknown subject go to the rules and the model, whose reading `_earlier_request` still fills from a request of the
+  quoted subject.
 - A request can list its shipment lot by lot, some figures per piece ("each 48 kg") and some for the lot ("together
   730 kg"), with net weights beside the gross ones. `extract.py` `_lots` adds gross weight, volume and pieces up in
   code, also when a model read the rest of the mail: a model's sum was 10% short and the quote was rejected as too low.
@@ -353,9 +399,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   and the subject of that older mail. `extract.py` `_text` reads neither: round 14's quoted lane and weight sent it
   to the model. Outlook's header without an address ends the customer's words too (`HISTORY`, `SENT`), but only by
   what a quoted header alone has: "From:"/"Von:" within a few lines of a "Sent:"/"Gesendet:" with a year or a time,
-  or a rule over such a "Sent:". Without it our own quote below a thank-you ("we will book it for you") read as an
-  acceptance; any field after a rule, or "Datum:" after "Von:", would cut a request laid out as "From: FRA / To: ORD"
-  (#186).
+  or a rule over such a "Sent:", also with the labels in bold ("*From:*"); Apple Mail's "Begin forwarded message:"
+  ends them as well. Lines quoted with ">" are dropped wherever they stand, also above a reply written below them
+  (`QUOTED`). Without it our own quote below a thank-you ("we will book it for you") read as an acceptance; any field
+  after a rule, or "Datum:" after "Von:", would cut a request laid out as "From: FRA / To: ORD" (#186).
 - A model guesses a door-to-port origin from the town (XFW for Lueneburg, CGN for Wuppertal): `_zone_origin` takes
   the pickup zone's airport unless the mail names the origin code itself. A departure airport the customer asks
   for and we truck to wins over the zone's ("please route via Munich (MUC), not Frankfurt", `_asked_departure`; a
@@ -410,6 +457,9 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
 - A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
   or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
+- A per-piece net weight with the gross one in its bracket ("each 142 kg net (160 kg gross)") makes the gross
+  per piece too (`NET_FIRST`); `check.py` reads the same, or it blocks the right weight. Lot lines may be
+  labelled "Posten 2:" or numbered ("2) 3 pallets"), gross and net written "G.W." and "N.W." (`LOT_LABEL`).
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
 - A volume the rules cannot settle (two sets of dimensions, no total) sends the mail to the model: a volume of 0
@@ -482,8 +532,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   price (`_price`). Truckers bring new layouts as a pdf, docx or voice message (rounds 63 to 65), so an offer that
   stands only in an attachment is read by the model too (`pricing/bids.py` `_crosscheck`, at most 3 s, so no answer
   misses `collect`'s cutoff); a `bid.crosscheck` event reports a difference. The model's total wins only in the
-  rules' currency and when the text states it as the shipment's amount (`_stated`). An answer in the mail itself
-  costs no call: on 359 answers of rounds 9 to 72 the model read no other total.
+  rules' currency and when the text states it as the shipment's price (`_stated`): in that currency or after a total
+  label, never a lead time, postcode or offer number, a side price, one charge or an exchange rate;
+  `tools/simulate.py` `swayed_bids` has the model answer every other amount of each generated offer. An answer in
+  the mail itself costs no call: on 359 answers of rounds 9 to 72 the model read no other total.
 - A customer can send the whole request as a voice message (round 65). Its transcript is an attachment like a
   packing list, and a spoken "please collect the goods" or "please arrange the truck" is a door pickup (`DOOR`);
   "the airline will collect the cargo" or "we will arrange the truck ourselves" is not. Unread, we had to ask the

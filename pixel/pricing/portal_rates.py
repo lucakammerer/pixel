@@ -12,7 +12,7 @@ from pixel.contracts import RateOption, Rfq
 from pixel.core import events, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
-from pixel.pricing import calc, selection
+from pixel.pricing import calc, rate_card, selection
 
 LANES_TTL_S = 600
 # Rounds 120 and 121: a rate read that answered with an outage is read again before the quote. The first read is
@@ -82,7 +82,11 @@ async def _read(
         events.emit(ctx, "option.failed", "pricing", session_id=rfq.session_id,
                     payload={"source": "portal", "carrier": name, "error": type(exc).__name__, "hint": str(exc)}
                     | ({"page": exc.page} if getattr(exc, "page", None) else {}))  # fmt: skip
-        return None
+        if not isinstance(exc, RatesUnavailable) or (card := rate_card.option(ctx, rfq, code)) is None:
+            return None
+        events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
+                    payload={"option": card.model_dump(mode="json"), "why": "rate card"})  # fmt: skip
+        return card
     events.emit(ctx, "option.found", "pricing", session_id=rfq.session_id,
                 payload={"option": option.model_dump(mode="json")})  # fmt: skip
     return option
