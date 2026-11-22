@@ -13,19 +13,19 @@ from pixel.ui.page import esc, money
 CSS = """<style>
 /* one statement on top, then one large figure at a time over a five-stop timeline. The accent marks only the
 price, the moment the section is about; everything else is white at three strengths */
-.pipe{margin-top:104px;padding:96px 64px 72px;border-radius:28px;background:var(--navy);color:#fff;text-align:center}
-.pipe .ey{margin:0 0 14px;font-size:17px;color:rgba(255,255,255,.55)}
-.pipe h2{margin:0;font-size:56px;font-weight:500;letter-spacing:-.035em;line-height:1.05;color:#fff}
+.pipe{margin-top:88px;padding:60px 48px 44px;border-radius:28px;background:var(--navy);color:#fff;text-align:center}
+.pipe .ey{margin:0 0 10px;font-size:15px;color:rgba(255,255,255,.55)}
+.pipe h2{margin:0;font-size:40px;font-weight:500;letter-spacing:-.035em;line-height:1.05;color:#fff}
 .pipe h2 span{color:rgba(255,255,255,.45)}
-.pipe .scenes{position:relative;height:240px;margin-top:80px}
+.pipe .scenes{position:relative;height:150px;margin-top:40px}
 .pipe .sc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
 opacity:0;transform:translateY(12px) scale(.98);transition:opacity .6s ease,transform .8s cubic-bezier(.2,.7,.2,1)}
 .pipe .sc.on{opacity:1;transform:none}
-.pipe .sc .v{max-width:100%;font-size:clamp(44px,7vw,80px);font-weight:500;letter-spacing:-.045em;line-height:1.02;
+.pipe .sc .v{max-width:100%;font-size:clamp(32px,4.6vw,54px);font-weight:500;letter-spacing:-.045em;line-height:1.02;
 font-variant-numeric:tabular-nums;text-wrap:balance;overflow-wrap:anywhere}
 .pipe .sc.hero .v{color:var(--accent-2)}
-.pipe .sc .c{margin-top:18px;font-size:19px;line-height:1.4;color:rgba(255,255,255,.6);text-wrap:balance}
-.pipe .tl{position:relative;max-width:880px;margin:56px auto 0}
+.pipe .sc .c{margin-top:12px;font-size:17px;line-height:1.4;color:rgba(255,255,255,.6);text-wrap:balance}
+.pipe .tl{position:relative;max-width:820px;margin:32px auto 0}
 .pipe .tl-line{position:absolute;top:39px;left:10%;right:10%;height:2px;border-radius:2px;background:rgba(255,255,255,.12)}
 .pipe .tl-line i{position:absolute;inset:0 auto 0 0;width:0;border-radius:2px;background:#fff;
 transition:width .9s cubic-bezier(.6,0,.2,1)}
@@ -44,10 +44,10 @@ box-shadow:inset 0 0 0 2px rgba(255,255,255,.25);transition:background .4s,box-s
 .pipe .stp.now b,.pipe .stp.now .t{color:#fff}
 .pipe .stp.hero.now i,.pipe .stp.hero.done i{background:var(--accent-2)}
 .pipe .stp.hero.now i{box-shadow:0 0 0 6px rgba(232,121,90,.22)}
-.pipe .proof{margin:56px 0 0;font-size:13px;color:rgba(255,255,255,.4)}
-@media (max-width:1000px){.pipe{margin-top:80px;padding:72px 32px 56px}.pipe h2{font-size:44px}}
-@media (max-width:560px){.pipe{padding:56px 16px 44px}.pipe h2{font-size:34px}.pipe .scenes{height:200px;margin-top:56px}
-.pipe .sc .c{font-size:16px}.pipe .stp .t{font-size:11px}.pipe .stp b{font-size:12px}}
+.pipe .proof{margin:32px 0 0;font-size:13px;color:rgba(255,255,255,.4)}
+@media (max-width:1000px){.pipe{margin-top:72px;padding:52px 32px 40px}.pipe h2{font-size:34px}}
+@media (max-width:560px){.pipe{padding:44px 16px 36px}.pipe h2{font-size:28px}.pipe .scenes{height:150px;margin-top:32px}
+.pipe .sc .c{font-size:15px}.pipe .stp .t{font-size:11px}.pipe .stp b{font-size:12px}}
 @media (prefers-reduced-motion:reduce){.pipe *{transition:none!important}}
 </style>"""
 
