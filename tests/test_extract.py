@@ -139,6 +139,22 @@ async def test_a_captured_door_request_without_an_origin_takes_the_pickup_zones_
     assert (rfq.origin, rfq.destination, rfq.extracted_by, rfq.missing) == ("AAA", "ORD", "rules", ())
 
 
+async def test_a_german_door_request_names_its_destination_zum_flughafen(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("28321"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, captured("rfq-german-door-zum-flughafen.json"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.extracted_by) == ("AAA", "SGN", "rules")
+
+
+def test_the_truck_to_the_departure_airport_is_no_destination():
+    text = "Abholung in 28321 Town, bitte den Lkw zum Abflughafen AAA. Luftfracht zum Flughafen BBB, 405 kg."
+    assert extract._destination_only(text) == "BBB"
+
+
 async def test_a_door_request_whose_zone_has_no_airport_is_left_to_the_model(conn, monkeypatch, emitted):
     async def as_the_model_read_it(ctx, **kw):
         data = {"origin": "FRA", "destination": "ORD", "weight_kg": "676", "volume_cbm": "5.79", "pieces": 12,
