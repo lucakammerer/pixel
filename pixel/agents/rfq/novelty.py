@@ -50,7 +50,7 @@ FRAME = (
     "included arrange thank thanks advance look looking forward hear soon possible best regards hello dear team "
     "sir madam taking lot have lovely day nice week good hope going well reply mail email back let know will "
     "need needs are was were has had all any some one per total gross weight volume pieces pcs ready date "
-    "service export import site airport departure truck trucking pickup pick-up collection transport "
+    "service export import site airport departure truck trucking pickup pick-up collection transport arranging flight their i’m i'm sorry left out "
     "bitte angebot luftfracht sendung anhang danke vielen gruss gruesse grüße unser unsere ihr ihre für mit und "
     "der die das den dem ein eine einen wir sie uns pour merci nous vous votre notre les des une avec avance "
     "d’avance d'avance bonne journée"
@@ -95,7 +95,9 @@ SCHEDULE_ALTERNATIVE = {
 }
 MONEY = re.compile(rf"[€$£]|\b(?:{'|'.join(extract.CURRENCIES)})\b")
 # No split after a dotted abbreviation: "Corrosive liquid, n.o.s. (contains phosphoric acid)" stays one sentence.
-SENTENCE = re.compile(r"(?<=[.!?])(?<!\.\w\.)\s+|\n")
+# Clauses too: "X only, and the cargo must arrive by ..." holds two requirements; a rule reading one must not hide
+# the other.
+SENTENCE = re.compile(r"(?<=[.!?])(?<!\.\w\.)\s+|\n|;\s*|,\s+(?=(?:and|but|while|und|aber|et|mais)\s)")
 WORD = re.compile(r"[^\W\d_][\w'’-]+")
 DATE = re.compile(
     rf"(?<![\w.,/-])(?P<value>{extract.DATE_VALUE}|\d{{1,2}}/\d{{1,2}}(?:/\d{{4}})?)(?![\w/-])", re.IGNORECASE
