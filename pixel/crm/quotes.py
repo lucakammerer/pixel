@@ -7,7 +7,6 @@ from typing import Any
 
 from pixel.contracts import Quote, QuoteStatus
 from pixel.core.context import Context
-from tools.board_me import rare
 
 HIDDEN = ("accuracy", "time")  # the board may leave these out of each row until the scores are revealed
 QUOTE = ("accuracy", "time", "cost")  # what the quote itself earns (R26 to R29)
@@ -212,7 +211,6 @@ def stats(ctx: Context, now: datetime | None = None) -> dict[str, Any]:
         "rounds": len(rounds),
         "accepted": verdicts.get("accepted", 0),  # by the scorer (R26)
         "rejected": verdicts.get("rejected", 0),
-        "rare": rare(rounds),  # rounds with one to three teams accepted by the scorer, and ours among them
         "no_answer": verdicts.get("no answer", 0),
         "won": status.get(QuoteStatus.ACCEPTED, 0),  # by the customer
         "lost": status.get(QuoteStatus.DECLINED, 0) + status.get(QuoteStatus.EXPIRED, 0),

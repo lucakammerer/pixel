@@ -158,13 +158,6 @@ def _business(ctx, s: dict[str, Any]) -> str:
     )
 
 
-def _rare(r: dict) -> str:
-    if not r.get("rare"):
-        return ""
-    factor = f" ×{esc(r['factor'])}" if r.get("factor") else ""
-    return f" <span class=muted title='teams accepted by the scorer'>{esc(r['teams'])} teams{factor}</span>"
-
-
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """`crm.quotes.stats` and the scored rounds of /v1/board/me. Shipments live in the CRM."""
@@ -183,8 +176,6 @@ async def dashboard(request: Request):
         ("Human writing", pts(p.get("humanity", Decimal(0))), "" if p.get("humanity") else "none yet"),
         ("Accepted", f'{accepted} / {s["rounds"]}', f'{s["rejected"]} rejected'
          + (f' · {s["no_answer"]} no answer' if s["no_answer"] else "")),
-        ("Rare rounds accepted", f'{s["rare"]["won"]} / {s["rare"]["rounds"]}',
-         f'{pts(s["rare"]["points"])} pts · 1-3 teams accepted by the scorer'),
         ("Spend / accepted", f"${spend:.4f}" if spend is not None else "—", "last hour"),
     ])  # fmt: skip
     flow = _strip([
@@ -197,7 +188,7 @@ async def dashboard(request: Request):
     rounds = quotes.scored_rounds(ctx)
     adjustment = any("adjustment" in r["points"] for r in rounds)
     score_rows = "".join(
-        f"<tr><td class=num>{esc(r.get('round'))}{_rare(r)}</td><td class=num>{clock(r.get('sent_at'))}</td>"
+        f"<tr><td class=num>{esc(r.get('round'))}</td><td class=num>{clock(r.get('sent_at'))}</td>"
         f"<td class=n>{esc(round(float(r['seconds']))) if r.get('seconds') is not None else '—'}</td>"
         f"<td>{status(str(r.get('verdict') or '—'), VERDICT_CSS.get(r.get('verdict'), ''))}</td>"
         f"<td class=muted>{esc(r.get('reason') or '')}</td>"
