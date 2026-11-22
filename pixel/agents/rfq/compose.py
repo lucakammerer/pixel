@@ -47,8 +47,8 @@ TEXT = {
                     "{transit} in transit."
                 ),
                 (
-                    "I've compared the airlines from {origin} to {destination}, and {carrier} comes out best at {total} "
-                    "{currency} all-in, with {transit} in transit."
+                    "The lowest rate from {origin} to {destination} is {total} {currency} all-in with {carrier}, "
+                    "with {transit} in transit."
                 ),
             ),
             "fastest": (
@@ -69,8 +69,8 @@ TEXT = {
                     "all-in."
                 ),
                 (
-                    "I've compared the airlines from {origin} to {destination}, and {carrier} is the quickest: "
-                    "{transit} in transit, {total} {currency} all-in."
+                    "The quickest option from {origin} to {destination} is {carrier}: {transit} in transit, "
+                    "{total} {currency} all-in."
                 ),
             ),
         },
@@ -82,8 +82,8 @@ TEXT = {
                     "{currency} all-in, {transit} in transit."
                 ),
                 (
-                    "I've compared the airlines for your {goods} from {origin} to {destination}, and {carrier} comes "
-                    "out cheapest at {total} {currency} all-in, with {transit} in transit."
+                    "{carrier} has the lowest rate for your {goods} from {origin} to {destination}: {total} "
+                    "{currency} all-in, with {transit} in transit."
                 ),
             ),
             "fastest": (
@@ -92,8 +92,8 @@ TEXT = {
                     "transit, {total} {currency} all-in."
                 ),
                 (
-                    "I've compared the airlines for your {goods} from {origin} to {destination}, and {carrier} is the "
-                    "quickest: {transit} in transit, {total} {currency} all-in."
+                    "{carrier} is the quickest option for your {goods} from {origin} to {destination}: "
+                    "{transit} in transit, {total} {currency} all-in."
                 ),
             ),
         },
@@ -189,8 +189,8 @@ TEXT = {
                     "Laufzeit {transit}."
                 ),
                 (
-                    "Ich habe die Airlines von {origin} nach {destination} verglichen: Am besten liegt {carrier} mit "
-                    "{total} {currency} all-in, Laufzeit {transit}."
+                    "Den günstigsten Preis von {origin} nach {destination} bietet {carrier}: "
+                    "{total} {currency} all-in. Die Laufzeit beträgt {transit}."
                 ),
             ),
             "fastest": (
@@ -207,8 +207,8 @@ TEXT = {
                     "{total} {currency} all-in."
                 ),
                 (
-                    "Ich habe die Airlines von {origin} nach {destination} verglichen: Am schnellsten ist {carrier}, "
-                    "Laufzeit {transit}, zu {total} {currency} all-in."
+                    "Die schnellste Verbindung von {origin} nach {destination} bietet {carrier}: "
+                    "{transit} Laufzeit für {total} {currency} all-in."
                 ),
             ),
         },
@@ -316,7 +316,7 @@ TEXT = {
                     "{total} {currency} tout compris."
                 ),
                 (
-                    "J'ai comparé les compagnies de {origin} à {destination} : {carrier} est la plus rapide, avec "
+                    "{carrier} propose le trajet le plus rapide de {origin} à {destination} : "
                     "{transit} de transit, pour {total} {currency} tout compris."
                 ),
             ),

@@ -390,6 +390,18 @@
    "known_gap": "One pickup per Rfq; several pickups need a list of pickup legs in `Rfq` and `pricing/pickup.py`. Owner: Accuracy, contracts on main. Size L."
   },
   {
+   "fixture": "next-cases/trucker-price-in-usd-without-rate.json",
+   "expected": {
+    "carrier": "Orion Cargo Air",
+    "trucker": "Bodenseefracht",
+    "total": "2520.12",
+    "currency": "EUR",
+    "note": "assumes the dataset rate 1 USD = 0.92 EUR as a priced source states it: Bodenseefracht 152.30 USD = 140.12 EUR, 6 h; balanced 1 + 1 = 2 against Taunusfracht 182.62/140.12 + 20/6 = 4.64; Orion 2380.00 (kit)"
+   },
+   "today": "Before accuracy/trucker-currency-fx: a USD price with no rate in the answer was no price (the model needs one too), so only Taunusfracht counted: 2562.62, 1.7% high. Now the rate comes from the newest priced source in USD (`bids.known_fx`). Offline the start kit has no USD source, so the replay still shows 2562.62.",
+   "known_gap": "Priced only once some source of the night stated a rate for that currency (portal, desk or a carrier); a currency no source ever priced (CHF, PLN) stays unpriced. Owner: Accuracy."
+  },
+  {
    "fixture": "next-cases/infra/poll-page-unreadable-mails.json",
    "expected": {
     "see": "the fixture's expected"

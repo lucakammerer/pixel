@@ -84,7 +84,7 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   this customer (R31). Greeting and sign-off in their register (`greeting`, `register`): "Dear Petra Hofmann," and
   "Kind regards" to a formal mail (the whole signed name, never a guessed Mr or Ms), "Hi Klaus," to a casual one,
   by the name they signed with (the model's slot, else `signed_name` by rule). The offer follows the greeting
-  directly, as in the six rounds that earned Humanity points. It states the goods in
+  directly. It states the selected option without describing how the carriers were compared, and names the goods in
   the customer's words when the mail names them (`goods_of`, "For your machine parts, …"), total and currency,
   carrier, transit, what is included, the chargeable weight only when it is above the gross weight; the validity on
   our desk's clock ("until 17:22 today") with the booking line, for a sheet price its last valid day
@@ -142,6 +142,10 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   reads the cap, `selection.within_cap` compares it with our total ("below" strict, "up to" not, another currency
   never), and `handle_reply` books only when it is met; otherwise, or when the condition is not a price, a person.
   It used to be a thank-you that needed nobody, and the German sentence was split at "3." and booked whatever the cap.
+- `cancel` (the customer withdraws after the booking, round 88) cancels at the portal by the airline's reference.
+  A booking by mail without that reference yet, or a portal that refuses or is down, is withdrawn by mail with the
+  airline (`_cancel_by_mail`, the carrier list's address); the customer is told either way. Only without an address
+  does a person take it, and the booking stays as it was.
 - `book` uses a shipment reference for the portal booking, including a retry. An expired rate is refreshed for
   the selected billed weight, and so is a rate id the bookings API does not know (404, a desk or browser-page id)
   or one taken (409). A 503, an option without a rate id, or an expired rate while the rate API is down or capped
