@@ -483,3 +483,73 @@ booking. The open variations still need opposite cases, pickup and air, arrival 
 it or after booking, body and file and later correction, another language and script, another unit, and a
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
+
+## Axis F: after the quote (22.11.2026 11:00, live database to round 179)
+
+Every incoming mail of the live database that is not the first of its session, re-read through today's
+`router.rules`, `booking.reply_intent`, `followup.read` and `followup.action` in the phase it met (offline, no model);
+tracking questions through today's `tracking.question` and `match`. Cases: `tests/fixtures/thread-followups.json`
+(`uv run python -m tools.followup_matrix`); behaviour after the action: `tests/test_booking.py`.
+
+### What the scorer scores, from 179 rounds
+
+| Fact | Evidence | Status |
+| --- | --- | --- |
+| `points.tracking` +10 needs `booked: true` and a tracking answer | 100 rounds booked and +10; 6 booked with 0: rounds 1, 2, 19 (tracking question matched no shipment, early matcher), 27, 29 (booking stuck `requested`, fixed #323) | proven |
+| `points.booking` is always 0.0 | 112 rounds with the key, none above 0 | open: what earns it; no round shows it |
+| `booked: null` when the scenario has no booking | 67 rounds: declines, the dangerous-goods "we'll send the documents" thread (13), match requests left unanswered | proven |
+| A booking made before the customer's yes is `booked: false` | rounds 144, 166: booked on a price-match request, the yes came after | proven (2 of 2) |
+| `adjustment` +10 when our reply keeps the price on a match request | rounds 144, 166 (+10); 108, 132, 157, 175 unanswered: none | proven (2 of 2, 0 of 4) |
+| `adjustment` −20 when a cancellation after the booking is not done | round 88 | proven; fixed #336 |
+| The answer to a change mail is the scored quote | round 86 | proven (rfq README) |
+| Whether a question about the quote (transit, inclusions, validity), a second request in the thread or a reminder is scored | never seen live | open: cheapest evidence is the first live round of each |
+
+### The census: 1738 later mails (21.11. 13:58 to 22.11. 09:08)
+
+| Sender | Kind | Count | Today's action | Right |
+| --- | --- | --- | --- | --- |
+| airline, trucker | carrier bid after our quote | 1222 | `bids.record` | right |
+| airline | booking confirmation | 100 | 93 `booking.confirmed`, 6 a second confirmation of a confirmed booking (nothing), 1 confirmed with a delivery error (C15, generalize) | right |
+| customer | acceptance after the quote | 114 | book | right |
+| customer | thanks after booking, confirmation or cancellation | 216 | nothing | right. These were the "reply_unhandled" sessions: all 119 `human.note`s of 21.11. 15:05 to 23:50 came from the code before `followup.read`; since 00:00 none |
+| customer | decline after the quote ("too low to be right", "too high", wrong language, no PDF, two shipments) | 37 | decline | right (the losses are the first quote's: price, checklist, shipments) |
+| customer | price-match request ("another forwarder quoted 7 % less, could you match?") | 6 (rounds 108, 132, 144, 157, 166, 175) | decline 3, person 1, booked at once 2 | **wrong**, fixed by #480 (`hold`) |
+| customer | the second yes after we booked on the match request | 2 | rebook (nothing) | follows from the row above |
+| customer | "we'll send the dangerous-goods documents shortly" | 13 | nothing | right (`booked: null`, no points lost) |
+| customer | cargo change after the quote | 4 | requote | right (2 of 21.11. went to a person before #467) |
+| customer | cancellation after the booking | 6 | cancel, customer told | right (round 88 lost −20 before #336) |
+| customer | "Understood, thanks for letting me know" to our no-price mail | 5 | 4 nothing, 1 `human.note` (no sign-off word, `_acknowledges_no_price` misses it) | wrong (an operator alert for nothing; no points) |
+| customer | answer to our question before the quote | 11 | quoted 6 (103, 131, 132 accepted), no price 2, no answer 3 (rounds 69, 89, 90 on 21.11.) | losses belong to scope (104), shipments (113, 89, 90), checklist (156) |
+| tracking desk | tracking question | 105 | 100 answered `confirmed`, 2 answered `booking` (stuck bookings, fixed #323), 3 matched nothing on 21.11. | right today: today's `match` finds all three |
+
+### The table: every case, right action, today
+
+Steps taken from each live case: the opposite (a competitor mentioned in a decline; a cap in "match 4,000 EUR"),
+another party (airline, trucker, rate desk, tracking desk), another moment (open, quoted, declined, accepted, booked,
+confirmed, cancelled), another channel (body, attachment, a new thread quoting ours), another language (en, de, fr,
+es, it), two at once (a yes and a match request; a change and a yes).
+
+| # | Case | Live | Right action | Today | Status, owner |
+| --- | --- | --- | --- | --- | --- |
+| F1 | price-match request after the quote, en/de/fr, after a decline | 6 rounds | `hold`: one reply keeping the price, quote open, the yes books | `hold` | fixed #480 (review) |
+| F2 | price-match request that declines in its own sentence | never | decline | decline | right |
+| F3 | price-match request after the booking | never | person | person | right |
+| F4 | acceptance in Spanish or Italian | never | book | nothing | **gap**, after the quote (`booking.ACCEPT`) |
+| F5 | decline "nous ne donnerons pas suite" | never | decline | nothing (quote stays open) | **gap**, after the quote (`booking.DECLINE`) |
+| F6 | weight corrected "1,952 kg, not 753 kg, please correct the offer" | once after the booking (21.11.) | requote at 1,952 kg | person, no requote | **gap**, after the quote (`followup.changes`, `UPDATE`) |
+| F7 | the same correction after the confirmation | 21.11. 15:51 | person with the change | person, change unread | **gap**, after the quote |
+| F8 | ready date moved after the booking | never | person | nothing | **gap**, after the quote (`followup.changes`) |
+| F9 | acceptance in a new thread quoting our quote | never | the old session books | new request, quoted again | **gap**, Speed (`router.rules`) |
+| F10 | booking confirmation for an unknown reference from an unlisted address | never | confirmation, unmatched | new request | gap, Speed (B13) |
+| F11 | question about the quote (transit, inclusions, validity), documents after the booking, a reminder | never | unknown: a person today; a reply from the quote's own facts if the scorer scores it | person | open, after the quote; scorer unknown |
+| F12 | second request in the same thread after the quote | never | unknown (R4 counts our first quote per thread) | requote of the new lane, the first quote superseded | open, scorer unknown (B15) |
+| F13 | cancellation before our quote ("please disregard my request") | never | unknown: R1 says always answer | person, the quote still goes out | open, scope |
+| F14 | acceptance after the rate expired | test | book a fresh rate | book (`portal_rates.refresh`) | right (B1) |
+| F15 | tracking question before any booking | never | person | person | right |
+| F16 | the same mail twice | test | one action | one booking (`test_acceptance_books_once_and_tells_customer`) | right |
+| F17 | "Understood, thanks" without a sign-off word to our no-price mail | 1 (07:06) | nothing | `human.note` | gap, after the quote (`_acknowledges_no_price`) |
+| F18 | airline refuses or changes a booking | never | the next option, or a person now | person (B7) | open, Shared (`booking.handle_confirmation`) |
+| F19 | booking failed, customer silent | never | a notice or a person within the round | nothing to the customer (B9) | open, Shared |
+
+0 wrong outside these known gaps (`tools.followup_matrix`: every non-right case carries its `known_gap` and owner).
+Next in this lane, most frequent and cheapest first: F4 and F5 (one regex each), F6 and F7, F8, F17.
