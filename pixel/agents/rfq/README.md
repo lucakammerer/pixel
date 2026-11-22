@@ -123,6 +123,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
   (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
   a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67).
+  When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
+  `compose.insured` confirms coverage in the mail alongside the single all-in amount.
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.

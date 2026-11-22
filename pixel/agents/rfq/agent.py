@@ -48,14 +48,13 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
         option = calc.in_currency(option, rfq.currency, _fx_for(rfq.currency, options))
     request = compose.customer_body(ctx, rfq.message_id)
     premium = _insurance(ctx, rfq, request, options, option)
-    air = option
     if premium:
         option = calc.with_insurance(option, premium)
     subject, body = compose.render(
         rfq, option, prose, compose.customer_subject(ctx, rfq.message_id), ctx.settings.signer, request
     )
     if premium:
-        body = compose.insured(body, rfq, option.total - air.total, option.currency)
+        body = compose.insured(body, rfq)
     calls = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE kind = 'llm.call' AND session_id = ?", (rfq.session_id,)
     ).fetchone()[0]
@@ -76,7 +75,7 @@ def _quote(ctx: Context, rfq: Rfq, options: list[RateOption], prose: compose.Pro
     quote = _noted(ctx, rfq, quote)
     if required:
         quote = quote.model_copy(update={"body": novelty.with_note(quote.body, required, compose.language_of(rfq))})
-    _check(ctx, rfq, quote)
+    _check(ctx, rfq, quote, insurance_eur=premium or Decimal(0))
     events.emit(ctx, "quote.drafted", "rfq", session_id=rfq.session_id,
                 payload={"quote_id": quote.id, "option": option.model_dump(mode="json"), "fallback": fallback,
                          "options": len(options), "insurance_eur": str(premium) if premium else None, "complete_service": not rfq.door_pickup or bool(option.trucker),
@@ -98,7 +97,7 @@ def _insurance(ctx: Context, rfq: Rfq, request: str, options: list[RateOption], 
     return calc.to_eur(calc.insurance_premium(value, share, rate, minimum), currency, fx)
 
 
-def _check(ctx: Context, rfq: Rfq, quote: Quote) -> None:
+def _check(ctx: Context, rfq: Rfq, quote: Quote, *, insurance_eur: Decimal = Decimal(0)) -> None:
     """The last look before the quote can leave (`check.py`): a `quote.checked` event with what it found. It never
     holds or changes the quote; a BLOCK finding is an issue for `feedback.alert`, so a person sees it at once.
     PIXEL_PRECHECK=off skips it. Never raises."""
@@ -118,7 +117,14 @@ def _check(ctx: Context, rfq: Rfq, quote: Quote) -> None:
             ).fetchone()
             if evidence and evidence["weight"] is not None:
                 document_weight = Decimal(evidence["weight"])
-        findings = check.run(quote, request, session.for_request(ctx, rfq), files, document_weight=document_weight)
+        findings = check.run(
+            quote,
+            request,
+            session.for_request(ctx, rfq),
+            files,
+            document_weight=document_weight,
+            insurance_eur=insurance_eur,
+        )
         events.emit(ctx, "quote.checked", "rfq", session_id=rfq.session_id,
                     payload={"quote": quote.id, "blocking": check.blocking(findings), "fallback": quote.fallback,
                              "total": str(quote.total), "findings": check.as_payload(findings)})  # fmt: skip
