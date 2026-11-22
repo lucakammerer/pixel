@@ -521,6 +521,27 @@ round-67 hourly-charge misread remains covered by `tests/fixtures/bid-plausibili
 | T11. One-hour bid, different weight, or one reply to two enquiries | Keep the stated expiry and weight tied to each enquiry. A fixed total for a different weight cannot price this request. | The air and truck samples lose validity. The rules build a bid option with the RFQ's weight. Multi-enquiry correlation remains untested. | Wrong for expiry; unknown for different weight or two enquiries. Owner: supply. |
 | T12. Airline changes name/address, an unknown airline or trucker replies, or a zone changes airport | Resolve the replying party to the actual enquiry and apply each effective carrier or zone change once | Current store keys carriers by name and zones by zone. Audit of rename, unknown sender and zone replacement is pending. | Unknown until carrier/zone updates are replayed. Owner: supply. |
 
+### Bid validity variants
+
+The next snapshot, through event 19080 and round 181, adds four inbound census rows, three portal events and two
+sent quotes. It adds no tariff versions and shows no further candidate for a newer sheet or later bid before
+send. All 158 stored start-kit lanes match the offline source reading for dates, rate breaks, currency, transit,
+minimum and surcharges. The 20 hand-worked kit prices agree. The two emailed tariff files still need their
+original attachments. Owner: supply.
+
+| Variant | Hand expectation | Observed offline | Status |
+| --- | --- | --- | --- |
+| T1a. UTC deadline, airline body, trucker body, airline DOCX | Keep 17:00 UTC with the stated total and transit or pickup | All three keep the amount and lead time, and drop the deadline | Wrong. Owner: supply. |
+| T1b. One hour and 45 minutes from a 16:00 UTC offer | Keep 17:00 and 16:45 UTC respectively | Both keep the amount and transit, and drop the deadline | Wrong. Owner: supply. |
+| T1c. German timestamp with offset, Arabic duration, French duration in a trucker's DOCX | Normalize to 17:00, 17:00 and 16:30 UTC | All three keep the amount and lead time, and drop the deadline | Wrong. Owner: supply. |
+| T1d. Departure time or an old expiry quoted below the new offer | Keep the offer without an expiry | Both keep the new total without an expiry | Right. |
+| T3a. Desk offer in 22 attachment layouts | Keep the per-airline amount, currency, transit, rate ID and 14:38 UTC expiry | All 22 preserve those fields with the RFQ supplied | Right for reading. Thread correlation and expiry before reuse remain open. Owner: supply. |
+| T7a. Missing portal dataset version | Carry the source's dataset version when it supplies one | Four options in round 100 lack it, including the one used in an accepted quote. The raw response is unavailable. | Unknown whether the source supplied the version. Owner: supply. |
+
+The validity probes run through the real bid recorder with no gateway, using `rfqs/bid-validity.json`. These
+findings verify the read separately from availability before send. Reuse before, at and after expiry, competing
+later replies and the same cases after a booking remain open. Owner: supply. No change to accepted quote rate.
+
 Steps already covered by this census include air versus truck versus desk, body versus attachment, reply linked
 to an enquiry versus a separate desk thread, and source received before the quote versus a fresh rate read for
 booking. The open variations still need opposite cases, pickup and air, arrival just before the quote or after

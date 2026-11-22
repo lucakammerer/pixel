@@ -39,7 +39,8 @@ Runs offline and free on the fixtures in `tests/fixtures/` and the sheets in `da
    every language, unit system and attachment format (`tools/followup_matrix.py`): the router's kind, and for a
    customer's mail the intent, the changed fields and what the session does.
 16. Rate desk answer in an attachment: the captured answer as its own lines or a table (`ratedesk-layouts.json`), in
-   pdf, xlsx, docx, txt and csv, behind a mail that only points to the file: the same airlines, rates and rate ids.
+   pdf, xlsx, docx, txt and csv, behind a mail that only points to the file: the same airlines, rates, rate ids
+   and validity.
 
 Rows carrying `known_gap` are reported as gaps for the code owner instead of failures.
 
@@ -461,7 +462,8 @@ def audit_desk_attachments() -> list[DeskRead]:
     raw, req = json.loads((MAILS / data["fixture"]).read_text()), data["request"]
     rfq = Rfq(session_id=1, message_id=1, customer="bench", origin=req["origin"], destination=req["destination"],
               weight_kg=D(req["weight_kg"]), volume_cbm=D(req["volume_cbm"]), received_at=NOW, deadline_at=NOW)  # fmt: skip
-    want = [(p["code"], p["total"], p["transit_days"], p["rate_id"]) for p in data["priced"]]
+    want = [(p["code"], p["total"], p["currency"], p["transit_days"], p["rate_id"],
+             datetime.fromisoformat(p["valid_until"])) for p in data["priced"]]  # fmt: skip
     results = []
     for layout, fmt, name, content in desk_files():
         body = (
@@ -470,7 +472,7 @@ def audit_desk_attachments() -> list[DeskRead]:
         with patch.object(agent, "_transcribe", lambda c: c.decode().splitlines()):  # the speech model offline
             text = "\n".join([bids._own_text(body), *(_readable(name, content) or [])])
         found = bids.parse_desk(to_message(raw | {"body": text}, "in"), rfq)
-        got = [(o.carrier_code, str(o.total), o.transit_days, o.rate_id) for o in found]
+        got = [(o.carrier_code, str(o.total), o.currency, o.transit_days, o.rate_id, o.valid_until) for o in found]
         outcome = "right" if got == want else "none" if not got else "wrong"
         results.append(DeskRead(layout, fmt, outcome, "" if outcome == "right" else str(got)))
     return results

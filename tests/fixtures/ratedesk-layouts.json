@@ -108,13 +108,17 @@
     {
       "code": "PL",
       "total": "952.00",
+      "currency": "EUR",
       "transit_days": 4,
+      "valid_until": "2026-11-21T14:38:00+00:00",
       "rate_id": "R-C5nfsmcn3aSHlsgp"
     },
     {
       "code": "SL",
       "total": "1149.20",
+      "currency": "EUR",
       "transit_days": 2,
+      "valid_until": "2026-11-21T14:38:00+00:00",
       "rate_id": "R-7Yjko7wz10J0l-aK"
     }
   ]

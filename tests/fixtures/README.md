@@ -19,7 +19,11 @@ under review. The captured mails and their descriptions are in `mails/README.md`
   declined lane, says it is incomplete or is cut short, a decline for capacity, a decline without a list.
 - `ratedesk-layouts.json`: the rate desk's captured answer as tables (header names, column order, currency in the
   header or the cell, German), with each priced airline read by hand; benchmark section 16 writes its own lines and
-  each table into every attachment format behind a mail that only points to the file.
+  each table into every attachment format behind a mail that only points to the file. It compares currency and
+  expiry as well as total, transit and rate ID.
+- `rfqs/bid-validity.json`: carrier offers with expiry in the body or an attachment, measured from the simulator's
+  16:00 UTC receipt time, with expected timestamps written by hand. The departure date and quoted old offer are
+  controls. `tools.simulate` runs each through `bids.record` offline.
 - `rfqs/followup-answers.json`: answers to our one question, each naming another airport beside the request's;
   benchmark section 15 appends each to every captured request and requires the same fields. `known_gaps`:
   `"<answer>:<fixture>"` read wrong today, each ending `Owner: <role>.`

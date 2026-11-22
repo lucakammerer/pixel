@@ -1,0 +1,17 @@
+{
+  "request": {"origin": "FRA", "destination": "JFK", "weight_kg": "340", "volume_cbm": "1.2"},
+  "airline": {"price": "All-in EUR 475.50", "lead": "Transit: 3 days", "total": "475.50", "currency": "EUR", "transit_days": 3},
+  "trucker": {"price": "Total EUR 108.20", "lead": "Pickup time: 12 hours", "total": "108.20", "currency": "EUR", "pickup_hours": 12},
+  "cases": [
+    {"id": "absolute", "carrier": "airline", "text": "Rate valid until: 21 Nov 2026 17:00 UTC", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "other-party", "carrier": "trucker", "text": "Price valid until 21 Nov 2026 17:00 UTC", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "without-expiry", "carrier": "airline", "text": "Departure scheduled for 21 Nov 2026 17:00 UTC", "until": null},
+    {"id": "old-quoted-expiry", "carrier": "airline", "text": "> Rate valid until 21 Nov 2026 15:00 UTC", "until": null},
+    {"id": "attached", "carrier": "airline", "text": "Rate valid until: 21 Nov 2026 17:00 UTC", "until": "2026-11-21T17:00:00+00:00", "place": "docx"},
+    {"id": "hours", "carrier": "airline", "text": "Offer valid for 1 hour", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "minutes", "carrier": "airline", "text": "Offer valid for 45 minutes", "until": "2026-11-21T16:45:00+00:00"},
+    {"id": "german-offset", "carrier": "airline", "text": "Preis gültig bis 21.11.2026 18:00 +01:00", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "arabic-script", "carrier": "airline", "text": "العرض صالح لمدة ٦٠ دقيقة", "until": "2026-11-21T17:00:00+00:00"},
+    {"id": "combined", "carrier": "trucker", "text": "Prix valable pendant 30 minutes", "until": "2026-11-21T16:30:00+00:00", "place": "docx"}
+  ]
+}
