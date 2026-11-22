@@ -321,7 +321,8 @@ def ring_order(ctx: Context, shipment_id: str) -> dict:
     if shipment is None:
         raise CallError(404, f"Unknown order {shipment_id}.")
     customer_name = names.who(ctx, shipment.customer).name
-    ref = f"order {shipment.id}" + (f" (booking {shipment.booking_reference})" if shipment.booking_reference else "")
+    # Only one number is read out on the call: the booking reference the carrier knows, else our order id.
+    ref = f"booking {shipment.booking_reference}" if shipment.booking_reference else f"order {shipment.id}"
     lane = f"{shipment.origin} to {shipment.destination}"
     details = f"{shipment.weight_kg} kg for {customer_name}, currently marked as {status_label(shipment.status).lower()}"
     variables = {
