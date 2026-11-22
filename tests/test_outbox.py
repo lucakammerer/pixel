@@ -128,6 +128,21 @@ async def test_the_quote_goes_out_with_itself_as_a_pdf(conn):
         assert "100.00 EUR all-in (Grüße)." in document.pages[0].extract_text()
 
 
+async def test_the_pdf_echoes_their_reference_and_breaks_down_only_a_total_that_adds_up(conn):
+    ctx = make_ctx(conn)
+    rfq = ingest_rfq(ctx)
+    conn.execute("UPDATE messages SET body = body || ? WHERE id = ?", ("\nOur ref: RE-4711", rfq.id))
+    quote = make_quote(rfq)
+    option = quote.option.model_copy(update={"freight": Decimal(80), "fuel": Decimal(15), "security": Decimal(5),
+                                             "billed_kg": Decimal(300)})  # fmt: skip
+    await outbox.send_quote(ctx, quote.model_copy(update={"option": option}))
+    with pdfplumber.open(io.BytesIO(ctx.mailbox.attachments[0][0][2])) as document:
+        text = document.pages[0].extract_text()
+    assert "Your reference: RE-4711" in text and "billed on 300 kg" in text and "Fuel surcharge: 15.00 EUR" in text
+    off = quote.model_copy(update={"option": option.model_copy(update={"fuel": Decimal(16)})})
+    assert not any("surcharge" in line for line in outbox.pdf.details(off))
+
+
 async def test_a_refused_pdf_never_costs_the_quote(conn):
     ctx = make_ctx(conn, FakeMailbox([ApiError(422, "attachment")]))
     rfq = ingest_rfq(ctx)
