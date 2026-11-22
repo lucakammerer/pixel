@@ -13,7 +13,6 @@ import asyncio
 import csv
 import json
 import random
-import subprocess
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -39,7 +38,7 @@ from pixel.core import db, events, feedback
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import store
-from pixel.ui import crm, dashboard, home, nightshift, routes
+from pixel.ui import crm, dashboard, home, routes
 
 KIT = Path("data/start-kit")
 US = "pixel@hackloop.mail"
@@ -58,7 +57,7 @@ COMPANIES = (  # invented: (address, company, person, town); the UI reads the co
 FATES = ("quoted",) * 5 + ("booked",) * 5 + ("confirmed",) * 4 + ("declined",) * 3 + ("fallback",) * 2 + (
     "failed", "missed")  # fmt: skip
 CENT = Decimal("0.01")
-LOST = "no_pdf_offer"  # the night shift's run of lost rounds: the reason merges in this repository name
+LOST = "no_pdf_offer"  # a seeded run of lost rounds
 
 
 class Kit:
@@ -359,60 +358,6 @@ class Seeder:
         self.request(now - timedelta(seconds=40), "open", live_deadline=True)
 
 
-def deploys(conn, cd_log: Path) -> None:
-    """A deploy job's log around the seeded run of LOST rounds: this repository's own merges to main, put live every
-    20 minutes; the second newest merge naming LOST goes live during the run, the newest right after its last round.
-    The night shift page then reads these merges from here instead of from git, at the times of the synthetic night."""
-    row = conn.execute(
-        "SELECT MIN(ts), MAX(ts), (SELECT MIN(ts) FROM events), MIN(json_extract(payload, '$.round')) FROM events"
-        " WHERE kind = 'feedback' AND json_extract(payload, '$.reason') = ?",
-        (LOST,),
-    ).fetchone()
-    if row[0] is None:
-        return
-    first, last, start = (datetime.fromisoformat(ts) for ts in row[:3])
-    now = datetime.now(UTC)
-    out = subprocess.run(["git", "log", "--first-parent", "-n", "120", "--format=%H%x1f%s%x1f%b%x1e"],
-                         check=False, capture_output=True, text=True).stdout  # fmt: skip
-    merges = [r.strip("\n").split("\x1f") for r in out.split("\x1e") if r.strip()][::-1]
-    named = [i for i, (_, s, b) in enumerate(merges) if LOST in s + b]
-    if len(named) < 2:
-        return
-    fix, tried = named[-1], named[-2]
-    # the merges name the rounds they repair: number the seeded rounds so the run is one of them
-    shift = min(nightshift.named("".join(merges[tried] + merges[fix])) or {row[3]}) - row[3]
-    conn.execute(
-        "UPDATE events SET payload = json_set(payload, '$.round', json_extract(payload, '$.round') + ?)"
-        " WHERE kind IN ('feedback', 'score')",
-        (shift,),
-    )
-    moves = [(first + timedelta(minutes=6), tried), (last + timedelta(seconds=90), fix)]
-    before = [first - timedelta(minutes=5 + 20 * n) for n in range(int((first - start).total_seconds() // 1200))]
-    moves += [(at, tried - 1 - 2 * n) for n, at in enumerate(before) if tried - 1 - 2 * n >= 0]
-    after = [last + timedelta(minutes=12 + 20 * n) for n in range(int((now - last).total_seconds() // 1200))]
-    moves += [(at, min(fix + 2 * (n + 1), len(merges) - 1)) for n, at in enumerate(after)]
-    moves.sort()
-    lines, commits, done = [], [], 0
-    for at, to in moves:
-        if to < done:
-            continue
-        carried = merges[done : to + 1]
-        for j, (sha, subject, body) in enumerate(carried):
-            pr = nightshift.MERGE.match(subject)
-            commits.append({"sha": sha, "at": at - timedelta(minutes=4, seconds=20 * (len(carried) - j)),
-                            "pr": pr and pr[1], "title": body.strip().splitlines()[0] if body.strip() else subject,
-                            "text": f"{subject}\n{body}"})  # fmt: skip
-        urgent = " (urgent)" if any("URGENT" in b for _, _, b in carried) else ""
-        new, old = merges[to][0][:7], merges[max(done - 1, 0)][0][:7]
-        tested, green = at - timedelta(seconds=70), at - timedelta(seconds=6)
-        lines += [f"{tested:%m-%d %H:%M:%S} testing {new}",
-                  f"{green:%m-%d %H:%M:%S} {new} green, waiting for the window{urgent}",
-                  f"{at:%m-%d %H:%M:%S} deployed {old}..{new}, restarted once"]  # fmt: skip
-        done = to + 1
-    cd_log.write_text("\n".join(lines) + "\n")
-    nightshift.history = lambda: [dict(c) for c in commits]
-
-
 async def play(seeder: Seeder, every: float) -> None:
     """A new request every `every` seconds, its events spaced out in real time so the live view has something."""
     while True:
@@ -476,8 +421,6 @@ def build(path: Path, *, reseed: bool, count: int, seed: int) -> tuple[Context, 
         store.save_carriers(ctx, seeder.kit.carriers)
         seeder.history(count)
         print(f"seeded {count} requests into {path}")
-    nightshift.CD_LOG = path.with_name(path.name + "-cd.log")  # ignored like the database
-    deploys(conn, nightshift.CD_LOG)
     return ctx, seeder
 
 

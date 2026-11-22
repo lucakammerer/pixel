@@ -24,7 +24,6 @@ def test_preview_seeds_every_page(tmp_path):
         "/",
         "/requests",
         "/dashboard",
-        "/night",
         "/crm/customers",
         "/crm/quotes",
         "/crm/shipments",

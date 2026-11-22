@@ -46,8 +46,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   `bids.py`, `pickup.py`, `engine.py`
 - `pixel/crm/`: quotes, bookings, shipments, customers, carriers; `pixel/ui/`: start page at `/` (`home.py`, with
   `pipeline.py` and `impact.py`), requests at `/requests` (`routes.py`), CRM viewer (`crm.py`, with the carrier
-  scorecard at `/crm/carriers`), performance (`dashboard.py`), the night shift at `/night` (`nightshift.py`: lost
-  rounds, the merged fix, its deploy, the next accepted round), company names from signatures (`names.py`), shared
+  scorecard at `/crm/carriers`), performance (`dashboard.py`), company names from signatures (`names.py`), shared
   HTML and styles (`page.py`)
 - `pixel/llm.py`: the only gateway caller
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
