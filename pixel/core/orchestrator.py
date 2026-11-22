@@ -1,6 +1,7 @@
 """Routes each mail to its handler and holds every request to its own deadline."""
 
 import asyncio
+import re
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -198,9 +199,12 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
     from pixel.core import quote_recovery
     from pixel.core.poller import spawn
 
+    scoped_out = out_of_scope(ctx, message.session_id)
+    if scoped_out:
+        return None
     loop = asyncio.get_running_loop()
     # A dry run holds outgoing bids. Replays report whether a later captured reply can still arrive.
-    late = not ctx.settings.dry_run and getattr(ctx.mailbox, "late_mail", True) and not is_import(ctx, message.session_id)
+    late = not ctx.settings.dry_run and getattr(ctx.mailbox, "late_mail", True) and not scoped_out
     wait = (deadline.hard_at - now()).total_seconds() if late else 0.0
     until = loop.time() + max(0.0, wait)
     failed = waiting = False
@@ -234,11 +238,35 @@ async def _first_price(ctx: Context, message: Message, deadline: Deadline) -> Qu
             sourcing.cancel()
 
 
-def is_import(ctx: Context, session_id: int) -> bool:
-    """A lane into the airports we export from, from one we do not: an import is out of scope (R36), no later price
-    comes, and its answer is due at once (round 159 waited to `hard_at` and kept 47.81 of 60 points)."""
+# Another mode of transport asked for, and no word of air (round 177: "port-to-port sea freight ... FCL").
+NOT_AIR = re.compile(
+    r"\b(?:sea|ocean|rail|road)[ -]?freight\b|\bseefracht\b|\b(?:FCL|LCL)\b|\b(?:by|via|per) (?:sea|ship|vessel|rail)\b",
+    re.IGNORECASE,
+)
+AIR = re.compile(r"\bair|\bflight|\bluft|\bflug|\bAWB\b|\ba[ée]r(?:ien|ienne|ea|eo|o)\b|\bavion", re.IGNORECASE)
+# A sentence that names the other mode only to set it aside: "not by sea", "pas de LCL", "our sea freight is too slow",
+# "we usually ship by sea, but this one is urgent". The request is still for air.
+SET_ASIDE = re.compile(
+    r"\b(?:not|no|never|instead|usually|normally|but|too|nicht|kein\w*|statt\w*|normalerweise|aber|sondern"
+    r"|pas|sans|mais|plut[oô]t)\b|zu (?:lange|langsam)",
+    re.IGNORECASE,
+)
+
+
+def _asks_other_mode(text: str) -> bool:
+    return any(NOT_AIR.search(s) and not SET_ASIDE.search(s) for s in re.split(r"[.!?;\n]", text))
+
+
+def out_of_scope(ctx: Context, session_id: int) -> bool:
+    """We quote air export only (R36). An import, a lane into the airports we export from, from one we do not; or a
+    request for sea, rail or road freight. No price is quoted, and the answer is due at once (round 159 waited to
+    `hard_at` and kept 47.81 of 60 points; round 177 quoted a sea freight request as air and was rejected)."""
     from pixel.pricing import session, store
 
+    row = ctx.db.execute("SELECT subject, body FROM messages WHERE id = ?", (session_id,)).fetchone()
+    text = f"{row['subject'] or ''}\n{row['body'] or ''}" if row else ""
+    if _asks_other_mode(text) and not AIR.search(text):
+        return True
     rfq = session.rfq(ctx, session_id)
     if rfq is None or not rfq.origin:
         return False

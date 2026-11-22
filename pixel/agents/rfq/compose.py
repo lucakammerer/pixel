@@ -501,7 +501,8 @@ FROM_TOWN = re.compile(
     r"\b(?i:greetings|regards|wishes|gr(?:ü|ue)(?:ß|ss)e)[ \t]+(?i:from|aus)[ \t]+"
     r"([A-ZÄÖÜ][\wäöüß-]+(?: [A-ZÄÖÜ][\wäöüß-]+)?)"
 )
-OWN_BYE = re.compile(r"^\s*(cheers|viele gr(?:ü|ue)(?:ß|ss)e)\b", re.IGNORECASE | re.MULTILINE)
+# "Viele Gruesse / Many greetings" offers its own English: only a closing they write in one language is mirrored.
+OWN_BYE = re.compile(r"^\s*(cheers|viele gr(?:ü|ue)(?:ß|ss)e)\b(?![^\n]*/)", re.IGNORECASE | re.MULTILINE)
 SUBJECT_MAX = 150
 DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b")
 READY = re.compile(
@@ -794,7 +795,7 @@ def _day(d: date, t: dict) -> str:
 
 def answers(rfq: Rfq, option: RateOption, request: str, subject: str = "") -> str:
     """What the request asked beyond the price, answered by code: their own reference (also in the PDF), the
-    earliest arrival (ready date, a day for a pickup to reach the airport, the transit), the departure that goes with
+    earliest arrival (ready date plus the transit, `calc.arrival`), the departure that goes with
     it, one air waybill for all lots, the drop-off cut-off. "" on any doubt."""
     try:
         t = TEXT[language_of(rfq)]
@@ -854,7 +855,7 @@ def city_of(request: str, airport: str) -> str | None:
 
 def in_kind(request: str, lang: str, tone: str, name: str | None) -> tuple[str | None, str]:
     """The customer's own closing answered: their wish for the day returned, and the sign-off sent to the town
-    they greet from, or as "Cheers" or "Viele Grüße" when they write it in an English mail. Without either, the sign-off of their register."""
+    they greet from, or as "Cheers" or "Viele Grüße" when they write it alone in an English mail. Without either, the sign-off of their register."""
     t = TEXT[lang]
     wished = WISH[lang].search(request)
     wish = t["wish_back"].format(wish=wished.group(1)[0].lower() + wished.group(1)[1:]) if wished else None
@@ -862,7 +863,7 @@ def in_kind(request: str, lang: str, tone: str, name: str | None) -> tuple[str |
     if town and town.group(1).split()[0] != name:
         return wish, t["bye_town"].format(town=town.group(1))
     if lang == "en" and (own := OWN_BYE.search(request)):
-        return wish, "Cheers," if own.group(1).lower() == "cheers" else "Viele Grüße,"
+        return wish, "Cheers," if own.group(1).lower() == "cheers" else "Viele Grüße"
     return wish, t["bye"][tone]
 
 

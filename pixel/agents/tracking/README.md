@@ -29,7 +29,7 @@ With one match, `answer` gives the route, weight, booking status, airline and av
 details. A door-to-port route names the town of the pickup the question asks about (its zone's area in
 `pickup_zones`), where ours was filled in from an earlier site; never a postcode or the customer's address.
 The answer greets the asker by the name they signed with and signs off as the quote did (`compose.in_kind`): to the
-town they greet from, or with their own "Viele Grüße" or "Cheers".
+town they greet from, or with their own "Viele Grüße" or "Cheers" when they write it in one language.
 `details` uses the ready date to calculate the arrival when that date is available. `VARIANT` picks the answer:
 `scored` (prose, then the record block with the customer's address), `a` (without the address, the pickup by town),
 `b` (the block's facts in the prose, no block), `c` (`b` without its filler sentences). One variant per booked round, measured by the +10 on the board;

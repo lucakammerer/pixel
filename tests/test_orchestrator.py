@@ -286,3 +286,48 @@ async def test_takeover_does_not_repeat_the_extraction_call(conn):
         await asyncio.gather(task, return_exceptions=True)
     calls = [p for p in gateway.purposes if p == "rfq_extract"]
     assert len(calls) == 1
+
+
+async def test_a_sea_freight_request_gets_no_price_and_its_answer_at_once(conn, monkeypatch):
+    """Round 177: "port-to-port sea freight ... FCL in 1 x 40ft container" was read as air HAM-DXB and quoted from
+    the portal; the scorer rejected it as out_of_scope_quoted. We quote air only: no price, one plain answer."""
+    ctx = make_ctx(conn)
+    message = ingest_rfq(ctx, "rfq-sea-freight-fcl.json")
+    fake_clock(monkeypatch, message, ctx, before_hard_s=200)
+    quote = make_quote(message)
+
+    async def handle(ctx, message, deadline):
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=message.id, payload=quote.rfq.model_dump(mode="json"))
+        events.emit(ctx, "option.found", "pricing", session_id=message.id,
+                    payload={"option": quote.option.model_dump(mode="json")})  # fmt: skip
+
+    monkeypatch.setattr(rfq_agent, "handle", handle)
+    assert orchestrator.out_of_scope(ctx, message.id)
+    await asyncio.wait_for(orchestrator.quote_with_deadline(ctx, message), timeout=1)
+    assert "quote.sent" not in kinds(ctx)
+    assert ctx.mailbox.sent == [message.sender]
+    assert not orchestrator.out_of_scope(ctx, ingest_rfq(ctx).id)
+
+
+@pytest.mark.parametrize(
+    ("text", "declined"),
+    [
+        ("Please quote port-to-port sea freight HAM to DXB, FCL 1 x 40ft.", True),
+        ("Bitte Seefracht HAM nach DXB, 1 x 40ft FCL.", True),
+        ("Cotation fret maritime LCL Le Havre - Dubai, 4 cbm.", True),
+        # an air request that names the other mode only to set it aside is quoted
+        ("Quote FRA to JFK 300 kg please, not by sea.", False),
+        ("We usually ship by sea, but this one is urgent: FRA to JFK, 300 kg, 1.2 cbm.", False),
+        ("Our sea freight is too slow for this order. Please quote FRA - JFK, 300 kg, 1.2 cbm.", False),
+        ("Bitte Angebot FRA nach JFK, 300 kg. Seefracht dauert uns zu lange.", False),
+        ("Merci de coter FRA - JFK, 300 kg, fret aérien, pas de LCL.", False),
+    ],
+)
+def test_only_a_request_for_another_mode_is_out_of_scope(conn, text, declined):
+    ctx = make_ctx(conn)
+    conn.execute(
+        "INSERT INTO messages (id, session_id, direction, sender, recipient, subject, body, sent_at, data)"
+        " VALUES (1, 1, 'in', 'c@x', 'us@x', 'Request', ?, '', '{}')",
+        (text,),
+    )
+    assert orchestrator.out_of_scope(ctx, 1) is declined

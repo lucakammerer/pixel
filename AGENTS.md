@@ -40,7 +40,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `pixel/core/`: `poller.py`, `webhook.py` (the mailbox's pushes), `orchestrator.py` (dispatch, deadlines, fallback),
   `outbox.py` (all outgoing mail; every quote with itself as a PDF from `pdf.py`), `events.py` (the log and its live stream), `db.py`, `context.py`;
   `feedback.py` (what each request scored, why it lost points, which balanced rule fits the scorer, and the
-  call to `PIXEL_ALERT_URL` when something needs repair); `watchdog.py` (a request still without our quote 90 s
+  call to `PIXEL_ALERT_URL` when something needs repair); `watchdog.py` (a request still without our quote 45 s
   after it was stored, alerted once with the step it hangs in)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`, `check.py` and `repair.py`: the check before sending and the repair of what
@@ -58,7 +58,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
-  `kpi_pr.sh`, `capture.py` (a stored session as a replay fixture with the state it met and a pytest), `outage_drill.py` (each external dependency failing on replayed rounds), `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `capture.py` (a stored session as a replay fixture with the state it met and a pytest), `outage_drill.py` (each external dependency failing on replayed rounds), `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `price_ledger.py` (every scored round's price against the scorer's best, then and with today's code), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -111,6 +111,7 @@ uv run python -m tools.board_me                 # our results from /v1/board/me 
 uv run python -m tools.attention --minutes 30   # what went wrong lately: where a repair starts
 uv run python -m tools.check_precision <database>   # per check rule: fired, the rounds accepted and not, by the scorer's reason
 uv run python -m tools.card_proof <database>    # the rate card against every portal rate in that database, offline
+uv run python -m tools.price_ledger <database>  # rounds lost on price or accuracy: quoted then, today's code now, offline
 uv run python -m tools.replay_gate <database>   # the last 20 accepted requests read and priced as quoted; exit 1 on a difference
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
 uv run python -m tools.bench_unmet              # the last reader's prompt on the lost first rounds (spends!)

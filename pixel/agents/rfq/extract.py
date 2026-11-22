@@ -32,18 +32,35 @@ ORIGIN_LABEL = re.compile(
 # "to DFW", "nach", "à"/"vers"/"pour", "a"/"para"/"hacia", "per"/"verso", "naar" (round 70 wrote French).
 DEST_LABEL = re.compile(
     rf"(?i:\b(?:destination|to|nach|bis|zielflughafen|vers|pour|para|hacia|destino|verso|naar|bestemming)\b|(?<!\w)à(?!\w)"
+    # "Luftfracht zum Flughafen SGN" (round 74): only right after the air word; "Für den Flug liefern wir die Ware
+    # selbst zum Flughafen MUC" is the truck's.
+    rf"|\b(?:luftfracht\w*|flug|fliegen|geflogen)\s+zu[mr](?=\s+flughafen\b)"
     # Spanish, Italian, Portuguese "a GRU", only right before a code that ends the clause: never the English article
     rf"|(?<!\w)a(?=\s+(?-i:[A-Z]{{3}})\s*(?:[.,;:!?(\n]|$))"
     rf"|\bper(?=\s+[A-Z]{{3}}\b))"  # Italian "per DFW"; English "per kg" and "per AWB" stay out
     rf"{AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
 )
 # The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
-# the door" the destination.
+# the door" the destination. Rounds 168 and 174 went to the model: "we deliver to Frankfurt airport (FRA) ourselves",
+# "we'll deliver it to Düsseldorf Airport (DUS) ourselves", a place name before the airport and the code in brackets.
 PRE_CARRIAGE = re.compile(
-    rf"(?i:\bdeliver\w*\s+(?:it\s+|them\s+|(?:the|this|these|our)\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
+    r"(?i:\b(?:deliver|bring|take|drop)\w*\s+(?:it\s+|them\s+|(?:the|this|these|our)\s+\w+\s+)?(?:off\s+)?(?:to|at))"
+    r"(?:\s+(?!(?i:the|our|your)\b)[A-Z][\w.'-]*){0,3}?(?:\s+(?i:airport|flughafen))?\s+\(?"
+    rf"{CODE}\)?(?=(?:\s+(?i:airport))?\s+(?i:ourselves|by us|on our own))"
 )
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
+)
+# The truck to the departure airport: "arrange the truck from our site to BBB airport. The goods go to Singapore" named
+# no destination code, and BBB was quoted as one. A code the trucking clause names as an airport, before any flight word.
+TRUCK_LEG = re.compile(
+    r"(?i:\b(?:truck\w*|lorry|lkw|by\s+road|collect\w*|pick\w*[\s-]?up|deliver\w*|bring\w*|haul\w*|transport\w*"
+    r"|abhol\w*|anliefer\w*|zustell\w*))"
+    # "Luftfracht" may be the truck verb's object ("bringen Sie die Luftfracht zum Flughafen FRA"): no flight word
+    r"(?:(?!(?i:\b(?:air(?!port)\w*|fl[iy]\w*|ship\w*|freight|arriv\w*|ankunft|destination|ziel\w*)\b))"
+    r"[^.;!?\n]){0,60}?(?i:\b(?:to|zum|zur)\s+(?:the\s+)?)"
+    r"(?:(?i:airport|flughafen)\s+(?=[A-Z]{3}\b)|(?=[A-Z]{3}\s+(?i:airport|flughafen)\b))"  # never a bare "to JFK"
+    rf"{CODE}"
 )
 
 # "1 250 kg": a space (also a no-break one) between thousands, not after a date's or a range's digits.
@@ -436,11 +453,14 @@ def shipments(rfq: Rfq, text: str) -> list[Rfq]:
     return found
 
 
-def _destination_only(text: str) -> str | None:
+def _destination_only(text: str, truck_leg: bool = True) -> str | None:
     """The one destination of a mail that names no origin airport (door-to-port). A code both labels reach belongs to
     the nearer one: "select the departure airport for the fastest option to JFK" labels the destination (round 69),
-    "our truck goes to departure airport FRA" the origin."""
+    "our truck goes to departure airport FRA" the origin. `truck_leg`: the airport a truck goes to is none; a later
+    mail of a quoted lane leaves that to its origin instead ("deliver to JFK airport instead of ORD" is a change)."""
     to, origin = _label_reach(DEST_LABEL, text), _label_reach(ORIGIN_LABEL, text)
+    trucked = set(TRUCK_LEG.findall(text)) if truck_leg else set()
+    to = {code: reach for code, reach in to.items() if code not in trucked}
     found = {code for code, reach in to.items() if reach < origin.get(code, reach + 1)}
     if set(origin) - found:
         return None
@@ -920,6 +940,33 @@ READY_DATE_FIRST = re.compile(
     + r"(?=[ \t]+(?:zur Abholung[ \t]+|zum Versand[ \t]+)?(?:bereit|abholbereit|versandbereit|verfügbar)\b)",
     re.IGNORECASE,
 )
+# Korean and Chinese write an ISO date beside the pickup ("2026-11-24부터 픽업 가능합니다", "픽업은 2026-11-24부터 가능",
+# "2026-11-23 可以提货"; rounds 72, 149, 161): without it a sheet valid only after the ready day was never chosen.
+CJK_PICKUP = r"(?:픽업|집하|출고|提货|取货|备妥|备好|集荷|出荷)"
+CJK_ARRIVAL = r"(?:도착|到达|抵达|到港|到着|送达)"
+CJK_DATE = r"(?P<value>\d{4}-\d{2}-\d{2})(?![\d-])"
+# A date first only with the pickup word right after it ("2026-12-15까지 납품해야 하므로 픽업은" is a delivery date): a
+# particle or a few letters between, never "by", and ",，、" end the clause.
+CJK_CLAUSE = r"[^.。!?！？\n,，、]"
+READY_CJK = (
+    re.compile(
+        rf"{CJK_DATE}\s*(?:부터|에|이후|起|以后|后|から|以降|に)?\s*(?:(?!까지|前|まで)[^\d\s.。!?！？\n,，、]){{0,3}}"
+        rf"{CJK_PICKUP}"
+    ),
+    re.compile(rf"{CJK_PICKUP}(?:(?!\d){CJK_CLAUSE}){{0,8}}?{CJK_DATE}(?!{CJK_CLAUSE}{{0,6}}?{CJK_ARRIVAL})"),
+)
+# The latest arrival as "2026-12-01까지 도착", "2026-12-01前到达", "2026-12-01までに到着": a date, its "by", then arriving.
+ARRIVE_BY_CJK = re.compile(rf"{CJK_DATE}\s*(?:까지|이전|之前|以前|前|までに|まで){CJK_CLAUSE}{{0,15}}?{CJK_ARRIVAL}")
+# The date our quote or reply must arrive by, never the cargo's: a reply word anywhere in the match's clause, before
+# ("견적 회신은 2026-11-30까지 도착하도록") or after it ("2026-11-30까지 도착하도록 견적서를 보내 주세요").
+CJK_REPLY = re.compile(r"견적|회신|답변|报价|回复|答复|見積|回答|返信")
+CLAUSE_END = re.compile(r"[.。!?！？\n,，、]")
+
+
+def _clause_of(text: str, match: re.Match) -> str:
+    start = max((m.end() for m in CLAUSE_END.finditer(text, 0, match.start())), default=0)
+    end = next((m.start() for m in CLAUSE_END.finditer(text, match.end())), len(text))
+    return text[start:end]
 ARRIVE_BY = re.compile(
     rf"\b(?:arriv(?:e|es|ing|al)\b(?!\s+(?:airport|port)\b){ARRIVAL_SPAN}(?:no later than|not later than|by)\b"
     r"|(?:latest arrival|delivery deadline|(?:required|requested) delivery date|delivery date required)\s*[:=]?"
@@ -995,11 +1042,14 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
     def arrive_by() -> date | None:
         """A latest arrival is a coming date the customer sets for this shipment, never an earlier one, and never the
         drop-off at our side ("delivered to your warehouse at FRA by")."""
-        matches = sorted([*ARRIVE_BY.finditer(text), *ARRIVE_BY_LAST.finditer(text)], key=lambda m: m.start())
+        found = (*ARRIVE_BY.finditer(text), *ARRIVE_BY_LAST.finditer(text), *ARRIVE_BY_CJK.finditer(text))
+        matches = sorted(found, key=lambda m: m.start())
         origin = (_lane(text) or ("",))[0]
         for match in matches:
             clause = re.split(r"[.!?;,:\n]", text[: match.start()])[-1]
             if OUR_SIDE.search(match[0]) or (origin and re.search(rf"\b{origin}\b", match[0])):
+                continue
+            if match.re is ARRIVE_BY_CJK and CJK_REPLY.search(_clause_of(text, match)):
                 continue
             if not ARRIVAL_CONTEXT.search(clause) and (value := _stated_date(match["value"], on)) and value >= on:
                 return value
@@ -1007,7 +1057,7 @@ def schedule(text: str, on: date) -> tuple[date | None, date | None, int | None]
 
     transit = MAX_TRANSIT.search(text)
     return (
-        first_date(READY_ON) or first_date(READY_DATE_FIRST),
+        first_date(READY_ON) or first_date(READY_DATE_FIRST) or next(filter(None, map(first_date, READY_CJK)), None),
         arrive_by(),
         int(transit["days"] or transit["most"]) if transit else None,
     )
@@ -2015,6 +2065,8 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
     rfq, prose = _earlier(ctx, mail, deadline) or rules(), None
     if rfq is not None and not (rfq := apply_pickup(await ask(rfq))).origin:
         rfq = None
+    if rfq is not None and rfq.destination == rfq.origin:  # the truck's airport read as the destination: the model reads
+        rfq = None
     if rfq is not None and files and ctx.settings.model_check:
         documented = frozenset(f for f, names in evidence.items() if names and "mail" not in names)
         rfq, prose = await _crosscheck(ctx, rfq, message, text, sources, deadline, documented)
@@ -2046,7 +2098,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
         except Exception as e:
             # A gateway that refuses the model must not cost the request: without an Rfq nothing can be quoted.
             guessed = rules(guess=True)
-            if guessed is None or not (guessed := apply_pickup(guessed)).origin:
+            if guessed is None or not (guessed := apply_pickup(guessed)).origin or guessed.destination == guessed.origin:
                 raise
             events.emit(
                 ctx,

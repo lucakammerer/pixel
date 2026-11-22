@@ -226,11 +226,11 @@ def test_answers_the_arrival_from_the_ready_date_and_one_air_waybill():
     request = "Ready on 2026-11-25 at our site in 51447.\n\nLot 1: 300 kg\nLot 2: 200 kg\nOne air waybill please."
     pickup = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
     _, body = compose.render(rfq("en"), pickup, request=request)
-    assert "Wednesday 25 November" in body and "Sunday 29 November" in body  # 3 days transit, a day to the airport
+    assert "Wednesday 25 November" in body and "Saturday 28 November" in body  # 3 days transit, the pickup adds none
     assert "single air waybill" in body and body.count("1234.57 EUR") == 1
     # Round 27 asked for "the earliest available pickup" too: answered as a pickup date, not only implied.
     _, body = compose.render(rfq("en"), pickup, request=request + " Please confirm the earliest available pickup.")
-    assert "We can collect on Wednesday 25 November" in body and "Sunday 29 November" in body
+    assert "We can collect on Wednesday 25 November" in body and "Saturday 28 November" in body
 
 
 @pytest.mark.parametrize(
@@ -265,7 +265,10 @@ def test_the_mail_is_written_in_the_customers_register():
     _, both = compose.render(
         rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Gruesse / Many greetings\nDeniz"
     )
-    assert "Viele Grüße,\nLena Berger\n" in both and "P.S." not in both
+    # Round 172: their closing gives its own English, so ours stays in the mail's language.
+    assert "Best regards,\nLena Berger\n" in both and "P.S." not in both
+    _, own = compose.render(rfq("en"), option, request="Hello,\n\nquote please.\n\nViele Grüße\nDeniz")
+    assert "\n\nViele Grüße\nLena Berger\n" in own
 
 
 def test_the_customers_own_closing_is_answered_in_kind():
@@ -349,7 +352,7 @@ def test_the_earliest_departure_is_answered_only_when_asked():
     asked = "Ready on 2026-11-25 at our site. Please confirm the earliest available departure and arrival."
     pickup = OPTION.model_copy(update={"trucker": "Example Trucks", "pickup": Decimal(50)})
     _, body = compose.render(rfq("en"), pickup, request=asked)
-    assert "departure from AAA on Thursday 26 November" in body and "Sunday 29 November" in body
+    assert "departure from AAA on Wednesday 25 November" in body and "Saturday 28 November" in body
     _, body = compose.render(rfq("en"), pickup, request="Ready on 2026-11-25, truck to the departure airport please.")
     assert "departure from" not in body
 

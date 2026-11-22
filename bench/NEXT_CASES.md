@@ -49,6 +49,8 @@ marked "model", the rules gave up and offline there is no model, so live behavio
 | 28 | `oversize-freighter-only` | "320 x 150 x 25 cm … longer than 300 cm" | cheapest, silent | capable carrier once data names it | data first | L |
 | 29 | `dg-lithium-in-body` | "lithium ion batteries, UN 3480, class 9" in the body only | **pass**: DGD and MSDS named | — | — | — |
 | 30 | `not-dg-declared` | "this is NOT dangerous goods, no lithium, no UN number" | **pass**: no DG paragraph | — | — | — |
+| 31 | out of scope by mode (live, round 177, lost) | "port-to-port sea freight ... FCL in 1 x 40ft container", "DEHAM to AEJEA" | **fixed #465** for English and German wording with no word of air | the plain answer, no price | open, generalize: sea in another language (model read), courier or express, "air or sea, whichever is cheaper", sea-air, UN/LOCODEs only, a sea mail that says "air" somewhere | `orchestrator.out_of_scope` | S |
+| 32 | latest arrival on a door request (live, round 179, lost too_high) | ready 27.11., "need to be at ORD by 2026-11-29", pickup in 51871 | **fixed #472**: the pickup adds no day, Aurelia (2 d) 1074.69 instead of Meridian (1 d) 1410.83 | the cheapest option with ready + transit ≤ the date | open, generalize: whether the scorer counts the ready day itself, a trucker's pickup time over 24 h, weekends, "arrive before" (exclusive) against "by" | `calc.arrival`, `selection.meets_schedule` | S |
 
 ## Axis D: truckers and the pickup place
 
@@ -132,22 +134,25 @@ one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window 
 Open and unverified: C5, C6, C8, C11, C14 and C16 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
 merged and the organisers turn that lever.
-## Axis E: outage drills (22.11.2026 09:30, live snapshot to round 167)
+## Axis E: outage drills (22.11.2026 10:30, live snapshot to round 174)
 
 `uv run python -m tools.outage_drill <database> --last 60`: each accepted round replayed offline on the state and
-portal answers it met (`tools/capture.py`), the rate card as it is today without the session's own reads, one
-dependency failing per drill. Right: a quote within 5 % of the scorer's best (`feedback.best`, else our accepted
-total) within 6 minutes of storage. Offline every model call fails, so each drill includes the gateway down. An
-airline or the rate desk asked by mail only because of the outage answers nothing (no such answer was recorded): the
-portal cells are the worst case of rounds 93 to 99. `tests/test_outage_drill.py` runs every drill on round 166.
+portal answers it met (`tools/capture.py`), every mail of its session at its own time (a change after our quote is
+answered by a requote, the quote the scorer scores), the rate card as it is today, one dependency failing per drill.
+The card's job reads every bracket of every portal lane (by 10:00 all 1341 of 206 lane and airline pairs), so the
+session's own portal reads count as card rates. Right: a quote within 5 % of the scorer's best (`feedback.best`, else
+our accepted total) within 6 minutes of storage. Offline every model call fails, so each drill includes the gateway
+down. An airline or the rate desk asked by mail only because of the outage answers nothing (no such answer was
+recorded): the portal cells are the worst case of rounds 93 to 99. `tests/test_outage_drill.py` runs every drill on
+round 166.
 
 | Drill | Right of 60 | Beyond the baseline | Cause | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- | --- |
-| `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 54 | baseline | 161, 149, 132 (Korean) and 131 (Turkish): no quote, the rules read no lane or weight in them; 152: the change mail of a requote is read by the model; 139: the request stands in an attachment whose bytes the database does not hold (not measurable offline) | `extract.by_rules` for Korean and Turkish requests | Cost (`extract.py`), generalize |
-| E1 `portal_429` (every rate read 429, `Retry-After: 60`) | 4 | 50 | `portal_rates._read` prices from the rate card only on `RatesUnavailable`; a 429 that outlasts the deadline (`RateLimited`) drops the airline, so the quote goes out from a sheet or bid (round 166: Danube 3111.28 against Aurelia 2913.96) | `portal_rates._read`: a `RateLimited` read priced from the card like an outage | Accuracy, pull request from generalize |
-| E2 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page) | 29 | 25 | the card never read the lane (round 141 HAM-RUH: no read before or since), so a fastest request gets a sheet airline (861.28 against 1182.28) or the cheapest a dearer one; the card reads only lanes requests asked for | `rate_card.run`: every lane of `/v1/portal/ports`, not only the requested ones | Accuracy |
-| `mail_twice`, `mail_late` (90 s), `airlines_silent` (airlines and desk) | 54 | 0 | — | — | — |
-| E3 `truckers_silent` | 52 | 2 | rounds 108 and 100: the pickup memory holds no answer of that zone within 24 h (D5's open part), the pickup goes out excluded or estimated low | `pickup.estimates` | Accuracy |
+| `gateway_down`, `gateway_hangs` (60 s, then a timeout) | 50 | baseline | 161, 149, 132 (Korean) and 171, 131 (Turkish): no quote, the rules read no destination or door pickup in them ("DFW (Dallas, US)까지", "ATL’ye", a postcode in a Turkish clause); 167 (Korean lots with "each"): the guess quotes 1964.76 against 4745.69; 168, 174: "we deliver to Düsseldorf Airport (DUS) ourselves", #463 open; 143, 139: a crosscheck against an attachment whose bytes the database does not hold (not measurable offline) | `extract.by_rules`, the guess path of `read_request` | Cost (`extract.py`), generalize |
+| `portal_429` (every rate read 429, `Retry-After: 60`) | 48 | 2, as `portal_down` (E4) | was 3 of 60: a 429 that outlasted the deadline (`RateLimited`) never asked the rate card; `portal_rates._read` prices from it since #462 | — | — |
+| E4 `portal_down`, `portal_nonsense`, `portal_hangs` (API and page), `airlines_silent` | 48 | 2 | 172 and 152: the change after our quote gets no requote; the quote before it was right | the requote path (`agents/rfq/agent.py`), cause not yet read | Accuracy |
+| `mail_twice`, `mail_late` (90 s) | 50 | 0 | — | — | — |
+| E3 `truckers_silent` | 49 | 1 | round 108: the pickup memory holds no answer of that zone within 24 h (D5's open part) | `pickup.estimates` | Accuracy |
 
 Not drilled yet: a tariff version changing within a round; booking and tracking down (no effect on the quote, axis B).
 
@@ -208,3 +213,398 @@ matrix in `uv run python -m tools.simulate --family shipments` (cells and their 
 Measured right: two, three and four shipments, a door pickup for all, bullets, German, a currency for all, by rules;
 another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.
+
+## Axis R: the scorer's checks (22.11.2026 10:40, live database to round 179)
+
+What the scorer reads from our first reply beyond the price, reconstructed from every `feedback` event (172 rounds,
+8 to 179) and the request and reply of each loss. Counts are rounds, not events.
+
+### The rubric, as far as the verdicts prove it
+
+| # | Check | Reason when it fails | Proof | What it reads |
+| --- | --- | --- | --- | --- |
+| 1 | a reply in the thread before the request expires | `no answer` (6: 69, 86, 87, 89, 90, 107) | — | any mail with `in_reply_to` |
+| 2 | the reply is in the customer's language | `wrong_language` (3: 70, 72, 156) | 156: an English question, then an English no-price reply to a Korean mail failed on language, not as a decline, so this check runs before 3 | the reply's text, also a no-price reply |
+| 3 | an in-scope request gets a price | `declined_in_scope` (3: 96, 104, 122) | all three: our "could not obtain a freight rate" reply. A question is not scored: the simulated customer answers it within about 11 s and the quote after it counts (103, 131, 132 accepted; 82, 113 scored on price and count). 104 lost because the answer ("pickup from 40043, select the departure airport") was not priced | a price in the first reply that holds one, or a no-price reply |
+| 4 | an out-of-scope request gets no price | `out_of_scope_quoted` (1: 177, sea FCL); the plain decline of an import was accepted (159) | — | a price in the reply |
+| 5 | the offer is attached as a PDF that holds the price, when asked | `no_pdf_offer` (4: 76 to 79) | 78: a PDF without `%%EOF` counted as none | the attachment, parsed |
+| 6 | every shipment of the mail has its own price | `one_of_two` (2: 113, 150) | both: two numbered shipments, "a separate all-in price for each"; we priced the first | the number of totals |
+| 7 | an airline the customer ruled out is not offered | `excluded_airline` (1: 42) | — | the airline named in the reply |
+| 8 | dangerous goods the documents reveal are answered with the documents they need | `dg_docs_missing` (1: 10) | the mail said "non-dangerous", the packing list `PL_53839.xlsx` said otherwise | named documents (DGD, MSDS) |
+| 9 | the total within 5 % of the scorer's best, both ways (owned by the price goal since 09:10) | `too_low` (18), `too_high` (10) | accuracy falls on both sides: round 13 was 2.67 % below the best and earned 33 of 45 (about 4.5 points per %). With several shipments its `quoted` is the sum of all (62, 127, 151, 153, 158, all accepted): it reads more than one amount. Insurance terms stated in the request are in its all-in (91, `too_low`) | the all-in total, in EUR |
+| — | the airline and the trucker are **not** compared | — | 172: our airline differed from the scorer's at the same total, 45 of 45; 13: another trucker, accepted | — |
+
+Order: 1, then 2 before 3 (round 156). Where 5 to 8 stand against 9 is unproven: every loss on 5 to 8 had a price we
+cannot place against the scorer's best (rejected rounds carry no `best`).
+
+### The timeline and its pattern
+
+| Round (time UTC) | New check | Stayed | Next check after |
+| --- | --- | --- | --- |
+| 10 (21.11. 16:00) | 8 DG documents, from an attachment | 1 round | 3 h |
+| 42 (19:10) | 7 excluded airline | 1 | 3 h |
+| 70 (22:00) | 2 language (French, then Chinese 72) | 2 rounds of 3 | 37 min |
+| 76 (22:37) | 5 PDF | 4 in a row (76 to 79) | 2 h |
+| 96 (00:43) | 3 decline, while the rate API was down (93 to 99) | 96, 104, 122 | 1.7 h |
+| 113 (02:23) | 6 two shipments | 113, 150 | 6.5 h |
+| 177 (08:50) | 4 another mode of transport | 1 so far | — |
+
+The pattern: every new check is one more field of the generator's request (an attachment fact, an exclusion, a
+language, an attachment wish, a shipment count, a mode), introduced alone in one round, repeated for 1 to 4 rounds, and
+from then on **combined** with older ones: 156 is Korean + an "import" by the buyer + a forwarded old mail + PDF; 179 is
+pounds and cubic feet + an arrival deadline + the buyer's "import" + PDF. Price levers move the same way from endpoint
+to endpoint (pickup place 15 to 20, trucker offers in files 63 to 67, rate API 93 to 99 and 120 to 123). A new
+check came every 0.6 to 6.5 hours; the last one is 2 hours old at this writing, so the next is due.
+
+### The 20 most likely next checks
+
+Likelihood: H = the generator already writes the field into every request or a check of the same kind is live; M = a
+cousin of a live check; L = the dataset holds nothing the scorer could check it against.
+
+| # | Check (predicted reason) | Likelihood | Why | Case | Today |
+| --- | --- | --- | --- | --- | --- |
+| P1 | the currency asked for (`wrong_currency`) | M | every request says "all-in price in EUR": one word of the template; but no live source ever priced in another currency (0 of 179 requests, 1223 carrier answers and every portal option), so the scorer would first need a rate it can hold us to | `currency-usd` | **wrong**: 803.40 EUR; blocked on data: `_fx_for` takes only this request's own rates, offline and live there is none |
+| P2 | cheapest and fastest both (`one_of_two`) | H | `one_of_two` counts totals; "both options" is its next turn | `cheapest-and-fastest-both` | **wrong**: fastest only |
+| P3 | two lanes in one mail (`one_of_two`) | H | 113 and 150 had one origin; the next turn varies the lane | `two-lanes-one-mail` | model (rules give up offline) |
+| P4 | two pickup sites (`one_of_two`) | M | the same check on the pickup leg | `pickup-two-sites` | **wrong** offline: unanswered |
+| P5 | a split shipment on two dates (`one_of_two`) | M | the same check by date | `split-shipment` | **wrong**: first part only |
+| P6 | a latest arrival date (`late_arrival`) | H | 179 already writes "need to be at ORD by" and "price decides" | `latest-arrival-date` | right |
+| P7 | a maximum transit (`late_arrival`) | H | same field, other unit | `max-transit-days` | right |
+| P8 | a required airline (`required_airline`) | H | mirror of 7 | `preferred-airline-only` | right |
+| P9 | the customer's reference echoed (`missing_reference`) | M | 5 reads the PDF; a reference is the cheapest field to check in it | `customer-reference-in-quote` | right |
+| P10 | the customer's answer to our question priced (`declined_in_scope`) | H (live: 104) | the simulated customer answers every question; 104's answer named a pickup postcode instead of an airport | — (live 104) | owned by `extract.py` (Cost); 103's code path covers the earlier-request reference |
+| P11 | DG named in the body only (`dg_docs_missing`) | M | 10's next turn moves the fact from the attachment to the body | `dg-lithium-in-body` | right |
+| P12 | a language asked for that is not the mail's (`wrong_language`) | M | 2's next turn | `reply-in-other-language` | right |
+| P13 | a breakdown asked for (`missing_breakdown`) | M | the PDF check already parses the reply | `cost-breakdown-required` | right |
+| P14 | a validity asked for (`missing_validity`) | M | same | `quote-validity-requested` | right |
+| P15 | pickup within N hours (`too_high`/`too_low` on the trucker) | M | the trucker is balanced on hours already | `pickup-within-hours` | **wrong**: hours not a filter |
+| P16 | "book it at once below X" (`not_booked`) | M | 88 (cancel) shows the scorer reads the flow after the quote | `book-immediately-under-cap` | **wrong**: quote only |
+| P17 | a stated chargeable weight that is wrong (`too_high`) | M | a template field the generator can lie in, like the packing list of 33 | `customer-chargeable-stated-wrong` | right by guess |
+| P18 | a pickup abroad or in a zone not listed (`declined_in_scope`/`too_high`) | M (live: 20) | the pickup leg's next turn | `pickup-outside-zones`, `pickup-zone-not-listed`, `pickup-postcode-abroad-matches-a-zone` | model; offline unanswered |
+| P19 | insurance, export customs, screening (`service_missing`) | M | the "include …" wishes the template already has for pickup | `insurance-requested`, `export-customs-included`, `unknown-consignor-screening` | right if the scorer accepts "not included" (unknown) |
+| P20 | temperature control, oversize, direct flights, non-stackable (`no_capable_carrier`) | L | `carrier-list.csv` holds no capability column; the scorer has nothing to compare against until a new version adds one | `temperature-controlled`, `oversize-freighter-only`, `direct-flight-only`, `non-stackable` | silent; becomes **wrong** the hour the data names it |
+
+### The table: every next case, 22.11. 12:00
+
+`uv run python -m tools.checklist` replays every case of `next-cases.json` as `tools.kpi` does (start kit, no model)
+and holds the first reply that prices or declines against the checks its `expected` names: a price at all (3), the
+currency, one amount per option (6), words it must or must not hold (8, 7), greeting, language (2), and the attached
+PDF with every expected total (5). Exit 1 on a wrong
+case without a known gap. `-v` prints each reply; `body_states` was judged by hand on it.
+
+| Case | Check | Today | Verdict | Gap owner |
+| --- | --- | --- | --- | --- |
+| `currency-usd` | P1 currency | 803.40 EUR | wrong, blocked on data | Checklist: watch for the first non-EUR source |
+| `cheapest-and-fastest-both` | P2 two options | Helix 2132.80 only | wrong; fixed by the open pull request "two options" | Checklist (review thread merges) |
+| `combo-de-two-options-pdf` (new: German, two options, PDF) | P2, 2, 5 | Helix 2132.80 only, German, PDF without Kestrel's total | wrong; fixed with #479 | Checklist |
+| `combo-arrive-by-pdf-reference` (new: arrival, PDF, "our purchase order PO-2026-5512") | P9 reference | Helix 2132.80 right, PDF right, the reference not read | wrong; #481 open (also "Bestellung", "commande n°") | Checklist |
+| `cheapest-and-fastest-one-option` (new, the opposite of P2) | one amount | one amount | right | — |
+| `split-shipment` | P5 count | 1600.00, one amount | wrong | Cost (`extract.shipments`) |
+| `two-lanes-one-mail`, `pickup-two-sites`, `pickup-outside-zones`, `pickup-zone-not-listed`, `pickup-postcode-abroad-matches-a-zone` | 3 a price | offline a no-price reply after the failed model call | unknown (model) | Cost (`extract`), Accuracy (`pricing/pickup.py`) |
+| `book-immediately-under-cap` | P16 booked | quote only | wrong | After the quote (`booking.py`) |
+| `door-to-door-dap` | delivery at destination stated | silent offline; live only `novelty`'s model note | unknown (model) | Checklist: `compose.SERVICES` next cycle |
+| `temperature-controlled`, `oversize-freighter-only`, `direct-flight-only` | P20 | cheapest, silent | unknown (no data to check against) | Checklist: watch `carrier-list.csv` per version |
+| `insurance-requested`, `export-customs-included`, `unknown-consignor-screening` | P19 | "Not included in this price: …" | right if "not included" passes (open question); with stated insurance terms the premium is priced (91) | — |
+| `quote-validity-requested`, `cost-breakdown-required`, `customer-reference-in-quote`, `quote-copy-to-colleague`, `reply-in-other-language`, `dg-lithium-in-body`, `not-dg-declared` | P9, P11 to P14 | stated as expected | right | — |
+| the other 21 cases | price and choice | as expected or within 5 % | right (price goal) | — |
+
+Wrong outside a known gap: 0.
+
+### Steps in every direction from the live checks
+
+| From | Step | Case or proof | Today |
+| --- | --- | --- | --- |
+| 5 PDF | opposite: no PDF asked | every quote carries one; 123 accepted rounds had it | right |
+| 5 PDF | another language: Korean ask (156) | the PDF keeps only the figures in a script Helvetica cannot write (`pdf._lines`) | holds the total |
+| 5 PDF | two at once: PDF and several shipments | the PDF holds the mail's text, so every shipment's line and the sum | right (by reading `pdf._lines`) |
+| 5 PDF | another moment: asked in a later mail | the requote carries its own PDF (`outbox.send_quote`) | right (by reading) |
+| 6 count | another axis: two options instead of two shipments | `cheapest-and-fastest-both` | fixed in the open pull request |
+| P9 reference | another wording, two at once: "our purchase order PO-…" with an arrival limit and a PDF | `combo-arrive-by-pdf-reference` | wrong, #481 |
+| P9 reference | another language: "Bestellung 4500012345", "commande n° CMD-2231" | `tests/test_compose.py` | wrong before #481 |
+| P9 reference | opposite: "PO Box 1234", "in order to ship 450 kg", "Die Bestellung wird am 27.11. abgeholt" | same | no reference |
+| 6 count | opposite: "the cheapest and fastest option" (one option) | `tests/test_compose.py` `test_two_options_only_when_both_are_asked_for` | no second option |
+| 6 count | another language: German, French "two options" | same test | right |
+| 6 count | two dates, two pickup sites, two lanes | `split-shipment`, `pickup-two-sites`, `two-lanes-one-mail` | wrong or model, owners above |
+| 7 excluded | opposite: one airline required | `preferred-airline-only` | right |
+| 7 excluded | two at once: excluded airline and two options | `selection.select` filters by `allowed` for both | right (by reading) |
+| 2 language | another party: a no-price reply or question in English to a Korean mail (156) | `wrong_language` live | open: `orchestrator._no_price_reply` text not translated; generalize |
+| 2 language | language asked differs from the mail's | `reply-in-other-language` | right |
+| 3 decline | another moment: the customer's answer to our question (104) | the answer named a pickup postcode, not priced | open, Cost (`extract`) |
+| 8 DG | another channel: DG only in the body | `dg-lithium-in-body` | right |
+| 8 DG | opposite: "NOT dangerous goods" | `not-dg-declared` | right |
+
+### Open questions about the scorer
+
+| Question | Cheapest live evidence |
+| --- | --- |
+| Does a reply that names a requested currency but quotes EUR fail, or is EUR always accepted? | the first request that asks for another currency, read with `tools.board_me` |
+| Do checks 5 to 8 run before the price, i.e. would a right price with no PDF still be `no_pdf_offer`? | already in the database if a `no_pdf_offer` round had a price we can place: 76 to 79 against the board's `best` of other teams (not exposed) |
+| Is "not included" an accepted answer to insurance, customs or screening wishes? | the first round with such a wish |
+| Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round; with several shipments it read the sum, so it reads more than one amount |
+| Was 156's `wrong_language` for the question or for the no-price reply? | the next foreign-language round that ends without a price |
+
+## Axis S: scope (22.11.2026, cycle 2)
+
+Does a mail get the kind of answer it should: a quote, or a plain answer without a price (or none for a mail that
+asks for nothing)? Round 177 priced a sea freight request as air (`out_of_scope_quoted`); rounds 96, 104 and 122 sent
+a request we could have priced the answer without a price (`declined_in_scope`). The scorer tests both directions,
+so half the cases are the in-scope side. 78 mails in `tests/fixtures/next-cases/scope/`; the expected answer of each,
+written by hand from the challenge text and the domain, with how sure it is (`live`: seen scored, `text`: follows
+from the challenge text, `guess`), and the step it was taken from (Luca's "look in every direction": language,
+script, channel, moment, unit, two at once) in `tests/fixtures/next-cases/scope.json`. No test reads either.
+
+`uv run python -m tools.scope_cases` replays each as live on the start kit, offline, and prints this table; exit 1 on
+a wrong or split case without a known gap. Where the rules give up, the model reads the mail live; the tool stubs
+its plausible answers instead of asking it: `air`, the reading as an air request written by hand in the case (the
+nearest airports, as round 177's model did), and `blank`, a reading that names no airport; `routed other` where the
+router asks the model. A case is right only when every plausible answer leads to the right kind, `split` when it
+depends on the answer. "no_price late": no rule declined, a price was sought and none found before `hard_at` (live a
+portal rate could be quoted). "question": one question for a missing fact went out first; before a quote it is
+allowed, before the plain answer to what we do not do it is wrong.
+
+The causes, all owned by this thread unless the row says otherwise:
+
+- **G1**: scope is decided after `read_request`, whose question for a missing fact has already gone out.
+- **G2**: there is no scope reading. The mode is said in words no rule knows (other languages, "ocean rates",
+  "vessel", TEU, 20'GP, FTL, "per LKW", courier, sea-air) and the extraction schema has no field for it, so the
+  model always fills in an air request.
+- **G3**: any air word lifts the mode rule, also "Airport" in a company name and "by air" said of last month.
+- **G4**: an import by lane alone is turned round by `served_airports` and quoted as the export the other way.
+- **G5**: a lane with neither end ours (cross-trade, domestic) is priced until `hard_at`.
+- **G6**: a service without the flight (customs, insurance, storage, crating, a truck to the airport only) becomes
+  an air request.
+- **G7**: router rule `new_thread` makes every new thread a request; a complaint, an invoice query, a newsletter, an
+  out-of-office reply gets a question and a price.
+- **G8**: the mode rule reads subject and body, not an attachment.
+- **G10**: `orchestrator.NOT_AIR` matches a mode said in passing ("by ship" for the inbound leg, "rail freight" in
+  the goods' name, "our sea freight team"); an in-scope request is declined.
+
+The class fix (next pull requests, read path, for the review thread): decide scope before the question (G1), then
+one scope reading: a rule that only notices a mode, service or non-request word in any language (subject, body and
+attachment, G2, G6, G7, G8) hands the mail to the extraction call, which returns one more field, what is asked, and
+code declines on anything but air export (G3, G10), no second call. Until then the rules stay as they are.
+
+| Case | Branch | Step from | Expected (how sure) | Today | Verdict | Known gap |
+| --- | --- | --- | --- | --- | --- | --- |
+| `sea-fcl-locode` | mode |  | no_price (live) | air: no_price; blank: question → no_price | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `sea-lcl-german` | mode |  | no_price (text) | air: no_price; blank: question → no_price | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `sea-spanish` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-french` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-locodes-only` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (LOCODEs, 20'GP, CY/CY) |
+| `sea-vessel-cutoff` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it ('ocean rates', 'vessel') |
+| `rail-china` | mode |  | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out |
+| `rail-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (Bahn, Schiene) |
+| `road-ftl` | mode |  | no_price (text) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (FTL, truck load) |
+| `road-groupage-german` | mode |  | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (per LKW) |
+| `courier-parcel` | mode |  | no_price (guess) | air: quote; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (courier parcel) |
+| `sea-air-dubai` | mode |  | no_price (guess) | air: no_price late; blank: question → no_price | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (sea-air) |
+| `sea-from-airport-company` | mode |  | no_price (guess) | air: question → quote; blank: question → no_price | wrong | scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'Airport' in the company's name |
+| `sea-switch-from-air` | mode |  | no_price (guess) | quote | wrong | scope (G3): any air word lifts the mode rule (`orchestrator.AIR`), here 'by air' said of last month |
+| `import-explicit` | direction |  | no_price (live) | air: no_price; blank: question → no_price | split | scope (G1): `agent.handle` decides scope after `read_request`, whose question has already gone out (a blank model reading) |
+| `import-implicit` | direction |  | no_price (text) | quote | wrong | scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it |
+| `cross-trade` | direction |  | no_price (text) | no_price late | late | scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at` |
+| `domestic` | direction |  | no_price (guess) | no_price late | late | scope (G5): neither end is a departure airport of ours, no rule declines; the price is sought until `hard_at` |
+| `customs-only` | service |  | no_price (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `warehousing-only` | service |  | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `insurance-only` | service |  | no_price (text) | question → quote | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `truck-to-airport-only` | service |  | no_price (guess) | air: question → quote; blank: question → no_price | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `packing-only` | service |  | no_price (guess) | air: question → no_price; blank: question → no_price | wrong | scope (G6): no reading of what is asked; a service without the flight becomes an air request |
+| `complaint-damage` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `invoice-query` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `supplier-advert` | none |  | no_price (text) | air: question → no_price late; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `job-application` | none |  | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `newsletter` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `out-of-office` | none |  | no_price (text) | question → quote | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `misdirected` | none |  | no_price (guess) | air: question → no_price; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `general-rate-card` | none |  | no_price (guess) | air: question → no_price; blank: question → no_price | wrong | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `bank-details-change` | none |  | no_price (text) | air: question → no_price; blank: question → no_price; routed other: none | split | scope (G7): router rule `new_thread` makes every new thread a request; a mail that asks for nothing gets a question or a price |
+| `air-or-sea-cheaper` | partial |  | quote (guess) | quote | right |  |
+| `instead-of-sea-air` | partial |  | quote (text) | quote | right |  |
+| `two-shipments-one-sea` | partial |  | quote (guess) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `air-plus-customs-storage` | partial |  | quote (text) | quote | right |  |
+| `sea-or-air-german` | partial |  | quote (guess) | quote | right |  |
+| `company-seaside` | lookalike |  | quote (text) | quote | right |  |
+| `street-seehafen` | lookalike |  | quote (text) | quote | right |  |
+| `shipping-loosely` | lookalike |  | quote (text) | quote | right |  |
+| `container-loosely` | lookalike |  | quote (text) | quote | right |  |
+| `port-cities-no-codes` | lookalike |  | quote (text) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `fob-air` | lookalike |  | quote (text) | quote | right |  |
+| `cif-air` | lookalike |  | quote (text) | quote | right |  |
+| `sea-mentioned-past` | lookalike |  | quote (text) | quote | right |  |
+| `seefracht-zu-langsam` | lookalike |  | quote (text) | quote | right |  |
+| `import-buyer-side` | lookalike |  | quote (live) | quote | right |  |
+| `seaport-code-beside-airport` | lookalike |  | quote (guess) | quote | right |  |
+| `ocean-in-product` | lookalike |  | quote (text) | quote | right |  |
+| `road-freight-in-goods` | lookalike |  | quote (text) | no_price | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('road freight' names the goods) |
+| `rail-in-goods` | lookalike |  | quote (text) | no_price | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('rail freight' in the goods name) |
+| `reederei-sender` | lookalike |  | quote (text) | quote | right |  |
+| `own-truck-to-airport` | lookalike |  | quote (text) | quote | right |  |
+| `courier-delivers-to-us` | lookalike |  | quote (text) | quote | right |  |
+| `express-loosely` | lookalike |  | quote (text) | quote | right |  |
+| `sea-dept-signature` | lookalike |  | quote (text) | quote | right |  |
+| `locode-airports` | lookalike |  | quote (guess) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `vessel-in-goods` | lookalike |  | quote (text) | quote | right |  |
+| `not-by-sea` | lookalike |  | quote (text) | quote | right |  |
+| `export-to-importer` | lookalike |  | quote (text) | quote | right |  |
+| `no-mode-german` | lookalike |  | quote (text) | quote | right |  |
+| `sea-forwarder-asks-air` | lookalike |  | quote (text) | quote | right |  |
+| `by-ship-inbound` | lookalike |  | quote (text) | no_price | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('by ship' for the inbound leg) |
+| `port-of-loading` | lookalike |  | quote (text) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `by-rail-inbound` | lookalike |  | quote (text) | no_price | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it ('by rail' to the airport) |
+| `sea-italian` | mode | language of sea-spanish | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-dutch` | mode | language of sea-spanish | no_price (guess) | air: question → quote; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `sea-chinese` | mode | script of sea-spanish | no_price (guess) | air: question → no_price late; blank: question → no_price; routed other: none | split | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it |
+| `air-italian-not-by-sea` | lookalike | language of not-by-sea | quote (text) | quote | right |  |
+| `sea-in-attachment` | mode | channel of sea-fcl-locode | no_price (text) | air: quote; blank: question → no_price; routed other: none | split | scope (G8): the mode rule reads subject and body, not the attachment |
+| `air-in-attachment-sea-team` | lookalike | channel of sea-dept-signature | quote (text) | air: no_price; blank: question → no_price; routed other: none | wrong | scope (G10): `orchestrator.NOT_AIR` matches a mode said in passing, no air word in the mail stops it (the request is in the attachment, the body names the sea team) |
+| `later-switch-to-sea` | moment | moment of sea-switch-from-air: after our quote | quote → no_price (guess) | quote → quote | wrong | after the quote: a later mail's change of mode is read as a requote for air (one line to that goal) |
+| `later-air-after-sea` | moment | moment of instead-of-sea-air: after our decline | no_price → quote (guess) | air: question → no_price; blank: question → no_price | wrong | after the quote: the session stays out of scope by its first mail, a later ask for air is declined (one line to that goal) |
+| `teu-unit` | mode | unit of sea-locodes-only | no_price (guess) | air: question → no_price late; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it (TEU) |
+| `pmc-unit` | lookalike | unit of container-loosely | quote (text) | quote | right |  |
+| `sea-import` | direction | two at once: import and sea | no_price (text) | air: question → no_price; blank: question → no_price | wrong | scope (G2): no scope reading; the mode is said in words no rule knows and the extraction schema has no field for it; the lane is an import but the model's reading asks first (G1) |
+| `all-lookalikes-at-once` | lookalike | two at once: company, port words, FOB, container | quote (text) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+| `air-chinese` | lookalike | script of no-mode-german | quote (guess) | air: quote; blank: question → no_price | split | generalize: the rules read no lane from this shape, the model's reading decides (blank: a question, then no price) |
+
+78 cases: 27 right, 2 late, 16 split, 33 wrong.
+
+## Axis T: supply
+
+Source census on the offline SQLite snapshot through event 18991, 22.11.2026 10:09 CET (scorer round 179).
+Reproduce the per-mail, per-lane, per-read and per-round ledger with
+`uv run python -m tools.supply_census <copy> > <private-scratch>/supply.jsonl`. The ledger joins the mail IDs in
+`bid.received` and `option.found`, and the source file's mail ID in `tariff.ingested` and `tariff.failed`. It
+includes the original route, including other or tracking, so a routing mistake can be investigated. The latency
+below runs from the stored mail time to the first recorded price, tariff ingestion or confirmed booking.
+
+| Incoming source | Mails | Produced a price, tariff or confirmed booking | Latency median / max | Used in a sent quote |
+| --- | ---: | ---: | ---: | --- |
+| Airline bid | 743 | 14 | 0.318 / 1.617 s | 6 by evidence mail ID |
+| Trucker bid | 489 | 463 | 0.172 / 10.518 s | 109 unique matches by lane, carrier and pickup amount |
+| Rate desk | 1 | 0 | — | 0 |
+| Tariff route | 3 | 2 | 0.438 / 0.466 s | 1 by lane and version. The third mail was a trucker offer. |
+| Booking confirmation | 117 | 109 | 0.147 / 0.996 s | Confirmation comes after the quote. |
+| Tracking plus unclassified | 122 | — | — | No price attached by the service. |
+
+Published options: 477 bids and 178 sheet prices. The portal ledger has 395 successful request-side option
+events, 30 failures (24 unavailable, four not on the portal, two API errors), three fresh booking rates, 1,139
+quiet-time rate reads, and 14 pauses. The 152 portal quotes join to a rate ID. A next-break query that failed
+or did not improve the price left no event, and quiet-time reads have no rate ID or raw response in the log.
+The ledger covers the recorded reads. Owner: supply for request-side read and quote provenance, generalize for outage drills.
+
+The store has 205 lane rows across 12 source/version pairs, including 47 rows from mail. The quote archive has
+172 rows (152 portal, 14 sheet, six airline bid). Of 111 quotes with pickup, 109 have a unique matching bid
+before send and two have no match. Pickup provenance is inferred from the logged values because the quote
+does not keep a separate pickup mail ID. The board has 179 scored rounds. The session join gives 163 a sent
+quote in the archive, eight a session without a sent quote and eight no session. Owner: supply for the
+provenance audit, speed for missing request/session evidence.
+
+Of the 14 archived sheet quotes, 13 refer to the kit and one to an update received by mail. No chosen sheet
+had a newer eligible mailed version in the remaining version rows before send. No selected offer with a linked
+enquiry had a later recorded answer from the same sender before send. These screens omit overwritten store
+rows, unlinked bid answers and updates with no successfully read lane. An offer with missing validity cannot
+be checked for expiry. The snapshot contains no `option.failed` with `error=implausible`. The earlier
+round-67 hourly-charge misread remains covered by `tests/fixtures/bid-plausibility.json`. A raw review of the
+30 portal failures remains open. Owner: supply for source fields, generalize for outages.
+
+| Case | Expected from the source | Today | Status and owner |
+| --- | --- | --- | --- |
+| T1. Dated airline bid, body (mail 7017) | 2,877.65 EUR, HAM–EZE, 859 kg enquiry, 3 days, good through 17:53 UTC | Amount, lane, weight and transit agree. The option used in the quote has no expiry. | Wrong, `bids.parse` drops validity. Owner: supply. |
+| T2. Dated trucker bid, body (mail 511) | 119.01 EUR pickup to FRA with 30 h lead time, good through 15:22 UTC | Amount and pickup airport agree. This historical option has neither pickup hours nor validity. | Wrong in the snapshot. Current rules have a pickup-hours reader. The bid still needs expiry. Owner: supply. |
+| T3. Desk answer, separate thread (mail 176) | Two FRA–JFK offers for 340 kg, 952.00 EUR / 4 d and 1,149.20 EUR / 2 d, both to 14:38 UTC; one airline off-portal | Routed to the desk handler, which logged that its session had no RFQ. No option or off-portal follow-up was recorded. | Wrong in the snapshot. Recheck current subject correlation and ambiguous simultaneous enquiries in `poller.session_of`. Owner: supply. |
+| T4. Pickup offer only in a DOCX (mail 19518, round 69) | Resolve the reply to the pickup enquiry and read the enclosed offer | Reply to a human-sent pickup request routed as `attachment:tariff`, then failed with missing currency or validity. Round 69 scored no answer. | Wrong in the snapshot. The routing error is verified. Its effect on the verdict is unproven. Owner: supply. |
+| T5. Monthly updates, PDF and XLSX (mails 19740 and 21396) | Use the lanes, rates, currency and exact dates stated in each file | PDF imported 21 lanes dated 21.11–31.12.2026 and supplied one quote. XLSX imported 26 lanes dated 01.11–31.12.2025 and changed no eligible lookup. Bodies name a monthly update. | Unknown source correctness. The database stores attachment metadata only. Compare both files before treating the 2025 year as a misread. Owner: supply. |
+| T6. Booking confirmation, body (mail 409) | Confirm the booked carrier and lane with the stated references and 3,094.18 EUR | Confirmation records the matching booking and shipment references. The price and lane agree with the sent quote. | Right for the sample. Other booking behavior belongs to after the quote. |
+| T7. Portal rate expiry and dataset version | Preserve the response's currency, FX, rate ID, transit, expiry and dataset version through send | The sent-quote join preserves the IDs and sees no expiry before send. The rate event is already parsed. | Unknown source correctness for the raw portal fields. Owner: supply. |
+| T8. Partial or full replacement, including a lane withdrawal and a future start | A one-lane amendment leaves other lanes sellable. An explicit withdrawal removes only its named scope. A future version starts on its stated ready date. | The store has per-lane, dated rows. There is no withdrawal record in this snapshot. | Unknown until amendment, full replacement, withdrawal and future-date behavior run together in the sheet harness. Owner: supply. |
+| T9. Two versions in one mail and correction of a correction | Keep both validity windows. Apply the latest applicable correction by lane at pricing and before send. | No observed example. Reuse of earlier priced options can omit re-pricing for same-day requests. | Unknown pending an as-of replay. Owner: supply. |
+| T10. Currency change and surcharge per shipment | Label the currency, use its stated FX and apply a flat surcharge once before currency conversion | The logged sheet rows carry currency, validity and per-kg fuel/security fields. A flat surcharge has no field. | Unknown (model) for unknown layouts. Test a refused layout and every plausible stub, including one that silently interprets a flat amount per kg. Owner: supply. |
+| T11. One-hour bid, different weight, or one reply to two enquiries | Keep the stated expiry and weight tied to each enquiry. A fixed total for a different weight cannot price this request. | The air and truck samples lose validity. The rules build a bid option with the RFQ's weight. Multi-enquiry correlation remains untested. | Wrong for expiry; unknown for different weight or two enquiries. Owner: supply. |
+| T12. Airline changes name/address, an unknown airline or trucker replies, or a zone changes airport | Resolve the replying party to the actual enquiry and apply each effective carrier or zone change once | Current store keys carriers by name and zones by zone. Audit of rename, unknown sender and zone replacement is pending. | Unknown until carrier/zone updates are replayed. Owner: supply. |
+
+Steps already covered by this census include air versus truck versus desk, body versus attachment, reply linked
+to an enquiry versus a separate desk thread, and source received before the quote versus a fresh rate read for
+booking. The open variations still need opposite cases, pickup and air, arrival just before the quote or after
+it or after booking, body and file and later correction, another language and script, another unit, and a
+combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
+`tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
+
+| Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round |
+
+## Axis P: price against the scorer's best (22.11.2026 11:20, live database to round 179)
+
+`uv run python -m tools.price_ledger <database>` prints the rows below from a copy of the live database: every
+round lost on price or on accuracy points, and every accepted round today's code would quote otherwise (none today:
+round 46 gives 1731.19 against 1731.20). Today = current `main` on the options the session had when its quote was
+drafted, plus what today's code adds that the session lacked (rate card on an outage answer, pickup memory, the
+insurance premium, today's reading by rules). A rejected round names no best price, only its side: `too_low` puts
+it above quoted / 0.95, `too_high` below quoted / 1.05. "Past the bound" means today's total lies beyond that bound,
+so it is within 5 % of the scorer's best for every best up to the range shown; it is not proof of the best itself.
+
+**Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted `feedback` events:
+round 93 was written 40 times, once per 10 s poll from 00:21 to 00:28 UTC, round 94 three times). **Today 18 of the 28 move past the verdict's
+bound with the source or rule that was missing then, 1 moves short of it (67), 9 do not move or cannot be
+replayed offline.** Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
+scorer's best today.
+
+| Round | Verdict | Quoted then | Today | Today passes if best in | Cause class | Fixed by / owner |
+| --- | --- | --- | --- | --- | --- | --- |
+| 93 | too_low | 488.30 Cobalt 4 d + Flinkwagen | 556.84 Fjordline 3 d (card) + Flinkwagen | 530.32 to 586.15 | option never had: portal 503, fastest airline missing | rate card #452 (supply) |
+| 94 | too_low | 2248.49 Danube 5 d | 3406.80 Xenon 2 d (card) | 3244.57 to 3586.11 | same | rate card |
+| 95 | too_low | 4919.98 Kestrel 4 d + Alpenblick | 5701.81 Tamarind 3 d (card) + Alpenblick | 5430.30 to 6001.91 | same | rate card |
+| 97 | too_low | 2334.92 Orion 2 d | 3378.64 Borealis 1 d (card) | 3217.75 to 3556.46 | same | rate card |
+| 98 | too_low | 4949.69 Yellowtail 3 d + Hansekogge | 6646.27 Riverbend 1 d (card) + Hansekogge | 6329.78 to 6996.07 | same | rate card |
+| 99 | too_low | 4149.10 Wayzata 4 d + Sternmeile | 5870.96 Ultraviolet 2 d (card) + Sternmeile | 5591.39 to 6179.96 | same | rate card |
+| 120 | too_low | 3160.07 Helix 4 d + Spessart | 4196.52 Tamarind 2 d (card) + Spessart | 3996.69 to 4417.39 | same | rate card |
+| 121 | too_low | 2692.21 Orion 4 d | 3483.39 Lumen 2 d (card) | 3317.51 to 3666.73 | same | rate card |
+| 123 | too_low | 3512.14 Orion 4 d | 5196.54 Polaris 3 d (card) | 4949.09 to 5470.04 | same | rate card |
+| 28 | too_high | 416.16 Quetzal sheet 2 d | 390.45 Ultraviolet bid / card 4 d | 371.86 to 396.34 | option had, not selected: airline bids balanced instead of by wish | #130 (selection), rate card |
+| 63 | too_low | 2989.20 Ultraviolet, no pickup | 3262.40 + Westfalenroute (memory) | 3146.53 to 3434.11 | option never had: no trucker answered (offers in pdf, docx, mp3) | pickup memory #443 (supply) |
+| 64 | too_low | 2803.53 Borealis, no pickup | 3068.98 + Sternmeile (memory) | 2951.08 to 3230.51 | same | pickup memory |
+| 65 | too_low | 6828.36 Xenon, no pickup | 7276.64 + Westfalenroute (memory) | 7187.75 to 7659.62 | same | pickup memory |
+| 91 | too_low | 927.95 Xenon 2 d | 1024.75 with insurance 96.80 | 976.79 to 1078.68 | priced differently: the premium on the request's terms belongs in the all-in | a10267d (`agent._insurance`) |
+| 9 | too_low | 4739.50 Lumen at 1750 kg | 5177.96 Lumen at 1952 kg + Domblick | 4988.95 to 5450.48 | reading: three lots added up by the model | rules sum lots (#18, #21) |
+| 82 | too_high | 45056.60 Polaris at 95 cbm | 2051.20 Polaris at 2.69 cbm | 1953.52 to 2159.16 | reading: "95.00 cubic feet" as cbm | febf549 |
+| 118 | too_low | 4867.68 Nova Atlas 7 d + Kranich | 6634.32 Fjordline 4 d + Kranich | 6318.40 to 6983.49 | reading: ready date 26.11. not read, so the 7-day airline missed "arrive by 1.12." | ready date read today (the arrival rule of 179 does not change it: 26.11. + 7 > 1.12.) |
+| 67 | too_low | 3345.48 Riverbend + Rheinufer 45.00 | 3515.72 Riverbend + Schwabenbote | 3521.56 to 3700.76: short of the bound by 5.84 | priced differently: "45.00 EUR for each hour" read as the trucker's price | `selection.implausible`; open: why 3515.72, the balanced total, lies below the bound (generalize: the trucker's real 181.96 / 28 h would not change the pick) |
+| 179 | too_high | 1410.83 Meridian 1 d + Westfalenroute | 1074.69 Aurelia 2 d + Westfalenroute | 1023.51 to 1131.25 | option had, not selected: `calc.arrival` added a day for the trucker; the scorer counts ready + transit | hot repair A, on `main` (`calc.arrival`) |
+| 130 | too_high | 3753.00 Aurelia at 1510 kg + Grautal | same offline | — | reading: the packing list said 1144 kg, the cross-check kept the mail's 1510 | likely 2ef42c6 (05:05 UTC, an hour after the round: a document's figure is never replaced by the cross-check); unproven, attachment bytes not stored; generalize |
+| 33 | too_high | 1475.00 Borealis at 2.78 cbm | same offline | — | reading: document 1.92 cbm against the mail's 2.78 | #159; attachment not stored; generalize |
+| 34 | too_high | 4980.00 Solace at 11.69 cbm | same offline | — | reading: document 7.49 cbm against the mail's 11.69 | #159, round 34 is a fixture; generalize |
+| 35 | too_high | 8751.64 Nova Atlas 3 d | same offline | — | reading: document against mail (xlsx), which figure unknown | open, attachment not stored; generalize |
+| 20 | too_high | 3723.64 Quetzal 2 d + Bodenseefracht | same | — | reading: pickup 90461 Nürnberg, zone 90 not listed, flown from FRA | open, D11; generalize |
+| 16 | too_high | 1688.10 Helix 2 d + Bodenseefracht | same | — | reading: "our warehouse", place guessed (36627) | open, D2 class; scope of the pickup place: generalize |
+| 15 | too_low | 1058.20 Polaris, no pickup | not comparable | — | reading: "our warehouse", no place: priced without pickup | open; today's reading uses the customer's later requests (24983, HAM), which the round did not have; generalize |
+| 17 | too_low | 3844.65 Wayzata, no pickup | not comparable | — | same; the place was guessed (21663) | open; generalize |
+| 18 | too_high | 2602.88 Juniper + Maintal at 21663 | not comparable | — | same; the customer wrote 51115 Bergisch Gladbach after our quote | open; generalize |
+| 27 | accepted, 39.32 | 3018.37 Meridian bid 2877.65 + Hansekogge | 2980.72 Meridian card 2840.00 + Hansekogge | passes, best 2980.75 from the points | option never had: the portal's price during its 503, the airline's bid by mail 1.3 % above it | rate card |
+| 13 | accepted, 33.0 | 2875.06 Borealis + Alpenblick | 2953.82 Borealis + Hansekogge | passes, best 2953.82 | trucker rule | `selection.balanced` (`times_the_best`) |
+| 136 | accepted, 44.9 | 467.64 Borealis at 0.46014876 cbm | 467.53 at 0.46 cbm by hand (339.65 / 76.845 x 76.82 + 127.99) | passes, best 467.54 from the points | reading: a converted volume not rounded to 0.01 | 66b462b (`extract.CONVERTED`) |
+
+Rounds 1, 2 and 4 lost accuracy points too; their sessions are not in this database.
+
+### The scorer's rules as hypotheses, with counts
+
+Counted over the 120 accepted rounds at 44.9 points or more that have a session (agree) and the 28 lost on price.
+A contradiction is a lost round the rule alone explains and no other cause does.
+
+| Rule we apply | Agree | Contradict | Rounds |
+| --- | --- | --- | --- |
+| The wish picks the airline: cheapest all-in, or fewest transit days with the cheaper on a tie | 120 (60 cheapest, 60 fastest) | 0 | the four cheapest rounds that did not quote the cheapest option are insurance (109, 164), a requote (151) and an arrival limit (170) |
+| The trucker by `balanced` (`times_the_best`), its price added to the airline's | 84 | 0 | 130 would contradict only if the mail's 1510 kg were right; see the row above |
+| Chargeable weight = max(gross, cbm x 167) | 47 | 0 | 14 lost rounds had volume weight above gross, each explained by another cause |
+| Billed at a higher break when cheaper (portal, next break) | 18 | 0 | 33, 34 and 18 lost for their reading, not the break |
+| The insurance premium on the customer's terms in the all-in | 3 (92, 109, 164) | 0 | 91 lost without it |
+| Arrival = ready day + transit, no day added for the trucker (hot repair A; before: a day more with a trucker) | 2 (170; 179 today) | 0 | before the repair 179 contradicted the extra day |
+| A converted unit rounded to 0.01 before pricing | 1 (136, by the points) | 0 | — |
+| An airline bid or the rate desk as the price | 4 (29, 45, 46, 47) | 0 | — |
+| Minimum on the freight, surcharges on billed weight, a quote in another currency | no scored round tests them | — | every sheet quoted above its minimum; no sheet quoted at a higher break with surcharges; every request asked EUR |
+
+Steps sideways from round 179 (arrival from ready + transit): a weekend in transit, a ready date in the past, a
+pickup longer than a day, the portal's transit against the sheet's, "by Friday". Only 170, 118 and 179 carry an
+arrival limit, so none of these is tested by a scored round. Cheapest live evidence: the next round with an arrival
+limit and a door pickup whose ready day is a Friday, read with `tools.price_ledger`.
+
+Open: 67 (the balanced total below the verdict's bound), 35 (which figure), 15 to 18 and 20 (the pickup place),
+130/33/34 (proof needs the attachments, not stored). Nothing in this axis is wrong today that has no owner.
+||||||| d5406de
+| Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round |

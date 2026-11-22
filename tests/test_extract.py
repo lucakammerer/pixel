@@ -73,6 +73,23 @@ def test_delivery_legs_around_the_flight_do_not_turn_the_lane():
     assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
 
 
+@pytest.mark.parametrize(
+    "delivery",
+    [
+        "we'll deliver it to Town Airport (AAA) ourselves",  # round 174
+        "we deliver to Town airport (AAA) ourselves",  # round 168
+        "we will bring the cargo to New Town Airport (AAA) ourselves",
+        "we take it to AAA airport ourselves",
+        "we drop it off at Town Airport (AAA) by us",
+        "our driver will deliver them to Town Airport AAA on our own",
+    ],
+)  # fmt: skip
+def test_the_airport_the_customer_delivers_to_is_the_origin(delivery):
+    body = f"I'm arranging the flight to BBB for our buyer's import, and {delivery}. 11 pieces, 492 kg, 1.86 cbm."
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert rfq and (rfq.origin, rfq.destination) == ("AAA", "BBB")
+
+
 async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
     calls = []
 
@@ -140,6 +157,76 @@ async def test_a_captured_door_request_without_an_origin_takes_the_pickup_zones_
     store.save_zones(ctx, [{"zone": zone_of("51447"), "area": "Town", "airport": "AAA"}])
     rfq = await extract.extract(ctx, captured("rfq-door-no-origin.json"), DEADLINE)
     assert (rfq.origin, rfq.destination, rfq.extracted_by, rfq.missing) == ("AAA", "ORD", "rules", ())
+
+
+@pytest.mark.parametrize(
+    ("text", "destination"),
+    [
+        ("Pickup in 28321 Town; please arrange the truck from our site to BBB airport. The goods go to Singapore.", None),
+        ("Please collect 405 kg from our site in 28321 Town and truck it to BBB airport for the flight to Singapore.", None),
+        ("Door pickup in 28321 Town, delivered to the airport BBB by truck; the cargo flies to Changi, Singapore.", None),
+        ("Please arrange pickup in 28321 Town, and let me know the earliest arrival to BBB.", "BBB"),
+        ("Please collect the goods in 60311 and deliver them to BBB, 300 kg, 1.2 cbm.", "BBB"),
+    ],
+)  # fmt: skip
+def test_the_airport_the_truck_goes_to_is_no_destination(text, destination):
+    assert extract._destination_only(text) == destination
+
+
+def test_the_air_freight_the_truck_brings_zum_flughafen_is_no_destination():
+    text = "Abholung in 60311 Town. Bitte bringen Sie die Luftfracht zum Flughafen AAA, Ziel Singapur. 300 kg, 1,2 cbm."
+    assert extract._destination_only(text) is None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Abholung in 60311 Town, Vorlauf der Luftfracht zum Flughafen AAA per Lkw. Ziel Singapur. 300 kg, 1,2 cbm.",
+        "Abholung in 60311, Zustellung der Luftfracht zum Flughafen AAA. Ziel Singapur. 300 kg, 1,2 cbm.",
+        "Abholung in 60311 und Transport der Luftfrachtsendung zum Flughafen AAA. Bestimmungsort ist Singapur. 300 kg.",
+        "Abholung in 60311. Vor dem Flug muss die Ware zum Flughafen AAA. Empfänger in Singapur. 300 kg, 1,2 cbm.",
+    ],
+)
+async def test_a_destination_the_rules_read_where_the_cargo_departs_is_left_to_the_model(conn, monkeypatch, body):
+    asked = []
+
+    async def down(ctx, **kw):
+        asked.append(kw["purpose"])
+        raise RuntimeError("no model")
+
+    monkeypatch.setattr(llm, "ask_json", down)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("60311"), "area": "Town", "airport": "AAA"}])
+    with pytest.raises(RuntimeError):  # never AAA to AAA
+        await extract.extract(ctx, mail(body), DEADLINE)
+    assert asked == ["rfq.extract"]
+
+
+async def test_a_german_door_request_names_its_destination_zum_flughafen(conn, monkeypatch, emitted):
+    async def boom(ctx, **kw):
+        raise AssertionError("no model call expected")
+
+    monkeypatch.setattr(llm, "ask_json", boom)
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("28321"), "area": "Town", "airport": "AAA"}])
+    rfq = await extract.extract(ctx, captured("rfq-german-door-zum-flughafen.json"), DEADLINE)
+    assert (rfq.origin, rfq.destination, rfq.extracted_by) == ("AAA", "SGN", "rules")
+
+
+@pytest.mark.parametrize(
+    ("body", "lane"),
+    [
+        ("Abholung in 60311 Town, Lkw zum Flughafen AAA. Die Ware geht nach Chicago. 300 kg, 1,2 cbm.", None),
+        ("Abholung in 60311, Transport zum Flughafen AAA, Luftfracht nach BBB, 300 kg, 1,2 cbm.", ("", "BBB")),
+        ("Bitte holen Sie die Ware in 60311 Town ab und bringen Sie sie zum Flughafen AAA. Ziel ist Chicago (BBB). 300 kg.", None),
+        ("Abholung in 60311 Town, Lkw zum Abflughafen. Luftfracht zum Flughafen BBB, 300 kg, 1,2 cbm.", ("", "BBB")),
+        ("Bitte holen Sie die Ware in 60311 Town ab und fahren Sie sie zum Flughafen AAA. Ziel: Singapur. 300 kg.", None),
+        ("Wir fahren die Kisten zum Flughafen AAA, Bestimmung Singapur, Abholung in 60311, 300 kg.", None),
+    ],
+)  # fmt: skip
+def test_the_truck_leg_zum_flughafen_is_no_destination(body, lane):
+    rfq = extract.by_rules(mail(body), DEADLINE)
+    assert (rfq and (rfq.origin, rfq.destination)) == lane
 
 
 async def test_a_door_request_whose_zone_has_no_airport_is_left_to_the_model(conn, monkeypatch, emitted):
@@ -1029,6 +1116,52 @@ def test_schedule_reads_only_stated_readiness_and_limits(text, ready, arrive_by,
     ],
 )
 def test_a_latest_arrival_is_only_one_set_for_this_shipment(text, arrive_by):
+    assert extract.schedule(text, date(2026, 11, 22))[1] == arrive_by
+
+
+@pytest.mark.parametrize(
+    ("text", "ready"),
+    [
+        ("2026-11-24부터 픽업 가능합니다.", date(2026, 11, 24)),  # rounds 149, 156, 161
+        ("픽업은 2026-11-24부터 가능하며, 공항까지의 픽업 트럭도 배차해 주세요.", date(2026, 11, 24)),
+        ("货物是汽车传感器。2026-11-23 可以提货，提货地点是我们的场地。", date(2026, 11, 23)),  # round 72
+        ("2026-11-25に集荷可能です。", date(2026, 11, 25)),
+        ("2026-12-01까지 도착해야 합니다. 픽업 가능합니다.", None),  # an arrival, not the pickup
+        ("픽업 후 2026-12-01까지 도착해야 합니다.", None),
+        ("货物需在2026-12-01前到达，2026-11-25可以提货。", date(2026, 11, 25)),
+        ("2026-12-15까지 납품해야 하므로 픽업은 가능한 빨리 부탁드립니다.", None),  # a delivery date, not the pickup
+        ("고객에게 2026-12-15까지 배송되어야 하며 픽업은 내일 가능합니다.", None),
+        ("2026-12-15前必须交货给客户，提货随时可以。", None),
+        ("货物需在2026-12-15送到客户手中，明天可以提货。", None),
+        ("2026-12-15までに納品が必要で、集荷は明日可能です。", None),
+        ("2026-12-20에 현지 창고 입고 필요, 출고는 2026-11-25 가능.", date(2026, 11, 25)),
+        ("견적은 2026-11-23까지 부탁드리며 픽업 주소는 41680입니다.", None),  # our answer's date
+    ],
+)  # fmt: skip
+def test_a_korean_chinese_or_japanese_pickup_date_is_the_ready_date(text, ready):
+    assert extract.schedule(text, date(2026, 11, 22))[0] == ready
+
+
+@pytest.mark.parametrize(
+    ("text", "arrive_by"),
+    [
+        ("2026-11-24부터 픽업 가능합니다. 2026-12-03까지 도착해야 합니다.", date(2026, 12, 3)),
+        ("货物须于2026-12-01前到达。", date(2026, 12, 1)),
+        ("2026-12-01までに到着する必要があります。", date(2026, 12, 1)),
+        ("견적은 2026-11-23까지 보내 주세요. 도착은 빠를수록 좋습니다.", None),  # our answer's date
+        ("견적 회신은 2026-11-30까지 도착하도록 부탁드립니다.", None),  # the reply arrives by then, not the cargo
+        ("报价请于2026-11-30前送达。", None),
+        ("見積の回答は2026-11-30までに到着するようお願いします。", None),
+        ("2026-12-01 이전에 도착 희망합니다.", date(2026, 12, 1)),
+        ("2026-11-30까지 도착하도록 견적서를 보내 주세요.", None),  # the reply word after the arrival verb
+        ("2026-11-30까지 도착하게 회신 부탁드립니다.", None),
+        ("请在2026-11-30前送达报价。", None),
+        ("2026-11-30までに到着するよう見積をお送りください。", None),
+        ("2026-11-30前到达的报价才有效。", None),
+        ("회신은 빨리 부탁드리고, 화물은 2026-12-01까지 도착해야 합니다.", date(2026, 12, 1)),  # another clause
+    ],
+)  # fmt: skip
+def test_a_korean_chinese_or_japanese_arrival_deadline_is_read(text, arrive_by):
     assert extract.schedule(text, date(2026, 11, 22))[1] == arrive_by
 
 

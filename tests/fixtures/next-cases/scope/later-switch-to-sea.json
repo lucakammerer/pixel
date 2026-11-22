@@ -1,0 +1,26 @@
+[
+  {
+    "id": 995072,
+    "from": "einkauf@lauenburg-pumpen.hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Quote HAM - DXB",
+    "body": "Hello,\n\nplease quote HAM to DXB, 2 pallets, 640 kg, 2.4 cbm, ready 27.11., delivered by us.\n\nRegards\nKarl Senger\nLauenburg Pumpen GmbH",
+    "in_reply_to": null,
+    "references": [],
+    "received_at": "2026-11-22T10:00:00+00:00",
+    "attachments": []
+  },
+  {
+    "id": 995073,
+    "from": "einkauf@lauenburg-pumpen.hackloop.mail",
+    "to": "pixel@hackloop.mail",
+    "subject": "Re: Quote HAM - DXB",
+    "body": "Thanks. Sorry, we need this by sea freight after all, LCL Hamburg to Jebel Ali. Please requote.\n\nKarl Senger",
+    "in_reply_to": 995072,
+    "references": [
+      995072
+    ],
+    "received_at": "2026-11-22T10:03:00+00:00",
+    "attachments": []
+  }
+]

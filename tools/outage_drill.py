@@ -116,17 +116,17 @@ async def drill(raws: list[dict], state: dict, name: str, nth: int = 0) -> tuple
 
 
 def today(conn: sqlite3.Connection, session_id: int, state: dict) -> dict:
-    """The session's state with the rate card as it is now: every portal rate of its lanes read by another session
-    or the card's own job (`rate_card.run`, live since 22.11. 05:18), never the session's own. A drill asks whether a
-    request like this one is answered when the portal fails today."""
+    """The session's state with the rate card as it is now: every portal rate of its lanes, its own reads too, as
+    events of no session. The card's job reads every bracket of every portal lane (by 22.11. 10:00 all 1341 of 206
+    lane and airline pairs), so it holds the rates the session read live; a drill asks whether a request like this
+    one is answered when the portal fails today."""
     lanes = {(p["origin"], p["destination"]) for p in capture._payloads(
         conn, "session_id = ? AND kind = 'rfq.extracted'", (session_id,))}  # fmt: skip
     card = [
-        {k: e[k] for k in capture.EVENT}
+        {k: e[k] for k in capture.EVENT} | {"session_id": None}
         for e in conn.execute(
-            "SELECT * FROM events WHERE (session_id IS NULL OR session_id <> ?) AND (kind = 'rate_card.read' OR"
-            " (kind = 'option.found' AND json_extract(payload, '$.option.source') = 'portal'))",
-            (session_id,),
+            "SELECT * FROM events WHERE kind = 'rate_card.read' OR (kind = 'option.found' AND"
+            " json_extract(payload, '$.option.source') = 'portal')"
         )
         if ((p := json.loads(e["payload"]).get("option") or json.loads(e["payload"]))["origin"], p["destination"])
         in lanes
