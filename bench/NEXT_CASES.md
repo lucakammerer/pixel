@@ -316,3 +316,64 @@ Wrong outside a known gap: 0. Every wrong row above has a `known_gap` in `next-c
 | Do checks 5 to 8 run before the price, i.e. would a right price with no PDF still be `no_pdf_offer`? | already in the database if a `no_pdf_offer` round had a price we can place: 76 to 79 against the board's `best` of other teams (not exposed) |
 | Is "not included" an accepted answer to insurance, customs or screening wishes? | the first round with such a wish |
 | Does the scorer accept one reply with both options for "cheapest and fastest", and which total does it compare? | the first such round |
+
+## Axis T: supply
+
+Source census on the offline SQLite snapshot through event 18991, 22.11.2026 10:09 CET (scorer round 179).
+Reproduce the per-mail, per-lane, per-read and per-round ledger with
+`uv run python -m tools.supply_census <copy> > <private-scratch>/supply.jsonl`. The ledger joins the mail IDs in
+`bid.received` and `option.found`, and the source file's mail ID in `tariff.ingested` and `tariff.failed`. It
+includes the original route, including other or tracking, so a routing mistake can be investigated. The latency
+below runs from the stored mail time to the first recorded price, tariff ingestion or confirmed booking.
+
+| Incoming source | Mails | Produced a price, tariff or confirmed booking | Latency median / max | Used in a sent quote |
+| --- | ---: | ---: | ---: | --- |
+| Airline bid | 743 | 14 | 0.318 / 1.617 s | 6 by evidence mail ID |
+| Trucker bid | 489 | 463 | 0.172 / 10.518 s | 109 unique matches by lane, carrier and pickup amount |
+| Rate desk | 1 | 0 | — | 0 |
+| Tariff route | 3 | 2 | 0.438 / 0.466 s | 1 by lane and version. The third mail was a trucker offer. |
+| Booking confirmation | 117 | 109 | 0.147 / 0.996 s | Confirmation comes after the quote. |
+| Tracking plus unclassified | 122 | — | — | No price attached by the service. |
+
+Published options: 477 bids and 178 sheet prices. The portal ledger has 395 successful request-side option
+events, 30 failures (24 unavailable, four not on the portal, two API errors), three fresh booking rates, 1,139
+quiet-time rate reads, and 14 pauses. The 152 portal quotes join to a rate ID. A next-break query that failed
+or did not improve the price left no event, and quiet-time reads have no rate ID or raw response in the log.
+The ledger covers the recorded reads. Owner: supply for request-side read and quote provenance, generalize for outage drills.
+
+The store has 205 lane rows across 12 source/version pairs, including 47 rows from mail. The quote archive has
+172 rows (152 portal, 14 sheet, six airline bid). Of 111 quotes with pickup, 109 have a unique matching bid
+before send and two have no match. Pickup provenance is inferred from the logged values because the quote
+does not keep a separate pickup mail ID. The board has 179 scored rounds. The session join gives 163 a sent
+quote in the archive, eight a session without a sent quote and eight no session. Owner: supply for the
+provenance audit, speed for missing request/session evidence.
+
+Of the 14 archived sheet quotes, 13 refer to the kit and one to an update received by mail. No chosen sheet
+had a newer eligible mailed version in the remaining version rows before send. No selected offer with a linked
+enquiry had a later recorded answer from the same sender before send. These screens omit overwritten store
+rows, unlinked bid answers and updates with no successfully read lane. An offer with missing validity cannot
+be checked for expiry. The snapshot contains no `option.failed` with `error=implausible`. The earlier
+round-67 hourly-charge misread remains covered by `tests/fixtures/bid-plausibility.json`. A raw review of the
+30 portal failures remains open. Owner: supply for source fields, generalize for outages.
+
+| Case | Expected from the source | Today | Status and owner |
+| --- | --- | --- | --- |
+| T1. Dated airline bid, body (mail 7017) | 2,877.65 EUR, HAM–EZE, 859 kg enquiry, 3 days, good through 17:53 UTC | Amount, lane, weight and transit agree. The option used in the quote has no expiry. | Wrong, `bids.parse` drops validity. Owner: supply. |
+| T2. Dated trucker bid, body (mail 511) | 119.01 EUR pickup to FRA with 30 h lead time, good through 15:22 UTC | Amount and pickup airport agree. This historical option has neither pickup hours nor validity. | Wrong in the snapshot. Current rules have a pickup-hours reader. The bid still needs expiry. Owner: supply. |
+| T3. Desk answer, separate thread (mail 176) | Two FRA–JFK offers for 340 kg, 952.00 EUR / 4 d and 1,149.20 EUR / 2 d, both to 14:38 UTC; one airline off-portal | Routed to the desk handler, which logged that its session had no RFQ. No option or off-portal follow-up was recorded. | Wrong in the snapshot. Recheck current subject correlation and ambiguous simultaneous enquiries in `poller.session_of`. Owner: supply. |
+| T4. Pickup offer only in a DOCX (mail 19518, round 69) | Resolve the reply to the pickup enquiry and read the enclosed offer | Reply to a human-sent pickup request routed as `attachment:tariff`, then failed with missing currency or validity. Round 69 scored no answer. | Wrong in the snapshot. The routing error is verified. Its effect on the verdict is unproven. Owner: supply. |
+| T5. Monthly updates, PDF and XLSX (mails 19740 and 21396) | Use the lanes, rates, currency and exact dates stated in each file | PDF imported 21 lanes dated 21.11–31.12.2026 and supplied one quote. XLSX imported 26 lanes dated 01.11–31.12.2025 and changed no eligible lookup. Bodies name a monthly update. | Unknown source correctness. The database stores attachment metadata only. Compare both files before treating the 2025 year as a misread. Owner: supply. |
+| T6. Booking confirmation, body (mail 409) | Confirm the booked carrier and lane with the stated references and 3,094.18 EUR | Confirmation records the matching booking and shipment references. The price and lane agree with the sent quote. | Right for the sample. Other booking behavior belongs to after the quote. |
+| T7. Portal rate expiry and dataset version | Preserve the response's currency, FX, rate ID, transit, expiry and dataset version through send | The sent-quote join preserves the IDs and sees no expiry before send. The rate event is already parsed. | Unknown source correctness for the raw portal fields. Owner: supply. |
+| T8. Partial or full replacement, including a lane withdrawal and a future start | A one-lane amendment leaves other lanes sellable. An explicit withdrawal removes only its named scope. A future version starts on its stated ready date. | The store has per-lane, dated rows. There is no withdrawal record in this snapshot. | Unknown until amendment, full replacement, withdrawal and future-date behavior run together in the sheet harness. Owner: supply. |
+| T9. Two versions in one mail and correction of a correction | Keep both validity windows. Apply the latest applicable correction by lane at pricing and before send. | No observed example. Reuse of earlier priced options can omit re-pricing for same-day requests. | Unknown pending an as-of replay. Owner: supply. |
+| T10. Currency change and surcharge per shipment | Label the currency, use its stated FX and apply a flat surcharge once before currency conversion | The logged sheet rows carry currency, validity and per-kg fuel/security fields. A flat surcharge has no field. | Unknown (model) for unknown layouts. Test a refused layout and every plausible stub, including one that silently interprets a flat amount per kg. Owner: supply. |
+| T11. One-hour bid, different weight, or one reply to two enquiries | Keep the stated expiry and weight tied to each enquiry. A fixed total for a different weight cannot price this request. | The air and truck samples lose validity. The rules build a bid option with the RFQ's weight. Multi-enquiry correlation remains untested. | Wrong for expiry; unknown for different weight or two enquiries. Owner: supply. |
+| T12. Airline changes name/address, an unknown airline or trucker replies, or a zone changes airport | Resolve the replying party to the actual enquiry and apply each effective carrier or zone change once | Current store keys carriers by name and zones by zone. Audit of rename, unknown sender and zone replacement is pending. | Unknown until carrier/zone updates are replayed. Owner: supply. |
+
+Steps already covered by this census include air versus truck versus desk, body versus attachment, reply linked
+to an enquiry versus a separate desk thread, and source received before the quote versus a fresh rate read for
+booking. The open variations still need opposite cases, pickup and air, arrival just before the quote or after
+it or after booking, body and file and later correction, another language and script, another unit, and a
+combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
+`tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
