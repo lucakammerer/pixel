@@ -284,7 +284,7 @@ def _label_reach(pattern: re.Pattern, text: str) -> dict[str, int]:
     return reach
 
 
-SHIPMENT_LINE = re.compile(r"^\s*\d+[.)]\s+([A-Z]{3})\b(.*)$", re.MULTILINE)
+SHIPMENT_LINE = re.compile(r"^\s*\d+[.):]\s+(?:[A-Za-z ]{0,30}?\s)?([A-Z]{3})\b(.*)$", re.MULTILINE)
 
 
 def first_shipment(rfq: Rfq, text: str) -> Rfq | None:
