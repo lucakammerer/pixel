@@ -39,7 +39,7 @@ DEST_LABEL = re.compile(
 # The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
 # the door" the destination.
 PRE_CARRIAGE = re.compile(
-    rf"(?i:\bdeliver\w*\s+(?:it\s+|the\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
+    rf"(?i:\bdeliver\w*\s+(?:it\s+|them\s+|(?:the|this|these|our)\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
 )
 ON_CARRIAGE = re.compile(
     rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
@@ -1272,7 +1272,7 @@ def _from_answer(read: Rfq, said: str, facts: list[str]) -> Rfq | None:
         update |= {"door_pickup": True, "pickup_postcode": postcode, "pickup_zone": zone_of(postcode)}
     elif "origin" in facts and (lane := _lane(said)) and lane[1] == read.destination:
         update["origin"] = lane[0]
-    if "destination" in facts and len(codes := {c for c in re.findall(r"(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])", said) if _airport(c)}) == 1:
+    if "destination" in facts and len(codes := {c for c in BARE_CODE.findall(said) if _airport(c)}) == 1:
         # Round 156: "도착 공항은 MIA입니다" answered the destination the model had read as the origin of an import
         # trucked from a German postcode; the pickup zone then gives the origin (`_zone_origin`).
         update["destination"] = codes.pop()
@@ -1374,10 +1374,12 @@ async def _ask(ctx: Context, message: Message, rfq: Rfq, facts: list[str], deadl
     if rfq.language not in ASK:
         from pixel.agents.rfq import compose  # compose reads this module's word lists
 
-        english = body
-        body = await compose.localize(ctx, rfq.language, message.session_id, body, ASK_TRANSLATE_S,
-                                      lambda text: compose.kept(english, text, (ctx.settings.signer,)),
-                                      "question.translate")  # fmt: skip
+        # Round 156: the translation wrote the signer's name in Hangul, the check refused it, and the question went out
+        # in English (wrong_language). The model never sees the name; code signs below the translated text.
+        english = body.removesuffix(f"\n{ctx.settings.signer}")
+        body = await compose.localize(ctx, rfq.language, message.session_id, english, ASK_TRANSLATE_S,
+                                      lambda text: compose.kept(english, text, ()), "question.translate")  # fmt: skip
+        body = f"{body}\n{ctx.settings.signer}"
     try:
         question = await outbox.send(
             ctx, to=message.sender, subject=subject, session_id=message.session_id, in_reply_to=message.id,
@@ -1451,6 +1453,23 @@ def _zone_origin(ctx: Context, rfq: Rfq, text: str) -> Rfq:
             update = {"destination": rfq.origin}
     missing = tuple(m for m in rfq.missing if m not in ("origin", *update))
     return rfq.model_copy(update={"origin": airport, **update, "missing": missing})
+
+
+BARE_CODE = re.compile(r"(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])")  # also right before a Korean particle: "KUL행"
+
+
+def _named_destination(ctx: Context | None, rfq: Rfq, text: str) -> Rfq:
+    """Before a destination is asked for: the one airport only arrivals of ours use (`store.airports`) that the
+    customer's words name. Rounds 89, 90, 113 and 156 asked for a destination the mail named, and three of them got
+    no quote; the model reads alone what the rules have no words for (round 156: Korean, "MIA (Miami, US)행")."""
+    if ctx is None or rfq.destination:
+        return rfq
+    origins, destinations = store.airports(ctx)
+    if len(named := set(BARE_CODE.findall(text)) & (destinations - origins)) != 1:
+        return rfq
+    code = named.pop()
+    return rfq.model_copy(update={"destination": code, "origin": "" if rfq.origin == code else rfq.origin,
+                                  "missing": tuple(m for m in rfq.missing if m != "destination")})  # fmt: skip
 
 
 def _declared(lines: list[str]) -> str | None:
@@ -2034,7 +2053,7 @@ async def read_request(ctx: Context, message: Message, deadline: Deadline) -> tu
             rfq = _earlier_request(ctx, mail, rfq)
             if cargo:
                 rfq = rfq.model_copy(update={**cargo, "missing": tuple(k for k in rfq.missing if k not in cargo)})
-            rfq = apply_pickup(await ask(rfq))
+            rfq = apply_pickup(await ask(_named_destination(ctx, rfq, text)))
             prose = {"first_name": result.data.get("first_name")}
     subject = "" if REPLY_SUBJECT.match(mail.subject) else mail.subject
     on = rfq.received_at.date()

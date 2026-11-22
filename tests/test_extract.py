@@ -68,6 +68,9 @@ def test_delivery_legs_around_the_flight_do_not_turn_the_lane():
             "Please include delivery from BBB airport to the door.")  # fmt: skip
     rfq = extract.by_rules(mail(body), DEADLINE)
     assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
+    # Round 154: "from Munich Airport (MUC) to RUH ... we will deliver them to MUC ourselves" went to the model.
+    rfq = extract.by_rules(mail("Please quote from Town Airport (AAA) to BBB, 631 kg. We will deliver them to AAA ourselves."), DEADLINE)
+    assert (rfq.origin, rfq.destination) == ("AAA", "BBB")
 
 
 async def test_unreadable_request_takes_one_model_call(monkeypatch, emitted):
@@ -1147,6 +1150,28 @@ async def test_a_question_for_a_missing_fact_is_asked_in_the_customers_language(
     assert asked[0].startswith("Hola:") and "volume" in asked[0]
 
 
+async def test_a_translated_question_keeps_the_signers_name_as_written(conn, monkeypatch):
+    ctx = Context(settings(), conn, None, None, None, None)
+    request = poller.ingest(ctx, mail("안녕하세요. AAA-BBB 항공 운송 견적 부탁드립니다. 총중량 600 kg입니다.").model_copy(
+        update={"id": 9300, "session_id": 9300, "sender": "buyer@hackloop.mail"}))  # fmt: skip
+    asked = []
+
+    async def transliterating(ctx, **kw):  # round 156: the name came back in Hangul
+        korean = "안녕하세요.\n\n부피를 알려주시겠습니까?\n\n감사합니다"
+        name = "\n레나 베르거" if ctx.settings.signer in kw["user"] else ""
+        return LlmResult(data={"body": korean + name}, model="m", tokens_in=1, tokens_out=1, cost_usd=Decimal(0))
+
+    async def send(ctx, *, to, subject, body, session_id, in_reply_to=None, purpose):
+        asked.append(body)
+        return request.model_copy(update={"id": 9301, "direction": "out"})
+
+    monkeypatch.setattr(llm, "ask_json", transliterating)
+    monkeypatch.setattr(outbox, "send", send)
+    monkeypatch.setattr(extract, "ASK_WAIT_S", 0)
+    await extract.extract(ctx, request, deadline_for(datetime.now(UTC), settings()))
+    assert asked[0].startswith("안녕하세요") and asked[0].endswith(f"\n{ctx.settings.signer}")
+
+
 @pytest.mark.parametrize(
     "volume, written",
     [("95.00", "a total volume of 95.00 cubic feet"), ("2690", "a volume of 2690 litres")],
@@ -1307,6 +1332,25 @@ async def test_a_pickup_abroad_asks_nothing_and_the_model_names_the_nearest_of_o
             "Alpenstrasse 48, 5020 Salzburg, Austria.\n\nBest regards\nAnna")  # fmt: skip
     rfq = await extract.extract(ctx, mail(body), DEADLINE)
     assert (rfq.origin, rfq.door_pickup, rfq.pickup_zone, rfq.missing) == ("BBB", True, None, ())
+
+
+@pytest.mark.parametrize("origin, door", [("", True), ("MIA", False)])
+async def test_a_destination_the_mail_names_is_not_asked_for(conn, monkeypatch, origin, door):
+    """Round 156: the model alone read a Korean import and gave no destination, or the destination as the origin; we
+    asked for the destination the mail named and sent no quote."""
+
+    async def no_question(*args, **kw):
+        raise AssertionError("the mail names its destination")
+
+    monkeypatch.setattr(extract, "_ask", no_question)
+    monkeypatch.setattr(llm, "ask_json", lambda ctx, **kw: _model({"origin": origin, "destination": "", "weight_kg": "549",
+                        "volume_cbm": "5.26", "pieces": 3, "door_pickup": door, "pickup_postcode": "41680"}))  # fmt: skip
+    ctx = Context(settings(), conn, None, None, None, None)
+    store.save_zones(ctx, [{"zone": zone_of("41680"), "area": "Town", "airport": "AAA"}])
+    store.save_carriers(ctx, [{"name": "Air", "kind": "airline", "email": "air@hackloop.mail", "serves": "MIA"}])
+    body = "MIA행 항공 운송 견적 요청. 화물은 총 3개이며, 총중량은 549 kg, 부피는 5.26 cbm입니다. 41680 Moenchengladbach."
+    rfq = await extract.extract(ctx, mail(body), DEADLINE)
+    assert (rfq.destination, rfq.origin) == ("MIA", "AAA")
 
 
 async def test_a_mail_with_one_line_per_shipment_asks_no_destination(conn, monkeypatch):
