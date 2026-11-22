@@ -644,7 +644,7 @@ def _mutations(raw: dict, exp: dict) -> dict[str, tuple[dict, dict]]:
     if figure and len(figure.findall(raw["body"])) == 1:
         lbs = (D(weight) / LB).quantize(D(1))
         body = figure.sub(f"{lbs} lbs", raw["body"], count=1)
-        found["pounds"] = (raw | {"body": body}, exp | {"weight_kg": str(lbs * LB)})
+        found["pounds"] = (raw | {"body": body}, exp | {"weight_kg": str((lbs * LB).quantize(D("0.01")))})
     return found
 
 

@@ -4,7 +4,7 @@ import re
 import unicodedata
 from collections import Counter
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from pixel import llm
 from pixel.contracts import Message, Preference, Rfq
@@ -268,6 +268,9 @@ LOT_SCHEMA = {
     "required": ["pieces", "weight", "weight_unit", "weight_per_piece", "volume_cbm", "volume_per_piece", "dimensions"],
 }
 LB = Decimal("0.45359237")
+# A figure converted from pounds or cubic feet is the scorer's own to two decimals: 16.25 cubic feet is 0.46 cbm, 121.26 lb
+# is 55.00 kg (rounds 116, 133, 136 fit only so; 136 lost 0.1 points on 0.46014876 cbm).
+CONVERTED = Decimal("0.01")
 SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -441,7 +444,7 @@ def _weight(text: str, pieces: int | None) -> Decimal | None:
     if weight is None and not any(p.search(text) for p in WEIGHT):  # in pounds or tonnes only: code converts
         pounds, tonnes = _unique(POUNDS, text, thousands=True), _unique(TONNES, text, thousands=False)
         if (pounds is None) != (tonnes is None):
-            weight = pounds * LB if pounds is not None else tonnes * 1000
+            weight = (pounds * LB).quantize(CONVERTED, ROUND_HALF_UP) if pounds is not None else tonnes * 1000
     if weight is None or not EACH_WEIGHT.search(text):
         return weight
     return weight * pieces if pieces else None
@@ -454,7 +457,7 @@ def _volume(text: str, pieces: int | None) -> Decimal | None:
     if stated is not None:
         return stated
     if not any(p.search(text) for p in VOLUME) and (feet := _unique(CUBIC_FEET, text, thousands=False)):
-        return feet * FT3
+        return (feet * FT3).quantize(CONVERTED, ROUND_HALF_UP)
     if not any(p.search(text) for p in VOLUME) and (litres := _unique(LITRES, text, thousands=True)):
         return litres / 1000
     dims = DIMS.findall(text)
