@@ -1,0 +1,19 @@
+{
+  "id": 995071,
+  "from": "logistics@elbtal-maschinen.hackloop.mail",
+  "to": "pixel@hackloop.mail",
+  "subject": "Quote request",
+  "body": "Hello,\n\nplease quote the shipment in the attached file. Our sea freight team sends their lots separately.\n\nRegards\nAnja Krause\nElbtal Maschinen GmbH",
+  "in_reply_to": null,
+  "references": [],
+  "received_at": "2026-11-22T10:00:00+00:00",
+  "attachments": [
+    {
+      "id": 1,
+      "filename": "request.txt",
+      "content_type": "text/plain",
+      "size": 108,
+      "content_base64": "RnJvbTogSEFNClRvOiBIS0cKUGllY2VzOiA0IGNhcnRvbnMKV2VpZ2h0OiA2MjAga2cKVm9sdW1lOiAyLjQgY2JtClJlYWR5OiAyNy4xMS4yMDI2CkRlbGl2ZXJlZCBieSB1cyB0byBIQU0K"
+    }
+  ]
+}
