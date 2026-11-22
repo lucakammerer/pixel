@@ -104,6 +104,10 @@ person (`tools.benchmark_generalization --stub`). It is read by `extract.py` `by
 Requests with dangerous goods, captured with their attachment (`content_base64`, fetched from the API: `--capture`
 stores the mail without the file). The mail says "general cargo, non-dangerous"; the attachment declares them:
 
+- `rfq-door-competitor-offer.json`: round 101, door-to-port DUS-RUH, fastest, with "another forwarder has already
+  offered us about 1620 EUR all-in" beside the request. Ignored; accepted at the best price.
+- `rfq-door-budget.json`: round 102, door-to-port STR-MEL, cheapest, with "our budget for this shipment is around
+  3300 EUR all-in" beside the request. Ignored.
 - `rfq-dg-packing-list.json`: an xlsx packing specification with "Dangerous goods: UN1133, Class 3, Adhesives".
   Our quote did not mention it and was rejected (`dg_docs_missing`); `customer-declines-dg.json` is the decline.
 - `rfq-dg-instruction-bullets.json`: a pdf shipper's letter of instruction with "UN1950, Class 2.1, Aerosols,
