@@ -20,7 +20,7 @@ ICONS = {  # 24x24 line icons, stroke only
 
 CSS = """<style>
 .pipe{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px 24px 18px;
-overflow:hidden;box-shadow:var(--shadow)}
+overflow:hidden}
 .pipe .stations{position:relative;display:grid;gap:22px}
 .pipe .rail{position:absolute;width:2px;background:var(--line-2);border-radius:2px}
 .pipe .fill{position:absolute;left:0;top:0;width:100%;height:0;background:var(--accent);border-radius:2px;

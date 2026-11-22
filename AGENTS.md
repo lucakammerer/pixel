@@ -42,7 +42,8 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
   after it was stored, alerted once with the step it hangs in)
 - `pixel/agents/<name>/`: one folder per agent with `agent.py` and `README.md`: `router`, `rfq` (plus
   `extract.py`, `compose.py`, `booking.py`, `check.py` and `repair.py`: the check before sending and the repair of what
-  it blocks; `gaps.py`: what the session knows it has not read, closed before the quote), `tracking`, `tariffs`
+  it blocks; `gaps.py`: what the session knows it has not read, closed before the quote; `unmet.py`: the last reader of
+  request and reply before the first quote leaves), `tracking`, `tariffs`
 - `pixel/pricing/`: `store.py` (tariffs, carriers, zones), `calc.py`, `selection.py`, `portal_rates.py`, `rate_card.py` (every portal rate read, scaled to the current version, priced during a 503),
   `bids.py`, `pickup.py`, `engine.py`
 - `pixel/crm/`: quotes, bookings, shipments, customers, carriers; `pixel/ui/`: start page at `/` (`home.py`, with
@@ -53,7 +54,7 @@ arrives every 6 minutes and expires 6 minutes later. This file is for you as a c
 - `docs/`: `RULES.md` (every rule we are scored by, numbered), `IMPLEMENTATION_PLAN.md` (system, backlog, work
   split, open questions), `challenge.md`; start at `docs/README.md`
 - `tests/`: unit tests and `fixtures/` (captured mails, tariff expectations); `tools/`: `replay.py`, `kpi.py`, `simulate.py`,
-  `kpi_pr.sh`, `board_me.py`, `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
+  `kpi_pr.sh`, `capture.py` (a stored session as a replay fixture with the state it met and a pytest), `board_me.py`, `bench_unmet.py` (the last reader's prompt on stored rounds), `check_precision.py`, `set_openai_key.py`, `webhook.py`, `preview.py`, `deploy.sh`, `window.py`, `cd_status.py`, `replay_gate.py` (the deploy gate), `benchmark_generalization.py`, `card_proof.py` (the rate card against every rate the portal gave a request), `document_conflicts.py` (its section 11: mail against attached document), `followup_matrix.py` (its section 17: every later mail in a session); `deploy/`: the service unit and the host's deploy job (`cd.sh`, `pixel-cd.{service,timer}`); `bench/RUNS.md`: our results per request; `bench/REVIEWS.md`: each reviewed pull request by head commit;
   `data/start-kit/`: the kit as downloaded
 
 ## Who owns what
@@ -95,6 +96,7 @@ uv run pytest -q                                # seconds, no network
 uv run ruff check . && uv run ruff format .
 uv run python -m tools.replay tests/fixtures/mails/<file>.json   # one stored mail through the pipeline
 uv run python -m tools.replay --db <database> --session <id>     # a stored session on a copy of that database
+uv run python -m tools.capture <database> <session>             # that session as a fixture and its pytest: a lost round as a failing test
 uv run python -m tools.kpi                      # accuracy, cost and speed on the replayed request fixtures, as JSON
 uv run python -m tools.benchmark_generalization # fixtures vs code: prices, sheets, wording, routing, bids; exit 1 on a fail
 uv run python -m tools.benchmark_generalization --gaps   # the channel matrix, then the open known gaps by owner
@@ -106,6 +108,7 @@ uv run python -m tools.check_precision <database>   # per check rule: fired, the
 uv run python -m tools.card_proof <database>    # the rate card against every portal rate in that database, offline
 uv run python -m tools.replay_gate <database>   # the last 20 accepted requests read and priced as quoted; exit 1 on a difference
 uv run python -m tools.bench_models             # candidate models on request mails: accuracy, tokens, cost (spends!)
+uv run python -m tools.bench_unmet              # the last reader's prompt on the lost first rounds (spends!)
 uv run python -m tools.ingest data/start-kit    # tariffs, carrier list and pickup zones into the store
 uv run python -m tools.preview                  # the UI on synthetic data in data/preview.sqlite3; sends nothing
 uv run python -m tools.webhook <public url>/hook  # push new mail to that endpoint, then test it; no url: last pushes
@@ -210,7 +213,7 @@ thread, the subject says what changed, no trailers. How a change reaches `main` 
 - Booking with a `rate_id` older than 15 minutes: 410. Fetch a fresh rate and book that.
 - Calling the model "just to be sure" in a loop or per carrier answer: the spend of an 18-minute window is
   divided by its *accepted* quotes only, and every USD costs 400 points.
-- Spending at the gateway outside the live service while rounds are scored (`tools.bench_models`,
+- Spending at the gateway outside the live service while rounds are scored (`tools.bench_models`, `tools.bench_unmet`,
   `tools.kpi --online`, `tools.replay --online`, `tools/kpi_pr.sh`, any process that holds our key): the scorer
   counts it in the window it happens in. On 21.11. spend the live service never logged took 8 and 12 cost points
   from single windows, more than a day of quotes.

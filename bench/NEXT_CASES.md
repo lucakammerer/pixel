@@ -115,6 +115,8 @@ Rank = likelihood × how badly we fail today × how cheap the fix is (each 1 to 
 | C11 | `out-of-order-visibility` | 91012 visible before 91011, 91011's push lost | new | 91011 is never polled again | every Nth poll from a few ids back; `ingest` drops duplicates | `poller.run` | S | 1×3×2 |
 | C8 | `push-timestamp-format` | `X-Webhook-Timestamp` in ms or ISO | new | 401 / 500, the 1 s poll takes it: latency only | read like a stored time | `webhook.hook` | S | 2×1×3 |
 | C14 | `large-attachment` | 9.5 MB, 400-page scan as the only document | new | unmeasured; parse unbounded, no Rfq at takeover | bounded parse; what is read by then counts | `extract._attachments` | M | 1×3×1 |
+| C15 | `portal-all-down` | the lane list fails with the rates (live: rounds 46, 47), or a rate read drops its connection | live | **fixed**: before, neither asked the rate card; rounds 120 to 123 replayed on the live database priced the fastest airline from it either way | the airline priced from the card | `portal_rates.options`, `_read` | S | 2×3×3 |
+| C16 | `version-change-in-outage` | the dataset version changes while the rate API is down | esc. | the card prices the old version: 11.8 % off in the one rate it met (`tools.card_proof`, `new version`), a lost round | a factor for the new version without a portal read | `rate_card` | M | 1×3×1 |
 | — | pushes stop | the webhook subscription is dropped | new | covered: the poll is the safety net (`test_poller`) | — | — | — | — |
 | — | push twice / out of order | same push repeated or an older one after a newer | new | covered: stored once by id (`test_webhook`) | — | — | — | — |
 | — | poll 429 with a slower minimum | "one poll per 5 seconds" | live (22.11. 01:23) | covered: interval learned from the 429 | — | — | — | — |
@@ -126,7 +128,7 @@ Cost points in a gateway outage (R28): a failed call logs 0 USD, and an 18-minut
 points for any of its quotes. A full outage therefore costs the window's cost points whatever we do. In a partial
 one (C6, or a 429 on one model) the prose call on gpt-4.1-mini keeps the window above zero.
 
-Open and unverified: C5, C6, C8, C11 and C14 have no fix. C6, C8 and C11 come from code reading, C14 is not
+Open and unverified: C5, C6, C8, C11, C14 and C16 have no fix. C6, C8 and C11 come from code reading, C14 is not
 measured, and the midnight case is not reproduced. The live effect of #327, #331 and #333 is unmeasured until each is
 merged and the organisers turn that lever.
 ## Axis B: booking, tracking and the flow after the quote (22.11.2026, 02:00 to 03:30)
@@ -170,10 +172,8 @@ matrix in `uv run python -m tools.simulate --family shipments` (cells and their 
 
 | Cell | Today | Required | Fix belongs in | Owner |
 | --- | --- | --- | --- | --- |
-| every cell with a door pickup, as all five live door mails | rules give up, the model reads the first shipment; with the gateway down, no quote | rules read the first shipment and split | `extract.by_rules` | Cost |
 | `lanes=same_lane` | second shipment not quoted | both | `extract.shipments` | Cost |
-| `lanes=door_and_port` | the airport delivery priced with a truck | that one port to port | `extract.shipments` | Cost |
-| `lanes=two_postcodes` (D12) | every shipment from the first pickup | each from its own zone airport | `extract.shipments`, `agent.handle` | Cost |
+| `lanes=two_postcodes` (D12) | each line's postcode read, every shipment from the first one's airport | each from its own zone airport | `agent.handle` (`store.airport_of`) | Cost |
 | `layout=paragraphs`, `table`, `also` | one shipment quoted | all | `extract.shipments` | Cost |
 | `layout=subject` | one shipment quoted | all | `extract.shipments` | Cost |
 | `layout=attachment_each`, `attachment_sections` | one shipment quoted | all | `extract.shipments`, `_shipment_sources` | Cost |
@@ -182,7 +182,9 @@ matrix in `uv run python -m tools.simulate --family shipments` (cells and their 
 | one lane's rate API 503, its truckers silent | not measured | each priced from the sheet, rate card or zone | `engine.options` | Accuracy |
 | accept both, accept "the second one", accept one and decline the other | one booking per session, always of the first shipment's option (`booking.book`, `quotes.for_session`) | a booking per accepted shipment | `booking.py`, `crm/quotes.py` | Shared |
 | a change of one shipment's weight | `agent.requote` prices one request | that shipment again, the others kept | `agent.requote` | Shared |
+| a trucker's answer outside its thread (no `in_reply_to`) | `bids.record` takes the carrier's latest request: every answer lands on the last shipment, the first has no trucker and its door quote falls back without pickup | matched by weight to its own shipment | `bids.record` | Accuracy |
+| `tools/replay.py --session` of a door mail for several shipments | the carriers' answers point at the live ids of our requests, so they land as above; offline neither quote is reproduced | the replay maps a stored answer's thread to its own new request | `tools/replay.py` | Speed |
 
-Measured right: two, three and four shipments; another origin per line; bullets; German and French; a currency for
-all (all via the model's read of the first shipment). Bids per lane, a lane still pricing at the target and every
+Measured right: two, three and four shipments, a door pickup for all, bullets, German, a currency for all, by rules;
+another origin per line, door and port, French, by the model's read of the first shipment. Bids per lane, a lane still pricing at the target and every
 lane priced in one reply with the sum: tests above.

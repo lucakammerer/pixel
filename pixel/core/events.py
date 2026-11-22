@@ -25,10 +25,10 @@ KINDS = (
     "quote.repaired",  # agents/rfq/repair.py: one repair of a BLOCK finding, kept or not
     "option.vetoed",  # agents/rfq/repair.py: an option a repair left out; pricing/session.py no longer offers it
     "quote.gaps",  # agents/rfq/gaps.py: what the session knew it had not read, what was closed, what stayed open
-    "rfq.critic",  # agents/rfq/repair.py `critic`: the model's pick among code's readings, and whether it was grounded
     "rfq.second_read",  # agents/rfq/agent.py `_second_read`: the prose call's figures against the rules' reading
     "quote.followup_wait",  # agents/rfq/agent.py `_followup_wait`: a newer customer mail still unread before the quote
     "rfq.novelty",  # agents/rfq/novelty.py: sentences no rule read, and what they ask of the quote
+    "quote.unmet",  # agents/rfq/unmet.py: the customer's asks the text about to leave does not meet
     "customer.accepted", "customer.declined", "customer.excludes",
     "followup.read",  # agents/rfq/followup.py: a customer's later mail in their thread, its phase, intent and changes
     "booking.requested", "booking.booked", "booking.confirmed", "booking.failed",
