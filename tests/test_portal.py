@@ -142,6 +142,20 @@ async def test_503_reads_the_rate_from_the_portal_page():
 
 
 @respx.mock
+async def test_a_rate_read_that_times_out_reads_the_portal_page():
+    """A /rates read past READ_TIMEOUT_S is an outage like a 503: the page is read before the rate is given up."""
+    page_url = "https://page.test/portal/ui"
+    respx.get(f"{BASE}/v1/portal/rates").mock(side_effect=httpx.ReadTimeout("hung"))
+    page = respx.post(page_url).respond(
+        403, html="<html><head><title>Just a moment...</title></head><body>x</body></html>"
+    )
+    async with httpx.AsyncClient(base_url=BASE, headers={"X-API-Key": "secret"}) as client:
+        with pytest.raises(portal_module.RatesUnavailable) as err:
+            await read(Portal(client, page_url))
+    assert page.called and err.value.page == "403 Just a moment... x"
+
+
+@respx.mock
 async def test_a_page_that_refuses_says_why_in_the_rate_error():
     """Round 120: the page answered 403 with a bot check and the outage showed no reason."""
     page_url = "https://page.test/portal/ui"

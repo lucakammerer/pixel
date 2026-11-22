@@ -14,8 +14,8 @@ from pixel import llm
 from pixel.api.mailbox import RATEDESK
 from pixel.api.portal import Portal
 from pixel.contracts import LaneTariff, Preference, Source
-from pixel.core import events, timing
-from pixel.pricing import bids, engine, portal_rates, selection, store
+from pixel.core import db, events, timing
+from pixel.pricing import bids, engine, portal_rates, rate_card, selection, store
 from tests.test_bids import ctx, deadline, kinds, mail, rfq  # noqa: F401  ctx is the fixture
 
 BASE = "https://portal.test"
@@ -64,8 +64,8 @@ def answer_rates(portal, case: str) -> None:
         route.respond(404, json={"detail": "This airline is not on the portal. Email the airline for a rate."})
     elif case == "429":
         route.respond(429, headers={"Retry-After": "60"})
-    elif case == "503":
-        route.respond(503, json={"detail": "Rates are still published on the portal page"})
+    elif case.isdigit():
+        route.respond(int(case), json={"detail": "The rate API is unavailable."})
 
 
 def desk_asked(ctx) -> list[dict]:  # noqa: F811
@@ -81,7 +81,17 @@ async def wait_for(ctx, n: int) -> None:  # noqa: F811
 
 @pytest.mark.parametrize(
     "case, airlines_mailed, desk",
-    [("healthy", 0, 0), ("no lane", 2, 0), ("404", 2, 0), ("429", 2, 0), ("503", 2, 1)],
+    [
+        ("healthy", 0, 0),
+        ("no lane", 2, 0),
+        ("404", 2, 0),
+        ("429", 2, 0),
+        ("503", 2, 1),
+        ("502", 2, 1),  # Cloudflare's own failures
+        ("520", 2, 1),
+        ("524", 2, 1),
+        ("403", 2, 1),  # a bot check in front of the API, not only in front of the page
+    ],
 )
 async def test_only_a_rate_api_outage_asks_the_rate_desk(ctx, offline, case, airlines_mailed, desk):  # noqa: F811
     answer_rates(offline, case)
@@ -91,6 +101,23 @@ async def test_only_a_rate_api_outage_asks_the_rate_desk(ctx, offline, case, air
     asked = kinds(ctx, "bid.requested")
     assert (len(asked) - len(desk_asked(ctx)), len(desk_asked(ctx))) == (airlines_mailed, desk)
     assert {o.source for o in found} == ({Source.PORTAL} if case == "healthy" else set())
+
+
+async def test_a_rate_read_that_fails_after_the_head_start_still_asks_the_desk(ctx, offline, monkeypatch):  # noqa: F811
+    """The desk decision used to be one sample of the event log after a one-second head start: a read that answered
+    503 at 1.2 s, or a hung one that timed out, was missed and the desk was never asked (rounds 120, 123)."""
+    offline.get("/v1/portal/ports").respond(200, json=PORTS)
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.2)
+        return httpx.Response(503, json={"detail": "The rate API is unavailable."})
+
+    offline.get("/v1/portal/rates").mock(side_effect=slow)
+    monkeypatch.setattr(engine, "PORTAL_HEAD_START_S", 0.02)
+    request = rfq()
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=1, payload=request.model_dump(mode="json"))
+    await engine.options(ctx, request, deadline(0.6))
+    assert len(desk_asked(ctx)) == 1
 
 
 @pytest.mark.parametrize("door", [False, True])
@@ -202,12 +229,14 @@ async def test_a_rate_that_answered_503_is_read_again_before_the_quote(ctx, offl
     """Rounds 120 and 121: the rate API answered 503 at the first read and the sheet airline was quoted; the first
     outage ended mid-round. A second read inside the desk wait prices the faster airline."""
     offline.get("/v1/portal/ports").respond(200, json=PORTS)
+    loop = asyncio.get_running_loop()
+    recovers_at = loop.time() + 0.15  # the outage ends here, between the first read and the first probe
     reads: dict[str, int] = {}
 
     def rate(request: httpx.Request) -> httpx.Response:
         code = request.url.params["airline"]
         reads[code] = reads.get(code, 0) + 1
-        if reads[code] == 1:
+        if loop.time() < recovers_at:
             return httpx.Response(503, json={"detail": "The rate API is unavailable."})
         names = {"A1": "Air One", "A2": "Air Two"}
         return httpx.Response(200, json={**RATE, "airline_code": code, "airline": names[code]})
@@ -215,7 +244,7 @@ async def test_a_rate_that_answered_503_is_read_again_before_the_quote(ctx, offl
     offline.get("/v1/portal/rates").mock(side_effect=rate)
     monkeypatch.setattr(bids, "DESK_CUTOFF_S", 0.6)
     monkeypatch.setattr(bids, "POLL_S", 0.01)
-    monkeypatch.setattr(portal_rates, "REREAD_AT_S", 0.3, raising=False)
+    monkeypatch.setattr(portal_rates, "PROBE_AT_S", (0.3,))
     ctx.settings = replace(ctx.settings, bid_wait_s=0)
     request = rfq(preference=Preference.FASTEST)
     today = request.received_at.date()
@@ -232,3 +261,53 @@ async def test_a_rate_that_answered_503_is_read_again_before_the_quote(ctx, offl
     assert (best.source, best.rate_id, best.transit_days) == (Source.PORTAL, "R-portal", 3)
     assert reads == {"A1": 2, "A2": 2}
     assert timing.now() < started + timedelta(seconds=1.5)
+
+
+def test_a_price_without_a_rate_id_keeps_the_airline_probed(ctx):  # noqa: F811
+    """A rate card price (PR #410) has no rate id: only the API's own answer stops the probes for that airline."""
+    events.emit(ctx, "option.failed", "pricing", session_id=1,
+                payload={"source": "portal", "carrier": "Air One", "error": "RatesUnavailable"})  # fmt: skip
+    card = {"source": "portal", "carrier": "Air One", "rate_id": None}
+    events.emit(ctx, "option.found", "pricing", session_id=1, payload={"option": card})
+    assert portal_rates._unpriced(ctx, rfq()) == ({"Air One"}, False)
+    events.emit(ctx, "option.found", "pricing", session_id=1, payload={"option": card | {"rate_id": "R-1"}})
+    assert portal_rates._unpriced(ctx, rfq()) == (set(), False)
+
+
+async def test_a_503_prices_the_airline_from_the_rate_card_at_the_current_versions_factor(ctx, offline):  # noqa: F811
+    """Round 94: the API, its page and the desk were silent; Xenon's 3399.00 for 1133 kg, read in v1, prices 1135.6 kg.
+    A later version raised every rate by 15 % (v1+ef9a74): one bracket read in both gives the factor for all."""
+    answer_rates(offline, "503")
+    db.put(ctx.db, "rate_card.breaks.A1", '["0", "1000"]')
+
+    def read(version: str, kg: str, total: str) -> None:
+        events.emit(ctx, rate_card.KIND, "pricing", payload={
+            "origin": "AAA", "destination": "BBB", "code": "A1", "carrier": "Air One", "kg": kg, "total": total,
+            "currency": "EUR", "fx_eur": None, "transit_days": 2, "version": version})  # fmt: skip
+
+    read("v1", "1133", "3399.00")
+    read("v1", "500", "2000.00")
+    read("v1+ef9a74", "500", "2300.00")
+    found = await portal_rates.options(ctx, rfq().model_copy(update={"weight_kg": D("1135.6")}), deadline())
+    assert [(o.carrier, o.source, o.total_eur, o.rate_id) for o in found] == [
+        ("Air One", Source.PORTAL, D("3917.82"), None)
+    ]
+
+
+async def test_the_rate_card_reads_the_bracket_requests_need_once_the_request_is_answered(ctx, offline, monkeypatch):  # noqa: F811
+    answer_rates(offline, "healthy")
+    offline.get("/v1/portal/brackets").respond(200, json={"breaks_kg": [0, 1000]})
+    monkeypatch.setattr(rate_card, "PACE_S", 0)
+    received = timing.now() - timedelta(seconds=30)
+    events.emit(ctx, "rfq.extracted", "rfq", session_id=7, payload={"received_at": received.isoformat(),
+                                                                    "weight_kg": "1200", "volume_cbm": "1"})  # fmt: skip
+
+    async def fill() -> list[httpx.Request]:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(rate_card.run(ctx), 0.2)
+        return [call.request for call in offline.calls if call.request.url.path == "/v1/portal/rates"]
+
+    assert await fill() == []
+    events.emit(ctx, "quote.sent", "outbox", session_id=7, payload={})
+    reads = await fill()  # one a minute while no read has named the limit
+    assert [(r.url.params["airline"], r.url.params["weight_kg"]) for r in reads] == [("A1", "1000")]

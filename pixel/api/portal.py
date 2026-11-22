@@ -35,7 +35,7 @@ class PortalBooking:
 
 
 class NotOnPortal(Exception):
-    """404 from /brackets or 503 from /rates: `hint` is the API's message on where to get the rate instead."""
+    """404 from /brackets or /rates: `hint` is the API's message on where to get the rate instead."""
 
     def __init__(self, hint: str):
         super().__init__(hint)
@@ -43,8 +43,10 @@ class NotOnPortal(Exception):
 
 
 class RatesUnavailable(NotOnPortal):
-    """503 from /rates: the rate API is down for every airline, not this airline off the portal (rounds 27 to 29).
-    `page`: why the browser page gave no rate either, its status and first words (round 120: 403 "Just a moment...")."""
+    """Any outage answer from /rates: a 5xx (Cloudflare's 502 to 524 too), a 403 bot check, a challenge redirect or
+    a read that timed out. The rate API is down for every airline, not this airline off the portal (rounds 27 to 29,
+    120, 123). `page`: why the browser page gave no rate either, its status and first words (round 120: 403
+    "Just a moment...")."""
 
     def __init__(self, hint: str, page: str | None = None):
         super().__init__(hint)
@@ -54,6 +56,13 @@ class RatesUnavailable(NotOnPortal):
 def _refusal(response: httpx.Response) -> str:
     words = " ".join(re.sub(r"<[^>]*>", " ", response.text).split())
     return f"{response.status_code} {words[:80]}"
+
+
+def _outage(status: int) -> bool:
+    """The portal failed for every airline, not for this one: any answer but 200, 404 (the airline is off the
+    portal) and 429 (the quota, waited out or `RateLimited`). Cloudflare's edge answers 403 on a bot check and
+    502 to 524 on its own failures; only 503 used to count (rounds 120, 123)."""
+    return status not in (200, 404, 429)
 
 
 class RateExpired(Exception):
@@ -92,6 +101,9 @@ def _now() -> datetime:
     return timing.now()
 
 
+# A rate read that takes longer is an outage, not a slow answer (rounds 120, 123). 10 s, not less: no read time of a
+# healthy portal is measured, and `engine`'s late window (1 + 4 + LATE_503_S 10 s) still asks the desk for a hang.
+READ_TIMEOUT_S = 10.0
 PAGE_TRIES = 3  # a sum we cannot read or the page refuses costs one fresh page load
 GLYPH = re.compile(r"<g\b[^>]*>(.*?)</g>", re.DOTALL)
 STROKE = re.compile(r'<line x1="(-?[\d.]+)" y1="(-?[\d.]+)" x2="(-?[\d.]+)" y2="(-?[\d.]+)"')
@@ -156,7 +168,7 @@ def page_rate(html: str) -> dict:
 class Portal:
     def __init__(self, client: httpx.AsyncClient, page_url: str = ""):
         self.client = client
-        self.page_url = page_url  # the portal's browser page, read when the rate API answers 503; empty: never
+        self.page_url = page_url  # the portal's browser page, read on any outage answer or a hung read; empty: never
         self.rate_limit: int | None = None  # X-RateLimit-Limit
         self.rate_remaining: int | None = None  # X-RateLimit-Remaining
         self.window_reset_at: datetime | None = None  # from the last 429's Retry-After
@@ -202,7 +214,8 @@ class Portal:
         *,
         not_after: datetime | None = None,
     ) -> RateOption:
-        """One counted rate read. On 429 waits `Retry-After` when the caller's deadline allows, else raises."""
+        """One counted rate read. On 429 waits `Retry-After` when the caller's deadline allows, else raises. On any
+        other outage answer the portal's browser page is read (R21); without a rate there, `RatesUnavailable`."""
         params = {
             "origin": origin,
             "destination": destination,
@@ -213,7 +226,13 @@ class Portal:
         for attempt in range(2):
             if self.rate_remaining == 0 and self.window_reset_at and self.window_reset_at > _now():
                 await self._wait((self.window_reset_at - _now()).total_seconds(), not_after, attempt)
-            response = await self.client.get("/v1/portal/rates", params=params)
+            try:
+                response = await self.client.get("/v1/portal/rates", params=params, timeout=READ_TIMEOUT_S)
+            except httpx.TimeoutException as e:  # a hung read is an outage: the page may still have the rate
+                page = await self._page_rate(params) if self.page_url else None
+                if isinstance(page, RateOption):
+                    return page
+                raise RatesUnavailable(f"no answer within {READ_TIMEOUT_S:g} s", page) from e
             self._read_limits(response)
             if response.status_code == 429:
                 retry_after = float(response.headers.get("Retry-After", "60"))
@@ -221,13 +240,13 @@ class Portal:
                 self.rate_remaining = 0
                 await self._wait(retry_after, not_after, attempt)
                 continue
-            if response.status_code == 503:
+            if response.status_code == 404:
+                raise NotOnPortal(_detail(response))
+            if _outage(response.status_code):
                 page = await self._page_rate(params) if self.page_url else None
                 if isinstance(page, RateOption):
                     return page
                 raise RatesUnavailable(_detail(response), page)
-            if response.status_code == 404:
-                raise NotOnPortal(_detail(response))
             if response.status_code != 200:
                 raise ApiError(response.status_code, _detail(response))
             return _option(response.json())

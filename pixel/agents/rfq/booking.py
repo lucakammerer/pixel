@@ -2,6 +2,7 @@
 through `core.outbox` only."""
 
 import asyncio
+import contextlib
 import re
 from datetime import UTC, datetime
 
@@ -11,7 +12,7 @@ from pixel.agents.rfq import compose, extract, followup
 from pixel.api.client import ApiError
 from pixel.api.mailbox import RATEDESK, TRACKING
 from pixel.api.portal import BookingUnavailable, NotOnPortal, PortalBooking, RateExpired, RateLimited
-from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus, Rfq
+from pixel.contracts import Booking, BookingStatus, Message, Quote, QuoteStatus, Rfq, Source
 from pixel.core import db, events, outbox
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
@@ -28,7 +29,12 @@ ACCEPT = re.compile(
     r"|please\s+(?:book|proceed)(?=\s*(?:[.,!;]|$|\s+(?:it|this|the|with|now|as|and|our|right)\b))|let['’]s (?:book|proceed|do it)|we['’]ll take (?:it|the offer)|(?<!as )agreed"
     r"|(?:would|['’]d)\s+like\s+to\s+(?:book|proceed)|arrange\s+the\s+booking|place\s+the\s+(?:shipment|order)\s+with\s+you"
     r"|bitte\s+(?:\w+\s+){0,2}buchen|buchen\s+sie|gerne\s+buchen|sie\s+können\s+buchen|auftrag\b|einverstanden"
-    r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen)",
+    r"|nehmen\s+(?:ihr|das)\s+angebot\s+an|angebot\s+angenommen|bitte\s+fortfahren|buchung\s+vornehmen"
+    # "go with" books only our offer: "go with it/this/your quote" or "the rate you quoted", never "the airline we used"
+    r"|(?:let['’]s|we['’]ll|we\s+will)\s+go\s+with\s+(?:(?:it|this|that|your)\b|the\b[^.\n]{0,40}?\byou\s+(?:quoted|offered|proposed)\b)"
+    # ... unless the clause puts it off or names someone else: "instead", "not now", "next month", "from DHL"
+    r"(?![^.!?;\n]*\b(?:instead|not\s+now|later|next\s+(?:week|month|time)|from\s+\w))"
+    r"|merci\s+de\s+r[ée]server|veuillez\s+r[ée]server|nous\s+acceptons|r[ée]servez)",
     re.IGNORECASE,
 )
 DECLINE = re.compile(
@@ -37,7 +43,8 @@ DECLINE = re.compile(
     r"another (?:offer|forwarder)(?!\s+(?:has|have)\s+(?:quoted|offered))|"
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:yet\s+)?(?:go ahead|accept(?:ed)?|book(?:ed)?|proceed|confirm(?:ed)?|take it|move forward|be moving forward)|"
-    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse)\b",
+    r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse|"
+    r"decided against|cheaper (?:option|offer|rate|quote) elsewhere|found a cheaper|trop cher|pas donner suite)\b",
     re.IGNORECASE,
 )
 # In the clause of the accept phrase: "we have decided not to go ahead", "Bitte buchen Sie nicht", "go ahead with a
@@ -218,6 +225,12 @@ async def book(ctx: Context, quote_id: str, reply_to: int | None = None, *, resu
 
     if booking.carrier.casefold() in availability.suspended_carriers(ctx, quote.rfq):
         return _failed(ctx, booking, "carrier suspended new bookings on this lane")
+    if booking.via != "email" and not booking.rate_id and quote.option.source == Source.PORTAL:
+        # A price from the rate card (`pricing/rate_card.py`) has no rate id: a fresh rate books it, if the API is back.
+        with contextlib.suppress(NotOnPortal, RateLimited, ApiError, httpx.HTTPError):
+            fresh = await portal_rates.refresh(ctx, quote.option)
+            booking = booking.model_copy(update={"rate_id": fresh.rate_id})
+            _save(ctx, booking, "booking")
     if booking.via == "email" or not booking.rate_id:
         return await _book_by_mail(ctx, quote, booking, "booking by email")
     try:
