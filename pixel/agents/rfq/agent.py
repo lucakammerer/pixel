@@ -212,6 +212,12 @@ async def served_airports(
     the airports we serve; a code the mail names stands. No call when both codes are served."""
     text = extract._text(message) if text is None else text
     origins, destinations = store.airports(ctx)
+    if rfq.origin in destinations - origins and rfq.destination in origins - destinations:
+        # A lane we price only the other way round was read backwards; as read it has no price and no fallback (R1).
+        rfq = rfq.model_copy(update={"origin": rfq.destination, "destination": rfq.origin})
+        events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
+                    payload=rfq.model_dump(mode="json"))  # fmt: skip
+        return rfq
     wrong = {
         key: served
         for key, served in (("origin", origins), ("destination", destinations))

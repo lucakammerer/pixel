@@ -29,6 +29,14 @@ ORIGIN_LABEL = re.compile(
     rf"(?i:\b(?:origin|from|von|ab|departure|abgangsflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}"
 )
 DEST_LABEL = re.compile(rf"(?i:\b(?:destination|to|nach|bis|zielflughafen)\b){AIRPORT_WORD}\s*:?[^\n:]{{0,30}}?{CODE}")
+# The legs around the flight: "we deliver to HAM ourselves" names the departure airport, "delivery from DXB airport to
+# the door" the destination.
+PRE_CARRIAGE = re.compile(
+    rf"(?i:\bdeliver\w*\s+(?:it\s+|the\s+\w+\s+)?to){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:ourselves|by us))"
+)
+ON_CARRIAGE = re.compile(
+    rf"(?i:\bfrom){AIRPORT_WORD}\s+{CODE}(?=(?:\s+airport)?\s+(?i:to\s+(?:the|your|their)\s+door))"
+)
 
 # "1 250 kg": a space (also a no-break one) between thousands, not after a date's or a range's digits.
 NUM = r"((?<![\d.,\-/])\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?![\d.,'])|\d[\d.,']*)"
@@ -268,8 +276,9 @@ def _lane(text: str) -> tuple[str, str] | None:
         return pairs.pop()
     if pairs:
         return None
-    origins = {c for c in ORIGIN_LABEL.findall(text) if _airport(c)}
-    destinations = {c for c in DEST_LABEL.findall(text) if _airport(c)}
+    before, after = set(PRE_CARRIAGE.findall(text)), set(ON_CARRIAGE.findall(text))
+    origins = {c for c in ORIGIN_LABEL.findall(text) if _airport(c)} - after | before
+    destinations = {c for c in DEST_LABEL.findall(text) if _airport(c)} - before | after
     if len(origins) == 1 and len(destinations) == 1 and origins != destinations:
         return origins.pop(), destinations.pop()
     return None
