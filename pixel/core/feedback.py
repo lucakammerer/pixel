@@ -26,7 +26,7 @@ from pixel.core import db, events
 from pixel.core.context import Context
 from pixel.crm import quotes
 from pixel.pricing import selection, session
-from tools.board_me import normalize
+from tools.board_me import normalize, rounds_of
 
 POLL_S = 10
 ACCURACY, TIME = Decimal(45), Decimal(15)
@@ -149,12 +149,9 @@ def _round(ctx: Context, row: dict[str, Any]) -> None:
                 payload=json.loads(json.dumps(payload, default=str)))  # fmt: skip
 
 
-async def _standing(ctx: Context, team: str | None) -> dict[str, Any]:
+def _standing(public: dict[str, Any], team: str | None) -> dict[str, Any]:
     """From the public board: how many teams, and the teams just above and below ours (rank, name, total)."""
-    try:
-        ranking = (await ctx.board.public()).get("ranking") or []
-    except Exception:  # noqa: BLE001  the public board is for the dashboard only: never cost the poll
-        return {}
+    ranking = public.get("ranking") or []
     ours = next((i for i, r in enumerate(ranking) if r.get("name") == team), None)
     if ours is None:
         return {"teams": len(ranking)} if ranking else {}
@@ -171,14 +168,20 @@ async def once(ctx: Context) -> int:
     data = await ctx.board.me()
     reported_total = data.get("total")
     total = Decimal(str(reported_total)) if reported_total is not None else None
+    try:
+        public = await ctx.board.public()
+    except Exception:  # noqa: BLE001  the public board is for the dashboard only: never cost the poll
+        public = {}
     summary = {"total": str(total) if total is not None else None, "rank": data.get("rank"),
-               "revealed": bool(data.get("scores_revealed"))} | await _standing(ctx, data.get("team"))  # fmt: skip
+               "revealed": bool(data.get("scores_revealed"))} | _standing(public, data.get("team"))  # fmt: skip
+    info = rounds_of(public)
     if total is not None and summary != quotes.board_summary(ctx)["raw"]:
         events.emit(ctx, "score.total", "board", payload=summary)
     requests = [r for r in data.get("requests", []) if r.get("verdict") in FINAL]
     stored = {str(score["round"]): score for score in quotes.latest_scores(ctx)}
     for row in requests:
-        score = json.loads(json.dumps(normalize(row) | {"round": row["round_no"]}, default=str))
+        score = normalize(row) | {"round": row["round_no"]} | info.get(str(row["round_no"]), {})
+        score = json.loads(json.dumps(score, default=str))
         if stored.get(str(score["round"])) != score:
             events.emit(ctx, "score", "board", payload=score)
             stored[str(score["round"])] = score
