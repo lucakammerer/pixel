@@ -218,6 +218,19 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   implausible price per kg, the language, an expired rate. The check itself never changes a quote; every result
   is a `quote.checked` event and a BLOCK is an issue for `feedback.alert`. `PIXEL_PRECHECK=off` skips it. A rule
   that raises becomes a WARN finding.
+- `gaps.py`: known gaps, closed before the quote while they can change it (rounds 120 to 123: the rate API answered
+  503, the sheet airline was quoted and the scorer's best was a portal rate we never read; nothing in that quote was
+  wrong, so no check could block it). `find` reads the session's log: an airline of the lane whose portal read failed
+  and that no source priced since (`source_down`; "not on the portal" is no gap; an airline the customer ruled out
+  cannot change the quote), an airline, the desk or a trucker asked by mail that has not answered (`answer_pending`:
+  can change the quote when fewer than `THIN` airlines or truckers are priced), sentences whose novelty mapping failed
+  (`unread_sentences`), a fact the request left open (`fact_missing`, only reported). `agent._close_gaps` calls
+  `close` after the bids and before the second reader, only when there is a price at all (else the fallback waits):
+  a failed portal read is read again up to `REREADS` times `REREAD_GAP_S` apart, a pending answer that can change the
+  quote is waited for, the novelty mapping is tried once more; then the request is priced again from every option
+  the session holds. Without a failed source it stops at `by_for` (110 s, inside the full time points of R29); with
+  one, at `agent._repair_by` (15 s before the orchestrator takes over): an outage round is one few teams win.
+  `quote.gaps` names what was found, closed and left open. `PIXEL_GAPS`: `on`, `log` (record only) or `off`.
 - `repair.py`: verify, repair, check again, inside the round. `agent._settled` drafts, translates and hands the
   quote to `settle`, which runs the check on the text that leaves (`quote.checked`, `stage: "sent"`). For a BLOCK
   with an entry in `REPAIRS` it builds the quote again with one thing changed: the distrusted bid or the ruled-out

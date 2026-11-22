@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from pixel import llm
-from pixel.agents.rfq import check, compose, dangerous, extract, novelty, repair
+from pixel.agents.rfq import check, compose, dangerous, extract, gaps, novelty, repair
 from pixel.contracts import Message, Quote, RateOption, Rfq
 from pixel.core import db, events, feedback, outbox, poller, timing
 from pixel.core.context import Context
@@ -336,14 +336,14 @@ async def _second_read(ctx: Context, rfq: Rfq, message: Message, text: str, dead
 
 
 async def _read_again(
-    ctx: Context, rfq: Rfq, options: list[RateOption], message: Message, text: str, deadline: Deadline
+    ctx: Context, rfq: Rfq, options: list[RateOption], message: Message, text: str, deadline: Deadline, by: datetime
 ) -> tuple[Rfq, list[RateOption]]:
     """`_second_read`, and the request priced again when it changed the weight or volume; the airline prices for
     the old chargeable weight are left out from then on (`option.vetoed`), so the fallback prices the new one."""
     read = await _second_read(ctx, rfq, message, text, deadline)
     if (read.weight_kg, read.volume_cbm) == (rfq.weight_kg, rfq.volume_cbm):
         return rfq, options
-    fresh = await _repriced(ctx, read, deadline, _repair_by(deadline))
+    fresh = await _repriced(ctx, read, deadline, by)
     if not fresh:
         return rfq, options
     old_kg, new_kg = (
@@ -356,6 +356,35 @@ async def _read_again(
     events.emit(ctx, "rfq.extracted", "rfq", session_id=rfq.session_id, message_id=rfq.message_id,
                 payload=read.model_dump(mode="json"))  # fmt: skip
     return read, fresh
+
+
+async def _close_gaps(
+    ctx: Context,
+    rfq: Rfq,
+    options: list[RateOption],
+    deadline: Deadline,
+    text: str,
+    repair_by: datetime | None = None,
+    subject: str = "",
+) -> tuple[Rfq, list[RateOption]]:
+    """`gaps.close` (a failed portal read read again, a pending answer waited for, an unread sentence mapped again),
+    then the request priced again from every option the session holds when anything new came in. `PIXEL_GAPS=log`
+    only records the gaps."""
+    if ctx.settings.gaps == "log":
+        found = gaps.find(ctx, rfq)
+        if found:
+            events.emit(ctx, "quote.gaps", "rfq", session_id=rfq.session_id,
+                        payload={"found": [g.__dict__ for g in found], "open": [g.__dict__ for g in found],
+                                 "logged_only": True})  # fmt: skip
+        return rfq, options
+    outage_by = repair_by or _repair_by(deadline)
+    rfq, changed = await gaps.close(ctx, rfq, deadline, by=min(gaps.by_for(deadline), outage_by), outage_by=outage_by,
+                                    text=text, subject=subject)  # fmt: skip
+    if not changed:
+        return rfq, options
+    fresh = engine.combine(rfq, session.for_request(ctx, rfq), feedback.pickup_rule(ctx), ctx)
+    fresh = [o for o in fresh if o.trucker] if rfq.door_pickup else fresh
+    return (rfq, fresh) if fresh and selection.compliant_options(rfq, fresh) else (rfq, options)
 
 
 def _repair_by(deadline: Deadline) -> datetime:
@@ -421,12 +450,15 @@ async def handle(ctx: Context, message: Message, deadline: Deadline) -> Quote | 
         rfq = await asyncio.wait_for(asyncio.shield(novel), max((deadline.target_at - timing.now()).total_seconds(), 0))
     except Exception:  # noqa: BLE001, S110  late: the quote goes out as the rules read it
         pass
+    repair_by = _repair_by(deadline)  # once: a wait below must not move it past the orchestrator's takeover
+    if ctx.settings.gaps != "off" and options and not others:  # no price at all: the fallback waits for one
+        rfq, options = await _close_gaps(ctx, rfq, options, deadline, text, repair_by, message.subject)
     if task is not None and task.done() and not others and ctx.settings.second_read != "off":
-        rfq, options = await _read_again(ctx, rfq, options, message, text, deadline)
-    await _followup_wait(ctx, rfq, _repair_by(deadline))
+        rfq, options = await _read_again(ctx, rfq, options, message, text, deadline, repair_by)
+    await _followup_wait(ctx, rfq, repair_by)
     extend = (lambda q: _with_shipments(q, others, pricing, deadline)) if others else None
     quote = await _settled(ctx, rfq, options, prose, fallback=False, translate_by=deadline.hard_at,
-                           repair_by=_repair_by(deadline), extend=extend)  # fmt: skip
+                           repair_by=repair_by, extend=extend)  # fmt: skip
     sent = await outbox.send_quote(ctx, quote)
     quotes.save(ctx, sent)
     return sent

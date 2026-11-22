@@ -91,6 +91,8 @@ orchestrator  customer_rfq → session row + a task with a deadline (target 100 
                   bids     mail carriers with outstanding prices        bid.requested → bid.received
                            portal outage + sheet price: pending desk until 115 s   bid.desk_wait
                   pickup   mail truckers for a door-to-port request     option.found
+                gaps.close: read a failed source again, wait for a     quote.gaps
+                pending answer while it can change the quote
                 selection.select → compose.render → translate          quote.drafted, quote.checked
                 repair.settle: check the sent text, mend a BLOCK      quote.repaired, option.vetoed
                 → outbox.send_quote                                    quote.sent
