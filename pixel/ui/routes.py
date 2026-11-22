@@ -18,6 +18,7 @@ from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.crm import bookings, quotes, shipments
 from pixel.pricing import engine
+from pixel.pricing import session as pricing_session
 from pixel.ui import names, operator
 from pixel.ui.page import (
     clock,
@@ -26,6 +27,8 @@ from pixel.ui.page import (
     days,
     esc,
     event_row,
+    group_events,
+    is_minor,
     lane,
     layout,
     money,
@@ -186,9 +189,27 @@ def _mails(ctx: Context, ids: list[int]) -> dict[int, dict]:
     return {r["id"]: dict(r) for r in rows}
 
 
-def render_events(ctx: Context, evs: list[Event], *, new: bool = False) -> list[str]:
-    mails = _mails(ctx, [e.message_id for e in evs if e.message_id and e.kind in ("mail.in", "mail.out")])
-    return [event_row(e, mails.get(e.message_id) if e.kind in ("mail.in", "mail.out") else None, new=new) for e in evs]
+def background(ev: Event, mails: dict[int, dict]) -> bool:
+    """A background step of the timeline: an internal kind, or mail with someone other than whoever opened the
+    thread (a carrier's bid, the rate desk), which a person rarely needs to follow."""
+    if ev.kind not in ("mail.in", "mail.out"):
+        return is_minor(ev.kind, ev.payload)
+    mail, first = mails.get(ev.message_id or 0), mails.get(ev.session_id or 0)
+    if not mail or not first:
+        return False
+    other = mail["recipient"] if ev.kind == "mail.out" else mail["sender"]
+    return other.lower() != first["sender"].lower()
+
+
+def render_events(ctx: Context, evs: list[Event], *, new: bool = False) -> list[tuple[str, bool]]:
+    """Each event's row and whether it is a background step."""
+    mail_evs = [e for e in evs if e.message_id and e.kind in ("mail.in", "mail.out")]
+    mails = _mails(ctx, list({i for e in mail_evs for i in (e.message_id, e.session_id) if i}))
+    flags = [background(e, mails) for e in evs]
+    return [
+        (event_row(e, mails.get(e.message_id) if e in mail_evs else None, new=new, minor=minor), minor)
+        for e, minor in zip(evs, flags, strict=True)
+    ]
 
 
 def held_drafts(evs: list[Event]) -> list[Event]:
@@ -299,9 +320,9 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
     if mode == "human":
         right = status(label, css)
         notice = (
-            "<div class='notice human handover'><div class=grow><b>You’re handling this session</b>"
-            "<p>Most automatic replies are held as drafts. Carrier sourcing can continue, "
-            "and the deadline fallback can still send.</p></div>"
+            "<div class='notice human handover'><div class=grow><b>You’re handling this request</b>"
+            "<p>PIXEL sends nothing to the customer without you; carrier replies keep coming in. If no quote is out "
+            "by the deadline, PIXEL still sends its best price, so the customer always gets an answer.</p></div>"
             f'<form class=inline method=post action="/sessions/{session_id}/release">'
             "<button class=btn>Release to autopilot</button></form></div>"
         )
@@ -349,6 +370,9 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
     )  # fmt: skip
     drafts = ""
     tools = ""
+    open_rfq = is_rfq and not sent and bool(deadline) and datetime.fromisoformat(deadline) > timing.now()
+    if mode != "human" and open_rfq:
+        tools = _sourcing(ctx, session_id, rfq, evs, deadline, priced=priced, controls=False)
     if mode == "human":
         held = held_drafts(evs)
         if priced:
@@ -358,7 +382,7 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
                 + "</div>"
             )
         if is_rfq and not sent:
-            if deadline and datetime.fromisoformat(deadline) > timing.now():
+            if open_rfq:
                 tools = _sourcing(ctx, session_id, rfq, evs, deadline, priced=priced)
                 drafts += (
                     f"<details class='panel followup'{' open' if entered and not entered.get('quote_id') else ''}>"
@@ -384,10 +408,15 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
             )
             drafts += "</details>"
 
+    rows, minor = zip(*render_events(ctx, evs), strict=True) if evs else ((), ())
     main = (
-        _calls_panel(ctx, session_id) + tools + _quote_panel(quote) + drafts + options_html
-        + f'<h2>Activity<span class=count>{len(evs)}</span></h2><div class=panel id=timeline>'
-        + "".join(render_events(ctx, evs)) + "</div>"
+        _calls_panel(ctx, session_id) + tools + (_quote_panel(quote) if quote or not tools else "") + drafts
+        + options_html
+        + f"<h2>Activity<span class=count>{len(evs)}</span>"
+        + f"<span class='count muted' id=folded{'' if any(minor) else ' hidden'}>· "
+        + f"<span>{minor.count(True)}</span> automatic steps folded</span>"
+        + "</h2><div class=panel id=timeline>"
+        + group_events(evs, list(rows), list(minor)) + "</div>"
     )  # fmt: skip
     body = (
         f"{head}{notice}{banner}<div class=notice id=session-updated role=status hidden>"
@@ -399,11 +428,25 @@ def _session_page(ctx: Context, session_id: int, error: str, result: str = "", e
     script = (
         "if(location.pathname.endsWith('/send'))history.replaceState(null,'',location.pathname.slice(0,-5));"
         "let editing=Boolean(document.querySelector('[data-edited]')), refreshTimer;"
+        # A live background step joins the folded line at the end of the timeline, as `group_events` folds it.
+        "function foldEvent(tl,html){const tp=document.createElement('template');tp.innerHTML=html;"
+        "const row=tp.content.firstElementChild;let g=tl.lastElementChild;"
+        "const f=document.getElementById('folded');if(row.classList.contains('minor')&&f){f.hidden=false;"
+        "f.firstElementChild.textContent=+f.firstElementChild.textContent+1;}"
+        "if(!row.classList.contains('minor')||!g||!g.matches('details.evgroup,.ev.minor')){tl.append(row);return;}"
+        "if(!g.matches('details')){const d=document.createElement('details');d.className='evgroup';"
+        "d.innerHTML='<summary class=ev><span class=t></span><div></div><span class=\"kind mono\">show all</span></summary>';"
+        "d.querySelector('.t').textContent=g.querySelector('.t').textContent;g.replaceWith(d);d.append(g);g=d;}"
+        "g.append(row);const n={};for(const w of g.querySelectorAll(':scope>.ev .what')){"
+        "const k=w.textContent.toLowerCase();n[k]=(n[k]||0)+1;}const rows=g.querySelectorAll(':scope>.ev').length;"
+        "const s=g.querySelector('summary div');s.innerHTML='<span class=what></span> <span class=d></span>';"
+        "s.firstChild.textContent=rows+' automatic step'+(rows==1?'':'s');"
+        "s.lastChild.textContent='· '+Object.entries(n).sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+(v>1?' ×'+v:'')).join(', ');}"
         "document.addEventListener('input',e=>{if(e.target.closest('form[data-preserve]'))editing=true;});"
         "document.querySelector('[data-open-mail]')?.addEventListener('click',e=>{"
         "const detail=document.querySelector(e.currentTarget.hash+' details');if(detail)detail.open=true;});"
         f"live('/events?session_id={session_id}&after_id={last}',e=>{{if(document.getElementById('ev'+e.id))return;"
-        "document.getElementById('timeline').insertAdjacentHTML('beforeend',e.html);"
+        "foldEvent(document.getElementById('timeline'),e.html);"
         "if(/^(quote|booking|human|customer|option[.]found|bid[.]received|mail[.]held)/.test(e.kind)){"
         "clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>{"
         "if(editing||window.pixelCallLive){document.getElementById('session-updated').hidden=false;}"
@@ -589,39 +632,98 @@ def _shipment_form(session_id: int, rfq: Rfq | None) -> str:
     )  # fmt: skip
 
 
-def _sourcing(ctx: Context, sid: int, rfq: Rfq | None, evs: list[Event], deadline: str, *, priced: bool) -> str:
+def _send_form(sid: int, q) -> str:
+    """The one-click send of the current quote draft, unchanged, through the draft form's checks (`send`)."""
+    return (
+        f'<form method=post action="/sessions/{sid}/send" class=handover-actions>'
+        f'<input type=hidden name=manual value=1><input type=hidden name=quote_id value="{esc(q.id)}">'
+        f'<input type=hidden name=to value="{esc(q.rfq.customer)}">'
+        f'<input type=hidden name=subject value="{esc(q.subject)}"><input type=hidden name=body value="{esc(q.body)}">'
+        f'<button class="btn primary">Send quote · {money(q.total, q.currency)}</button>'
+        '<a href="#quote-draft">Edit the text first</a></form>'
+    )
+
+
+def _step(n: int, state: str, title: str, text: str, controls: str = "") -> str:
+    mark = "✓" if state == "done" else str(n)
+    return (
+        f"<li class='step {state}'><span class=step-n aria-hidden=true>{mark}</span><div class=step-body>"
+        f"<b>{title}</b><p>{text}</p>{controls}</div></li>"
+    )
+
+
+def _sourcing(
+    ctx: Context, sid: int, rfq: Rfq | None, evs: list[Event], deadline: str, *, priced: bool, controls: bool = True
+) -> str:
+    """The guide to an open request: request read, prices, quote draft, send. Each step says where it stands. On
+    takeover the first step not done carries the primary button, so a person always sees what to click next; on
+    autopilot the same steps show how far PIXEL got, without buttons, and offer the takeover."""
     message_id = rfq.message_id if rfq else sid
     mail = next((event for event in evs if event.kind == "mail.in" and event.message_id == message_id), None)
     links = f'<a href="#ev{mail.id}" data-open-mail>Read incoming email</a>' if mail else ""
-    if priced:
-        links += '<a href="#quote-draft">Review quote draft</a>'
     links += "".join(
         f'<a href="/sessions/{sid}/mail/{message_id}/attachments/{int(file["id"])}">{esc(file["filename"])}</a>'
         for file in _attachments(ctx, sid, message_id)
     )
-    if operator.usable(rfq):
-        controls = (
-            f'<form method=post action="/sessions/{sid}/source" class=handover-actions>'
-            '<button class=btn name=action value=portal>Find sheet and portal rates</button>'
-            '<button class=btn name=action value=bids>Request carrier bids</button>'
-            + ('<button class=btn name=action value=desk>Ask the rate desk</button>'
-               if engine._ask_desk(ctx, rfq) else "")
-            + f'<button class="btn{" " if priced else " primary"}" name=action value=draft>'
-              f'{"Rebuild" if priced else "Prepare"} quote draft</button></form>'
-            '<p class=muted>Rate lookups leave the mailbox untouched. Bid requests email eligible airlines and '
-            'truckers. A draft uses the best complete price available for this request.</p>'
-        )  # fmt: skip
+    read = operator.usable(rfq)
+    found = len(pricing_session.for_request(ctx, rfq)) if read else 0
+    asked, answered = ({str(e.payload.get("carrier", "")).casefold() for e in evs if e.kind in k}
+                       for k in (("bid.requested",), ("bid.received", "carrier.lanes")))  # fmt: skip
+    waiting = len(asked - answered)
+
+    def btn(action: str, label: str, primary: bool) -> str:
+        return f'<button class="btn{" primary" if primary else ""}" name=action value={action}>{label}</button>'
+
+    def form(*buttons: str) -> str:
+        if not controls:
+            return ""
+        return f'<form method=post action="/sessions/{sid}/source" class=handover-actions>{"".join(buttons)}</form>'
+
+    if read:
+        facts = [f"<span class=mono>{esc(rfq.origin)} → {esc(rfq.destination)}</span>", f"{esc(rfq.weight_kg)} kg",
+                 esc(rfq.preference)] + (["door pickup"] if rfq.door_pickup else [])  # fmt: skip
+        facts += [f"leave out {esc(', '.join(rfq.excluded_carriers))}"] if rfq.excluded_carriers else []
+        facts += [f"only {esc(', '.join(rfq.required_carriers))}"] if rfq.required_carriers else []
+        step1 = _step(1, "done", "Request read", " · ".join(facts))
+    elif operator.can_record(evs) and controls:
+        step1 = _step(1, "next", "Enter the shipment details", "PIXEL could not read them. Read the email and its "
+                      "attachments, then fill in what the price needs.", _shipment_form(sid, rfq))  # fmt: skip
     elif operator.can_record(evs):
-        controls = "<p>Read the email and attachments, then enter the shipment details before sourcing.</p>"
-        controls += _shipment_form(sid, rfq)
+        step1 = _step(1, "next", "Request read", "PIXEL could not read the shipment details. Take over to enter them.")
     else:
-        controls = "<p>Waiting for shipment details. Read the incoming request while PIXEL finishes its first pass.</p>"
+        step1 = _step(1, "next", "Request read", "PIXEL is still reading the request. Read the email meanwhile.")
+    desk = btn("desk", "Ask the rate desk", False) if read and engine._ask_desk(ctx, rfq) else ""
+    price_text = f"{found} option{'s' if found != 1 else ''} priced, listed under <a href='#options'>Options</a>."
+    if not found:
+        price_text = "No price yet. Rate lookups leave the mailbox untouched; bid requests email eligible carriers."
+    if waiting:
+        price_text += f" Waiting for {waiting} carrier repl{'ies' if waiting != 1 else 'y'}."
+    step2 = _step(2, "done" if found else "next" if read else "todo", "Prices", price_text,
+                  form(btn("portal", "Find sheet and portal rates", read and not found),
+                       btn("bids", "Request carrier bids", False), desk) if read else "")  # fmt: skip
+    q = quotes.for_session(ctx, sid)
+    if priced and q:
+        o = q.option
+        draft_text = f"{money(q.total, q.currency)} with {esc(o.carrier)}, {days(o.transit_days)}, via {esc(o.source)}."
+        step3 = _step(3, "done", "Quote draft", draft_text, form(btn("draft", "Rebuild from current prices", False)))
+        step4 = _step(4, "next", "Send the quote", "Only the first quote in the thread counts. Check the total, "
+                      "then send it as drafted or edit the text first.", _send_form(sid, q) if controls else "")  # fmt: skip
+    else:
+        prepare = form(btn("draft", "Prepare quote draft", True)) if found else ""
+        step3 = _step(3, "next" if found else "todo", "Quote draft", "Code picks the best complete price that meets "
+                      "the request and writes the mail.", prepare)  # fmt: skip
+        step4 = _step(4, "todo", "Send the quote", "Available once a draft is ready.")
+    takeover = "" if controls else (
+        f"<form method=post action='/sessions/{sid}/takeover' class=handover-actions><button class=btn>Take over"
+        "</button><span class=muted>Step in if something looks wrong. You get these steps as buttons; PIXEL holds "
+        "its quote for you, and still answers at the deadline if nobody has.</span></form>"
+    )  # fmt: skip
     return (
         '<section class="panel pad sourcing" aria-labelledby=sourcing-title>'
-        "<div class=sourcing-head><h2 id=sourcing-title>Source a quote</h2>"
+        f"<div class=sourcing-head><h2 id=sourcing-title>{'Get the quote out' if controls else 'PIXEL is on it'}</h2>"
         f'<span>Deadline <time datetime="{esc(deadline)}" data-deadline="{esc(deadline)}" class=due>'
         f"{clock(deadline)}</time></span></div>"
-        f"<div class=handover-actions>{links}</div>{controls}</section>"
+        f"<div class=handover-actions>{links}</div><ol class=steps>{step1}{step2}{step3}{step4}</ol>{takeover}</section>"
     )
 
 
@@ -651,7 +753,7 @@ def _draft_form(session_id: int, held: Event | None, to: str = "", *, quote=None
 
 
 def _frame(ctx: Context, ev: Event) -> str:
-    data = {"id": ev.id, "kind": ev.kind, "session_id": ev.session_id, "html": render_events(ctx, [ev], new=True)[0]}
+    data = {"id": ev.id, "kind": ev.kind, "session_id": ev.session_id, "html": render_events(ctx, [ev], new=True)[0][0]}
     return f"id: {ev.id}\ndata: {json.dumps(data)}\n\n"
 
 

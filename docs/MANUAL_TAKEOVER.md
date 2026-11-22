@@ -6,11 +6,16 @@ Only the first quote for the request counts.
 
 ## From incoming email to sent quote
 
-1. Open **Requests → Open** and select the customer thread. In **Activity**, expand the incoming email and confirm
-   it asks for an air-freight quote. Tracking questions, tariff updates, and carrier bids belong to their own handlers.
-2. Select **Take over**. The session shows **You’re handling this session**. The normal quote is held for review.
-   Carrier sourcing may continue, and the deadline fallback can still send even while you are in control.
-3. Under **Source a quote**, open **Read incoming email** and download any listed attachments. Use the latest
+1. Open **Requests → Open** and select the customer thread. **Activity** lists the customer's mail, the quote and
+   booking; each run of automatic steps (carrier mail, priced options, model calls) is one line you can expand.
+   Expand the incoming email and confirm it asks for an air-freight quote. Tracking questions, tariff updates, and carrier bids belong to their own handlers.
+2. While PIXEL works, **PIXEL is on it** shows its four steps and how far it got. Select **Take over** there or at
+   the top. The session shows **You’re handling this request**: PIXEL holds its quote for you and sends nothing to
+   the customer, carrier replies keep coming in, and if no quote is out by the deadline PIXEL still sends its best
+   price.
+3. **Get the quote out** walks you through four steps: request read, prices, quote draft, send. A step that is
+   done shows a check mark, and the next one has the highlighted button. **Prices** also says how many carrier replies
+   are still out. Open **Read incoming email** and download any listed attachments. Use the latest
    customer's message and its governing documents. Compare the lane, gross kg, volume in cbm, packages, cheapest
    or fastest preference, required or excluded airlines, currency, and the language with the **Request** panel. For
    door-to-port, confirm the pickup postcode. Note the goods-ready date, arrival deadline and maximum transit if
@@ -21,7 +26,8 @@ Only the first quote for the request counts.
    the lane. Review **Options** and **Activity**. The lookup does not send mail.
 5. Select **Request carrier bids** if you need mail-only air rates or a pickup quote. PIXEL uses the current carrier
    list and pickup zone, skips carriers already sourced or contacted for the lane, and sends through the outbox.
-   Incoming quotes appear in **Activity** and usable prices under **Options**. If the rate API returns 503,
+   Incoming quotes appear in **Activity**, inside the folded line of automatic steps, and usable prices under
+   **Options**. If the rate API returns 503,
    **Ask the rate desk** requests its portal prices and rate IDs. For a custom carrier message, use **Write to a
    carrier**. Use the bid button when you need the response to feed into PIXEL’s pricing.
 6. Select **Prepare quote draft**. PIXEL selects and prices a complete offer from the saved options, including pickup
@@ -29,7 +35,7 @@ Only the first quote for the request counts.
    is still missing, keep watching for bids or release the session so recovery can continue.
 7. Review the draft's recipient, total, currency, carrier, transit, and pickup scope. Edit the subject and message
    in the customer's language. Preserve the priced values in the draft, including the exact numeric format. Select
-   **Send quote**. PIXEL sends a threaded reply with its offer PDF and records it in the CRM. If another quote
+   **Send quote** in step 4 to send the draft as it is, or edit it under **Review and send the quote**. PIXEL sends a threaded reply with its offer PDF and records it in the CRM. If another quote
    went out while you were editing, the send is refused. Verify **Quote sent** in **Activity**.
 8. Select **Release to autopilot** so the session can continue through acceptance, booking, and tracking. While in
    takeover, use **Write or review a follow-up email** for a separate question after the quote.
@@ -43,7 +49,7 @@ use the read-only rate steps below to verify the discrepancy before deciding how
 | Stage | What happens | What you see |
 | --- | --- | --- |
 | Receive and classify | The webhook or poller records the mail. The router decides whether this is a quote request, customer reply, carrier bid, tariff update, or tracking question. | **Mail received**, **Sorted as customer RFQ** |
-| Read the shipment | The RFQ agent reads the current mail and its attachments. Rules handle supported layouts and the gateway handles ambiguous ones. | **Request read**, evidence and missing facts in **Activity** |
+| Read the shipment | The RFQ agent reads the current mail and its attachments. Rules handle supported layouts and the gateway handles ambiguous ones. | **Request read** with missing facts in **Activity**; the evidence in the automatic steps after it |
 | Source and select | The engine prices valid sheets, calls the portal, and sends relevant air and pickup enquiries. It compares in EUR, respects excluded airlines, and selects for the customer's stated preference. | **Options**, **Bid requested**, **Bid received**, **Option failed** |
 | Send the first quote | The CRM stores the draft. The outbox claims the reply, sends it to the customer thread and records delivery. At the deadline, recovery can send an airport-only offer if pickup is still unpriced. If air freight is also unpriced, PIXEL replies that a rate is unavailable. | **Quote drafted**, **Quote sent**, or **Fallback quote sent** |
 | Book and track | The booking agent waits for an explicit instruction to book the delivered offer. It uses the selected rate ID or booking by mail when required. Tracking reads the shipment record from the CRM. | **Booking requested**, **Booked**, **Booking confirmed**, tracking replies |

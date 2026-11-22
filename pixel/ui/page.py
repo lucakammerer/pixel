@@ -113,6 +113,11 @@ tr.chosen td{background:var(--sunk)}
 .ev.new{animation:flash 2s}@keyframes flash{from{background:var(--sunk)}to{background:transparent}}
 .ev details summary{cursor:pointer;list-style:none}.ev details summary::-webkit-details-marker{display:none}
 .ev details summary:hover .what{text-decoration:underline}
+.evgroup{border-bottom:1px solid var(--line)}.evgroup:last-child{border-bottom:0}
+.evgroup>summary{cursor:pointer;list-style:none;border-bottom:0}.evgroup>summary::-webkit-details-marker{display:none}
+.evgroup>summary .what{font-weight:400;color:var(--muted)}.evgroup>summary .d{color:var(--muted)}
+.evgroup>summary:hover .what{text-decoration:underline}.evgroup[open]>summary .kind{visibility:hidden}
+.evgroup>.ev{background:var(--sunk);border-bottom:1px solid var(--line)}.evgroup>.ev:last-child{border-bottom:0}
 .ev pre{white-space:pre-wrap;margin:8px 0 2px;padding:12px 14px;background:var(--sunk);border-radius:6px;font-size:13px;
 font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
 .draft{padding:16px 18px}.draft+.draft{border-top:1px solid var(--line)}
@@ -126,6 +131,14 @@ font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
 .handover-actions a{margin-right:8px;text-decoration:underline;text-underline-offset:3px}
 .sourcing{margin-bottom:16px}.sourcing-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
 .sourcing-head h2{margin:0}
+.steps{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:2px}
+.step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.step-n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:500;
+border:1px solid var(--line-2);color:var(--muted)}
+.step.done .step-n{background:var(--ok);border-color:var(--ok);color:#fff}
+.step.next .step-n{background:var(--accent);border-color:var(--accent);color:#fff}
+.step.todo{color:var(--muted)}.step.todo b{font-weight:500}.step .handover-actions{margin-top:8px}
+.step p{margin:2px 0 0}
 .shipment-form,.followup{margin-top:12px}
 .shipment-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:10px 14px}
 .shipment-fields label,.mail-text{display:grid;gap:4px}
@@ -303,6 +316,65 @@ LABELS = {
 }  # fmt: skip
 
 
+# What a person follows on a session's timeline: the request as read, the quote, the customer's answer, booking,
+# people and failures (`ui.routes.background` adds which mail). Every other kind is a background step, and the timeline folds each run of them into
+# one line, so a new kind folds by default.
+KEY = frozenset({
+    "mail.in", "mail.out", "mail.held", "rfq.extracted", "rfq.dangerous_goods", "quote.sent",
+    "quote.fallback", "quote.missed", "quote.stuck", "tracking.answered", "followup.read", "error", "call.started",
+    "call.ended", "call.answer", "call.transcript", "shipment.updated", "feedback", "score", "attachment.unreadable",
+})  # fmt: skip
+KEY_PREFIXES = ("customer.", "booking.", "human.", "tariff.")
+
+
+def is_minor(kind: str, payload: dict | None = None) -> bool:
+    """A background step; a check that blocked the quote or unmet asks that raised an alert stay visible."""
+    p = payload or {}
+    if (kind == "quote.checked" and p.get("blocking")) or (kind == "quote.unmet" and p.get("alert")):
+        return False
+    return kind not in KEY and not kind.startswith(KEY_PREFIXES)
+
+
+def minor_summary(kinds: list[str]) -> str:
+    """The folded line's text: how many steps, then each kind with its count, most frequent first."""
+    counts: dict[str, int] = {}
+    for k in kinds:
+        counts[k] = counts.get(k, 0) + 1
+    parts = ", ".join(
+        LABELS.get(k, esc(k)).lower() + (f" ×{n}" if n > 1 else "")
+        for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
+    )
+    noun = "step" if len(kinds) == 1 else "steps"
+    return f"<span class=what>{len(kinds)} automatic {noun}</span> <span class=d>· {parts}</span>"
+
+
+def group_events(evs: list[Event], rows: list[str], minor: list[bool]) -> str:
+    """The timeline: every row of `evs` in order, with each run of background rows (`minor`) folded into one
+    <details>."""
+    out: list[str] = []
+    run: list[int] = []
+
+    def flush() -> None:
+        if len(run) == 1:
+            out.append(rows[run[0]])
+        elif run:
+            out.append(
+                f"<details class=evgroup><summary class=ev><span class=t>{clock(evs[run[0]].ts)}</span>"
+                f"<div>{minor_summary([evs[i].kind for i in run])}</div><span class='kind mono'>show all</span></summary>"
+                + "".join(rows[i] for i in run) + "</details>"
+            )  # fmt: skip
+        run.clear()
+
+    for i, ev in enumerate(evs):
+        if minor[i]:
+            run.append(i)
+        else:
+            flush()
+            out.append(rows[i])
+    flush()
+    return "".join(out)
+
+
 def kind_class(kind: str) -> str:
     if kind.startswith("mail."):
         return "mail"
@@ -320,7 +392,7 @@ def _plain(value: Any) -> str:
     return esc(text)[:300]
 
 
-def event_row(ev: Event, mail: dict[str, Any] | None = None, *, new: bool = False) -> str:
+def event_row(ev: Event, mail: dict[str, Any] | None = None, *, new: bool = False, minor: bool | None = None) -> str:
     p = ev.payload or {}
     what = f'<span class="what {kind_class(ev.kind)}">{LABELS.get(ev.kind, esc(ev.kind))}</span>'
     if mail:
@@ -344,6 +416,15 @@ def event_row(ev: Event, mail: dict[str, Any] | None = None, *, new: bool = Fals
                 f"<span class=num>{money(o.get('total'), o.get('currency'))}</span>"
                 f" <span class=muted>· {days(o.get('transit_days'))} · billed {esc(o.get('billed_kg'))} kg</span>"
             )
+        elif ev.kind == "rfq.extracted" and p.get("origin") and p.get("destination"):
+            units = (("weight_kg", " kg"), ("volume_cbm", " cbm"), ("pieces", " pcs"), ("preference", ""))
+            bits = [f"<span class=mono>{esc(p['origin'])} → {esc(p['destination'])}</span>"]
+            bits += [f"{esc(p[k])}{unit}" for k, unit in units if p.get(k)]
+            bits += ["door pickup"] if p.get("door_pickup") else []
+            bits += [f"<span class=muted>read by</span> {esc(p['extracted_by'])}"] if p.get("extracted_by") else []
+            missing = ", ".join(map(str, p.get("missing") or []))
+            bits += [f"<span class=bad>missing {esc(missing)}</span>"] if missing else []
+            detail = " · ".join(bits)
         elif ev.kind == "route" and "kind" in p:
             detail = f"<span class=muted>as</span> {esc(str(p['kind']).replace('_', ' '))}"
         elif ev.kind == "shipment.updated":
@@ -366,7 +447,9 @@ def event_row(ev: Event, mail: dict[str, Any] | None = None, *, new: bool = Fals
             )
         main = f"{what} <span class=d>{detail}</span>" if detail else what
     actor = f"{esc(ev.kind)} · {esc(ev.actor)}"
+    minor = is_minor(ev.kind, ev.payload) if minor is None else minor
+    cls = "ev" + (" minor" if minor else "") + (" new" if new else "")
     return (
-        f'<div class="ev{" new" if new else ""}" id="ev{ev.id}"><span class=t>{clock(ev.ts)}</span>'
+        f'<div class="{cls}" id="ev{ev.id}"><span class=t>{clock(ev.ts)}</span>'
         f"<div>{main}</div><span class='kind mono'>{actor}</span></div>"
     )
