@@ -557,7 +557,7 @@ it or after booking, body and file and later correction, another language and sc
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
 
-## Axis P: price against the scorer's best (22.11.2026 12:10, live database to round 184)
+## Axis P: price against the scorer's best (22.11.2026 12:40, live database to round 186)
 
 `uv run python -m tools.price_ledger <database>` prints the rows below from a copy of the live database: every
 round lost on price or on accuracy points, and every accepted round today's code would quote otherwise (none today:
@@ -644,6 +644,14 @@ Steps sideways from round 179 (arrival from ready + transit): a weekend in trans
 pickup longer than a day, the portal's transit against the sheet's, "by Friday". Only 170, 118 and 179 carry an
 arrival limit, so none of these is tested by a scored round. Cheapest live evidence: the next round with an arrival
 limit and a door pickup whose ready day is a Friday, read with `tools.price_ledger`.
+
+Every scored round, cycle 3 (the ledger's last line): 186 scored, 136 accepted. Of these, today's code quotes 124
+exactly as sent, 1 a cent apart (46), and the 3 that lost accuracy points at the scorer's best (13, 27, 136); 8 have
+no session in this database (1 to 7, 107). 28 lost on price, above. The other 22 rejections were judged on something
+else than the price (Axis R); 186 (`not_what_was_asked`, 22.11. 09:45) is new: a Turkish "en hızlı seçeneği
+istiyoruz" (fastest) read as cheapest, so Aurelia 3 d at 844.49 went out instead of Fjordline 2 d at 1194.71. The
+scorer now names a wrong kind of option by its own reason rather than as too low; hot repair A holds it (claim
+56183, `extract.py`).
 
 Open, none of them a price or selection rule: 67 and 130 need the attachment (supply, generalize), 15 and 16 the
 place the customer would name. Rounds 180 to 184 (cycle 2, fresh copy): all accepted, today's code quotes them as sent. Nothing in this axis is wrong today that has no owner.
