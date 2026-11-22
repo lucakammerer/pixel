@@ -555,7 +555,7 @@ it or after booking, body and file and later correction, another language and sc
 combined change. Extend the existing bid, sheet and desk checks in `tools.benchmark_generalization` and
 `tools.simulate`. The census and this table have no direct effect on the accepted quote rate.
 
-## Axis P: price against the scorer's best (22.11.2026 11:20, live database to round 179)
+## Axis P: price against the scorer's best (22.11.2026 12:10, live database to round 184)
 
 `uv run python -m tools.price_ledger <database>` prints the rows below from a copy of the live database: every
 round lost on price or on accuracy points, and every accepted round today's code would quote otherwise (none today:
@@ -566,9 +566,11 @@ it above quoted / 0.95, `too_high` below quoted / 1.05. "Past the bound" means t
 so it is within 5 % of the scorer's best for every best up to the range shown; it is not proof of the best itself.
 
 **Headline: 28 rounds were lost on price, not 68** (18 `too_low`, 10 `too_high`; the 68 counted `feedback` events:
-round 93 was written 40 times, once per 10 s poll from 00:21 to 00:28 UTC, round 94 three times). **Today 18 of the 28 move past the verdict's
-bound with the source or rule that was missing then; 67 stays short of it for want of a trucker offer in an mp3,
-which today's code reads; 9 do not move or cannot be replayed offline.** Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
+round 93 was written 40 times, once per 10 s poll from 00:21 to 00:28 UTC, round 94 three times). **Today 24 of the 28 move past the verdict's
+bound with the source, rule or reading that was missing then. 4 are likely but unproven: 67 (a trucker offer in an
+mp3), 130 (an attachment not stored), 15 and 16 (a pickup place the customer was never asked for).** Cycle 2 added
+17, 18 and 20 (priced at the place the customer named when asked) and 33 to 35 (priced at the figure today's rules
+read from the fixture of the round's attachment). Of the three accepted rounds that lost accuracy points with a session in the database, all three give the
 scorer's best today.
 
 | Round | Verdict | Quoted then | Today | Today passes if best in | Cause class | Fixed by / owner |
@@ -592,15 +594,15 @@ scorer's best today.
 | 118 | too_low | 4867.68 Nova Atlas 7 d + Kranich | 6634.32 Fjordline 4 d + Kranich | 6318.40 to 6983.49 | reading: ready date 26.11. not read, so the 7-day airline missed "arrive by 1.12." | ready date read today (the arrival rule of 179 does not change it: 26.11. + 7 > 1.12.) |
 | 67 | too_low | 3345.48 Riverbend + Rheinufer 45.00 | 3515.72 Riverbend + Schwabenbote | 3521.56 to 3700.76: short of the bound by 5.84 | option never had: a fourth trucker, Domblick, sent its offer only as a voice message (mp3), never read. With Riverbend no trucker we had reaches the bound (Hansekogge 220.24 gives 3520.72), so the scorer's trucker cost at least 221.08: Domblick, the express trucker of zone 40. Also "45.00 EUR for each hour" read as Rheinufer's price | `bids._with_attachments` reads audio today (`tariffs.agent.attachment_lines`, transcribed locally) and `selection.implausible` drops the misread; unproven offline, the mp3 is not stored; supply |
 | 179 | too_high | 1410.83 Meridian 1 d + Westfalenroute | 1074.69 Aurelia 2 d + Westfalenroute | 1023.51 to 1131.25 | option had, not selected: `calc.arrival` added a day for the trucker; the scorer counts ready + transit | hot repair A, on `main` (`calc.arrival`) |
-| 130 | too_high | 3753.00 Aurelia at 1510 kg + Grautal | same offline | — | reading: the packing list said 1144 kg, the cross-check kept the mail's 1510 | likely 2ef42c6 (05:05 UTC, an hour after the round: a document's figure is never replaced by the cross-check); unproven, attachment bytes not stored; generalize |
-| 33 | too_high | 1475.00 Borealis at 2.78 cbm | same offline | — | reading: document 1.92 cbm against the mail's 2.78 | #159; attachment not stored; generalize |
-| 34 | too_high | 4980.00 Solace at 11.69 cbm | same offline | — | reading: document 7.49 cbm against the mail's 11.69 | #159, round 34 is a fixture; generalize |
-| 35 | too_high | 8751.64 Nova Atlas 3 d | same offline | — | reading: document against mail (xlsx), which figure unknown | open, attachment not stored; generalize |
-| 20 | too_high | 3723.64 Quetzal 2 d + Bodenseefracht | same | — | reading: pickup 90461 Nürnberg, zone 90 not listed, flown from FRA | open, D11; generalize |
-| 16 | too_high | 1688.10 Helix 2 d + Bodenseefracht | same | — | reading: "our warehouse", place guessed (36627) | open, D2 class; scope of the pickup place: generalize |
-| 15 | too_low | 1058.20 Polaris, no pickup | not comparable | — | reading: "our warehouse", no place: priced without pickup | open; today's reading uses the customer's later requests (24983, HAM), which the round did not have; generalize |
-| 17 | too_low | 3844.65 Wayzata, no pickup | not comparable | — | same; the place was guessed (21663) | open; generalize |
-| 18 | too_high | 2602.88 Juniper + Maintal at 21663 | not comparable | — | same; the customer wrote 51115 Bergisch Gladbach after our quote | open; generalize |
+| 130 | too_high | 3753.00 Aurelia at 1510 kg + Grautal | 2936.82 Aurelia 2 d at 1144 kg + Grautal, by hand | 2796.97 to 3091.39 | reading: the packing list said 1144 kg, the cross-check kept the mail's 1510 | likely 2ef42c6 (05:05 UTC, an hour after the round: a document's figure is never replaced by the cross-check); the reading is unproven, the attachment is not stored and no fixture holds it; generalize |
+| 33 | too_high | 1475.00 Borealis at 2.78 cbm | 1083.76 Borealis at 1.92 cbm (320.64 kg) | 1032.15 to 1140.80 | reading: document 1.92 cbm against the mail's 2.78 | #159: today's rules read 1.92 from the SLI (`test_extract`, `rfq-sli-volume-differs-from-mail`); priced offline at it |
+| 34 | too_high | 4980.00 Solace at 11.69 cbm | 3944.40 Solace 2 d at 7.49 cbm (1384 kg) | 3756.57 to 4152.00 | reading: document 7.49 cbm against the mail's 11.69 | #159: today's rules read 7.49 from the packing list (`test_extract`, `rfq-packing-list-volume-differs-from-mail`); priced offline at it |
+| 35 | too_high | 8751.64 Nova Atlas 3 d at 2644 kg | 6620.00 Nova Atlas 3 d at 1751 kg (billed 2000) | 6304.76 to 6968.42 | reading: the spec's 1751 kg against the mail's 2644 | today's rules read 1751 from the xlsx (`test_extract`, `rfq-spec-weight-differs-from-mail`); priced offline at it |
+| 20 | too_high | 3723.64 Quetzal FRA 2 d + Bodenseefracht at 61391 (guessed) | 3404.90 Juniper MUC 1 d + Neckarstrom at zone 86 | 3242.76 to 3546.32 | reading: "from our warehouse", no place; signature Nuremberg (zone 90, not listed) | today `extract._ask` asks for the postcode; Weidner named Augsburg when asked (`_town_zone`), priced offline at MUC zone 86. A question for the pickup place is accepted (round 131: Auer named Augsburg, quoted MUC, 45 of 45) |
+| 16 | too_high | 1688.10 Helix 2 d + Bodenseefracht at 36627 (guessed) | not comparable | — | reading: "our warehouse", no place | today asked (as 131); Nordlicht was never asked, its place is unknown; generalize |
+| 15 | too_low | 1058.20 Polaris MUC, no pickup | 1258.85 Polaris MUC + Neckarstrom at zone 93 (Regensburg), or 1725.08 Juniper HAM + Hansekogge at zone 24 | 1198.90 to 1325.11, or 1642.93 to 1815.87 | reading: "our warehouse", no place: priced without pickup | today asked (as 131); Auer was never asked; either of its two likely places passes; generalize |
+| 17 | too_low | 3844.65 Wayzata HAM, no pickup | 4255.50 Wayzata CGN 4 d + Westfalenroute at zone 51 | 4052.86 to 4479.47 | reading: "our warehouse", place guessed (21663) | today asked; Lindqvist named 51115 Bergisch Gladbach when asked (round 18), priced offline at CGN zone 51 |
+| 18 | too_high | 2602.88 Juniper HAM + Maintal at 21663 (guessed) | 2358.88 Lumen CGN 4 d + Westfalenroute at zone 51 | 2246.55 to 2478.93 | reading: "our warehouse", place guessed | today asked; the customer wrote 51115 Bergisch Gladbach after our quote, priced offline at CGN zone 51 |
 | 27 | accepted, 39.32 | 3018.37 Meridian bid 2877.65 + Hansekogge | 2980.72 Meridian card 2840.00 + Hansekogge | passes, best 2980.75 from the points | option never had: the portal's price during its 503, the airline's bid by mail 1.3 % above it | rate card |
 | 13 | accepted, 33.0 | 2875.06 Borealis + Alpenblick | 2953.82 Borealis + Hansekogge | passes, best 2953.82 | trucker rule | `selection.balanced` (`times_the_best`) |
 | 136 | accepted, 44.9 | 467.64 Borealis at 0.46014876 cbm | 467.53 at 0.46 cbm by hand (339.65 / 76.845 x 76.82 + 127.99) | passes, best 467.54 from the points | reading: a converted volume not rounded to 0.01 | 66b462b (`extract.CONVERTED`) |
@@ -630,6 +632,8 @@ A contradiction is a lost round the rule alone explains and no other cause does.
 | Billed at a higher break when cheaper (portal, next break) | 18 | 0 | 33, 34 and 18 lost for their reading, not the break |
 | The insurance premium on the customer's terms in the all-in | 3 (92, 109, 164) | 0 | 91 lost without it |
 | Arrival = ready day + transit, no day added for the trucker (hot repair A; before: a day more with a trucker) | 2 (170; 179 today) | 0 | before the repair 179 contradicted the extra day |
+| A figure the attached document states over the mail's (weight, volume) | 3 accepted since (`test_extract`) and 33, 34, 35 at the document's figure | 0 | 130 too, by hand at 1144 kg |
+| A pickup without a place is priced at the place the customer names when asked | 1 (131: Augsburg, 45 of 45) and 17, 18, 20 at the named place | 0 | 15 and 16: never asked |
 | A converted unit rounded to 0.01 before pricing | 1 (136, by the points) | 0 | — |
 | An airline bid or the rate desk as the price | 4 (29, 45, 46, 47) | 0 | — |
 | Minimum on the freight, surcharges on billed weight, a quote in another currency | no scored round tests them | — | every sheet quoted above its minimum; no sheet quoted at a higher break with surcharges; every request asked EUR |
@@ -639,8 +643,8 @@ pickup longer than a day, the portal's transit against the sheet's, "by Friday".
 arrival limit, so none of these is tested by a scored round. Cheapest live evidence: the next round with an arrival
 limit and a door pickup whose ready day is a Friday, read with `tools.price_ledger`.
 
-Open: 67, 130, 33 and 34 (proof needs the attachments, not stored), 35 (which figure), 15 to 18 and 20 (the pickup
-place). Nothing in this axis is wrong today that has no owner.
+Open, none of them a price or selection rule: 67 and 130 need the attachment (supply, generalize), 15 and 16 the
+place the customer would name. Rounds 180 to 184 (cycle 2, fresh copy): all accepted, today's code quotes them as sent. Nothing in this axis is wrong today that has no owner.
 
 ## Axis F: after the quote (22.11.2026 11:00, live database to round 179)
 
