@@ -1,5 +1,7 @@
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import pytest
@@ -92,6 +94,33 @@ async def test_not_on_portal_carries_hint(portal, status):
     with pytest.raises(NotOnPortal) as err:
         await read(portal)
     assert "some-air@example.test" in err.value.hint
+
+
+@respx.mock
+async def test_503_reads_the_rate_from_the_portal_page():
+    """Rounds 93 to 97: the rate API answered 503 and neither the airlines nor the desk answered by mail, so the
+    fastest airline was never priced. A captured page load and its answer: fields named anew, the sum as strokes,
+    decoy characters hidden in the rate id and the total."""
+    page_url = "https://page.test/portal/ui"
+    fixtures = Path(__file__).parent / "fixtures" / "portal_page"
+    load, rate, expected = (json.loads((fixtures / f"{n}.json").read_text()) for n in ("load", "rate", "expected"))
+    key_field = next(f["name"] for f in load["fields"] if f["kind"] == "password")
+
+    def page(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("X-Portal-Step") == "load":
+            return httpx.Response(200, json=load)
+        form = request.content.decode()
+        solved = f'name="{load["answer"]["name"]}"\r\n\r\n{expected["answer"]}\r\n' in form
+        keyed = f'name="{key_field}"\r\n\r\nsecret\r\n' in form
+        return httpx.Response(200, json=rate) if solved and keyed else httpx.Response(400, json={"error": "wrong"})
+
+    respx.get(f"{BASE}/v1/portal/rates").respond(503, json={"detail": "The rate API is unavailable."})
+    respx.post(page_url).mock(side_effect=page)
+    async with httpx.AsyncClient(base_url=BASE, headers={"X-API-Key": "secret"}) as client:
+        option = await read(Portal(client, page_url))
+    assert option.source == Source.PORTAL and option.rate_id == expected["rate_id"]
+    assert (option.carrier_code, option.transit_days) == (expected["carrier_code"], expected["transit_days"])
+    assert option.total_eur == Decimal(expected["total_eur"])
 
 
 @respx.mock
