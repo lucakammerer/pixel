@@ -12,11 +12,13 @@ import pytest
 
 from pixel import llm
 from pixel.agents.rfq import agent, extract
+from pixel.agents.router import agent as router
+from pixel.agents.tariffs import agent as tariffs
 from pixel.agents.tariffs.agent import _spoken
 from pixel.api.mailbox import to_message
 from pixel.config import settings
 from pixel.contracts import Attachment, LaneTariff, LlmResult, Message, RateOption, Rfq, Source
-from pixel.core import events, outbox
+from pixel.core import events, outbox, timing
 from pixel.core.context import Context
 from pixel.core.orchestrator import Deadline
 from pixel.crm import quotes
@@ -107,6 +109,33 @@ def ctx(conn, monkeypatch):
 
 def kinds(ctx, kind):
     return [json.loads(r[0]) for r in ctx.db.execute("SELECT payload FROM events WHERE kind = ?", (kind,))]
+
+
+async def test_explicit_lane_suspension_applies_only_from_effective_date_until_resumption(ctx):
+    request = rfq()
+    day = NOW.date()
+    effective = day + timedelta(days=1)
+    tariff = LaneTariff(carrier="Air One", origin=request.origin, destination=request.destination, currency="EUR",
+                        valid_from=day, valid_to=day + timedelta(days=10), version="original", transit_days=2,
+                        minimum=D(0), breaks=((D(0), D(2)),), fuel_per_kg=D("0.10"), security_per_kg=D(0),
+                        source="test")  # fmt: skip
+    store.upsert(ctx, [tariff])
+    [old] = engine.sheet_options(ctx, request)
+    lane = f"{request.origin}-{request.destination}"
+    notice = mail("one@air", f"New bookings on {lane} suspended from {effective}.")
+    assert router.rules(ctx, notice)[0].value == "tariff"
+    await tariffs.handle(ctx, notice.model_copy(update={"sender": "unknown@example.test"}))
+    assert not kinds(ctx, "carrier.availability")
+    await tariffs.handle(ctx, notice)
+    assert engine.combine(request, [old], ctx=ctx) == [old]
+
+    token = timing.clock.set(lambda: NOW + timedelta(days=1))
+    try:
+        assert not engine.sheet_options(ctx, request) and not engine.combine(request, [old], ctx=ctx)
+        await tariffs.handle(ctx, mail("one@air", f"New bookings on {lane} resumed on {effective}."))
+        assert engine.combine(request, [old], ctx=ctx) == [old]
+    finally:
+        timing.clock.reset(token)
 
 
 @pytest.mark.parametrize(

@@ -18,6 +18,7 @@ from pixel.api.portal import (
     RatesUnavailable,
 )
 from pixel.contracts import Attachment, BookingStatus, QuoteStatus
+from pixel.core import poller
 from pixel.crm import bookings, quotes, shipments
 
 pytest_plugins = ["test_crm"]  # the `pipe` fixture
@@ -96,6 +97,26 @@ async def test_no_rate_id_books_by_mail_with_the_carrier_list(pipe):
     pipe.ctx.portal = Portal()
     b = await booking.book(pipe.ctx, "Q-1")
     assert b.via == "email" and pipe.sent[0]["to"] == "kestrel@air.example" and pipe.ctx.portal.calls == []
+
+
+@pytest.mark.parametrize("status", ["Status: QU. Space pending.", "Confirmed for 3 of 5 pcs. Balance pending."])
+async def test_pending_airline_reply_keeps_reference_until_standalone_confirmation(pipe, accepted, status):
+    pipe.ctx.portal = Portal(BookingUnavailable("Book by email with bookings@kestrel.example."))
+    b = await booking.book(pipe.ctx, "Q-1")
+    reference = "BK-AB12CD34"
+    reply = mail(31, 1, sender="bookings@kestrel.example", subject="Booking confirmation",
+                 body=f"Booking reference: {reference}\nYour reference: {b.team_reference}\n{status}")  # fmt: skip
+    await booking.handle_confirmation(pipe.ctx, reply)
+    pending = bookings.for_session(pipe.ctx, 1)
+    assert (pending.status, pending.booking_reference) == (BookingStatus.REQUESTED, reference)
+    assert kinds(pipe.ctx)[-1] == "human.note" and len(pipe.sent) == 1
+
+    confirmed = mail(32, 32, sender=reply.sender, subject=f"Booking {reference} confirmed",
+                     body="Confirmed for 5 of 5 pieces.")  # fmt: skip
+    assert poller.session_of(pipe.ctx, confirmed) == 1
+    await booking.handle_confirmation(pipe.ctx, confirmed)
+    assert bookings.for_session(pipe.ctx, 1).status == BookingStatus.CONFIRMED
+    assert len(pipe.sent) == 2
 
 
 @pytest.mark.parametrize("status", [404, 409])

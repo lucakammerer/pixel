@@ -21,7 +21,7 @@ from pixel.api.client import ApiError
 from pixel.contracts import Attachment, LaneTariff, Message
 from pixel.core import events
 from pixel.core.context import Context
-from pixel.pricing import bids, store
+from pixel.pricing import availability, bids, store
 
 NUM = r"\d+(?:[.,]\d+)?"
 CODE = re.compile(r"\b[A-Z]{3}\b")
@@ -782,6 +782,10 @@ def _reference_csv(ctx: Context, content: bytes) -> bool:
 
 async def handle(ctx: Context, message: Message) -> None:
     """A tariff mail: download attachments, ingest each, emit `tariff.ingested` or `tariff.failed`."""
+    carrier = store.carrier_by_email(ctx, message.sender)
+    if carrier and carrier[1] == "airline" and (notice := availability.notice(f"{message.subject}\n{message.body}")):
+        events.emit(ctx, "carrier.availability", "tariffs", session_id=message.session_id, message_id=message.id,
+                    payload={**notice, "carrier": carrier[0]})  # fmt: skip
     files = [(a.filename, await ctx.mailbox.attachment(message.id, a.id)) for a in message.attachments]
     for key, document in _documents(files).items():
         if key.lower().endswith(".csv") and _reference_csv(ctx, document[0][1]):
