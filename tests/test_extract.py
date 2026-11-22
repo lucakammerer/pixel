@@ -217,6 +217,11 @@ async def test_a_captured_request_in_lots_is_added_up_by_code_whatever_the_model
     assert (rfq.weight_kg, rfq.volume_cbm, rfq.pieces, rfq.origin) == (Decimal(1952), Decimal("4.6768"), 13, "AAA")
 
 
+def test_a_lot_figure_with_each_after_it_is_per_piece():
+    text = "- 2 pallets, 120 x 80 x 60 cm, 210 kg each\n- 1 crate, 100 x 100 x 50 cm, 180 kg\n- 3 boxes, 20 kg, 0.1 cbm each"
+    assert extract._lots(text) == (Decimal(620), Decimal("1.952"), 6)
+
+
 def test_a_lot_whose_figures_are_not_certain_is_left_to_the_model():
     text = "Lot 1: 4 drums, 730 kg, 1.68 cbm\nLot 2: 4 cartons, each 48 kg gross (41 kg net)"
     assert extract._lots(text) is None  # no volume for lot 2

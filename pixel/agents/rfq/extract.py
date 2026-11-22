@@ -374,6 +374,11 @@ def _per_cbm(unit: str) -> Decimal:
     return FT3 if re.fullmatch(FEET3, unit) else Decimal("0.001") if re.fullmatch(LITRE, unit) else Decimal(1)
 
 
+def _each(match: re.Match, rest: str) -> bool:
+    """Per piece with "each" before the figure or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each")."""
+    return bool(match["each"] or re.match(rf"\s*{PER_PIECE}", rest[match.end() :], re.IGNORECASE))
+
+
 def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
     """Gross weight, volume and pieces of a request that lists its shipment lot by lot ("Lot 2: 4 cartons, each
     48 kg gross, each 110 x 110 x 52 cm"). A figure is per piece with "each", else for the whole lot ("9 pieces,
@@ -392,7 +397,9 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
         kg = number(weights[0].group(3), thousands=per_kg < 1000)  # "1.234 t" is 1234 kg, not 1234 t
         kg = kg and kg * per_kg
         if stated:
-            cbm = number(stated.group(3), thousands=False) * (n if stated["each"] else 1) * _per_cbm(stated["unit"])
+            cbm = (
+                number(stated.group(3), thousands=False) * (n if _each(stated, rest) else 1) * _per_cbm(stated["unit"])
+            )
         else:
             *sides, unit = dims.groups()[2:]
             per_m = _per_m(unit)
@@ -401,7 +408,7 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
                 cbm *= number(side, thousands=False) / per_m
         if kg is None or cbm is None:
             return None
-        weight += kg * (n if weights[0]["each"] else 1)
+        weight += kg * (n if _each(weights[0], rest) else 1)
         volume += cbm
         pieces += n
     return (weight, volume, pieces) if len(lots) > 1 else None
