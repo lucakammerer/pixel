@@ -2,10 +2,11 @@
 
 The example is the newest booked request in the CRM (else the newest quote), so every figure on it ran here."""
 
+from datetime import datetime
 from typing import Any
 
 from pixel.core.context import Context
-from pixel.crm import quotes, shipments
+from pixel.crm import bookings, quotes, shipments
 from pixel.ui import names
 from pixel.ui.page import esc, money
 
@@ -73,6 +74,25 @@ def _icon(name: str) -> str:
     return f'<svg viewBox="0 0 24 24" aria-hidden=true>{ICONS[name]}</svg>'
 
 
+def span(seconds: float) -> str:
+    """Elapsed time as people read it: 42 s, 3 min 05 s, 2 h 14 min."""
+    s = max(0, round(seconds))
+    if s < 60:
+        return f"{s} s"
+    if s < 3600:
+        return f"{s // 60} min {s % 60:02d} s"
+    return f"{s // 3600} h {s % 3600 // 60:02d} min"
+
+
+def _first(ctx: Context, session_id: int, kinds: tuple[str, ...], last: bool = False) -> datetime | None:
+    marks = ",".join("?" * len(kinds))
+    row = ctx.db.execute(
+        f"SELECT {'MAX' if last else 'MIN'}(ts) FROM events WHERE session_id = ? AND kind IN ({marks})",
+        (session_id, *kinds),
+    ).fetchone()
+    return datetime.fromisoformat(row[0]) if row and row[0] else None
+
+
 def example(ctx: Context) -> dict[str, Any] | None:
     """The newest booked request (else the newest quote sent) with what each station did for it."""
     shipment = next(iter(shipments.recent(ctx, 1)), None)
@@ -88,15 +108,25 @@ def example(ctx: Context) -> dict[str, Any] | None:
     options = ctx.db.execute(
         "SELECT COUNT(*) FROM events WHERE session_id = ? AND kind = 'option.found'", (quote.session_id,)
     ).fetchone()[0]
-    secs = max(0, round((quote.sent_at - quote.rfq.received_at).total_seconds()))
     o, r = quote.option, quote.rfq
+    start = r.received_at
+    sent = (quote.sent_at - start).total_seconds()
+    # when each station finished for this request, from its own events; a missing one falls back to its neighbour
+    read = _first(ctx, quote.session_id, ("rfq.extracted",))
+    priced = _first(ctx, quote.session_id, ("option.found", "quote.drafted"), last=True)
+    read_s = min(sent, (read - start).total_seconds()) if read else 0.0
+    priced_s = min(sent, max(read_s, (priced - start).total_seconds())) if priced else sent
+    booking = bookings.for_session(ctx, quote.session_id) if shipment else None
+    clock = [span(0), span(read_s), span(priced_s), span(sent)]
+    clock.append(span((booking.created_at - start).total_seconds()) if booking else "not booked yet")
     return {
         "company": names.who(ctx, r.customer).name,
         "cargo": f"{r.weight_kg} kg · {o.origin} → {o.destination}",
         "options": options,
         "carrier": o.carrier,
         "total": money(quote.total, quote.currency),
-        "secs": secs,
+        "secs": round(sent),
+        "clock": clock,
         "booked": bool(shipment),
         "ref": (shipment.booking_reference or shipment.id) if shipment else "",
     }
@@ -109,12 +139,11 @@ def render(ctx: Context) -> str:
             f"<b>{esc(ex['company'])}</b> asks for a price",
             esc(ex["cargo"]) + ", read by rules",
             f"<b>{ex['options'] or 'Every'}</b> options compared, best: {esc(ex['carrier'])}",
-            f"<b>{esc(ex['total'])}</b> all-in, sent after {ex['secs']} s",
+            f"<b>{esc(ex['total'])}</b> all-in, sent after {esc(span(ex['secs']))}",
             (f"Booked · <b>{esc(ex['ref'])}</b>, tracking answered from the CRM" if ex["booked"]
              else "Booked by rate id when the customer says yes"),
         )  # fmt: skip
-        t = ex["secs"]
-        clock = ["0 s", f"{max(1, t // 5)} s", f"{max(2, t * 3 // 5)} s", f"{t} s", "after the yes"]
+        clock = ex["clock"]
         caption = (
             f"<span>A real request from <b>{esc(ex['company'])}</b>, as it ran through PIXEL</span>"
             "<span>Time since the mail arrived: <b class=clock>0 s</b></span>"
