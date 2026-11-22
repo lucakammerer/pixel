@@ -87,8 +87,8 @@ LOT = re.compile(
 )
 EACH = r"each|apiece|per\s+(?:piece|unit|carton|case|drum|pallet|box|crate)|je|pro\s+st(?:ü|ue)ck"
 ALL = r"together|in\s+total|total|combined|altogether|zusammen|gesamt|insgesamt"
-MODE = rf"(?:(?<!\w)(?P<each>{EACH}|à)|\b(?P<all>{ALL}))?\s*"
-AFTER = rf"(?:\s*(?P<after>{EACH}))?"  # "210 kg each", "0.58 cbm per pallet"
+MODE = rf"(?:\b(?P<each>{EACH}|à)|\b(?P<all>{ALL}))?\s*"
+AFTER = rf"(?:\s+(?P<after>{EACH})\b)?"  # "210 kg each"
 PER_PIECE = rf"(?:\b(?:{EACH})\b|(?<!\w)à)"
 EACH_WEIGHT = re.compile(
     rf"{PER_PIECE}\s*(?:of\s+)?{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\b|{NUM}\s*(?:kgs?|kilos?|lbs?|pounds?)\s+(?:gross\s+)?{PER_PIECE}",
@@ -100,7 +100,8 @@ LOT_WEIGHT = re.compile(
     re.IGNORECASE,
 )
 LOT_VOLUME = re.compile(
-    rf"{MODE}{NUM}\s*(?P<unit>cbm\b|m3\b|m³|{FEET3.removeprefix(r'\s*')}|{LITRE.removeprefix(r'\s*')}){AFTER}", re.IGNORECASE
+    rf"{MODE}{NUM}\s*(?P<unit>cbm\b|m3\b|m³|{FEET3.removeprefix(r'\s*')}|{LITRE.removeprefix(r'\s*')}){AFTER}",
+    re.IGNORECASE,
 )
 LOT_DIMS = re.compile(MODE + DIMS.pattern, re.IGNORECASE)
 PIECES = re.compile(
@@ -450,7 +451,11 @@ def _lots(text: str) -> tuple[Decimal, Decimal, int] | None:
         kg = number(weights[0].group(3), thousands=per_kg < 1000)  # "1.234 t" is 1234 kg, not 1234 t
         kg = kg and kg * per_kg
         if stated:
-            cbm = number(stated.group(3), thousands=False) * (n if stated["each"] or stated["after"] else 1) * _per_cbm(stated["unit"])
+            cbm = (
+                number(stated.group(3), thousands=False)
+                * (n if stated["each"] or stated["after"] else 1)
+                * _per_cbm(stated["unit"])
+            )
         else:
             *sides, unit = dims.groups()[2:]
             per_m = _per_m(unit)

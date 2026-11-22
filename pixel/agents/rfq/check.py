@@ -20,7 +20,7 @@ from decimal import Decimal, InvalidOperation
 from pixel.agents.rfq import compose
 from pixel.agents.rfq.extract import DG_DOCUMENTS, number, own_words
 from pixel.contracts import Preference, Quote, RateOption, Source
-from pixel.pricing.calc import CBM_KG
+from pixel.pricing.calc import CBM_KG, insurance_in_currency
 from pixel.pricing.selection import TRUST, allowed, implausible
 
 BLOCK, WARN = "block", "warn"
@@ -51,6 +51,7 @@ def run(
     attachments: tuple[str, ...] = (),
     *,
     document_weight: Decimal | None = None,
+    insurance_eur: Decimal = Decimal(0),
 ) -> list[Finding]:
     """Every finding for `quote`. `request` is the customer's mail (subject and body), `options` every option the
     session found (airlines and pickups), `attachments` the file names on the customer's mail. A gross weight
@@ -60,7 +61,8 @@ def run(
         if rule in (_weight, _accounting) and document_weight == quote.rfq.weight_kg:
             continue
         try:
-            findings.extend(rule(quote, request, list(options), attachments))
+            kwargs = {"insurance_eur": insurance_eur} if rule in (_arithmetic, _best_price) else {}
+            findings.extend(rule(quote, request, list(options), attachments, **kwargs))
         except Exception as exc:  # noqa: BLE001  a broken rule must never cost the quote
             findings.append(Finding(rule.__name__.lstrip("_"), WARN, f"check failed: {type(exc).__name__}: {exc}"))
     return findings
@@ -84,13 +86,15 @@ def _lane(q: Quote, request: str, options: list[RateOption], files: tuple[str, .
     return []
 
 
-def _arithmetic(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+def _arithmetic(
+    q: Quote, request: str, options: list[RateOption], files: tuple[str, ...], *, insurance_eur: Decimal
+) -> list[Finding]:
     o, found = q.option, []
     if q.total != o.total or q.currency != o.currency:
         found.append(Finding("total", BLOCK, f"quote {q.total} {q.currency}, option {o.total} {o.currency}"))
     if o.total <= 0 or o.total_eur <= 0:
         found.append(Finding("total", BLOCK, f"total {o.total} {o.currency} ({o.total_eur} EUR)"))
-    parts = o.freight + o.fuel + o.security + o.pickup
+    parts = o.freight + o.fuel + o.security + o.pickup + insurance_in_currency(o, insurance_eur)
     if abs(parts - o.total) > CENTS:
         found.append(Finding("total", BLOCK, f"parts add up to {parts}, total is {o.total}"))
     if o.currency == "EUR" and o.total_eur != o.total:
@@ -122,7 +126,9 @@ def _pickup(q: Quote, request: str, options: list[RateOption], files: tuple[str,
     return []
 
 
-def _best_price(q: Quote, request: str, options: list[RateOption], files: tuple[str, ...]) -> list[Finding]:
+def _best_price(
+    q: Quote, request: str, options: list[RateOption], files: tuple[str, ...], *, insurance_eur: Decimal
+) -> list[Finding]:
     """Our total against the cheapest total the session could have quoted for what the customer asked: the
     cheapest airline (cheapest) or the cheapest among the fastest (fastest), plus the cheapest pickup. More than
     5% above it is rejected when the scorer takes that one (round 16: the fastest trucker instead of the cheapest).
@@ -137,7 +143,7 @@ def _best_price(q: Quote, request: str, options: list[RateOption], files: tuple[
     if r.preference == Preference.FASTEST:
         days = min(a.transit_days for a in airlines)
         airlines = [a for a in airlines if a.transit_days == days]
-    best = min(a.total_eur for a in airlines) + (min(pickups) if r.door_pickup else 0)
+    best = min(a.total_eur for a in airlines) + (min(pickups) if r.door_pickup else 0) + insurance_eur
     if o.total_eur > best * (1 + ACCEPT):
         return [Finding("best_price", WARN, f"{o.total_eur} EUR is {_pct(o.total_eur, best)} above {best} EUR, "
                                             "the cheapest the session had for this request")]  # fmt: skip

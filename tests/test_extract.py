@@ -238,6 +238,8 @@ def test_a_lot_whose_figures_are_not_certain_is_left_to_the_model():
         ("AAA-BBB, 500 kg, 2 cbm. Not urgent, no rush, the cheapest please.", ("500", "2", Preference.CHEAPEST)),
         ("AAA-BBB:\n- 4 cartons, each 48 kg, 110 x 110 x 52 cm\n- 2 pallets, together 400 kg, 2.1 cbm",
          ("592", "4.6168", Preference.CHEAPEST)),
+        ("AAA-BBB:\n- 2 pallets, 120 x 80 x 60 cm, 210 kg each\n- 1 crate, 0.5 cbm, 180 kg\n- 3 boxes, 40 kg, 0.1 cbm each",
+         ("640", "1.952", Preference.CHEAPEST)),
         ("AAA nach BBB: 3 Kartons à 30 kg, je 60x40x50 cm. Bitte schnellstmöglich.", ("90", "0.360", Preference.FASTEST)),
     ],
 )  # fmt: skip

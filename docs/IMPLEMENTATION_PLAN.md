@@ -80,7 +80,7 @@ Deviations from this list need a reason written here.
 
 ```
 webhook       POST /hook: the mailbox pushes each new mail, signed          mail.in
-poller        GET /v1/mailbox/messages?since_id=…  every second, the safety net; a mail is stored once
+poller        GET /v1/mailbox/messages?since_id=…  at the allowed cadence, the safety net; a mail is stored once
 router        rules on sender, thread, attachments; model only if unsure   route
 orchestrator  customer_rfq → session row + a task with a deadline (target 100 s, hard 315 s, expiry 360 s)
   rfq agent     read customer mail and attachment facts                 rfq.extracted

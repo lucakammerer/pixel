@@ -784,17 +784,17 @@ def _body(rfq: Rfq, option: RateOption, prose: Prose, signer: str, said: str = "
 
 
 INSURED = {
-    "en": "It also includes the cargo insurance on your terms, {premium} {currency}.",
-    "de": "Enthalten ist auch die Transportversicherung zu Ihren Konditionen, {premium} {currency}.",
+    "en": "It also includes cargo insurance on your terms.",
+    "de": "Enthalten ist auch die Transportversicherung zu Ihren Konditionen.",
 }
 
 
-def insured(body: str, rfq: Rfq, premium: Decimal, currency: str) -> str:
-    """The offer paragraph with the insurance premium the total holds."""
+def insured(body: str, rfq: Rfq) -> str:
+    """Confirm that the all-in price includes insurance."""
     parts = body.split("\n\n", 2)
     if len(parts) < 3:
         return body
-    note = INSURED.get(language_of(rfq), INSURED["en"]).format(premium=money(premium), currency=currency)
+    note = INSURED.get(language_of(rfq), INSURED["en"])
     return "\n\n".join([parts[0], f"{parts[1]} {note}", parts[2]])
 
 

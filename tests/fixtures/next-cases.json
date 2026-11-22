@@ -119,7 +119,7 @@
     "total": "1920.00",
     "currency": "EUR"
    },
-   "today": "600 kg, 1.652 cbm, Vega Skyfreight 1920.00 EUR: right since `_lots` reads 'each' after the figure."
+   "today": "600 kg, 1.652 cbm, Vega Skyfreight 1920.00 EUR."
   },
   {
    "fixture": "next-cases/non-stackable.json",
@@ -131,7 +131,7 @@
     "currency": "EUR",
     "assumption": "non-stackable pieces billed at 160 cm loading height; the scorer's rule is unknown"
    },
-   "today": "Volume 3.78, 600 kg, 2020.03 EUR.",
+   "today": "Weight 600, volume 3.78, 2020.03 EUR.",
    "known_gap": "No non-stackable rule in `extract` or `calc` Owner: Accuracy."
   },
   {

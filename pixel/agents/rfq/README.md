@@ -123,6 +123,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   count; a listed shipment only by its sum; a mail with no weight figure only warns), dangerous goods marked by `extract` without the papers
   (round 10), the total exactly once and no other amount with a currency outside the DG note, template leftovers,
   a bid `pricing/selection.py` `implausible` distrusts (`_implausible`, round 67).
+  When the request states its insurance terms, the premium is included in the arithmetic and the price comparison.
+  `compose.insured` confirms coverage in the mail alongside the single all-in amount.
   The mail-only weight checks defer to the exact gross weight when `rfq.evidence` records that an eligible packing
   table corroborated it. Round 57 priced the packing list's 1729 kg correctly, but the check saw only the mail's
   1210 kg and raised an alert.
@@ -266,9 +268,8 @@ In: the RFQ `Message` and its `Deadline`; later the customer's reply and the air
   "delivery from DXB airport to the door" the destination (`extract.py` `PRE_CARRIAGE`, `ON_CARRIAGE`). A lane we
   price only the other way round is turned round in `served_airports`: read backwards it prices nothing, and the
   fallback has nothing to send (`quote.missed`, `no_price`).
-- A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg). "Each" counts wherever
-  it stands: "- 2 pallets, 120 x 80 x 60 cm, 210 kg each", "à 30 kg", "0.58 cbm per pallet" (`_lots`, `AFTER`;
-  before, 122 of 816 generated two-lot mails summed one piece). A lot line
+- A lot's figure without "each" is for the whole lot ("9 pieces, 345 kg gross" is 345 kg); "each" counts before
+  or after it ("2 pallets, 120 x 80 x 60 cm, 210 kg each" is 420 kg), as do “à 30 kg” and “0.58 cbm per pallet”. A lot line
   code cannot read leaves the whole list to the model: a sum without it would be short again.
 - A figure per piece also stands outside lot lists ("4 cartons, each 48 kg", "250 kg per pallet", "3 Kartons à
   30 kg") and piece groups come as bullets: the rules multiply by the pieces or give the mail to the model.
