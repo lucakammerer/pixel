@@ -192,8 +192,7 @@
     "branch": "direction",
     "expected": "no_price",
     "sure": "text",
-    "why": "an import by lane alone, no word import",
-    "known_gap": "scope (G4): no import said, `served_airports` turns PVG-FRA round to FRA-PVG and quotes it"
+    "why": "an import by lane alone, no word import"
   },
   "cross-trade": {
     "branch": "direction",
