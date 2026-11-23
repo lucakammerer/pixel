@@ -34,7 +34,12 @@ ACCEPT = re.compile(
     r"|(?:let['’]s|we['’]ll|we\s+will)\s+go\s+with\s+(?:(?:it|this|that|your)\b|the\b[^.\n]{0,40}?\byou\s+(?:quoted|offered|proposed)\b)"
     # ... unless the clause puts it off or names someone else: "instead", "not now", "next month", "from DHL"
     r"(?![^.!?;\n]*\b(?:instead|not\s+now|later|next\s+(?:week|month|time)|from\s+\w))"
-    r"|merci\s+de\s+r[ée]server|veuillez\s+r[ée]server|nous\s+acceptons|r[ée]servez)",
+    r"|merci\s+de\s+r[ée]server|veuillez\s+r[ée]server|nous\s+acceptons|r[ée]servez"
+    # Spanish, Italian, Dutch, Portuguese: the yes itself or an imperative to book, never a bare participle
+    # ("le spedizioni prenotate con un altro") or a subjunctive ("las reservas que reserven otros")
+    r"|aceptamos|(?:por\s+favor|favor\s+de)\s+reserv\w*|proced\w*\s+con\s+la\s+reserva"
+    r"|accettiamo|(?:per\s+favore|vi\s+preghiamo\s+di)\s+prenot\w*|proced\w*\s+(?:pure\s+)?con\s+la\s+prenotazione"
+    r"|wij\s+accepteren|graag\s+boeken|aceitamos|(?:por\s+favor\s+)?pode(?:m)?\s+reservar)",
     re.IGNORECASE,
 )
 DECLINE = re.compile(
@@ -44,20 +49,37 @@ DECLINE = re.compile(
     r"(?:not|cannot|can['’]t|won['’]t|don['’]t|unable to)\s+"
     r"(?:yet\s+)?(?:go ahead|accept(?:ed)?|book(?:ed)?|proceed|confirm(?:ed)?|take it|move forward|be moving forward)|"
     r"nicht (?:buchen|annehmen|fortfahren)|leider nicht(?=\s*(?:[.!,;]|$))|cancel|absage|ablehnen|zu teuer|kein interesse|"
-    r"decided against|cheaper (?:option|offer|rate|quote) elsewhere|found a cheaper|trop cher|pas donner suite)\b",
+    r"decided against|cheaper (?:option|offer|rate|quote) elsewhere|found a cheaper|trop cher|pas donner suite"
+    r"|ne\s+(?:\w+\s+){0,2}pas\s+suite|ne\s+(?:pouvons|souhaitons)\s+pas\s+(?:accepter|réserver|poursuivre)"
+    r"|no\s+(?:vamos\s+a\s+)?(?:acept\w*|seguir\s+adelante|continuar)|demasiado\s+caro|rechazamos"
+    r"|non\s+(?:procederemo|accettiamo|possiamo\s+accettare)|troppo\s+caro|rifiutiamo|te\s+duur)\b",
     re.IGNORECASE,
 )
 # In the clause of the accept phrase: "we have decided not to go ahead", "Bitte buchen Sie nicht", "go ahead with a
 # competitor", "go ahead once we confirm pickup" decline or hold; rounds 9, 10 and 15 were booked on such a reply.
 # An English negation counts before the phrase only: "book it and don't forget the AWB" still books.
 NEGATED = re.compile(r"\b(?:not|no need|never)\b|n['’]t\b", re.IGNORECASE)
+# Spanish, Italian, Portuguese negate right before the verb, a pronoun between ("no la aceptamos", "non l'accettiamo",
+# "não podem reservar"); Dutch anywhere in the clause ("Wij accepteren uw offerte niet", "Nog niet graag boeken").
+NEGATED_BEFORE = re.compile(r"\b(?:no|non|não|nao)\s+(?:(?:la|lo|las|los|le|li|l['’]|a|o|as|os)\s*)?$", re.IGNORECASE)
+NEGATED_CLAUSE = re.compile(r"\b(?:niet|geen)\b", re.IGNORECASE)
 HOLD = re.compile(
     r"\b(?:nicht|nichts|kein\w*|erst|hold|competitor|other (?:quote|offer|forwarder)|anderweitig|storniert"
-    r"|once (?:we|our|you have)|only after|sobald|nach\s+(?:unserer|der)\s+freigabe|next week)\b",
+    r"|once (?:we|our|you have)|only after|sobald|nach\s+(?:unserer|der)\s+freigabe|next week"
+    r"|todav[ií]a|a[uú]n|ancora|ainda|aguard\w*|esper(?:en|ad)|attendete|wacht)\b",
     re.IGNORECASE,
 )
 CONDITION = re.compile(
-    r"\b(?:if|unless|whether|falls|wenn|ob|haven['’]t|hasn['’]t|have not|has not|didn['’]t|did not)\b", re.IGNORECASE
+    r"\b(?:if|unless|whether|falls|wenn|ob|haven['’]t|hasn['’]t|have not|has not|didn['’]t|did not"
+    r"|indien|als\s+(?:u|jullie|het|de|we|wij|ze)|mits|op\s+voorwaarde|siempre\s+que|con\s+tal\s+(?:de\s+)?que"
+    r"|a\s+condici[óo]n\s+de\s+que|purch[ée]|a\s+condizione\s+che|desde\s+que|contanto\s+que)\b"
+    # A clause opener or an inline condition on the offer. Reflexives such as "la marchandise se trouve" can
+    # accompany an acceptance without qualifying it.
+    r"|(?:^|[,;:]|\b(?:offre|oferta|offerta|tarifa|tariffa|devis|r[ée]server|reservar|prenotare"
+    r"|acceptons|aceptamos|accettiamo|aceitamos)\b)\s*"
+    # "Si, aceptamos" is an unaccented yes, "si prega di procedere" a polite form: neither a condition.
+    r"(?:(?:solo|só|somente|apenas)\s+)?(?:si|se|caso|qualora)\b(?!\s*[,!.]|\s+preg)",
+    re.IGNORECASE,
 )
 ASKS_TO_BOOK = re.compile(
     r"\b(?:can|could|would|will|können|könnten)\s+(?:you|sie)\s+(?:please\s+|bitte\s+)?(?:book|proceed|buchen)",
@@ -81,7 +103,13 @@ def intent(text: str) -> str:
         if CONDITION.search(sentence) or (sentence.rstrip().endswith("?") and not ASKS_TO_BOOK.search(sentence)):
             continue
         for clause in re.split(r"[,;:]|\s[-–]\s|\bbut\b", sentence):
-            if (m := ACCEPT.search(clause)) and not NEGATED.search(clause[: m.start()]) and not HOLD.search(clause):
+            if (
+                (m := ACCEPT.search(clause))
+                and not NEGATED.search(clause[: m.start()])
+                and not NEGATED_BEFORE.search(clause[: m.start()])
+                and not NEGATED_CLAUSE.search(clause)
+                and not HOLD.search(clause)
+            ):
                 return "accept"
     return "other"
 
