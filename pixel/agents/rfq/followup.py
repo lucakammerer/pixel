@@ -25,14 +25,27 @@ from pixel.pricing.pickup import zone_of
 # our answer to this mail (round 86).
 UPDATE = re.compile(
     r"\b(?:update|revise|adjust|redo|amend)\w*\s+(?:\w+\s+){0,2}(?:offer|quote|quotation|price|rate)"
-    r"|\b(?:updated|revised|new|adjusted|amended)\s+(?:offer|quote|quotation|price)|\bre-?quote"
-    r"|\bangebot\w*\s+(?:\w+\s+){0,3}(?:aktualisier|anpass|überarbeit|neu)\w*|(?:neues|aktualisiertes|angepasstes)\s+angebot"
+    r"|\b(?:correct|rectify)\s+(?:the|your|this|our)\s+(?:\w+\s+)?(?:offer|quote|quotation|price|rate)\b"
+    r"|\b(?:updated|revised|new|adjusted|amended|corrected)\s+(?:offer|quote|quotation|price)|\bre-?quote"
+    r"|\bangebot\w*\s+(?:\w+\s+){0,3}(?:aktualisier|anpass|überarbeit|korrigier|neu)\w*|(?:neues|aktualisiertes|angepasstes)\s+angebot"
     r"|\bpassen\s+sie\s+(?:\w+\s+){0,3}angebot\w*\s+an\b|\bofferte\s+(?:\w+\s+){0,2}(?:aan\s*(?:te\s+)?passen|bijwerken)"
     r"|nieuwe\s+offerte"
-    r"|\b(?:mettre|mettez)\s+à\s+jour\s+(?:votre|l['’]|cette)\s*(?:offre|cotation|devis)|nouvelle\s+(?:offre|cotation)"
+    r"|\b(?:mettre|mettez|corriger|corrigez)\s+(?:à\s+jour\s+)?(?:votre|l['’]|cette)\s*(?:offre|cotation|devis)|nouvelle\s+(?:offre|cotation)"
     r"|offre\s+(?:mise\s+à\s+jour|révisée)|\bactualiz\w+\s+(?:la|su)\s+(?:oferta|cotización)"
     r"|nueva\s+(?:oferta|cotización)|\baggiorna\w*\s+(?:l['’]|la\s+)?offerta|nuova\s+offerta",
     re.IGNORECASE,
+)
+# "No need to correct the offer": the update word is negated in its sentence, nothing to price again.
+NO_NEED = re.compile(
+    r"\b(?:no\s+need|not\s+necessary|need\s+not|don['’]t\s+need|pas\s+besoin|inutile\s+de"
+    r"|nicht\s+(?:nötig|notwendig|erforderlich)|no\s+hace\s+falta|non\s+serve|niet\s+nodig)\b",
+    re.IGNORECASE,
+)
+# The figure a correction replaces ("1,952 kg, not 753 kg", "statt 753 kg", "au lieu de 753 kg"): never the new one.
+REPLACED = re.compile(
+    rf"(?:,\s*|\s+|^)(?:and\s+|und\s+|et\s+)?(?:not|instead\s+of|rather\s+than|(?:an)?statt|nicht|au\s+lieu\s+de|non|pas"
+    rf"|en\s+(?:lugar|vez)\s+de|invece\s+di)\s+(?:the\s+|der\s+|die\s+|des\s+|de\s+)?{extract.NUM}\s*(?:[^\W\d_]+\.?|m³)",
+    re.IGNORECASE | re.MULTILINE,
 )
 # Says that something is different now: a preference or currency counts as changed only beside such a word.
 CHANGED = re.compile(
@@ -58,7 +71,9 @@ CANCELS = re.compile(
 )
 # A condition with a booking word in one sentence ("If the all-in stays below EUR 400, please book it"): never a
 # thank-you that needs nobody. Its cap, when it states one, is compared with our total by `selection.within_cap`.
-CONDITION = re.compile(r"\b(?:if|as long as|provided|unless|falls|wenn|sofern|solange|si|sous\s+réserve|se)\b", re.IGNORECASE)
+CONDITION = re.compile(
+    r"\b(?:if|as long as|provided|unless|falls|wenn|sofern|solange|si|sous\s+réserve|se)\b", re.IGNORECASE
+)
 BOOK_WORD = re.compile(
     r"\b(?:book\w*|proceed|go\s+ahead|buch\w*|beauftrag\w*|réserv\w*|reserv\w*|prenot\w*|confirm\w*\s+(?:the\s+)?order)\b",
     re.IGNORECASE,
@@ -74,6 +89,11 @@ CAP = re.compile(
 )
 SYMBOL = {"€": "EUR", "$": "USD"}
 HYPOTHETICAL = re.compile(r"\b(?:if|whether|falls|wenn|ob|si|se|would|würde)\b", re.IGNORECASE)
+QUOTE_CHECK = re.compile(
+    r"(?:^|(?<=[.!?])\s+|\n)\s*(?:is\s+(?:this|that)|please\s+confirm|(?:can|could|would)\s+you\s+(?:please\s+)?confirm)\b"
+    r"[^.!?\n]*\b(?:offer|quote|quotation|price|rate)\b",
+    re.IGNORECASE,
+)
 PRICED_AGAIN = ("open", "quoted", "declined")  # after the acceptance a person rebooks
 BOOKED = ("accepted", "booked", "confirmed")
 
@@ -122,7 +142,7 @@ def changes(rfq: Rfq, text: str, ours: set[Decimal] = frozenset(), documents: li
     """The request fields this text states differently from `rfq`: cargo (from the text, else from the first
     attached document that states it), lane, pickup postcode, and beside a word of change the preference or currency.
     Our own chargeable or billed weight quoted back is no change."""
-    text = _stated(text)
+    text = REPLACED.sub("", _stated(text))
     cargo = _cargo(text)
     for document in documents if not cargo else ():
         if cargo := _cargo(document, document=True):
@@ -225,7 +245,8 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         if said == "accept" and found.keys() <= {"weight_kg", "volume_cbm", "pieces"} and _priced(rfq, found):
             found = {}
     # "The updated offer works, please book" accepts: only a changed field outweighs an acceptance or a decline.
-    if found or (UPDATE.search(own) and said == "other"):
+    asks = any(UPDATE.search(s) and not NO_NEED.search(s) for s in re.split(r"(?<=[.!?])\s+|\n", own))
+    if found or (asks and said == "other"):
         intent = "change"
     elif CANCELS.search(own):  # "bitte stornieren, der Auftrag wurde zurückgezogen": "Auftrag" is no acceptance here
         intent = "cancel"
@@ -237,7 +258,7 @@ async def read(ctx: Context, message: Message, quote: Quote | None, rfq: Rfq | N
         intent = said
     elif TRACKING.search(own) and now in BOOKED:
         intent = "tracking"
-    elif "?" in own:
+    elif "?" in own or QUOTE_CHECK.search(own):
         intent = "question"
     else:
         intent = "thanks"

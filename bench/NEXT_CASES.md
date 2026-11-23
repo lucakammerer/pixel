@@ -940,8 +940,9 @@ number with a dot as the thousands separator. F1b checks a price cap on both sid
 | F3 | price-match request after the booking | never | person | person | right |
 | F4 | acceptance in Spanish or Italian | never | book | nothing | **gap**, after the quote (`booking.ACCEPT`) |
 | F5 | decline "nous ne donnerons pas suite" | never | decline | nothing (quote stays open) | **gap**, after the quote (`booking.DECLINE`) |
-| F6 | weight corrected "1,952 kg, not 753 kg, please correct the offer" | once after the booking (21.11.) | requote at 1,952 kg | person, no requote | **gap**, after the quote (`followup.changes`, `UPDATE`) |
-| F7 | the same correction after the confirmation | 21.11. 15:51 | person with the change | person, change unread | **gap**, after the quote |
+| F6 | weight corrected "1,952 kg, not 753 kg, please correct the offer"; "instead of", "statt", "au lieu de", "not X but Y", a volume | once after the booking (21.11.) | requote at the new figure | requote | fixed (this pull request: `followup.REPLACED`, "correct" in `UPDATE`) |
+| F7 | the same correction after the confirmation | 21.11. 15:51 | person with the change | person with the change | fixed (this pull request) |
+| F7a | a rate check with the existing or a changed figure, and a receipt acknowledgment | fixtures from both reviews by B | person for the existing figure, a new quote for the changed figure, nothing for the acknowledgment | person, requote, nothing | right (`followup.changes` reads the difference before `QUOTE_CHECK` classifies a question) |
 | F8 | ready date moved after the booking | never | person | nothing | **gap**, after the quote (`followup.changes`) |
 | F9 | acceptance in a new thread quoting our quote | never | the old session books | new request, quoted again | **gap**, Speed (`router.rules`) |
 | F10 | booking confirmation for an unknown reference from an unlisted address | never | confirmation, unmatched | new request | gap, Speed (B13) |
@@ -961,4 +962,4 @@ number with a dot as the thousands separator. F1b checks a price cap on both sid
 | F24 | objection to the quoted option without a new request or explicit refusal | round 192, mail 57922 | send to an operator | `thanks`, no action | **gap**, after the quote (`followup.read`); scorer rejected the first quote for `not_what_was_asked` |
 
 0 wrong outside these known gaps (`tools.followup_matrix`: every non-right case carries its `known_gap` and owner).
-Next in this lane, most frequent and cheapest first: F4 and F5 (one regex each), F6 and F7, F8, F17.
+Next in this lane, most frequent and cheapest first: F4 and F5 (one regex each), F8, F17.
